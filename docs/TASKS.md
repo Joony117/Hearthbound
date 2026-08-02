@@ -208,11 +208,12 @@ into a numbered sequence; `P2-01a` is expanded below and is where to start.
 | P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
 | P2-01d | `BalanceTable` Resource + `balance.tres` authored from `SYSTEMS.md` | Expanded below. Container shape is settled (`DECISIONS.md`, one `BalanceTable`). Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. Does **not** move `Hero.RANK_NAMES` — split out below. |
 | P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites; author the Summoning Circle's two-field schema | Expanded below. Unblocked by `godot-architect`'s ruling on reaching shared Resources without a fourth autoload. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
-| P2-02 | Real summon against the weight table; roster and equip UI | Replaces P1-02. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). |
+| P2-02 | Real weighted summon against `BALANCE.summon_weights`; roster displays hero archetype | Replaces P1-02. Expanded below. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). Equip UI moved out — nothing is equippable yet; see `P2-05a`. |
 | P2-03 | `quick_resolve.gd` — waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. **Add GUT here.** |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
+| P2-05a | Equip UI for authored equipment | Sequences after `P2-05` — needs item instances to exist before a hero has anything to equip. Split out of `P2-02`'s original backlog line, which named equip UI before equipment, loot, or item instances existed. |
 | P2-06 | Sacrifice → essence → rank up, with dupe resonance | |
 | P2-07 | Five buildings as five integers | |
 | P2-08 | Full save/load round-trip through `SaveService` | |
@@ -657,10 +658,103 @@ equipment definition yet. `P2-04` (lost-gear caches) is what first makes this da
 ### Non-goals
 Item instances or rolled items; `Item` as a `RefCounted`; affix rolling; enhancement; salvage,
 part conversion, or any other `P2-05` behavior; Cores and sockets as behavior (Phase 4);
-equipping anything to a `Hero`; equip UI (`P2-02`); lost-gear caches or recovery expeditions
+equipping anything to a `Hero`; equip UI (`P2-05a`); lost-gear caches or recovery expeditions
 (`P2-04`); loot tables; any consumer that reads an `EquipmentDefinition`; `item.gd`;
 `core_definition.gd`; save-format changes; restating `BalanceTable`'s
 `equipment_affix_counts`/`core_socket_counts` anywhere in this ticket's files.
+
+---
+
+## P2-02 — Real weighted summon + archetype roster display          [TODO]
+
+Narrowed from the original backlog line ("Real summon against the weight table; roster and
+equip UI"). Equip UI is split out to `P2-05a`: nothing is equippable yet — `Hero` has no
+equipment slots, `equipment/item.gd` doesn't exist (`P2-05` owns it), there is no loot table
+(`P2-04` owns it), and adding slots now would touch the save format for a UI with nothing to
+put in it.
+
+### Objective
+Pressing Summon creates a hero with a rank rolled against `BALANCE.summon_weights` and one of
+the five authored archetypes, then the roster displays that archetype alongside the hero's rank
+and name.
+
+### Existing architecture
+- `hub/summon/summon.gd` is the Phase-1 placeholder explicitly reserved for wholesale
+  replacement here (its own header comment says so). Its current `randi() %
+  BALANCE.rank_names.size()` roll is uniform across all eight ranks, ignoring weights entirely,
+  and its fixed name list creates a `Hero` with no `def_id`.
+- `BalanceTable.summon_weights` is already authored and matches `SYSTEMS.md`'s table —
+  `[4000, 2700, 1700, 1000, 450, 120, 28, 2]` (`balance_table.gd:10`), same F-through-SSS index
+  order as `rank_names`. Nothing reads `summon_weights` yet — this ticket is its first consumer.
+- `Hero` (`heroes/hero.gd`) already carries `def_id: StringName` and round-trips it through
+  `to_dict`/`from_dict`; `NO_ARCHETYPE_DEF_ID` (`&""`) is the empty sentinel. An empty `def_id`
+  is legitimate legacy Phase-1 data and must keep loading without error; a non-empty `def_id`
+  that resolves to no `HeroDefinition` is a failed Resource lookup and must fail loudly
+  (`CODING_RULES.md:121-122`), never silently default. `tests/save_roundtrip_check.gd` already
+  hand-constructs both cases directly — it never calls `Summon.roll()`, so it does not cover the
+  gameplay path this ticket adds.
+- The five authored `HeroDefinition` Resources are `knight`, `rogue`, `ranger`, `mage`, and
+  `cleric` (`heroes/defs/*.tres`). `HeroDefinition` has no rank field, and rank-up preserves a
+  hero's level rather than replacing the hero (`DECISIONS.md`, ~line 226) — archetype is
+  therefore independent of rolled rank. `SYSTEMS.md:324`'s "a random definition from that rank's
+  pool" wording doesn't match the authored data (no rank-scoped pool exists); read the pool as
+  all five archetypes, independent of rank, and flag the wording mismatch rather than inventing a
+  rank-scoped pool that isn't there (see Unresolved below).
+- `hub/hub.gd` already owns roster presentation: `_refresh_roster()` formats each row, and
+  `_on_summon_pressed()` calls `Summon.roll()`. `hub/hub.gd` and `hub/summon/summon.gd` both
+  already preload `balance.tres` as a typed `const`, matching `ARCHITECTURE.md`'s "Reaching
+  shared Resources" section — keep the same pattern for the `def_id → HeroDefinition` lookup
+  (`load()`/`preload()` assigned to a `const`, never handed out by an autoload). Adding an
+  archetype label to a roster row is a string-format change in `hub/hub.gd`; `hub/hub.tscn` needs
+  no node, unique-name, or `[connection]` change for it.
+
+### Acceptance criteria
+- `Summon.roll()` replaces the Phase-1 uniform rank roll with a weighted cumulative roll using
+  `BALANCE.summon_weights`; each rank's chance is its authored weight divided by the table total,
+  with no weight values copied into code.
+- A direct headless check proves the deterministic weighted-roll logic assigns exactly 4000,
+  2700, 1700, 1000, 450, 120, 28, and 2 of the 10000 possible tickets to F through SSS
+  respectively (exhaustive over the table, not a probabilistic sample); it also fails loudly on
+  an invalid ticket or an inconsistent weight table rather than indexing silently.
+- Each new summon receives a non-empty `def_id` chosen from all five authored archetypes,
+  independent of the rolled rank, and the `def_id` resolves to the matching `HeroDefinition`
+  through a typed `const` Resource load.
+- A non-empty `def_id` that resolves to no `HeroDefinition` emits a visible error and does not
+  silently substitute an archetype; an empty `NO_ARCHETYPE_DEF_ID` is legitimate legacy data and
+  emits no lookup error.
+- Every roster row displays the resolved `HeroDefinition.display_name` alongside the existing
+  rank label and hero name; a legacy hero with an empty `def_id` displays an explicit
+  no-archetype label without error.
+- A headless check calls `Summon.roll()`, adds the resulting hero to `GameSession.roster`, drives
+  a real `SaveService` save/reload cycle, and asserts the summoned hero keeps the identical
+  non-empty `def_id` and resolves to the same archetype after reload — this is the risky-boundary
+  case `tests/save_roundtrip_check.gd`'s existing (hand-constructed) fixtures don't cover.
+- No `hub/hub.tscn` node, unique-name, or `[connection]` block changes.
+- Existing tests still pass: `tests/save_roundtrip_check.gd` in full (legacy empty-`def_id`,
+  malformed-`def_id`, roster, and permadeath checks — no save payload or save version changes)
+  and `tests/balance_table_check.gd`.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean with
+  zero script errors and zero warnings.
+
+### Files allowed to change
+`hub/summon/summon.gd`, `hub/hub.gd`, `tests/`
+
+### Non-goals
+Summoning Circle weight renormalization (`P2-07` — `summoning_circle_multiplier_per_level` and
+`summoning_circle_level_cap` are authored and deliberately unread until then); summon cost,
+currency, or income rate of any kind (`P2-09` — no Summon Stone income rate is defined, so there
+is no number to charge); equipment slots on `Hero`, `equipment/item.gd`, loot, or equip UI
+(`P2-05a`, after `P2-05`); any change to `Hero.to_dict`/`from_dict`, `GameSession`,
+`SaveService`, or the save file format/version; combat, `CombatResult`, `quick_resolve.gd`, or
+`WaveDefinition`; pity timers, duplicate protection, or summon animation.
+
+**Unresolved wording mismatch (for `game-designer`, not blocking this ticket):**
+`SYSTEMS.md:324` says "Roll a rank from the table, then a random definition from that rank's
+pool," but no rank-scoped pool exists anywhere in the data — `HeroDefinition` has no rank field
+and rank-up preserves an existing hero rather than replacing it, so archetype and rank are
+independent by construction. This ticket proceeds on the only data-supported reading (one shared
+pool of all five archetypes, independent of rank); `SYSTEMS.md`'s wording should be corrected to
+match, but that correction is `game-designer`'s call on its own document, not this ticket's.
 
 ---
 
