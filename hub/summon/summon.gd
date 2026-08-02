@@ -56,6 +56,15 @@ static func definition_for(def_id: StringName) -> HeroDefinition:
 	return definition
 
 
+static func archetype_label_for(def_id: StringName) -> String:
+	if def_id == Hero.NO_ARCHETYPE_DEF_ID:
+		return "No archetype"
+	var definition: HeroDefinition = definition_for(def_id)
+	if definition == null:
+		return "Missing archetype (%s)" % def_id
+	return definition.display_name
+
+
 static func _total_weight(weights: Array[int]) -> int:
 	var total_weight: int = 0
 	for weight: int in weights:
