@@ -204,7 +204,7 @@ into a numbered sequence; `P2-01a` is expanded below and is where to start.
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Expanded below. Start here — unblocks P2-02. |
-| P2-01b | `ZoneDefinition` Resource + 3 zones authored | Unblocks P2-03. Expand next. |
+| P2-01b | `ZoneDefinition` Resource + 3 zones authored | Expanded below. Unblocks P2-03. |
 | P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
 | P2-01d | `BalanceTable` Resource + `balance.tres` authored from `SYSTEMS.md` | Expanded below. Container shape is settled (`DECISIONS.md`, one `BalanceTable`). Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. Does **not** move `Hero.RANK_NAMES` — split out below. |
 | P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites; author the Summoning Circle's two-field schema | Expanded below. Unblocked by `godot-architect`'s ruling on reaching shared Resources without a fourth autoload. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
@@ -482,6 +482,83 @@ Summon Stone income (`P2-09`); any change to `Hero.to_dict`/`from_dict`, `GameSe
 future Summoning Circle consumer must compute a local value (e.g. `effective_weight :=
 base_weight * circle_multiplier`) and never write back into `BalanceTable`'s exported arrays in
 place — the same shared-Resource mutation hazard `P2-01d` already flags for `P2-07`.
+
+---
+
+## P2-01b — `ZoneDefinition` Resource + three zones authored     [TODO]
+
+### Objective
+`docs/SYSTEMS.md`'s three expedition zones exist as authored `ZoneDefinition` Resource
+instances under `zones/defs/`, editable in the inspector without touching code. This ticket
+makes no player-facing change by itself — nothing reads a zone yet. `P2-03` is what consumes
+the data to build and resolve waves.
+
+### Existing architecture
+- No `zones/zone_definition.gd` or `zones/defs/` exist yet, though `ARCHITECTURE.md`'s
+  "Project layout" already reserves the folder (`docs/ARCHITECTURE.md:121`). Rules 2-3
+  (`docs/ARCHITECTURE.md:15-20`) require a Definition to be a Resource holding no runtime
+  state; a zone's wave index and in-progress HP belong to an expedition-scoped
+  `RefCounted`/`Node` instead — `DECISIONS.md` already rejected a `CombatState` autoload for
+  exactly this and named `hub/expedition/expedition.gd`'s `Expedition` as where it belongs
+  (`docs/DECISIONS.md:142-159`).
+- `ARCHITECTURE.md`'s "Reaching shared Resources" section names `ZoneDefinition` explicitly
+  alongside `HeroDefinition`/`EquipmentDefinition` as authored data reached by a plain
+  `preload()`/`load()`, never handed out by an autoload (`docs/ARCHITECTURE.md:62-85`).
+- `docs/SYSTEMS.md:240-282` (Expeditions) is the sole source for this ticket's fields and
+  values: the `ZoneDefinition` sketch (name, recommended power, wave list, loot table, unlock
+  condition), the three-zone table (`SYSTEMS.md:257-261`), and the explicit rejection of
+  per-species enemy stats or a bestiary as scope creep (`SYSTEMS.md:263-268`). Copy values and
+  descriptive text verbatim — do not recompute, approximate, or restate them in this ticket's
+  prose or in code comments; a second copy drifts the moment either is tuned.
+- The zone table gives each wave ramp only as a trash-wave count plus start/end fractions of
+  recommended power (e.g. "5 trash (50%→90% of RP) + 1 boss (110% RP)") — no intermediate
+  per-wave values or interpolation rule. Author the endpoints and count as given; inventing a
+  linear-interpolation rule here would be design `SYSTEMS.md` never specified. That
+  transformation, and constructing whatever the combat seam's `wave: WaveDefinition` argument
+  (`docs/ARCHITECTURE.md:96`) turns out to be, is `P2-03`'s job — `WaveDefinition` is a
+  committed type name in the combat-seam signature but appears nowhere in the project layout
+  yet (`docs/ARCHITECTURE.md:110-128`); closing that gap is `P2-03`'s call, not this ticket's.
+- `docs/SYSTEMS.md`'s recommended-power figures carry a `PROVISIONAL` marker
+  (`SYSTEMS.md:270-273`) — settled only by both combat paths existing and a played build.
+  Fine to transcribe today; do not present them as balanced or final.
+- `tests/balance_table_check.gd` is the precedent for the required headless transcription
+  check: `extends SceneTree`, `load()` the `.tres`, compare fields against hardcoded literals
+  copied from `SYSTEMS.md`, report through a `_fail()` helper, exit nonzero on the first
+  mismatch.
+
+### Acceptance criteria
+- `zones/zone_definition.gd` defines `class_name ZoneDefinition extends Resource` with
+  `@export` fields for: display name, recommended power, trash-wave count, trash-wave
+  start/end fraction of recommended power, boss fraction of recommended power, loot emphasis
+  (descriptive text), and unlock condition (descriptive text). No runtime fields, no
+  `WaveDefinition` reference or construction.
+- Three `.tres` instances exist under `zones/defs/` — Verdant Outskirts, Ashfall Reaches,
+  Sundered Vault — with every field copied from `docs/SYSTEMS.md:257-261`, not invented or
+  approximated.
+- A headless check under `tests/` (new script, following `tests/balance_table_check.gd`'s
+  style) loads all three authored zones and asserts every field of every zone against
+  `SYSTEMS.md` verbatim — three zones at this size is cheap enough to check exhaustively
+  rather than sample.
+- Grep-checkable: `ZoneDefinition` does not appear anywhere in `systems/game_session.gd` or
+  `systems/save_service.gd`; no zone `.tres` ever round-trips through `SaveService`.
+- No existing file outside this ticket's scope changes: `heroes/`, `hub/`, `systems/`, `ui/`,
+  and `project.godot` are byte-identical to their pre-ticket state.
+- Existing tests still pass: P1-02/P1-03 roster and permadeath checks, P2-01a's `def_id`
+  round-trip and legacy-fixture checks, P2-01d's balance-table check.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean.
+
+### Files allowed to change
+`zones/zone_definition.gd`, `zones/defs/*.tres`, `tests/`
+
+### Non-goals
+Any consumer of `ZoneDefinition` — constructing a `WaveDefinition`, resolving waves,
+`quick_resolve.gd`, `CombatResult`, HP carry-forward, permadeath, the retreat threshold (all
+`P2-03`). The combat seam names `WaveDefinition`, but nothing in the project layout defines it
+yet; closing that gap is `P2-03`'s call, not this ticket's. Also out of scope: per-species
+enemy stats or a bestiary (`SYSTEMS.md`'s own rejection); actual loot tables and drop rolls;
+lost-gear caches and recovery runs (`P2-04`); `EquipmentDefinition` (`P2-01c`); zone unlock
+progression as enforced gating logic — `unlock_condition` here is descriptive authored text
+only, nothing reads or enforces it; the arena.
 
 ---
 
