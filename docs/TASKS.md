@@ -207,7 +207,7 @@ into a numbered sequence; `P2-01a` is expanded below and is where to start.
 | P2-01b | `ZoneDefinition` Resource + 3 zones authored | Unblocks P2-03. Expand next. |
 | P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
 | P2-01d | `BalanceTable` Resource + `balance.tres` authored from `SYSTEMS.md` | Expanded below. Container shape is settled (`DECISIONS.md`, one `BalanceTable`). Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. Does **not** move `Hero.RANK_NAMES` — split out below. |
-| P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites | **Not expanded — blocked.** `godot-architect` is running concurrently on how a consumer reaches `balance.tres` without a fourth autoload, which is what this ticket's diff shape depends on; it may also rule this a scene↔script boundary change (`hub/hub.gd` backs `hub.tscn`). Expand once that ruling lands. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
+| P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites; author the Summoning Circle's two-field schema | Expanded below. Unblocked by `godot-architect`'s ruling on reaching shared Resources without a fourth autoload. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
 | P2-02 | Real summon against the weight table; roster and equip UI | Replaces P1-02. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). |
 | P2-03 | `quick_resolve.gd` — waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. **Add GUT here.** |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
@@ -385,9 +385,8 @@ tickets (sacrifice, buildings) are what make it visible.
 `balance_table.gd`, `balance.tres`, `tests/`
 
 ### Non-goals
-Moving `Hero.RANK_NAMES` off `Hero` and repairing its three call sites (`P2-01d-2`, blocked on
-`godot-architect`'s concurrent ruling on the consumer-access mechanism and on whether that ruling
-makes `hub/hub.gd`/`hub.tscn` a scene↔script boundary change under `CLAUDE.md`); any function
+Moving `Hero.RANK_NAMES` off `Hero` and repairing its three call sites (`P2-01d-2`, expanded
+separately once `godot-architect`'s ruling on the consumer-access mechanism landed); any function
 that consumes `BalanceTable` — `compute_essence_yield`, a real summon roll against the weight
 table, `rank_mult`/`growth` applied to a live `Hero`'s stats, or a building reading its own
 effect field — those land with the tickets that actually need them (`P2-02`, sacrifice,
@@ -399,6 +398,90 @@ reference to it and can persist into `balance.tres` on disk; this ticket's data 
 construction, but note the constraint here since P2-07 doesn't own this file. Also out of scope:
 `EquipmentDefinition`/`ZoneDefinition` (`P2-01c`/`P2-01b`), `level`/`xp`/equipment slots on
 `Hero`, save-format migrations, salvage, sacrifice, cores, combat, `CombatResult`.
+
+---
+
+## P2-01d-2 — Shared rank labels + Summoning Circle schema     [TODO]
+
+Unblocked by `godot-architect`'s 2026-08-02 rulings (`DECISIONS.md`, `ARCHITECTURE.md`'s
+"Reaching shared Resources"). Folds in a second, unrelated change from the same ruling window:
+`game-designer` gave the Summoning Circle a real formula (`SYSTEMS.md`), which needs two new
+`BalanceTable` fields in place of the single `summoning_circle_weight_shift` placeholder. Both
+changes land in one ticket because both touch only `balance_table.gd` and `balance.tres` plus
+their consumers — splitting them means opening the same two files twice for no isolation gained.
+
+### Objective
+Roster rank labels and the Phase-1 summon placeholder continue to work after rank-label data
+moves from `Hero` into the shared `BalanceTable` Resource. `BalanceTable` also gains the authored
+Summoning Circle inputs specified in `SYSTEMS.md`; no building effect consumes them yet.
+
+### Existing architecture
+- `BalanceTable` (`balance_table.gd`, `balance.tres`) is the one shared authored-data Resource
+  settled by `DECISIONS.md` (2026-08-01). Its exported fields use plural table names and
+  building-prefixed, descriptive scalar names (e.g. `forge_enhance_cap_per_level`); it currently
+  contains the obsolete `summoning_circle_weight_shift` placeholder.
+- `Hero` (`heroes/hero.gd`) is a runtime `RefCounted`. Its `RANK_NAMES` const currently backs
+  `rank_label()` (`heroes/hero.gd:7,20-21`), while `hub/summon/summon.gd:17` uses the same const
+  to size its placeholder rank roll and `hub/hub.gd:26,35` calls `rank_label()` rendering the
+  roster and summon status.
+- Per `DECISIONS.md` (2026-08-02, both entries) and `ARCHITECTURE.md`'s "Reaching shared
+  Resources" section, `balance.tres` is reached with a plain `preload("res://balance.tres")`
+  assigned to a `const` at the top of each flow (`hub/hub.gd` and `hub/summon/summon.gd` both
+  qualify) — no autoload, no `GameSession` field. `Hero.rank_label()` gains a
+  `balance: BalanceTable` parameter and indexes `balance.rank_names` instead of the removed const.
+- `hub/hub.tscn` has exactly two `pressed` connections (`hub.tscn:163-164`), both to no-argument
+  button handlers. Passing `balance` to an internal `rank_label()` call changes neither a node nor
+  a connection — this is not a scene↔script boundary change under `CLAUDE.md`.
+- `Hero.rank` remains a persisted int; `Hero.to_dict`/`from_dict` (`heroes/hero.gd:24-25`) are
+  untouched by this ticket — the rank label is presentation only and must not become a
+  save-format change. `tests/save_roundtrip_check.gd` already drives the save/reload and P1-03
+  permadeath path directly; extend it or a sibling in the same direct style, not through the hub
+  scene.
+- `SYSTEMS.md`'s Summoning Circle section defines the formula, level cap, affected rank block,
+  and the renormalization rule, plus an explicit "Implementation note" naming the current
+  one-field placeholder as a schema gap needing two fields (a per-level rate and a level cap).
+  Copy the formula's rate and cap values from there — don't restate the worked table in this
+  ticket or in code comments.
+
+### Acceptance criteria
+- `BalanceTable` gains an exported `rank_names: PackedStringArray` authored in `balance.tres`
+  from the rank order already in `Hero.RANK_NAMES`; `Hero.RANK_NAMES` is removed.
+- `Hero.rank_label` has the signature `func rank_label(balance: BalanceTable) -> String` and
+  returns the clamped label from `balance.rank_names`; all three call sites are updated to pass
+  the preloaded `BalanceTable`.
+- `hub/hub.gd` and `hub/summon/summon.gd` each declare a typed `const` preloading
+  `res://balance.tres` at the top of the file. No autoload, `GameSession` field, service locator,
+  or new Resource-loading abstraction is added.
+- The roster still renders each hero's rank label, and pressing Summon still produces a `Hero`
+  with a valid rank and displays its rank label — same observable behavior as before this ticket.
+- `summoning_circle_weight_shift` is replaced in both `balance_table.gd` and `balance.tres` by
+  two fields — a per-level rate and a level cap, named consistently with the existing
+  `_per_level`/`_cap` suffixes already used elsewhere in the file — with values copied from
+  `SYSTEMS.md`'s Summoning Circle section, not invented or approximated. Nothing reads these
+  fields in this ticket.
+- A headless check (extend `tests/balance_table_check.gd` or add a sibling, following its style
+  of loading `balance.tres` directly) asserts `balance.rank_names` matches the prior
+  `Hero.RANK_NAMES` order and asserts both new Summoning Circle fields against `SYSTEMS.md`
+  verbatim.
+- `tests/save_roundtrip_check.gd` still passes in full, including its P1-02/P1-03 roster and
+  permadeath checks — no save payload or save version changes.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean with
+  zero script errors and zero warnings.
+
+### Files allowed to change
+`balance_table.gd`, `balance.tres`, `heroes/hero.gd`, `hub/summon/summon.gd`, `hub/hub.gd`,
+`tests/`
+
+### Non-goals
+P2-02's real weighted summon roll, the renormalization arithmetic itself, and the `def_id` →
+`HeroDefinition` lookup; `ZoneDefinition`/`EquipmentDefinition` (`P2-01b`/`P2-01c`); implementing
+any building effect or a Summoning Circle consumer that actually reads the two new fields
+(`P2-07` — this ticket authors data only, nothing reads it); combat; the XP curve (`P2-04a`) and
+Summon Stone income (`P2-09`); any change to `Hero.to_dict`/`from_dict`, `GameSession`,
+`SaveService`, or the save format; any `hub/hub.tscn` node, unique-name, or connection change. A
+future Summoning Circle consumer must compute a local value (e.g. `effective_weight :=
+base_weight * circle_multiplier`) and never write back into `BalanceTable`'s exported arrays in
+place — the same shared-Resource mutation hazard `P2-01d` already flags for `P2-07`.
 
 ---
 
