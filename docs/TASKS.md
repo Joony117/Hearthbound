@@ -401,7 +401,11 @@ construction, but note the constraint here since P2-07 doesn't own this file. Al
 
 ---
 
-## P2-01d-2 — Shared rank labels + Summoning Circle schema     [TODO]
+## P2-01d-2 — Shared rank labels + Summoning Circle schema     [DONE]
+
+Landed in `6b691f9`. First ticket to edit files Phase 1 ships and gates green; the save format
+was verified unchanged by diff, not assumed. `rank_label(balance)` and `preload()` consts in
+`hub.gd`/`summon.gd` — no autoload, no `GameSession` field.
 
 Unblocked by `godot-architect`'s 2026-08-02 rulings (`DECISIONS.md`, `ARCHITECTURE.md`'s
 "Reaching shared Resources"). Folds in a second, unrelated change from the same ruling window:
@@ -485,7 +489,11 @@ place — the same shared-Resource mutation hazard `P2-01d` already flags for `P
 
 ---
 
-## P2-01b — `ZoneDefinition` Resource + three zones authored     [TODO]
+## P2-01b — `ZoneDefinition` Resource + three zones authored     [DONE]
+
+Landed in `cbf8f91`. All 24 authored fields asserted against `SYSTEMS.md`, not sampled. The wave
+ramp is stored as endpoints only — no interpolation rule was invented, and P2-03 owns that
+transformation. Nothing references `WaveDefinition`, which still has no home in the layout.
 
 ### Objective
 `docs/SYSTEMS.md`'s three expedition zones exist as authored `ZoneDefinition` Resource
