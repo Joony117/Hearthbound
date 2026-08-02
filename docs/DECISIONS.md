@@ -7,6 +7,27 @@ Newest first.
 
 ---
 
+## 2026-08-01: No `CombatState` autoload
+
+Proposed fourth autoload holding the current expedition's wave index and per-hero HP between
+waves, readable by both `combat/quick_resolve.gd` and `combat/arena/`.
+
+**Reason:** rule 6 — "Autoloads hold no level-specific state" — is a direct hit. Wave index and
+per-hero HP mid-expedition is created when an expedition starts and meaningless once it ends;
+even `GameSession`, the one autoload justified by surviving scene changes, is explicitly barred
+from owning combat or level state, so a new autoload for the same reason doesn't get a pass
+either. It also undermines the seam it was meant to serve: the combat seam's whole point is that
+`resolve(team, wave) -> CombatResult` is the only channel data flows through between the two
+implementations, and a shared autoload both paths read from is a second, implicit channel
+alongside it.
+
+**Rejected:** the autoload. Wave index and in-progress HP belong on an expedition-scoped
+`RefCounted`/`Node` (e.g. growing `hub/expedition/expedition.gd`'s `Expedition` past its current
+Phase-1 placeholder) passed explicitly into `resolve()` — or read back out of `CombatResult`,
+which already carries HP-after between waves.
+
+---
+
 ## 2026-08-01: Skeleton first, architecture third
 
 Development order is: thin walking skeleton → complete-but-ugly vertical slice →
