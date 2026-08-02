@@ -50,7 +50,10 @@ a roguelite.
   specifically so that a wipe is a setback, not a dead save.
 
 Long-term goal: build an SSS hero. The design assumes you *manufacture* one through
-sacrifice rather than pull one — the pull rate is 0.02%.
+sacrifice rather than pull one — the pull rate is 0.02%. Checked against the current
+`SYSTEMS.md` numbers: a lucky direct pull takes ~5,000 summons on average; feeding every hero
+you don't keep into one target takes ~327 — about 15× cheaper, which is what "manufacture,
+don't pray" needs to be true to hold up as a claim rather than flavor text.
 
 ---
 
