@@ -55,15 +55,12 @@ structural problem being treated as a syntax problem. Reassess.
 Goal: prove the project travels launch → gameplay → completion → back, and exports from a
 clean checkout. **Resist making any of it good.** Everything here is replaced in Phase 2.
 
-**Status: complete except one manual step.** All four tickets are `[DONE]`; the automated
-checklist rows pass from a real clean clone. The outstanding item is the human walkthrough of
-the exported binary:
+**Status: COMPLETE.** All four tickets `[DONE]`, all eight checklist rows pass, and the manual
+exit gate passed — the packaged binary was walked by hand and **permadeath persisted across a
+real quit and relaunch**. That was the one criterion no headless run could prove, and it is the
+whole reason Phase 1 existed: the loop runs in a shipped build, not just in the editor.
 
-> Launch `export/game.exe` → Play → summon several heroes → send them out until one dies →
-> quit, relaunch, confirm the dead hero is still gone → Escape → Return to Menu → Play again.
-
-That is the Phase 1 exit gate. Nothing in Phase 2 should start before it passes, because every
-Phase 2 ticket builds on the assumption that this loop actually runs in a packaged build.
+Phase 2 is cleared to start.
 
 ---
 
@@ -168,10 +165,9 @@ Landed in `a8c5e47`. Verified from a real `git clone` into a temp directory: imp
 zero error/warning lines, and exports from the clone itself — `game.exe` (109,071,360 bytes)
 plus `game.pck`. The exported binary launches headless with no script errors.
 
-**One criterion remains manually unverified:** "the exported exe launches and the full
-P1-01..03 flow works in it". Launching is proven; clicking through summon → expedition →
-permadeath inside the packaged binary cannot be driven headlessly and is the human walkthrough
-below. Do not read this ticket as evidence that it was checked.
+**Manually verified.** The packaged binary was walked by hand: summon → expedition →
+permadeath, then quit and relaunch, and the dead hero stayed dead. This could not be driven
+headlessly, so it was the one criterion carried as unproven until a human ran it.
 
 ### Objective
 The project exports to a runnable Windows exe, and a fresh clone opens and runs.
