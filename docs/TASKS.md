@@ -55,6 +55,16 @@ structural problem being treated as a syntax problem. Reassess.
 Goal: prove the project travels launch → gameplay → completion → back, and exports from a
 clean checkout. **Resist making any of it good.** Everything here is replaced in Phase 2.
 
+**Status: complete except one manual step.** All four tickets are `[DONE]`; the automated
+checklist rows pass from a real clean clone. The outstanding item is the human walkthrough of
+the exported binary:
+
+> Launch `export/game.exe` → Play → summon several heroes → send them out until one dies →
+> quit, relaunch, confirm the dead hero is still gone → Escape → Return to Menu → Play again.
+
+That is the Phase 1 exit gate. Nothing in Phase 2 should start before it passes, because every
+Phase 2 ticket builds on the assumption that this loop actually runs in a packaged build.
+
 ---
 
 ## P1-01 — Project boots to a main menu and into the hub          [DONE]
@@ -152,7 +162,16 @@ recovery runs, zones, `CombatResult`, `quick_resolve.gd`.
 
 ---
 
-## P1-04 — Export and clean-checkout gate                         [TODO]
+## P1-04 — Export and clean-checkout gate                         [DONE]
+
+Landed in `a8c5e47`. Verified from a real `git clone` into a temp directory: imports with
+zero error/warning lines, and exports from the clone itself — `game.exe` (109,071,360 bytes)
+plus `game.pck`. The exported binary launches headless with no script errors.
+
+**One criterion remains manually unverified:** "the exported exe launches and the full
+P1-01..03 flow works in it". Launching is proven; clicking through summon → expedition →
+permadeath inside the packaged binary cannot be driven headlessly and is the human walkthrough
+below. Do not read this ticket as evidence that it was checked.
 
 ### Objective
 The project exports to a runnable Windows exe, and a fresh clone opens and runs.
