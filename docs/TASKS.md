@@ -316,7 +316,11 @@ here is that those two stats simply don't scale with rank or level, not a new ca
 
 ---
 
-## P2-01d — `BalanceTable` Resource + `balance.tres` authored     [TODO]
+## P2-01d — `BalanceTable` Resource + `balance.tres` authored     [DONE]
+
+Landed in `c46b153`. Every value verified against `SYSTEMS.md` directly, including the rank-up
+cost table's seven entries against the rank tables' eight. Transcribing it exposed the
+Summoning Circle magnitude gap, fixed in `2d49f6b`; the schema followed in `6b691f9`.
 
 Split off `Hero.RANK_NAMES` relocation as `P2-01d-2` (backlog table above). The two decisions
 that unblock this ticket are both settled in `DECISIONS.md` (2026-08-01): `balance.tres` is one
