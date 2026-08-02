@@ -225,7 +225,22 @@ P2-09 — that question can't be honestly answered until stone income rate is de
 
 ---
 
-## P2-01a — HeroDefinition Resource + five archetypes authored     [TODO]
+## P2-01a — HeroDefinition Resource + five archetypes authored     [DONE]
+
+Landed in `034a6df`, hardened in `9605d3e` after an adversarial `verifier` pass.
+
+Two decisions worth carrying forward. A missing `def_id` defaults to **empty**, never to an
+archetype — `to_dict` always emits the field and `roster_changed` triggers a save, so
+defaulting to a real archetype would have written a fabrication to disk on the first roster
+change and permanently destroyed the fact that those heroes predate archetypes. A `def_id`
+present but not a `String` is corrupt rather than legacy, and gets a `push_error` naming the
+type before falling back to empty.
+
+Both new assertions were mutation-tested, not assumed: reintroducing either defect makes the
+suite fail with the specific wrong value and exit 1.
+
+**P2-02 inherits the consequence** — empty `def_id` is the input its fail-loud lookup criterion
+exists to handle.
 
 ### Objective
 Five hero archetypes (Knight, Rogue, Ranger, Mage, Cleric) exist as data — a `HeroDefinition`
