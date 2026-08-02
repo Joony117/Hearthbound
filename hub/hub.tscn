@@ -1,0 +1,164 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://hub/hub.gd" id="1_hub"]
+[ext_resource type="PackedScene" path="res://ui/pause_menu.tscn" id="2_pause"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.11, 0.12, 0.15, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.5, 0.55, 0.66, 1)
+ambient_light_energy = 0.7
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_1"]
+size = Vector2(48, 48)
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.22, 0.24, 0.27, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_1"]
+size = Vector3(3, 3, 3)
+
+[node name="Hub" type="Node3D"]
+script = ExtResource("1_hub")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.866, -0.5, 0, 0.5, 0.866, 0, 9, 15)
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 12, 0)
+shadow_enabled = true
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_1")
+surface_material_override/0 = SubResource("Mat_ground")
+
+[node name="Buildings" type="Node3D" parent="."]
+
+[node name="SummoningCircle" type="MeshInstance3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.5, 0)
+mesh = SubResource("BoxMesh_1")
+
+[node name="Label" type="Label3D" parent="Buildings/SummoningCircle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, 0)
+pixel_size = 0.02
+billboard = 1
+text = "Summoning Circle"
+
+[node name="Forge" type="MeshInstance3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 1.5, 0)
+mesh = SubResource("BoxMesh_1")
+
+[node name="Label" type="Label3D" parent="Buildings/Forge"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, 0)
+pixel_size = 0.02
+billboard = 1
+text = "Forge"
+
+[node name="TrainingHall" type="MeshInstance3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("BoxMesh_1")
+
+[node name="Label" type="Label3D" parent="Buildings/TrainingHall"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, 0)
+pixel_size = 0.02
+billboard = 1
+text = "Training Hall"
+
+[node name="Sanctum" type="MeshInstance3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 1.5, 0)
+mesh = SubResource("BoxMesh_1")
+
+[node name="Label" type="Label3D" parent="Buildings/Sanctum"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, 0)
+pixel_size = 0.02
+billboard = 1
+text = "Sanctum"
+
+[node name="Reliquary" type="MeshInstance3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 1.5, 0)
+mesh = SubResource("BoxMesh_1")
+
+[node name="Label" type="Label3D" parent="Buildings/Reliquary"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, 0)
+pixel_size = 0.02
+billboard = 1
+text = "Reliquary"
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Root" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="RosterPanel" type="PanelContainer" parent="UI/Root"]
+layout_mode = 1
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 296.0
+offset_bottom = -16.0
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/Root/RosterPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="Label" parent="UI/Root/RosterPanel/VBox"]
+layout_mode = 2
+text = "ROSTER"
+
+[node name="RosterList" type="ItemList" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Bottom" type="VBoxContainer" parent="UI/Root"]
+layout_mode = 1
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 312.0
+offset_top = -96.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 10
+
+[node name="Status" type="Label" parent="UI/Root/Bottom"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "..."
+autowrap_mode = 3
+
+[node name="Buttons" type="HBoxContainer" parent="UI/Root/Bottom"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Summon" type="Button" parent="UI/Root/Bottom/Buttons"]
+layout_mode = 2
+text = "Summon"
+
+[node name="Expedition" type="Button" parent="UI/Root/Bottom/Buttons"]
+layout_mode = 2
+text = "Send on Expedition"
+
+[node name="Hint" type="Label" parent="UI/Root/Bottom/Buttons"]
+layout_mode = 2
+text = "   Esc = pause"
+modulate = Color(1, 1, 1, 0.4)
+
+[node name="PauseMenu" parent="." instance=ExtResource("2_pause")]
+unique_name_in_owner = true
+
+[connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
+[connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]

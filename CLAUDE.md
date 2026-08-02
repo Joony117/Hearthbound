@@ -1,0 +1,99 @@
+# Infinite Gacha — repo rules
+
+A Godot 4.7.1 GDScript game. `docs/` is the spec set and it is authoritative:
+`GAME_SPEC.md` (what the game is) · `ARCHITECTURE.md` (the nine boundary rules) ·
+`CODING_RULES.md` (how GDScript is written here) · `SYSTEMS.md` (the numbers) ·
+`DECISIONS.md` (ADRs) · `TASKS.md` (tickets, and the delegation payload) ·
+`KNOWN_ISSUES.md` (deliberate shortcuts).
+
+**Inheritance.** The global routing rules in `~/.claude/CLAUDE.md` apply here unchanged —
+cheapest-sufficient-path routing, the Codex tiers, `~/.claude/WORKER-CONTRACT.md`. This file adds
+only what the global file says each repo must supply: the risky boundary and what BUILT means,
+plus the doc-ownership table. It removes nothing.
+
+## BUILT
+
+```bash
+cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --quit
+```
+
+Exit 0 with **zero script errors and zero warnings**. Warnings count — a shadowed variable or an
+unused signal is how the next runtime failure gets introduced quietly.
+
+Use the `_console` binary. `Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows
+stdout, so a scripted run against it reports success no matter what happened
+(`docs/KNOWN_ISSUES.md`).
+
+From Phase 2, BUILT also requires the GUT suite green:
+
+```bash
+cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests -gexit
+```
+
+## The risky boundary
+
+No FFI here. The boundary is everything Godot resolves **at runtime**, where static typing catches
+nothing and the failure surfaces on load rather than on import. A green import gate is not
+evidence that any of the following still works.
+
+A change touching any of these makes a `verifier` pass mandatory.
+
+**1. Save round-trip.** `Hero.to_dict/from_dict` ↔ `GameSession.to_dict/from_dict`
+(`systems/game_session.gd:31`) ↔ `SaveService` (`systems/save_service.gd`). A field written but
+never read — or read under a different key — fails silently and the import gate stays green.
+Acceptance for any state change is a real save/reload cycle, not a passing import. This is why
+`docs/TASKS.md` puts "survives save and reload" in the ticket template.
+
+**2. Scene ↔ script seam.** `%UniqueName` lookups, `[connection]` blocks inside `.tscn`, autoload
+names in `project.godot`, `.gd.uid` pairs. Renaming a node or a `_on_*_pressed` handler is a
+boundary change even though everything still compiles.
+
+**3. Permadeath.** `GameSession.kill_hero()` (`systems/game_session.gd:26`) is the only call site
+permitted to remove a hero from the roster (`ARCHITECTURE.md` r8). A second one is a bug
+regardless of how correctly it behaves.
+
+**4. Combat seam** (Phase 2+). Two independent implementations of
+`resolve(team: Array[Hero], wave: WaveDefinition) -> CombatResult` that must agree. Deliberately
+two plain functions — no base class, no registry (`DECISIONS.md`).
+
+## Who owns what
+
+Nothing edits a document it does not own.
+
+| Change | Route to | Owns |
+|---|---|---|
+| Vague ask → ticket | `tech-lead` | `docs/TASKS.md` |
+| Game numbers, feel, scope | `game-designer` | `docs/SYSTEMS.md`, `GAME_SPEC.md`, `KNOWN_ISSUES.md` |
+| Boundary moves, autoload count, ADRs | `godot-architect` | `docs/ARCHITECTURE.md`, `DECISIONS.md` |
+| Code | global `implementer` → Codex | `*.gd`, `*.tscn`, `project.godot` |
+| "How does X work", tracing a flow | global `researcher` | nothing — read-only |
+| Gates and tests | `godot-tester` | `tests/`, gate runs |
+| Post-boundary review | global `verifier` | nothing — read-only |
+
+The four repo roles are additions, not replacements: global routing rule 3 (researcher for
+questions, implementer for changes) and rule 4 (implementer **then** verifier on any
+boundary-crossing change) apply here unchanged.
+
+Codex workers additionally read `AGENTS.md`, which tightens the worker contract for this repo.
+
+## Standing constraints
+
+- **Three autoloads, hard cap**: `SceneRouter`, `SaveService`, `GameSession`. A fourth requires a
+  `DECISIONS.md` entry and goes through `godot-architect` first. Autoloads hold no level state and
+  are not where game rules live.
+- **Stop rule.** After two or three failed patches on the same error, stop patching. That is a
+  structural problem being treated as a syntax problem — reassess instead of trying a fourth
+  (`docs/TASKS.md`).
+- **Tickets, not feature names.** "Add an inventory system" hands an implementer dozens of
+  architectural decisions. Route it through `tech-lead` first.
+- Never edit `.godot/` or `tools/` — both gitignored, both engine-owned.
+- `docs/` is the spec. If code and docs disagree, that is a finding, not something to silently
+  reconcile in either direction.
+
+## Export
+
+```bash
+cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --export-release "Windows Desktop" export/game.exe
+```
+
+Currently blocked: 4.7.1 export templates are not installed (`docs/KNOWN_ISSUES.md`).

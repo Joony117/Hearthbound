@@ -1,0 +1,23 @@
+; Engine configuration file.
+; Pinned to Godot 4.7.1 stable - see docs/DECISIONS.md.
+
+config_version=5
+
+[application]
+
+config/name="Infinite Gacha"
+config/version="0.1.0"
+run/main_scene="res://ui/main_menu.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+
+[autoload]
+
+SceneRouter="*res://systems/scene_router.gd"
+SaveService="*res://systems/save_service.gd"
+GameSession="*res://systems/game_session.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
