@@ -207,18 +207,21 @@ into a numbered sequence; `P2-01a` is expanded below and is where to start.
 | P2-01b | `ZoneDefinition` Resource + 3 zones authored | Unblocks P2-03. Expand next. |
 | P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
 | P2-01d | Shared tunables container: rank multiplier/level-cap table, essence tables, summon weight table, building effects | Container shape (one `balance.tres` vs several small resources; whether `Hero.RANK_NAMES` moves off `Hero`) is `godot-architect`'s open call, not this doc's. Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. |
-| P2-02 | Real summon against the weight table; roster and equip UI | Replaces P1-02 |
+| P2-02 | Real summon against the weight table; roster and equip UI | Replaces P1-02. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). |
 | P2-03 | `quick_resolve.gd` — waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. **Add GUT here.** |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
+| P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
 | P2-06 | Sacrifice → essence → rank up, with dupe resonance | |
 | P2-07 | Five buildings as five integers | |
 | P2-08 | Full save/load round-trip through `SaveService` | |
+| P2-09 | Summon Stone income rate — how a player actually acquires stones | Found by `game-designer`, deliberately not authored by it — a design input, not a Resource-authoring task. Nothing defines acquisition rate today, which makes the verified ~327-pull spine number unvalidatable against real play time: the ratio is sound, the pacing is unknowable without this. Needed before the Phase 2 exit question below can be honestly answered. |
 | P2b-01 | Minimum playable arena: capsules, WASD + mouse, one attack, one dodge, one enemy | Same `CombatResult` |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
-the fix is design, not code — and finding out here is much cheaper than after Phase 3.
+the fix is design, not code — and finding out here is much cheaper than after Phase 3. (See
+P2-09 — that question can't be honestly answered until stone income rate is defined.)
 
 ---
 
@@ -247,22 +250,35 @@ change by itself: summon still rolls the Phase-1 placeholder. P2-02 is what make
   `def_id`, so prove the round trip with a standalone headless script in the style of
   `tests/save_roundtrip_check.gd` (which drives `GameSession`/`SaveService` directly, not
   through the hub UI), not by clicking Summon.
-- Per-archetype base stats and growth are not yet in `docs/SYSTEMS.md` — its Archetypes table
-  (`docs/SYSTEMS.md:43-49`) currently lists only Archetype/Row/Role, no numbers.
-  `game-designer` is authoring those concurrently. Read the values from `SYSTEMS.md` once they
-  land; do not invent placeholder numbers.
+- Per-archetype base stats and growth are now in `docs/SYSTEMS.md`'s Archetypes/Base-stats
+  tables (`docs/SYSTEMS.md:49-83`). Read the values from there, not invented, and do not
+  restate them in this ticket or in code comments — a second copy drifts.
+- **Corrected formula** (`docs/SYSTEMS.md:26-31`): `rank_mult` and per-level `growth` apply to
+  `HP`, `ATK`, `DEF`, `SPD` only. `CRIT_RATE` and `CRIT_DMG` are flat archetype constants with
+  no growth and no rank scaling — applying the generic formula to them was a caught bug (a
+  Rogue's `CRIT_RATE` would hit 122.55% at SSS, before gear). `HeroDefinition`'s fields must
+  reflect this split, not a uniform base+growth pair per stat.
+- The existing `from_dict` already tolerates missing keys via `Dictionary.get(key, default)`
+  (`heroes/hero.gd:27-28` defaults `name` to `"?"` and `rank` to `0`) — follow the same pattern
+  for `def_id` rather than assuming the key is present. Real save files from the Phase 1 exit
+  walkthrough exist with no `def_id` key at all, and `Hero.from_dict` must keep loading them.
 
 ### Acceptance criteria
 - `heroes/hero_definition.gd` defines `class_name HeroDefinition extends Resource` with
-  `@export` fields covering the six-stat sheet's base and growth (`SYSTEMS.md`'s
-  `final = (base + growth*level) * rank_mult + equip_flat`) plus `display_name` and role —
-  this ticket authors base/growth data only, not the formula
+  `@export` fields for `HP`/`ATK`/`DEF`/`SPD` as base-and-growth pairs, `@export` fields for
+  `CRIT_RATE`/`CRIT_DMG` as single flat values (no growth field for either), plus
+  `display_name` and role — this ticket authors data only, not the `final = ...` formula itself
 - Five `.tres` instances exist under `heroes/defs/`, one per archetype (Knight, Rogue, Ranger,
   Mage, Cleric), with values copied from `docs/SYSTEMS.md`, not invented
 - `Hero` gains a `def_id: StringName` field; `to_dict`/`from_dict` both include it
 - A headless round-trip check (extend `tests/save_roundtrip_check.gd` or add a sibling script)
   proves a `Hero` constructed with a non-empty `def_id` survives a `SaveService` save/reload
   cycle unchanged
+- A second check loads a **hand-written save fixture in the pre-`def_id` format** (heroes with
+  no `def_id` key at all — not a file the test just wrote) and proves it loads without error,
+  with those heroes getting a sensible default `def_id`. This is the actual risky-boundary
+  proof; a round trip that only reloads its own output does not demonstrate backward
+  compatibility (`CLAUDE.md` risky-boundary item 1)
 - Existing tests still pass: the P1-02/P1-03 roster and permadeath checks
 - `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean
 
@@ -279,7 +295,8 @@ lands with combat); adding `level`, `xp`, or equipment slots to `Hero` (deferred
 later ticket first consumes them); moving `Hero.RANK_NAMES` off `Hero` (`godot-architect`'s open
 call, not this ticket's); combat, `CombatResult`, `quick_resolve.gd`, XP progression, rank-up,
 lost-gear caches, recovery expeditions, salvage, sacrifice, cores, buildings, currencies, or
-save-format migrations.
+save-format migrations; a `CRIT_RATE`/`CRIT_DMG` soft cap or diminishing-returns curve — the fix
+here is that those two stats simply don't scale with rank or level, not a new capping system.
 
 ---
 
