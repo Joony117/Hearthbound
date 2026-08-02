@@ -1,0 +1,11 @@
+class_name ZoneDefinition
+extends Resource
+
+@export var display_name: String = ""
+@export var recommended_power: int = 0
+@export var trash_wave_count: int = 0
+@export var trash_wave_start_fraction: float = 0.0
+@export var trash_wave_end_fraction: float = 0.0
+@export var boss_fraction: float = 0.0
+@export var loot_emphasis: String = ""
+@export var unlock_condition: String = ""

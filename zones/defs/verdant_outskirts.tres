@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://zones/zone_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Verdant Outskirts"
+recommended_power = 900
+trash_wave_count = 5
+trash_wave_start_fraction = 0.5
+trash_wave_end_fraction = 0.9
+boss_fraction = 1.1
+loot_emphasis = "Gold, F–C parts, light Summon Stones"
+unlock_condition = "Available from start"

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://zones/zone_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Ashfall Reaches"
+recommended_power = 4800
+trash_wave_count = 6
+trash_wave_start_fraction = 0.5
+trash_wave_end_fraction = 1.0
+boss_fraction = 1.2
+loot_emphasis = "Gold, C–A parts, moderate Summon Stones, first A+ drops"
+unlock_condition = "Clear Verdant Outskirts"

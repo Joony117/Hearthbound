@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://zones/zone_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Sundered Vault"
+recommended_power = 11500
+trash_wave_count = 7
+trash_wave_start_fraction = 0.6
+trash_wave_end_fraction = 1.1
+boss_fraction = 1.3
+loot_emphasis = "Gold, S–SSS parts, heavy Summon Stones, best A+ drop rate"
+unlock_condition = "Clear Ashfall Reaches"
