@@ -2,13 +2,14 @@ class_name Hero
 extends RefCounted
 ## Runtime hero instance.
 ##
-## Phase 1 has no HeroDefinition yet, so a name and a rank is all there is. Once P2-01 lands
-## this holds a def_id pointing at a shared HeroDefinition, plus level, xp, and equipment.
+## Runtime state points at shared HeroDefinition data by def_id per ARCHITECTURE.md rule 3.
 
 const RANK_NAMES: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
+const NO_ARCHETYPE_DEF_ID: StringName = &""
 
 var hero_name: String
 var rank: int
+var def_id: StringName
 
 
 func _init(p_name: String = "", p_rank: int = 0) -> void:
@@ -21,8 +22,11 @@ func rank_label() -> String:
 
 
 func to_dict() -> Dictionary:
-	return {"name": hero_name, "rank": rank}
+	return {"name": hero_name, "rank": rank, "def_id": str(def_id)}
 
 
 static func from_dict(data: Dictionary) -> Hero:
-	return Hero.new(str(data.get("name", "?")), int(data.get("rank", 0)))
+	var hero := Hero.new(str(data.get("name", "?")), int(data.get("rank", 0)))
+	# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.
+	hero.def_id = StringName(str(data.get("def_id", NO_ARCHETYPE_DEF_ID)))
+	return hero

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Mage"
+role = "Back"
+base_hp = 80.0
+hp_growth = 6.0
+base_atk = 34.0
+atk_growth = 3.4
+base_def = 10.0
+def_growth = 0.8
+base_spd = 95.0
+spd_growth = 1.2
+crit_rate = 0.08
+crit_dmg = 1.65

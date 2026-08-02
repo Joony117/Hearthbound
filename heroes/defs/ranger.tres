@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Ranger"
+role = "Back"
+base_hp = 100.0
+hp_growth = 9.0
+base_atk = 26.0
+atk_growth = 2.6
+base_def = 14.0
+def_growth = 1.2
+base_spd = 100.0
+spd_growth = 1.4
+crit_rate = 0.1
+crit_dmg = 1.6

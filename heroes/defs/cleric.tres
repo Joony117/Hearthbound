@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Cleric"
+role = "Back"
+base_hp = 110.0
+hp_growth = 10.0
+base_atk = 16.0
+atk_growth = 1.4
+base_def = 16.0
+def_growth = 1.4
+base_spd = 95.0
+spd_growth = 1.1
+crit_rate = 0.05
+crit_dmg = 1.5

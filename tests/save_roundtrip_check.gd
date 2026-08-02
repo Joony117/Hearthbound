@@ -2,8 +2,10 @@ extends SceneTree
 
 const FIRST_HERO_NAME := "Roundtrip Aster"
 const FIRST_HERO_RANK := 2
+const FIRST_HERO_DEF_ID := &"rogue"
 const SECOND_HERO_NAME := "Roundtrip Brann"
 const SECOND_HERO_RANK := 6
+const SECOND_HERO_DEF_ID := &"cleric"
 const PREEXISTING_HERO_NAME := "Preexisting Cyra"
 const PREEXISTING_HERO_RANK := 4
 
@@ -48,11 +50,21 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: save round-trip loaded pre-existing data, preserved two heroes, persisted permadeath, wrote save version %d, and restored the original save." % _save_version)
+		print("PASS: legacy save compatibility and new-format def_id round-trip passed separately; roster, permadeath, save version %d, and byte-identical restoration also passed." % _save_version)
 	quit(exit_code)
 
 
 func _run() -> int:
+	var legacy_code: int = _check_legacy_save()
+	if legacy_code != 0:
+		return legacy_code
+	var round_trip_code: int = _check_new_format_round_trip()
+	if round_trip_code != 0:
+		return round_trip_code
+	return _check_permadeath_and_version()
+
+
+func _check_legacy_save() -> int:
 	var fixture_code: int = _write_preexisting_fixture()
 	if fixture_code != 0:
 		return fixture_code
@@ -61,12 +73,22 @@ func _run() -> int:
 		return _fail("pre-existing disk reload", "load_game() == true", "load_game() == false")
 	if _roster().size() != 1:
 		return _fail("hero count after pre-existing disk reload", "1", str(_roster().size()))
-	if not _has_hero(PREEXISTING_HERO_NAME, PREEXISTING_HERO_RANK):
+	var legacy_hero: Hero = _find_hero(PREEXISTING_HERO_NAME, PREEXISTING_HERO_RANK)
+	if legacy_hero == null:
 		return _fail("pre-existing hero identity after disk reload", "%s:%d" % [PREEXISTING_HERO_NAME, PREEXISTING_HERO_RANK], _roster_summary())
+	if legacy_hero.def_id != &"":
+		return _fail("legacy hero default def_id", "empty", str(legacy_hero.def_id))
+	return 0
 
+
+func _check_new_format_round_trip() -> int:
 	_roster().clear()
-	_game_session.call("add_hero", Hero.new(FIRST_HERO_NAME, FIRST_HERO_RANK))
-	_game_session.call("add_hero", Hero.new(SECOND_HERO_NAME, SECOND_HERO_RANK))
+	var first_hero := Hero.new(FIRST_HERO_NAME, FIRST_HERO_RANK)
+	first_hero.def_id = FIRST_HERO_DEF_ID
+	var second_hero := Hero.new(SECOND_HERO_NAME, SECOND_HERO_RANK)
+	second_hero.def_id = SECOND_HERO_DEF_ID
+	_game_session.call("add_hero", first_hero)
+	_game_session.call("add_hero", second_hero)
 	_save_service.call("save")
 
 	_roster().clear()
@@ -78,7 +100,15 @@ func _run() -> int:
 		return _fail("first hero identity after disk reload", "%s:%d" % [FIRST_HERO_NAME, FIRST_HERO_RANK], _roster_summary())
 	if not _has_hero(SECOND_HERO_NAME, SECOND_HERO_RANK):
 		return _fail("second hero identity after disk reload", "%s:%d" % [SECOND_HERO_NAME, SECOND_HERO_RANK], _roster_summary())
+	var loaded_first_hero: Hero = _find_hero(FIRST_HERO_NAME, FIRST_HERO_RANK)
+	if loaded_first_hero == null:
+		return _fail("first hero selected for def_id check", "%s:%d" % [FIRST_HERO_NAME, FIRST_HERO_RANK], _roster_summary())
+	if loaded_first_hero.def_id != FIRST_HERO_DEF_ID:
+		return _fail("new-format hero def_id after disk reload", str(FIRST_HERO_DEF_ID), str(loaded_first_hero.def_id))
+	return 0
 
+
+func _check_permadeath_and_version() -> int:
 	var doomed_hero: Hero = _find_hero(FIRST_HERO_NAME, FIRST_HERO_RANK)
 	if doomed_hero == null:
 		return _fail("hero selected for permadeath", "%s:%d" % [FIRST_HERO_NAME, FIRST_HERO_RANK], _roster_summary())
@@ -152,7 +182,7 @@ func _write_preexisting_fixture() -> int:
 	if save_file == null:
 		return _fail("pre-existing fixture write", "writable", error_string(FileAccess.get_open_error()))
 	var fixture: Dictionary = {
-		"roster": [Hero.new(PREEXISTING_HERO_NAME, PREEXISTING_HERO_RANK).to_dict()],
+		"roster": [{"name": PREEXISTING_HERO_NAME, "rank": PREEXISTING_HERO_RANK}],
 		"version": _save_version,
 	}
 	save_file.store_string(JSON.stringify(fixture, "\t"))
