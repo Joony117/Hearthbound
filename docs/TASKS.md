@@ -574,6 +574,91 @@ only, nothing reads or enforces it; the arena.
 
 ---
 
+## P2-01c — EquipmentDefinition Resource + 10-slot enum authored     [TODO]
+
+### Objective
+`docs/SYSTEMS.md`'s ten equipment slots and their primary stats exist as authored
+`EquipmentDefinition` Resource instances under `equipment/defs/`, editable in the inspector
+without touching code. This ticket makes no player-facing change by itself — nothing reads an
+equipment definition yet. `P2-04` (lost-gear caches) is what first makes this data visible.
+
+### Existing architecture
+- `ARCHITECTURE.md` rules 2-3 require Definitions to be Resources holding no runtime state
+  (`docs/ARCHITECTURE.md:15-20`). `CODING_RULES.md` makes the equipment-specific shape explicit:
+  prefer one Resource type with exported fields over N subclasses — one `EquipmentDefinition`
+  with exported values, not ten slot subclasses (`docs/CODING_RULES.md:64-66`).
+- `ARCHITECTURE.md`'s "Reaching shared Resources" section names `EquipmentDefinition` explicitly
+  alongside `HeroDefinition`/`ZoneDefinition` as authored data reached by a plain
+  `preload()`/`load()`, never handed out by an autoload (`docs/ARCHITECTURE.md:62-85`).
+- The project layout already reserves `equipment/` for `item.gd`, `equipment_definition.gd`,
+  `core_definition.gd`, and `defs/*.tres` (`docs/ARCHITECTURE.md:110-128`). This ticket creates
+  only `equipment_definition.gd` and its `.tres` instances: `item.gd` is P2-05's runtime
+  rolled-item `RefCounted`; `core_definition.gd` and Core behavior are Phase 4. Neither is
+  touched here.
+- `docs/SYSTEMS.md:184-209` is the sole source for this ticket's authored data: the closed
+  ten-slot set (`head chest legs gloves boots main_hand off_hand necklace ring belt`) and each
+  slot's primary stat (head/legs → HP; chest/off_hand → DEF; main_hand/gloves → ATK;
+  boots/belt → SPD; necklace → CRIT_RATE; ring → CRIT_DMG). Copy the names and mapping verbatim
+  — do not invent flavor names, rank, affixes, rolled values, or item identities; none of that
+  exists in `SYSTEMS.md` yet.
+- `BalanceTable` already owns the per-rank `equipment_affix_counts` and `core_socket_counts`
+  arrays (`balance_table.gd:6-7`), transcribed from the rank table (`docs/SYSTEMS.md:16-21`).
+  Those are rank tuning under `ARCHITECTURE.md` rule 9 (`docs/ARCHITECTURE.md:37-38`), not
+  per-definition data, and must not be restated on `EquipmentDefinition` or in `equipment/defs/`
+  — a second copy drifts from `balance.tres` the moment either is tuned.
+- `HeroDefinition` uses typed, snake_case stat field names — `base_hp`, `base_atk`, `base_def`,
+  `base_spd`, `crit_rate`, `crit_dmg` (`heroes/hero_definition.gd:4-15`). No project-wide stat
+  enum exists yet (checked — no `enum` naming HP/ATK/DEF/SPD/CRIT anywhere outside `addons/gut`).
+  Mirror `HeroDefinition`'s stat names in a new, closed `PrimaryStat` enum on
+  `EquipmentDefinition` rather than introducing free-form stat-name strings. Unlike
+  `HeroDefinition.role`, which stayed a String with no compile-time enforcement
+  (`heroes/hero_definition.gd:5`), the ten slots are a small, permanently fixed, closed set that
+  upcoming equip-validation and primary-stat-lookup code will consume by name — an enum turns a
+  typo'd slot into a compile error instead of a runtime string mismatch, matching the fail-loud
+  philosophy `CODING_RULES.md` already applies elsewhere (`docs/CODING_RULES.md:118-122`).
+
+### Acceptance criteria
+- `equipment/equipment_definition.gd` defines `class_name EquipmentDefinition extends Resource`
+  with `enum Slot { HEAD, CHEST, LEGS, GLOVES, BOOTS, MAIN_HAND, OFF_HAND, NECKLACE, RING, BELT }`,
+  an exported `slot: Slot` field, and an exported `primary_stat` field using a closed enum whose
+  members mirror `HeroDefinition`'s existing stat naming (`HP`, `ATK`, `DEF`, `SPD`, `CRIT_RATE`,
+  `CRIT_DMG`); it also exports `display_name: String`. No free-form String slot or
+  primary-stat field, no runtime state, no rank, affixes, rolled values, or unique item name.
+- Ten `.tres` instances exist under `equipment/defs/`, one per slot — Head, Chest, Legs,
+  Gloves, Boots, Main Hand, Off Hand, Necklace, Ring, Belt — each authoring exactly `slot`,
+  `display_name`, and `primary_stat`, matching `docs/SYSTEMS.md:198-209` verbatim. These are
+  authored per-slot data for a future loot table to reference, not item instances in `P2-04`'s
+  loot-table sense — the same relationship `HeroDefinition` has to a future summon-weight roll.
+- A headless check under `tests/` (new script, following `tests/balance_table_check.gd` and
+  `tests/zone_definition_check.gd`'s direct-load, `_fail()`, nonzero-exit-on-mismatch style)
+  loads all ten definitions and asserts every authored field of every slot against
+  `docs/SYSTEMS.md` verbatim — ten slots at three fields each is cheap enough to check
+  exhaustively rather than sample.
+- Grep-checkable: `EquipmentDefinition` does not appear anywhere in `systems/game_session.gd` or
+  `systems/save_service.gd`; no equipment `.tres` ever round-trips through `SaveService`.
+- Grep-checkable: neither `equipment_affix_counts` nor `core_socket_counts` appears in
+  `equipment/equipment_definition.gd` or anywhere under `equipment/defs/` — those per-rank
+  arrays stay owned solely by `BalanceTable`.
+- No existing file outside this ticket's scope changes: `heroes/`, `hub/`, `systems/`, `ui/`,
+  `zones/`, and `project.godot` are byte-identical to their pre-ticket state.
+- Existing tests still pass: `tests/save_roundtrip_check.gd`'s roster/permadeath and `def_id`
+  checks, `tests/balance_table_check.gd`, and `tests/zone_definition_check.gd`.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean with
+  zero script errors and zero warnings.
+
+### Files allowed to change
+`equipment/equipment_definition.gd`, `equipment/defs/*.tres`, `tests/`
+
+### Non-goals
+Item instances or rolled items; `Item` as a `RefCounted`; affix rolling; enhancement; salvage,
+part conversion, or any other `P2-05` behavior; Cores and sockets as behavior (Phase 4);
+equipping anything to a `Hero`; equip UI (`P2-02`); lost-gear caches or recovery expeditions
+(`P2-04`); loot tables; any consumer that reads an `EquipmentDefinition`; `item.gd`;
+`core_definition.gd`; save-format changes; restating `BalanceTable`'s
+`equipment_affix_counts`/`core_socket_counts` anywhere in this ticket's files.
+
+---
+
 ## Commands
 
 Import check / `BUILT`:
@@ -589,7 +674,7 @@ the script performs.
 Tests (Phase 2 onward):
 
 ```bash
-cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests -gexit
+cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
 ```
 
 Export:
