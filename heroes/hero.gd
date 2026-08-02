@@ -4,7 +4,6 @@ extends RefCounted
 ##
 ## Runtime state points at shared HeroDefinition data by def_id per ARCHITECTURE.md rule 3.
 
-const RANK_NAMES: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
 const NO_ARCHETYPE_DEF_ID: StringName = &""
 
 var hero_name: String
@@ -17,8 +16,8 @@ func _init(p_name: String = "", p_rank: int = 0) -> void:
 	rank = p_rank
 
 
-func rank_label() -> String:
-	return RANK_NAMES[clampi(rank, 0, RANK_NAMES.size() - 1)]
+func rank_label(balance: BalanceTable) -> String:
+	return balance.rank_names[clampi(rank, 0, balance.rank_names.size() - 1)]
 
 
 func to_dict() -> Dictionary:

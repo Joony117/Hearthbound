@@ -1,5 +1,7 @@
 extends Node3D
 
+const BALANCE: BalanceTable = preload("res://balance.tres")
+
 @onready var _roster_list: ItemList = %RosterList
 @onready var _status: Label = %Status
 @onready var _pause_menu: CanvasLayer = %PauseMenu
@@ -23,7 +25,7 @@ func _refresh_roster() -> void:
 
 	_roster_list.clear()
 	for hero: Hero in GameSession.roster:
-		_roster_list.add_item("[%s]  %s" % [hero.rank_label(), hero.hero_name])
+		_roster_list.add_item("[%s]  %s" % [hero.rank_label(BALANCE), hero.hero_name])
 
 	if previous >= 0 and previous < _roster_list.item_count:
 		_roster_list.select(previous)
@@ -32,7 +34,7 @@ func _refresh_roster() -> void:
 func _on_summon_pressed() -> void:
 	var hero := Summon.roll()
 	GameSession.add_hero(hero)
-	_status.text = "Summoned %s, rank %s." % [hero.hero_name, hero.rank_label()]
+	_status.text = "Summoned %s, rank %s." % [hero.hero_name, hero.rank_label(BALANCE)]
 
 
 func _on_expedition_pressed() -> void:

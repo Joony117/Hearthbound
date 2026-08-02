@@ -4,6 +4,7 @@ extends RefCounted
 ## HeroDefinition. Replaced wholesale by P2-02 (weight table + definition pools) - do not
 ## build on this.
 
+const BALANCE: BalanceTable = preload("res://balance.tres")
 const NAMES: PackedStringArray = [
 	"Aldric", "Brenna", "Cassius", "Dara", "Edric", "Fenna", "Gorath", "Hilde",
 	"Ivo", "Jorunn", "Kestrel", "Lyra", "Morgen", "Nils", "Orla", "Perrin",
@@ -14,5 +15,5 @@ const NAMES: PackedStringArray = [
 static func roll() -> Hero:
 	return Hero.new(
 		NAMES[randi() % NAMES.size()],
-		randi() % Hero.RANK_NAMES.size(),
+		randi() % BALANCE.rank_names.size(),
 	)

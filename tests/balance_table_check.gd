@@ -1,5 +1,7 @@
 extends SceneTree
 
+const EXPECTED_RANK_NAMES: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
+
 
 func _init() -> void:
 	call_deferred("_run")
@@ -27,6 +29,12 @@ func _check_values(balance: BalanceTable) -> int:
 		return _fail("SS to SSS essence cost", "16000", str(balance.rank_up_essence_costs[6]))
 	if balance.summon_weights[7] != 2:
 		return _fail("SSS summon weight", "2", str(balance.summon_weights[7]))
+	if balance.rank_names != EXPECTED_RANK_NAMES:
+		return _fail("rank_names", str(EXPECTED_RANK_NAMES), str(balance.rank_names))
+	if balance.summoning_circle_multiplier_per_level != 0.15:
+		return _fail("summoning_circle_multiplier_per_level", "0.15", str(balance.summoning_circle_multiplier_per_level))
+	if balance.summoning_circle_level_cap != 5:
+		return _fail("summoning_circle_level_cap", "5", str(balance.summoning_circle_level_cap))
 	return 0
 
 

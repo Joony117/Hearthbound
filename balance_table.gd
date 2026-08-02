@@ -8,9 +8,10 @@ extends Resource
 @export var essence_bases: Array[int] = [10, 25, 65, 165, 420, 1050, 2600, 6500]
 @export var rank_up_essence_costs: Array[int] = [40, 110, 300, 800, 2200, 6000, 16000]
 @export var summon_weights: Array[int] = [4000, 2700, 1700, 1000, 450, 120, 28, 2]
+@export var rank_names: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
 
-# SYSTEMS.md leaves this magnitude undefined; replace this placeholder when its formula is designed.
-@export var summoning_circle_weight_shift: float = 0.0
+@export var summoning_circle_multiplier_per_level: float = 0.15
+@export var summoning_circle_level_cap: int = 5
 @export var forge_enhance_cap_per_level: int = 3
 @export var forge_enhance_cap_max: int = 15
 @export var forge_salvage_yield_bonus: float = 0.10
