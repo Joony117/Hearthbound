@@ -500,6 +500,11 @@ Landed in `cbf8f91`. All 24 authored fields asserted against `SYSTEMS.md`, not s
 ramp is stored as endpoints only — no interpolation rule was invented, and P2-03 owns that
 transformation. Nothing references `WaveDefinition`, which still has no home in the layout.
 
+**Settled since.** That open type is closed: it is `Wave` (`zones/wave.gd`, `RefCounted`), not a
+`Definition` — see `DECISIONS.md`, 2026-08-02. P2-03 inherits a named type instead of the naming
+question, and the ramp interpolation this ticket declined to invent must live in exactly one
+place. The deferral above was right; it is simply no longer open.
+
 ### Objective
 `docs/SYSTEMS.md`'s three expedition zones exist as authored `ZoneDefinition` Resource
 instances under `zones/defs/`, editable in the inspector without touching code. This ticket
@@ -746,7 +751,7 @@ currency, or income rate of any kind (`P2-09` — no Summon Stone income rate is
 is no number to charge); equipment slots on `Hero`, `equipment/item.gd`, loot, or equip UI
 (`P2-05a`, after `P2-05`); any change to `Hero.to_dict`/`from_dict`, `GameSession`,
 `SaveService`, or the save file format/version; combat, `CombatResult`, `quick_resolve.gd`, or
-`WaveDefinition`; pity timers, duplicate protection, or summon animation.
+`Wave`; pity timers, duplicate protection, or summon animation.
 
 **Unresolved wording mismatch (for `game-designer`, not blocking this ticket):**
 `SYSTEMS.md:324` says "Roll a rank from the table, then a random definition from that rank's

@@ -80,8 +80,14 @@ permitted to remove a hero from the roster (`ARCHITECTURE.md` r8). A second one 
 regardless of how correctly it behaves.
 
 **4. Combat seam** (Phase 2+). Two independent implementations of
-`resolve(team: Array[Hero], wave: WaveDefinition) -> CombatResult` that must agree. Deliberately
-two plain functions — no base class, no registry (`DECISIONS.md`).
+`resolve(team: Array[Hero], wave: Wave) -> CombatResult` that must agree. Deliberately two plain
+functions — no base class, no registry (`DECISIONS.md`).
+
+`Wave` is `zones/wave.gd`, a `RefCounted` derived from `ZoneDefinition`'s ramp — **not** a
+`Definition`, and the rename off `WaveDefinition` is itself an ADR (`DECISIONS.md`, 2026-08-02).
+The ramp interpolation must live in exactly one place and hand both implementations the same
+`Wave` instance; re-deriving it per path is how the two quietly stop agreeing, which is the
+failure this seam exists to prevent.
 
 ## Who owns what
 

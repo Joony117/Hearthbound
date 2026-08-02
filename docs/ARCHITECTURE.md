@@ -93,7 +93,7 @@ it means rewriting the expedition system.
 
 ```gdscript
 # both have this exact signature
-func resolve(team: Array[Hero], wave: WaveDefinition) -> CombatResult
+func resolve(team: Array[Hero], wave: Wave) -> CombatResult
 ```
 
 - `combat/quick_resolve.gd` — statistical, synchronous, returns immediately.
@@ -102,8 +102,19 @@ func resolve(team: Array[Hero], wave: WaveDefinition) -> CombatResult
 Two plain functions. **No base class, no interface, no strategy registry.** Two functions
 with the same signature do not need a hierarchy in GDScript.
 
-`CombatResult` is the contract: survivors, HP after, dead heroes, loot seed. The expedition
-system consumes only that, so it cannot tell which path produced it.
+`CombatResult` is the contract on the way out: survivors, HP after, dead heroes, loot seed.
+The expedition system consumes only that, so it cannot tell which path produced it.
+
+`Wave` is the contract on the way in: one wave's already-resolved enemy composition and
+power level. It is `zones/wave.gd`, `extends RefCounted` — **not** a `Definition`. A wave is
+derived at runtime by interpolating `ZoneDefinition`'s stored ramp
+(`trash_wave_start_fraction` → `trash_wave_end_fraction`, `boss_fraction`) for a given wave
+index; nobody hand-authors an individual wave in the inspector, so rules 2–3 rule out the
+`Definition` suffix and the `Resource` base for it. Whatever computes that interpolation must
+do it in exactly one place and hand both `resolve()` implementations the same `Wave`
+instance — the two paths must agree on which enemies a given wave contains, and duplicating
+the ramp-interpolation math into each implementation is how they'd quietly disagree. See
+`DECISIONS.md`, 2026-08-02.
 
 ---
 
@@ -118,7 +129,7 @@ res://
 ├── hub/             hub.tscn + summon/ roster/ forge/ expedition/
 ├── heroes/          hero.gd (runtime), hero_definition.gd (Resource), defs/*.tres
 ├── equipment/       item.gd, equipment_definition.gd, core_definition.gd, defs/*.tres
-├── zones/           zone_definition.gd, defs/*.tres
+├── zones/           zone_definition.gd (Resource, authored), wave.gd (RefCounted, runtime), defs/*.tres
 ├── combat/          combat_result.gd, quick_resolve.gd, arena/
 ├── ui/              main_menu.tscn, pause_menu.tscn, hud.tscn
 ├── systems/         AUTOLOADS ONLY

@@ -7,6 +7,59 @@ Newest first.
 
 ---
 
+## 2026-08-02: The combat seam's second argument is `Wave` (`zones/wave.gd`, `RefCounted`), not `WaveDefinition`
+
+`ARCHITECTURE.md:96` committed to `func resolve(team: Array[Hero], wave: WaveDefinition) ->
+CombatResult` before `WaveDefinition` existed anywhere. A repo-wide sweep (all `.gd`/`.tscn`/
+`.tres`/`project.godot`, non-docs) found zero references to `WaveDefinition` — no field list, no
+consumer, nothing to preserve by keeping the name. P2-01b stored `ZoneDefinition`'s ramp
+(`trash_wave_count`, `trash_wave_start_fraction`, `trash_wave_end_fraction`, `boss_fraction`) and
+explicitly declined to write the interpolation that turns those endpoints into one wave's actual
+composition, deferring the question to whoever names the type P2-03 implements against.
+
+**Reason:** rules 2–3 reserve the `Definition` suffix and the `Resource` base for **authored**
+data a human edits in the inspector — confirmed against the only two other implementations in
+the tree, `heroes/hero_definition.gd` and `equipment/equipment_definition.gd`, both pure
+`@export`-only `Resource`s with no methods. A wave is not that: nobody hand-authors individual
+wave `.tres` files, and `zone_definition.gd` (read in full) stores only the ramp's endpoints, not
+per-wave values — the per-wave composition is *derived* by interpolating that ramp for a given
+index, at runtime, once an expedition is underway. That derivation is exactly the "runtime state
+lives in `RefCounted` domain objects, never in a Definition" split rule 3 already draws for
+`Hero`/`HeroDefinition`; a wave's relationship to `ZoneDefinition` is the same shape.
+
+Naming it `zones/wave.gd` rather than `combat/wave.gd` follows that same precedent: `Hero`
+(runtime) sits next to `HeroDefinition` (authored) in `heroes/`, so `Wave` (runtime) sits next to
+`ZoneDefinition` (authored) in `zones/`. `combat/` keeps owning only what it produces
+(`combat_result.gd`); it does not also own the type of the data fed into it.
+
+Whatever computes the interpolation must do so in exactly one place and pass the same `Wave`
+instance to both `resolve()` implementations. `CLAUDE.md` calls the two combat implementations
+"independent... that must agree" — if each path re-derived a wave's enemy composition from
+`ZoneDefinition`'s raw fractions independently, a lerp bug in one path would silently make that
+path easier or harder than the other for the same zone and index, which is a correctness
+regression the seam exists to prevent, not a legitimate independence between the two
+implementations. Passing a pre-built `Wave` makes that agreement structural rather than a
+discipline someone has to remember.
+
+Also considered and rejected: taking `(zone: ZoneDefinition, wave_index: int)` directly and
+dropping the wave type entirely, since it needs no new type at all and `ARCHITECTURE.md` already
+warns against the combat seam growing. Rejected because it relocates the interpolation into
+`combat/` itself (or worse, into each of the two implementations separately) with nothing in the
+signature forcing both paths to share one computation — the exact duplication risk above. Adding
+`Wave` is not seam growth in the sense the existing warning targets: that warning is about the
+seam's *implementation shape* (no base class, no strategy registry for the two `resolve()`
+functions), not about the number of plain data types crossing it — `CombatResult` already crosses
+the seam on the way out without objection, and `Wave` is the same kind of thing on the way in.
+
+**Rejected:** keeping the `WaveDefinition` name/`Resource` base (violates rules 2–3, since it
+would carry runtime-derived data under the authored-only suffix); authoring per-wave `.tres`
+files to make the `Definition` label literally true (nobody has asked for this, and it
+contradicts what `ZoneDefinition` actually stores — a ramp, not a per-wave table); and dropping
+the wave type in favor of `(zone, wave_index)` args (moves the "must agree" duplication risk into
+`combat/`, where it's harder to catch, instead of eliminating it).
+
+---
+
 ## 2026-08-02: Consumers reach `balance.tres` via `preload()`, not an autoload or `GameSession`
 
 P2-01d-2 was blocked on this: `RANK_NAMES` "moves onto `BalanceTable`" only fixes where the data
