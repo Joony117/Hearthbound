@@ -45,7 +45,13 @@ stdout, so a scripted run against it reports success no matter what happened
 `tools/` is gitignored, so the script's relative engine path only resolves in a checkout that
 already has `tools/godot/` populated. A fresh clone has no engine binary at all.
 
-From Phase 2, BUILT also requires the GUT suite green:
+**GUT is not installed yet, and BUILT does not require it until it is.** `addons/` does not
+exist in this checkout; `docs/TASKS.md` P2-03 is the ticket that installs it, and installing a
+test framework is a dependency addition needing director sign-off. Until then the gate above is
+the whole of BUILT, and a worker that runs the GUT command will correctly find nothing — that is
+the current state, not a defect in its change.
+
+From **P2-03 onward**, BUILT also requires the GUT suite green:
 
 ```bash
 cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests -gexit
