@@ -204,8 +204,12 @@ the fix is design, not code — and finding out here is much cheaper than after 
 Import check / `BUILT`:
 
 ```bash
-cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --quit
+cd /e/Game && powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1
 ```
+
+Run the script, not `--headless --quit` directly — the raw command **exits 0 while printing
+script errors**, so it is not a gate. See `CLAUDE.md` for why, and for the cold-cache warm-up
+the script performs.
 
 Tests (Phase 2 onward):
 

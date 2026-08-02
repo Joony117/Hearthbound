@@ -14,15 +14,36 @@ plus the doc-ownership table. It removes nothing.
 ## BUILT
 
 ```bash
-cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --quit
+cd /e/Game && powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1
 ```
 
 Exit 0 with **zero script errors and zero warnings**. Warnings count — a shadowed variable or an
 unused signal is how the next runtime failure gets introduced quietly.
 
+**Run the script, not the engine directly.** `--headless --quit` on its own is not a gate: it
+**exits 0 while printing script errors**. Measured on a fresh `git clone` of this repo — 8
+`SCRIPT ERROR`/`ERROR:` lines including a failed autoload instantiation, process exit code **0**.
+Any agent reporting BUILT off `$LASTEXITCODE` alone reports green on a project that does not load,
+and every downstream `BUILT:` claim inherits it.
+
+The script exists because the gate needs two things the raw command cannot give:
+
+1. **It greps the output** and fails on `SCRIPT ERROR`/`ERROR:`/`WARNING` regardless of exit code.
+2. **It warms the class cache first** (`--headless --import`, output printed but not asserted,
+   then `--headless --quit` is the pass that gets checked). On a cold `.godot/` the global script
+   class cache does not exist, so `Hero` and friends are unresolvable and the autoloads fail to
+   compile — and `--quit` alone never rebuilds it, so a clean checkout stays red *permanently*
+   rather than self-healing on the second run.
+
+It also redirects `%APPDATA%` to a temp path for the duration, so running BUILT cannot mutate the
+real `user://save.json`.
+
 Use the `_console` binary. `Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows
 stdout, so a scripted run against it reports success no matter what happened
-(`docs/KNOWN_ISSUES.md`).
+(`docs/KNOWN_ISSUES.md`). The script already does this; the note matters for ad-hoc runs.
+
+`tools/` is gitignored, so the script's relative engine path only resolves in a checkout that
+already has `tools/godot/` populated. A fresh clone has no engine binary at all.
 
 From Phase 2, BUILT also requires the GUT suite green:
 
