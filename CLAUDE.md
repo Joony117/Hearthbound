@@ -203,6 +203,43 @@ the engine gets invoked, not by whether the file lists collide.
 Practically: when a dispatch will run BUILT, the export, or any `--headless` invocation, it gets
 the engine to itself until it returns. Two Godot-touching agents in one message is a bug.
 
+### Serena's LSP daemon is a fourth engine consumer
+
+Serena's GDScript backend is an LSP **client**, not a server. It attaches to a running Godot
+editor on `127.0.0.1:6005` (`.serena/project.yml` sets this; Serena's built-in default is Godot
+3's 6008, which never connects). That daemon is a fourth thing running the engine against this
+project — and the only *persistent* one, so it does not fit the "gets the engine to itself until
+it returns" model above.
+
+```bash
+# start — verified: --headless --editor does serve the LSP
+./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --editor --path E:/Game
+# stop
+Get-Process Godot* | Stop-Process -Force
+```
+
+The `_console` wrapper spawns `Godot_v4.7.1-stable_win64.exe`, and that child is what holds the
+port — kill by name, not by the pid you launched.
+
+**The daemon must already be listening when Serena's MCP server starts.** The connection is made
+once, at project activation, and there is no retry: start the daemon afterwards and every
+symbolic call fails for the rest of the session with a cached
+`Could not connect to 127.0.0.1:6005 within 30.0s`. It returns *instantly*, which is how you tell
+a cached failure from a real timeout. Reconnecting the MCP server is the only fix — waiting is
+not one.
+
+**Serena up and BUILT are mutually exclusive.** `tests/import_gate.ps1` aborts with exit 1 when
+6005 is listening rather than racing the daemon on `.godot/`, whose rebuild is not
+concurrency-safe. So a session runs one way or the other:
+
+> daemon up → start Claude Code → symbolic work → stop daemon → run the gate
+
+After that stop, Serena stays dead until the next session. That is the design, not a fault.
+`godot-tester` and any dispatch that runs BUILT, GUT, or the export therefore never get Serena
+tools — the daemon must be down for their whole window.
+
+Codex workers never see Serena; they read `AGENTS.md`, which needs no change for any of this.
+
 ## Export
 
 ```bash

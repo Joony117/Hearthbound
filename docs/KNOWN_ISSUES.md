@@ -100,3 +100,32 @@ it exercises the real `user://save.json` via the `GameSession`/`SaveService` aut
 — confirmed this is read-only (`GameSession._ready()` loads before connecting `roster_changed` to
 `SaveService.save`, so the load's own signal emission never triggers a write). Redirect `%APPDATA%`
 to a temp dir when running GUT manually anyway, for the same reason `import_gate.ps1` does.
+
+### Serena's GDScript backend is an LSP client, not a server
+It attaches to a Godot editor daemon already listening on `127.0.0.1:6005`; it never launches one
+itself. That daemon is a fourth, persistent engine consumer against this project (`CLAUDE.md`,
+"Serialize engine access"), which is why `tests/import_gate.ps1` now checks the port before
+touching `.godot/` rather than assuming it has the engine to itself.
+
+Start it with `./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --editor --path E:/Game`
+(confirmed this serves LSP). The `_console` wrapper is not what holds the port — it spawns a child
+`Godot_v4.7.1-stable_win64.exe`, and that child process is the one bound to 6005. `Get-Process
+Godot* | Stop-Process -Force` kills both by name, so this only matters if you were trying to target
+one PID specifically.
+
+Serena's built-in GDScript port default is 6008 (Godot 3's); `.serena/project.yml` overrides it to
+6005 via `ls_specific_settings`, and without that override nothing connects at all. Serena also
+connects **once**, at MCP server startup, with no retry (`serena/project.py:512`,
+`get_language_server_manager_or_raise`): if the daemon isn't already listening at that moment,
+every symbolic call fails for the rest of the session with a cached "Could not connect to
+127.0.0.1:6005 within 30.0s" — and starting the daemon afterwards does not help, since Serena never
+looks again. The tell that distinguishes this cached failure from a real timeout: the cached one
+returns *instantly*, not after 30s.
+
+### The LSP guard in `import_gate.ps1` aborts before any `.godot/` write, confirmed
+Verified directly: with the daemon up and 6005 listening, the gate exits 1 immediately and
+`.godot/`'s mtime is unchanged from before the run (the port check is the first thing the script
+does, ahead of the `--headless --import` warmup pass). With the daemon down, the gate behaves
+exactly as before the guard was added — exit 0, zero script errors and warnings, `.godot/` rebuilds
+normally. Stopping the daemon afterward frees the port immediately and a subsequent gate run is
+green again, so an aborted run leaves no residue for the next one to trip over.
