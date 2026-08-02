@@ -103,6 +103,35 @@ because the roles that *find* tooling facts are the ones that run the engine, an
 they have nowhere legal to record them: a finding stranded in a return block is ephemeral, and
 `.agent-results/` is gitignored. Both of those lose the knowledge.
 
+## Marking provisional design
+
+`docs/` states decisions, and some are far firmer than others — but a reader cannot tell which
+by looking. A number that survived arithmetic verification reads identically to one nobody has
+ever played against, and both read identically to a placeholder someone dropped in to make a
+field non-zero.
+
+Mark the soft ones:
+
+```
+> ⚠️ **PROVISIONAL** — <what is actually uncertain> · **Settled by:** <what would resolve it>
+```
+
+**The `Settled by` half is the point.** "Needs tuning" is not actionable. "Needs a played build"
+and "needs Summon Stone income to exist first" tell the next reader whether this is resolvable at
+a desk or not — which decides whether they can act on it now or must stop.
+
+Two things earn the marker:
+
+- **Unfelt** — arithmetically verified, never played. Most of `SYSTEMS.md`'s numbers are this.
+- **Undefined** — named but carrying no value, or a placeholder standing in for one.
+
+An ADR-backed decision is **not** provisional. Six hero stats, ten equipment slots, ranks F–SSS,
+the three-autoload cap and the combat seam are settled; marking them dilutes the signal until
+nobody reads it. Over-marking is the failure mode here, not under-marking.
+
+Grep `PROVISIONAL` before treating any number as final, and before building a system that assumes
+one holds.
+
 ## Reporting: what STATUS means
 
 `STATUS: done` means **the problem in the task is solved**, not that the literal acceptance
