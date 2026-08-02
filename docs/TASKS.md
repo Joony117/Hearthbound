@@ -220,5 +220,8 @@ cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s 
 Export:
 
 ```bash
-cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --export-release "Windows Desktop" export/game.exe
+cd /e/Game && mkdir -p export && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --export-release "Windows Desktop" export/game.exe
 ```
+
+The `mkdir` is required — Godot does not create its own export directory, and `export/` is
+gitignored, so a clean checkout hits this every time.

@@ -51,9 +51,22 @@ addresses it. It must land with the arena in Phase 2b, not be deferred to Phase 
 
 ## Environment
 
-### Export templates not yet installed
-`--export-release` fails until the 4.7.1 templates are downloaded via
-*Editor → Manage Export Templates* (~1 GB). Blocks Phase 1 checklist item 7.
+### The exporter does not create its own output directory
+`--export-release` fails with `Prepare Template: The given export path doesn't exist.` and exit 1
+if `export/` is absent. `export/` is gitignored, so **every** clean checkout hits this, not just
+the first. The documented command in `CLAUDE.md` carries the `mkdir -p export` for this reason.
+
+### A fresh clone has no engine binary
+`tools/` is gitignored (170 MB), so `git clone` produces a checkout where
+`tests/import_gate.ps1` cannot resolve its relative engine path (`$PSScriptRoot\..\tools\godot\`).
+The gate only runs in a checkout that already has `tools/godot/` populated. Deliberately not
+fixed with engine discovery or a `GODOT_BIN` fallback — that is speculative until there is CI.
+
+### `--headless --import` regenerates `.gd.uid` sidecars
+The gate's cache-warming pass makes Godot write a `.gd.uid` next to any script it has not indexed
+yet. Godot owns these and they are committed like every other `.gd.uid` in the repo; a new one
+appearing after a cold-cache gate run is expected, and should be committed rather than ignored.
+Never hand-edit one (`AGENTS.md`).
 
 ### Console binary required for CLI
 `tools/godot/Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows stdout.

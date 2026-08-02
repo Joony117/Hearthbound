@@ -114,7 +114,11 @@ Codex workers additionally read `AGENTS.md`, which tightens the worker contract 
 ## Export
 
 ```bash
-cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --export-release "Windows Desktop" export/game.exe
+cd /e/Game && mkdir -p export && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --export-release "Windows Desktop" export/game.exe
 ```
 
-Currently blocked: 4.7.1 export templates are not installed (`docs/KNOWN_ISSUES.md`).
+**The `mkdir` is not optional.** Godot's exporter does not create its own output directory — it
+fails with `Prepare Template: The given export path doesn't exist.` and exit 1. `export/` is
+gitignored, so this bites every clean checkout and every CI run, not just the first one.
+
+Templates for 4.7.1 are installed. Produces `export/game.exe` (~109 MB) plus `game.pck`.
