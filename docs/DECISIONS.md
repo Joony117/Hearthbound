@@ -7,6 +7,65 @@ Newest first.
 
 ---
 
+## 2026-08-01: `balance.tres` is one `BalanceTable` Resource, not several
+
+P2-01d left the shape of the shared tunables container as an open `godot-architect` call:
+one `BalanceTable` holding every table in `docs/SYSTEMS.md` (rank multipliers, level caps,
+affix/socket counts, essence bases, rank-up costs, summon weights, building effects), or
+several smaller Resources split by subsystem.
+
+**Reason:** r9 already names a single file (`balance.tres`), and `CODING_RULES.md`'s own
+convention is "prefer one Resource type with exported fields over N subclasses" — the same
+reasoning that gave `EquipmentDefinition` one shape instead of ten. More concretely,
+`SYSTEMS.md`'s own formulas already cross-reference multiple tables in one expression (the
+sacrifice formula reads `essence_base[fodder.rank]` and `level_cap[fodder.rank]` in the same
+line; the rank table itself groups stat multiplier, level cap, affix count, and socket count
+per rank as one row). Splitting these into separate resources doesn't remove any coupling —
+the game design already coupled them — it just forces every pure function that consumes
+balance data to thread N resource arguments instead of one, for no isolation gained.
+
+This is not the rejected `GameManager` shape. The god-object failure mode that entry
+describes is *behavior* accreting onto a *singleton* until nothing is testable without
+booting the engine. `BalanceTable` holds only exported data, no methods, and is not an
+autoload — it is passed as a plain argument into pure static functions
+(`compute_essence_yield(fodder, target, balance: BalanceTable)`, per `CODING_RULES.md`).
+A data resource with many exported fields is not the same shape as a singleton that
+accumulates responsibilities.
+
+**Rejected:** several small Resources split by subsystem (one for ranks, one for essence,
+one for summon weights, one for building effects). `BalanceTable` is one Resource, one
+`.tres`, authored under the project root as `balance.tres`, per `ARCHITECTURE.md` r9's own
+wording.
+
+---
+
+## 2026-08-01: `Hero.RANK_NAMES` moves to `BalanceTable`, not before P2-01d
+
+P2-01a explicitly left "moving `Hero.RANK_NAMES` off `Hero`" as a `godot-architect` open
+call and out of that ticket's scope. Ranks apply to heroes and equipment identically
+(`SYSTEMS.md`): once `EquipmentDefinition`/`Item` exist, they need the same eight labels.
+
+**Reason:** `RANK_NAMES` is presentation data about the rank *system*, not about any one
+`Hero` instance — it is the same shape as the rank table's other columns (stat multiplier,
+level cap, affix/socket counts), which are already headed for `BalanceTable`. Leaving it as
+a `const` on `Hero` (a `RefCounted` *instance* type) means the eventual equipment runtime
+class either duplicates the same eight-string array or reaches across into `heroes/` to read
+`Hero.RANK_NAMES` — the second option is a cross-feature-folder dependency this repo's
+layout (`ARCHITECTURE.md`, "Project layout") is structured to avoid, and the first is the
+kind of duplicated hardcoded array `ARCHITECTURE.md` rule 9 exists to prevent for numbers and
+should equally apply to the labels describing the same axis.
+
+This is **not** part of P2-01a. `hero.gd` is a file Phase 1 ships and gates green
+(`tests/save_roundtrip_check.gd`, `hub/summon/summon.gd:17` both reference
+`Hero.RANK_NAMES` today), and moving the const is a call-site-breaking change, not an
+additive one — it belongs to whichever ticket first builds `BalanceTable` (`P2-01d`) or
+first needs rank labels from a second domain (equipment, `P2-01c`), not to `P2-01a`.
+
+**Rejected:** leaving `RANK_NAMES` on `Hero` permanently and having equipment either
+duplicate it or reach into `heroes/hero.gd` for it.
+
+---
+
 ## 2026-08-01: No `CombatState` autoload
 
 Proposed fourth autoload holding the current expedition's wave index and per-hero HP between
