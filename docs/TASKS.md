@@ -11,6 +11,11 @@ build/test commands, decision bounds. One write, both purposes.
 
 **Status:** `TODO` · `WIP` · `DONE` · `BLOCKED`
 
+`tech-lead` owns ticket **bodies**; the director owns **status transitions**. A status word is
+not content, and the director is the only role that sees a ticket's gates come back green.
+Stale status is expensive here — `tech-lead` reads this file first and an `implementer` takes
+its scope from the ticket, so a ticket left `[TODO]` after it lands gets rebuilt.
+
 ---
 
 ## Ticket format
@@ -52,7 +57,9 @@ clean checkout. **Resist making any of it good.** Everything here is replaced in
 
 ---
 
-## P1-01 — Project boots to a main menu and into the hub          [TODO]
+## P1-01 — Project boots to a main menu and into the hub          [DONE]
+
+Landed in `f62e545`. Import gate clean, `hub.tscn` headless smoke exit 0.
 
 ### Objective
 Launching the game shows a main menu. Pressing Play loads a gray-box 3D hub. Escape opens a
@@ -84,7 +91,10 @@ data, building interaction.
 
 ---
 
-## P1-02 — Summon a hero into a visible roster                    [TODO]
+## P1-02 — Summon a hero into a visible roster                    [DONE]
+
+Landed in `f62e545`. Roster survives save and reload — proved by
+`tests/save_roundtrip_check.gd`, not by the import gate, which cannot see that boundary.
 
 ### Objective
 A Summon button in the hub adds a hero to a roster list on screen.
@@ -111,7 +121,11 @@ animation, currency cost, pity, dupes.
 
 ---
 
-## P1-03 — Send a hero out; it lives or dies permanently          [TODO]
+## P1-03 — Send a hero out; it lives or dies permanently          [DONE]
+
+Landed in `f62e545`. `GameSession.kill_hero()` is the single deletion call site
+(`ARCHITECTURE.md` r8); permadeath persisting across reload is covered by
+`tests/save_roundtrip_check.gd`.
 
 ### Objective
 Selecting a hero and pressing Expedition resolves a coin flip. On success the hero returns
