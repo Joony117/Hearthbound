@@ -200,9 +200,17 @@ work this process exists to avoid.
 
 Expand each into the full format when it comes up.
 
+**P2-01 split.** The original backlog line bundled three independent Resource domains (hero,
+equipment, zone) plus a shared tunables container behind one line. That is a subsystem, not
+one behavior, and the tunables container's shape is still an open `godot-architect` call. Split
+into a numbered sequence; `P2-01a` is expanded below and is where to start.
+
 | # | Objective | Notes |
 |---|---|---|
-| P2-01 | `HeroDefinition` / `EquipmentDefinition` / `ZoneDefinition` Resources + `balance.tres` | 5 archetypes, 10 slots, 3 zones |
+| P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Expanded below. Start here — unblocks P2-02. |
+| P2-01b | `ZoneDefinition` Resource + 3 zones authored | Unblocks P2-03. Expand next. |
+| P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
+| P2-01d | Shared tunables container: rank multiplier/level-cap table, essence tables, summon weight table, building effects | Container shape (one `balance.tres` vs several small resources; whether `Hero.RANK_NAMES` moves off `Hero`) is `godot-architect`'s open call, not this doc's. Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. |
 | P2-02 | Real summon against the weight table; roster and equip UI | Replaces P1-02 |
 | P2-03 | `quick_resolve.gd` — waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. **Add GUT here.** |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
@@ -215,6 +223,67 @@ Expand each into the full format when it comes up.
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3.
+
+---
+
+## P2-01a — HeroDefinition Resource + five archetypes authored     [TODO]
+
+### Objective
+Five hero archetypes (Knight, Rogue, Ranger, Mage, Cleric) exist as data — a `HeroDefinition`
+Resource class with one authored `.tres` per archetype — and a `Hero` runtime instance can
+carry a `def_id` pointing at one, surviving save and reload. This ticket makes no player-facing
+change by itself: summon still rolls the Phase-1 placeholder. P2-02 is what makes this visible.
+
+### Existing architecture
+- `Hero` (`heroes/hero.gd:1-28`) is a `RefCounted` with only `hero_name`, `rank`, and
+  `to_dict`/`from_dict`; its own header comment (`heroes/hero.gd:5-6`) already earmarks this
+  ticket to add `def_id`.
+- `GameSession.roster: Array[Hero]` (`systems/game_session.gd:10`) serializes heroes through
+  `GameSession.to_dict`/`from_dict` (`systems/game_session.gd:31-43`), which calls straight
+  through to `Hero.to_dict`/`from_dict`. Any new `Hero` field must round-trip through both
+  layers or it is silently dropped on load — this is risky-boundary item 1 in `CLAUDE.md`.
+- No `heroes/hero_definition.gd` or `heroes/defs/` exist yet. `ARCHITECTURE.md` rules 2-3
+  (Definitions are Resources holding no runtime state; runtime state lives in a `RefCounted`
+  pointing at a definition by `def_id`) and `CODING_RULES.md`'s own `HeroDefinition` sketch
+  (lines 46-52, `@export` fields, no `current_hp`) set the shape.
+- `hub/summon/summon.gd` (`hub/summon/summon.gd:1-18`) is explicitly reserved for P2-02's
+  replacement and is not touched here. Nothing running today constructs a `Hero` with a
+  `def_id`, so prove the round trip with a standalone headless script in the style of
+  `tests/save_roundtrip_check.gd` (which drives `GameSession`/`SaveService` directly, not
+  through the hub UI), not by clicking Summon.
+- Per-archetype base stats and growth are not yet in `docs/SYSTEMS.md` — its Archetypes table
+  (`docs/SYSTEMS.md:43-49`) currently lists only Archetype/Row/Role, no numbers.
+  `game-designer` is authoring those concurrently. Read the values from `SYSTEMS.md` once they
+  land; do not invent placeholder numbers.
+
+### Acceptance criteria
+- `heroes/hero_definition.gd` defines `class_name HeroDefinition extends Resource` with
+  `@export` fields covering the six-stat sheet's base and growth (`SYSTEMS.md`'s
+  `final = (base + growth*level) * rank_mult + equip_flat`) plus `display_name` and role —
+  this ticket authors base/growth data only, not the formula
+- Five `.tres` instances exist under `heroes/defs/`, one per archetype (Knight, Rogue, Ranger,
+  Mage, Cleric), with values copied from `docs/SYSTEMS.md`, not invented
+- `Hero` gains a `def_id: StringName` field; `to_dict`/`from_dict` both include it
+- A headless round-trip check (extend `tests/save_roundtrip_check.gd` or add a sibling script)
+  proves a `Hero` constructed with a non-empty `def_id` survives a `SaveService` save/reload
+  cycle unchanged
+- Existing tests still pass: the P1-02/P1-03 roster and permadeath checks
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean
+
+### Files allowed to change
+`heroes/hero_definition.gd`, `heroes/defs/*.tres`, `heroes/hero.gd`, `tests/`
+
+### Non-goals
+Wiring `hub/summon/summon.gd` to pick a `HeroDefinition`, roll the weight table, or select from
+a definition pool (P2-02); the summon weight table itself; summon/roster/equip UI;
+`EquipmentDefinition` or `ZoneDefinition` (`P2-01c`/`P2-01b`, split out above); `balance.tres` or
+any shared tunables container (`P2-01d`, shape is `godot-architect`'s open call); applying
+`rank_mult` or equipment to a `Hero`'s live stats (no consumer needs computed stats yet — that
+lands with combat); adding `level`, `xp`, or equipment slots to `Hero` (deferred to whichever
+later ticket first consumes them); moving `Hero.RANK_NAMES` off `Hero` (`godot-architect`'s open
+call, not this ticket's); combat, `CombatResult`, `quick_resolve.gd`, XP progression, rank-up,
+lost-gear caches, recovery expeditions, salvage, sacrifice, cores, buildings, currencies, or
+save-format migrations.
 
 ---
 
