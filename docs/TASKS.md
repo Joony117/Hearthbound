@@ -670,7 +670,29 @@ equipping anything to a `Hero`; equip UI (`P2-05a`); lost-gear caches or recover
 
 ---
 
-## P2-02 — Real weighted summon + archetype roster display          [TODO]
+## P2-02 — Real weighted summon + archetype roster display          [DONE]
+
+Landed in `0556ce0`, hardened in `1a67450` after an adversarial `verifier` pass.
+
+The finding worth carrying forward is about *where* logic lives, not what it does. The code was
+correct on the first pass; nothing proved it. The three-way archetype-label decision sat inside
+`_refresh_roster()`, a method on a `Node3D` bound to `hub.tscn` — and because this repo's checks
+deliberately drive things directly rather than through the hub UI, **nothing could reach it**.
+Collapsing the loud unresolvable-`def_id` branch into the silent legacy one defeated this
+ticket's headline requirement and still passed the gate, all six checks, and GUT. It is now
+`Summon.archetype_label_for()`, and `hub/hub.gd` is pure row formatting.
+
+The general lesson for later UI tickets: a branch reachable only by instantiating a scene is
+untested by construction here. Extract the decision, leave the rendering.
+
+Second finding, same shape one layer down: `tests/summon_weight_check.gd` proved itself
+"exhaustive over the table" while being exhaustive over a *hardcoded copy* of the table, never
+reconciled against the shipped `balance.tres`. `balance_table_check.gd` spot-checks only index 7,
+so per-index drift anywhere else went uncaught — this repo's own "a second copy drifts" objection,
+landed in test code where it is harder to spot. Both fixes were mutation-proven.
+
+`P2-05a` (equip UI) was split out of this ticket's original backlog line and sequences after
+`P2-05`. `SYSTEMS.md:324`'s "that rank's pool" wording remains `game-designer`'s to correct.
 
 Narrowed from the original backlog line ("Real summon against the weight table; roster and
 equip UI"). Equip UI is split out to `P2-05a`: nothing is equippable yet — `Hero` has no
