@@ -25,7 +25,14 @@ func _refresh_roster() -> void:
 
 	_roster_list.clear()
 	for hero: Hero in GameSession.roster:
-		_roster_list.add_item("[%s]  %s" % [hero.rank_label(BALANCE), hero.hero_name])
+		var archetype_name: String = "No archetype"
+		if hero.def_id != Hero.NO_ARCHETYPE_DEF_ID:
+			var definition: HeroDefinition = Summon.definition_for(hero.def_id)
+			if definition == null:
+				archetype_name = "Missing archetype (%s)" % hero.def_id
+			else:
+				archetype_name = definition.display_name
+		_roster_list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
 
 	if previous >= 0 and previous < _roster_list.item_count:
 		_roster_list.select(previous)
