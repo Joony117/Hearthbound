@@ -102,6 +102,13 @@ Verified `hero_power` (`ATK + DEF + HP/10 + SPD`, no equipment) at three rank/le
 The bottom row is a same-rank, same-level, ungeared reference team — the baseline that
 Expeditions' recommended power is pinned against.
 
+> ⚠️ **PROVISIONAL** — the five archetype stat lines and the `hero_power` checkpoints above are
+> internally consistent but never played. Rogue reads as the highest-`hero_power` archetype at
+> every checkpoint by design; whether that plays as "intentional burst carry" or "obviously best,
+> take five" once gear is layered on is a feel question arithmetic can't answer. · **Settled by:**
+> a played build with real teams and real gear, since gear is exactly where this kind of gap
+> would show up.
+
 ---
 
 ## Sacrifice → rank up — *Phase 2*
@@ -143,6 +150,12 @@ exactly the players following the naive strategy. An optimistic bound — Sanctu
 happens to be max-level — comes down to **~150 pulls**; that excludes the cost of leveling
 fodder before feeding it, so treat it as a ceiling, not a target.
 
+> ⚠️ **PROVISIONAL** — the `~327`-pull spine number is arithmetically solid (`78.38` essence/pull
+> checked directly against the weight and essence-base tables), but unvalidatable against actual
+> play time: there is no Summon Stone income rate yet, so "327 pulls" doesn't map to a session
+> count or an hour count. · **Settled by:** Summon Stone income being defined (`P2-09`), then a
+> played build to see how many pulls a session actually yields.
+
 A max-level sacrifice yields double, so levelling fodder before feeding it is a real (if
 slow) strategy.
 
@@ -157,6 +170,12 @@ resonance point. Resonance unlocks traits from that hero's definition trait pool
 
 This is why a duplicate is never dead weight, and it gives chasing a specific unit a payoff
 ladder beyond raw stats.
+
+> ⚠️ **PROVISIONAL** — resonance unlocking at 1, 3, and 6 dupes is an untested curve; nobody has
+> checked it against how often a player actually accumulates duplicates of one `def_id` at the
+> weights in Summoning, so "6 dupes" could be a routine milestone or a near-unreachable one
+> depending on rank. · **Settled by:** a played build, or a dupe-rate calculation cross-referenced
+> against the Summoning weight table (not yet done).
 
 ---
 
@@ -248,6 +267,11 @@ enemy species and their stat blocks is its own follow-up ticket; nothing in P2-0
 depends on it existing yet, and inventing one here would be scope creep past what this pass was
 asked for.
 
+> ⚠️ **PROVISIONAL** — the recommended power figures (900 / 4,800 / 11,500) are derived from the
+> ungeared reference team in Heroes, not from any fought wave. Whether "recommended" actually
+> predicts a fair fight once `quick_resolve`'s statistical comparison and real gear are both in
+> play is untested. · **Settled by:** both combat paths existing and a played build against them.
+
 ### Retreat threshold
 
 Each expedition carries a retreat threshold, default: bail at 25% party HP.
@@ -278,6 +302,12 @@ damage_chance = 0.15 + 0.03 * turns_elapsed + power_deficit_penalty
 
 Damaged means enhancement halved (rounded down), or if already at `+0`, one affix rolled
 down. **Any socketed Cores are lost.**
+
+> ⚠️ **PROVISIONAL** — `power_deficit_penalty` is named in the formula above with no value or
+> formula defined anywhere; the two terms that do carry numbers (`0.15` base, `0.03 *
+> turns_elapsed`) haven't been played either. · **Settled by:** defining `power_deficit_penalty`'s
+> formula, then a played build to feel whether `damage_chance` lands where "damaged gear is a
+> real cost" needs it to.
 
 Caches **expire after 15 turns** (+5 per Reliquary level). The clock is what makes a death
 hurt: you choose between pushing progression and mounting a salvage run.
@@ -335,6 +365,11 @@ max level, not just at level 0. Verified arithmetic: Codex thread `019fc33f-8055
 spot-checked independently (`D = 9400 + 600*m`, `SSS_weight = 2*m*10000/D`, `direct_pulls =
 D/(2*m)`).
 
+> ⚠️ **PROVISIONAL** — the `0.15`/level curve is verified to preserve "near-mythical" and the
+> "manufacture, don't pray" ratio at every Circle level (arithmetic above), but nobody has played
+> against a built Circle to see if the mid-game convenience actually feels like one, or feels like
+> nothing. · **Settled by:** a played build with the Circle built to at least level 3.
+
 **Rejected:** an exponential-per-rank-index tilt (`weight_i *= mult ^ (level * i)`), which
 compounds across level *and* rank index at once — at modest-looking per-step rates it exceeds
 100× at the top rank by level 5, which both breaks "near-mythical" and makes the number
@@ -372,6 +407,15 @@ not the "one system" claim.
 | Training Hall | Post-expedition XP +15% | 1 | expedition |
 | Sanctum | Sacrifice essence yield +10% | 1 | sacrifice |
 | Reliquary | Cache decay +5 turns; recovery damage chance −3% | 2 | recovery |
+
+> ⚠️ **PROVISIONAL** — Training Hall, Sanctum, and Reliquary carry no level cap at all; only Forge
+> has one (`level * 3 ≤ 15`, implied by Enhancement). Nothing stops the other three scaling into
+> a magnitude nobody has checked. · **Settled by:** a design pass giving each an explicit cap, and
+> a played build to find where the effect stops being fun to keep pushing.
+
+> ⚠️ **PROVISIONAL** — Training Hall's "+15% XP" reads against an XP-per-level curve that doesn't
+> exist anywhere in this document (`P2-04a`). The percentage is meaningless until there's a curve
+> to apply it to. · **Settled by:** `P2-04a` defining the XP curve.
 
 Upgrade cost: gold + parts.
 

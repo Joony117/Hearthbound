@@ -58,6 +58,11 @@ Circle (base building, `SYSTEMS.md`) erodes this ratio as it levels up, but by d
 ~12× even at its cap — checked so the claim holds at every stage of the game, not just before
 any buildings are built.
 
+> ⚠️ **PROVISIONAL** — the ~327-pull and ~12×/~15× ratios are arithmetically verified
+> (`SYSTEMS.md`) but unvalidatable against real play time: there is no Summon Stone income rate
+> yet, so "327 pulls" doesn't map to a session count, and the ratio itself has never been played,
+> only computed. · **Settled by:** Summon Stone income being defined (`P2-09`) and a played build.
+
 ---
 
 ## Target platform
