@@ -43,11 +43,33 @@ while you are in there.
 
 ## Evidence
 
-`BUILT` is the import gate from `CLAUDE.md`, run with the `_console` binary. The plain
-`Godot_v4.7.1-stable_win64.exe` detaches and swallows stdout, so a run against it proves nothing
-regardless of what it printed.
+`BUILT` is `tests/import_gate.ps1`, not a raw engine call. Run the script.
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\import_gate.ps1
+```
+
+`--headless --quit` on its own **exits 0 while printing script errors** — measured on a fresh
+clone of this repo: 8 error lines, exit code 0. Judging BUILT by exit code alone reports green on
+a project that does not load. The script greps the output and warms the class cache first; read
+the BUILT section of `CLAUDE.md` before you reach for the engine directly.
+
+The plain `Godot_v4.7.1-stable_win64.exe` detaches and swallows stdout, so a run against it proves
+nothing regardless of what it printed. Always `_console`.
 
 Zero warnings, not just zero errors.
+
+## STATUS
+
+`done` means the **problem is solved**, not that the literal acceptance criteria were satisfied.
+When those diverge, the difference is the most valuable thing you can report.
+
+If your own findings show the task's premise was wrong, the correct status is `partial` with the
+corrected premise — not `done` because you did what was literally asked. `partial` naming a
+precise gap is never treated as a failure. `done` on work a re-run does not reproduce is, because
+it stops anyone looking again.
+
+Full definitions are in `CLAUDE.md` under "Reporting: what STATUS means" and they bind you.
 
 If your change touches the save round-trip, the import gate does not cover it — say so under
 `UNRESOLVED` unless you actually drove a save and a reload.

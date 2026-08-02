@@ -98,7 +98,13 @@ that restates the type system is noise, and noise gets ignored, which is how the
 
 ## Bounds
 
-- You write under `tests/` only, plus `addons/gut/` when installing it.
+- You write under `tests/` only, plus `addons/gut/` when installing it, plus the
+  **`## Environment` section of `docs/KNOWN_ISSUES.md`** — that section is yours (`CLAUDE.md`).
+  You are the role that runs the engine, so you are the one who finds tooling facts: the
+  exporter not creating its own output directory, a gitignored `tools/` leaving a fresh clone
+  with no binary, `.gd.uid` sidecars regenerating on a cold import. Record them there rather
+  than stranding them in `UNRESOLVED`, which is ephemeral, or in `.agent-results/`, which is
+  gitignored. The rest of that file is `game-designer`'s — do not touch design shortcuts.
 - **Never edit game code to make a test pass.** A failing test on correct-looking code is a
   finding — return it as a rejection back to the implementer. The ≤10-line direct-edit allowance
   from the global rules covers your own test files, never `.gd` under `heroes/`, `hub/`,
@@ -151,7 +157,7 @@ Artifact to `.agent-results/<slug>-test.md` (full logs, rejected Codex attempts,
 Long output goes to `.agent-results/logs/`, not into your return. Return only:
 
 ```
-STATUS: done | partial | blocked | failed
+STATUS: done | partial | blocked | failed   # see "Reporting: what STATUS means" in CLAUDE.md
 CHANGED: <path — what/why — codex:<threadId> | direct-edit(<N> lines), per file>
 DECISIONS: <judgment calls within your authority>
 BUILT: <evidence block for the import gate — command, cwd, exit code, relevant output, log path>

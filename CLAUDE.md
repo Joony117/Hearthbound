@@ -84,11 +84,11 @@ Nothing edits a document it does not own.
 | Change | Route to | Owns |
 |---|---|---|
 | Vague ask → ticket | `tech-lead` | `docs/TASKS.md` |
-| Game numbers, feel, scope | `game-designer` | `docs/SYSTEMS.md`, `GAME_SPEC.md`, `KNOWN_ISSUES.md` |
+| Game numbers, feel, scope | `game-designer` | `docs/SYSTEMS.md`, `GAME_SPEC.md`, `KNOWN_ISSUES.md` **except** its `## Environment` section |
 | Boundary moves, autoload count, ADRs | `godot-architect` | `docs/ARCHITECTURE.md`, `DECISIONS.md` |
 | Code | global `implementer` → Codex | `*.gd`, `*.tscn`, `project.godot` |
 | "How does X work", tracing a flow | global `researcher` | nothing — read-only |
-| Gates and tests | `godot-tester` | `tests/`, gate runs |
+| Gates and tests | `godot-tester` | `tests/`, gate runs, the `## Environment` section of `docs/KNOWN_ISSUES.md` |
 | Post-boundary review | global `verifier` | nothing — read-only |
 
 The four repo roles are additions, not replacements: global routing rule 3 (researcher for
@@ -96,6 +96,35 @@ questions, implementer for changes) and rule 4 (implementer **then** verifier on
 boundary-crossing change) apply here unchanged.
 
 Codex workers additionally read `AGENTS.md`, which tightens the worker contract for this repo.
+
+`KNOWN_ISSUES.md` is split on purpose. Its design shortcuts — placeholder systems, deferred
+features, scope calls — are `game-designer`'s. Its `## Environment` section is `godot-tester`'s,
+because the roles that *find* tooling facts are the ones that run the engine, and without this
+they have nowhere legal to record them: a finding stranded in a return block is ephemeral, and
+`.agent-results/` is gitignored. Both of those lose the knowledge.
+
+## Reporting: what STATUS means
+
+`STATUS: done` means **the problem in the task is solved**, not that the literal acceptance
+criteria were satisfied. Those are not the same thing, and when they diverge the difference is
+the most valuable thing in the return.
+
+- **`done`** — the acceptance criteria are met *in the scenario that motivated them*. If you
+  proved a behavior under conditions other than the ones the task was actually about, that is
+  not `done`.
+- **`partial`** — anything real is left over. Name what, specifically. This includes the case
+  where **your own findings show the task's premise was wrong**: a task built on a mistaken
+  assumption cannot be `done` even when you did everything it literally asked. Report the
+  corrected premise and what it means for the acceptance criteria.
+- **`blocked`** — you cannot proceed. State the single concrete thing that would unblock it.
+- **`failed`** — you tried and it does not work. Name the first cause and stop.
+
+`partial` with a precise account of the gap is worth more than `done`, and it is never treated
+as a failure. `done` on work that a re-run does not reproduce is the one reporting outcome that
+actually costs the project something, because it stops anyone looking again.
+
+This binds every worker and subagent in this repo, and it is a tightening of the global
+contract, not a replacement for it.
 
 ## Standing constraints
 
@@ -110,6 +139,34 @@ Codex workers additionally read `AGENTS.md`, which tightens the worker contract 
 - Never edit `.godot/` or `tools/` — both gitignored, both engine-owned.
 - `docs/` is the spec. If code and docs disagree, that is a finding, not something to silently
   reconcile in either direction.
+- **One Godot process against this project at a time.** See below — this one is not obvious and
+  has already bitten twice.
+
+## Serialize engine access
+
+**Never dispatch two agents that run Godot concurrently against `E:\Game`.** The director
+serializes them, no exceptions.
+
+This is not ordinary file-locking caution. The gates deliberately put the project into a broken
+state as part of doing their job:
+
+- `godot-tester` proving the import gate goes red **injects a bad type into a real `.gd` file**,
+  runs, then restores it.
+- Proving the cold-cache path **moves `.godot/` aside entirely**, so the class cache is absent.
+- Both leave the tree correct at the end, and wrong in the middle.
+
+Anything else touching the engine during that window sees the broken tree and believes it. An
+export run concurrent with a red-proof packages a knowingly-broken build and reports exit 0.
+A second process also races the first on `.godot/`, whose rebuild is not concurrency-safe.
+
+Neither failure announces itself: you get a green result describing a state that never existed.
+
+**What is safe in parallel:** agents whose bounds do not overlap and that do not run the engine
+— a `docs/`-only writer alongside a `tests/` writer is fine, and was done here. Judge by whether
+the engine gets invoked, not by whether the file lists collide.
+
+Practically: when a dispatch will run BUILT, the export, or any `--headless` invocation, it gets
+the engine to itself until it returns. Two Godot-touching agents in one message is a bug.
 
 ## Export
 
