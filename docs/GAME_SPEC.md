@@ -53,7 +53,10 @@ Long-term goal: build an SSS hero. The design assumes you *manufacture* one thro
 sacrifice rather than pull one — the pull rate is 0.02%. Checked against the current
 `SYSTEMS.md` numbers: a lucky direct pull takes ~5,000 summons on average; feeding every hero
 you don't keep into one target takes ~327 — about 15× cheaper, which is what "manufacture,
-don't pray" needs to be true to hold up as a claim rather than flavor text.
+don't pray" needs to be true to hold up as a claim rather than flavor text. The Summoning
+Circle (base building, `SYSTEMS.md`) erodes this ratio as it levels up, but by design not past
+~12× even at its cap — checked so the claim holds at every stage of the game, not just before
+any buildings are built.
 
 ---
 

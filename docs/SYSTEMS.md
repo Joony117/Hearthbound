@@ -299,7 +299,58 @@ for a first S (`1/0.012`), **~5,000** for a first SSS (`1/0.0002`) — at 1,000 
 having hit at least one SSS by luck alone is ~18%; at 5,000 pulls, ~63%. See Sacrifice for the
 ~327-pull manufactured route, which is why this table can afford to be this stingy.
 
-Summoning Circle level shifts weight up the table.
+### Summoning Circle
+
+The building table below used to say "shifts summon weight toward higher ranks" with no
+magnitude — not implementable as written, and the gap only surfaced when P2-01d tried to
+transcribe it into `balance.tres`. The formula:
+
+```
+circle_multiplier = 1 + 0.15 * level   (level capped at 5)
+```
+
+Applied to the four highest ranks (**A, S, SS, SSS** — indices 4-7) as a block; **F, D, C, B are
+untouched**. The full 8-value table is then renormalized back to sum `10000`. Because both
+blocks are scaled uniformly before renormalizing, this only moves mass *between* the two
+blocks — the relative odds *within* each block are unchanged (`A:S:SS:SSS` stays `450:120:28:2`;
+`F:D:C:B` stays `4000:2700:1700:1000`).
+
+| Circle level | 0 (unbuilt) | 1 | 3 | 5 (cap) |
+|---|---|---|---|---|
+| `circle_multiplier` | 1.00 | 1.15 | 1.45 | 1.75 |
+| SSS weight /10000 | 2.00 | 2.28 | 2.82 | 3.35 |
+| SSS probability | 0.0200% | 0.0228% | 0.0282% | 0.0335% |
+| Expected pulls to first SSS | 5,000 | 4,387 | 3,541 | 2,986 |
+| Expected pulls to first S | 83 | 73 | 59 | 50 |
+| Manufactured pulls per SSS (spine number, re-derived) | 327 | ~307 | ~274 | ~248 |
+| Manufactured-vs-direct-pull advantage | ~15.0× | ~14.3× | ~12.9× | ~12.0× |
+
+At the level cap, an SSS is still ~2,986 expected pulls direct — comfortably past the doc's own
+"near-mythical" bar (it takes ~5,000 pulls of bad luck at any Circle level for even a coin-flip
+chance of one) — and manufacturing is still ~12× cheaper than pulling, not inverted. The
+Summoning Circle is a mid-game convenience on top of the sacrifice economy, not a route around
+it: this was the explicit design risk this ticket asked to weigh, and the magnitude above was
+chosen to keep both the "near-mythical" claim and the "manufacture, don't pray" ratio intact at
+max level, not just at level 0. Verified arithmetic: Codex thread `019fc33f-8055-73b1-89a2-5ba881ce0cc4`,
+spot-checked independently (`D = 9400 + 600*m`, `SSS_weight = 2*m*10000/D`, `direct_pulls =
+D/(2*m)`).
+
+**Rejected:** an exponential-per-rank-index tilt (`weight_i *= mult ^ (level * i)`), which
+compounds across level *and* rank index at once — at modest-looking per-step rates it exceeds
+100× at the top rank by level 5, which both breaks "near-mythical" and makes the number
+impossible to sanity-check by eye. Also rejected: scaling only S/SS/SSS and leaving A alone —
+that block is `150/10000` of the table versus `600/10000` for A-and-above, so a S+-only version
+barely moves at low Circle levels and the building would read as doing nothing until near its
+cap. Also rejected (as a gentler alternative, computed but not recommended): `0.05 * level` —
+SSS still near-mythical (~4,060 pulls at cap) but the effect is small enough (~19% relative
+lift in top-rank odds at max level) that the building risks feeling like it does nothing, which
+fails "does this need to exist" for the one building whose whole job is to be felt.
+
+**Implementation note, not a doc change:** this needs two `BalanceTable` fields (a per-level
+rate and a level cap), not the single placeholder currently authored
+(`summoning_circle_weight_shift = 0.0`, `balance.tres`) — a schema change, not a value fill-in.
+Route through `tech-lead` as a ticket; this document does not edit `balance.tres` or
+`balance_table.gd`.
 
 **No pity system until Phase 4.** Pity is a player-frustration feature, not a correctness
 one, and adding it before the loop is proven would be tuning something that may not survive.
@@ -308,15 +359,19 @@ one, and adding it before the loop is proven would be tuning something that may 
 
 ## Base buildings — *Phase 2*
 
-Five buildings. **Five integers.** Each read by exactly one system.
+Five buildings. **Not five integers** — corrected here after P2-01d's transcription into
+`balance.tres` found the original "five integers" line false: it's eight magnitudes across the
+five (nine if the Forge's cap and its own ceiling are counted as separate numbers, which is
+arguable either way). Every magnitude is still read by exactly one system; the count was wrong,
+not the "one system" claim.
 
-| Building | Effect per level | Read by |
-|---|---|---|
-| Summoning Circle | Shifts summon weight toward higher ranks | summon |
-| Forge | Enhance cap `level * 3` (max 15); salvage yield +10% | forge |
-| Training Hall | Post-expedition XP +15% | expedition |
-| Sanctum | Sacrifice essence yield +10% | sacrifice |
-| Reliquary | Cache decay +5 turns; recovery damage chance −3% | recovery |
+| Building | Effect per level | Magnitudes | Read by |
+|---|---|---|---|
+| Summoning Circle | `circle_multiplier = 1 + 0.15*level` (cap 5) applied to the A/S/SS/SSS block, table renormalized — see Summoning | 2 | summon |
+| Forge | Enhance cap `level * 3` (max 15); salvage yield +10% | 2 (arguably 3: rate, cap, ceiling) | forge |
+| Training Hall | Post-expedition XP +15% | 1 | expedition |
+| Sanctum | Sacrifice essence yield +10% | 1 | sacrifice |
+| Reliquary | Cache decay +5 turns; recovery damage chance −3% | 2 | recovery |
 
 Upgrade cost: gold + parts.
 
