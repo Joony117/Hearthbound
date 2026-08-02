@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BalanceTable" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://balance_table.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stat_multipliers = Array[float]([1.0, 1.35, 1.82, 2.46, 3.32, 4.48, 6.05, 8.17])
+level_caps = Array[int]([10, 20, 30, 40, 50, 60, 70, 80])
+equipment_affix_counts = Array[int]([1, 1, 2, 2, 3, 3, 4, 4])
+core_socket_counts = Array[int]([0, 0, 0, 0, 1, 1, 2, 2])
+essence_bases = Array[int]([10, 25, 65, 165, 420, 1050, 2600, 6500])
+rank_up_essence_costs = Array[int]([40, 110, 300, 800, 2200, 6000, 16000])
+summon_weights = Array[int]([4000, 2700, 1700, 1000, 450, 120, 28, 2])
+summoning_circle_weight_shift = 0.0
+forge_enhance_cap_per_level = 3
+forge_enhance_cap_max = 15
+forge_salvage_yield_bonus = 0.1
+training_hall_xp_bonus = 0.15
+sanctum_essence_yield_bonus = 0.1
+reliquary_decay_turns_bonus = 5
+reliquary_damage_chance_reduction = 0.03
