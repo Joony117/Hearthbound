@@ -574,7 +574,12 @@ only, nothing reads or enforces it; the arena.
 
 ---
 
-## P2-01c — EquipmentDefinition Resource + 10-slot enum authored     [TODO]
+## P2-01c — EquipmentDefinition Resource + 10-slot enum authored     [DONE]
+
+Landed in `eb3c35a`. Completes the P2-01 group. All 30 authored fields asserted and all ten
+slot→primary-stat mappings re-derived against `SYSTEMS.md` independently. Grep-verified that
+`equipment_affix_counts`/`core_socket_counts` are not restated — those stay per-rank tuning in
+`balance.tres`.
 
 ### Objective
 `docs/SYSTEMS.md`'s ten equipment slots and their primary stats exist as authored
