@@ -27,6 +27,15 @@ func to_dict() -> Dictionary:
 
 static func from_dict(data: Dictionary) -> Hero:
 	var hero := Hero.new(str(data.get("name", "?")), int(data.get("rank", 0)))
-	# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.
-	hero.def_id = StringName(str(data.get("def_id", NO_ARCHETYPE_DEF_ID)))
+	if not data.has("def_id"):
+		# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.
+		hero.def_id = NO_ARCHETYPE_DEF_ID
+		return hero
+	# Save-file fields remain Variant until their types are validated.
+	var raw_def_id: Variant = data["def_id"]
+	if raw_def_id is String:
+		hero.def_id = StringName(raw_def_id as String)
+	else:
+		push_error("Invalid hero def_id: expected String, got %s." % type_string(typeof(raw_def_id)))
+		hero.def_id = NO_ARCHETYPE_DEF_ID
 	return hero
