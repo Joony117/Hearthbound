@@ -206,7 +206,8 @@ into a numbered sequence; `P2-01a` is expanded below and is where to start.
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Expanded below. Start here — unblocks P2-02. |
 | P2-01b | `ZoneDefinition` Resource + 3 zones authored | Unblocks P2-03. Expand next. |
 | P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
-| P2-01d | Shared tunables container: rank multiplier/level-cap table, essence tables, summon weight table, building effects | Container shape (one `balance.tres` vs several small resources; whether `Hero.RANK_NAMES` moves off `Hero`) is `godot-architect`'s open call, not this doc's. Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. |
+| P2-01d | `BalanceTable` Resource + `balance.tres` authored from `SYSTEMS.md` | Expanded below. Container shape is settled (`DECISIONS.md`, one `BalanceTable`). Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. Does **not** move `Hero.RANK_NAMES` — split out below. |
+| P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites | **Not expanded — blocked.** `godot-architect` is running concurrently on how a consumer reaches `balance.tres` without a fourth autoload, which is what this ticket's diff shape depends on; it may also rule this a scene↔script boundary change (`hub/hub.gd` backs `hub.tscn`). Expand once that ruling lands. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
 | P2-02 | Real summon against the weight table; roster and equip UI | Replaces P1-02. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). |
 | P2-03 | `quick_resolve.gd` — waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. **Add GUT here.** |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
@@ -312,6 +313,92 @@ call, not this ticket's); combat, `CombatResult`, `quick_resolve.gd`, XP progres
 lost-gear caches, recovery expeditions, salvage, sacrifice, cores, buildings, currencies, or
 save-format migrations; a `CRIT_RATE`/`CRIT_DMG` soft cap or diminishing-returns curve — the fix
 here is that those two stats simply don't scale with rank or level, not a new capping system.
+
+---
+
+## P2-01d — `BalanceTable` Resource + `balance.tres` authored     [TODO]
+
+Split off `Hero.RANK_NAMES` relocation as `P2-01d-2` (backlog table above). The two decisions
+that unblock this ticket are both settled in `DECISIONS.md` (2026-08-01): `balance.tres` is one
+`BalanceTable` Resource, not several split by subsystem, and `RANK_NAMES` does eventually move
+onto it — but "moves onto it" only fixes *where the data ends up*, not *how a consumer reaches
+`balance.tres` without a fourth autoload*, which is a separate `godot-architect` question still
+open and running concurrently with this ticket. Bundling the relocation in here would mean
+guessing that mechanism to make `hero.gd`/`summon.gd`/`hub.gd` compile against it. The data
+transcription this ticket does is not blocked on that question at all — `BalanceTable`'s shape
+and `balance.tres`'s values are fully determined by `SYSTEMS.md` regardless of how anything
+later reads them — so it proceeds now and the relocation trails it.
+
+### Objective
+`docs/SYSTEMS.md`'s rank table, essence tables, summon weight table, and building-effect
+magnitudes exist as one authored `BalanceTable` Resource instance (`balance.tres`), editable in
+the inspector without touching code (`ARCHITECTURE.md` r9). This ticket makes no player-facing
+change by itself — nothing reads `balance.tres` yet. P2-02 (real summon weights) and later
+tickets (sacrifice, buildings) are what make it visible.
+
+### Existing architecture
+- No `balance_table.gd` or `balance.tres` exist yet. `DECISIONS.md` (2026-08-01, "`balance.tres`
+  is one `BalanceTable` Resource, not several") settled the shape: one Resource type with
+  exported fields for every table, authored at the project root as `balance.tres`, per
+  `ARCHITECTURE.md` r9's own wording — not one Resource per subsystem.
+- `docs/SYSTEMS.md` holds every value this ticket transcribes and nothing else does: the rank
+  table (stat multiplier / level cap / affix count / socket count per rank, `SYSTEMS.md:16-21`),
+  sacrifice's essence base per rank and essence cost per rank-up (`SYSTEMS.md:116-122`), the
+  summon weight per rank (`SYSTEMS.md:289-291`), and the five building effect magnitudes
+  (`SYSTEMS.md:313-319`). Read from there — copy values, don't recompute or approximate them,
+  and don't restate a single one in this ticket's prose or in code comments; a second copy
+  drifts from the first the moment either is tuned.
+- Nothing consumes `BalanceTable` yet, and this ticket adds no consumer. `CODING_RULES.md:98`
+  sketches the intended shape for later tickets: pure static functions take
+  `balance: BalanceTable` as a plain argument (`compute_essence_yield(fodder, target, balance:
+  BalanceTable)`) — this ticket only authors the data those functions will read.
+- `Hero.RANK_NAMES` (`heroes/hero.gd:7`) and its three call sites (`heroes/hero.gd:20-21`,
+  `hub/summon/summon.gd:17`, `hub/hub.gd:26,35`) are untouched by this ticket. They move in
+  `P2-01d-2`, once `godot-architect`'s concurrent ruling on the access mechanism lands.
+- `BalanceTable` is authored data, not player state. It has no relationship to
+  `GameSession.to_dict`/`from_dict` or `SaveService` and must never gain one — see Non-goals.
+
+### Acceptance criteria
+- `balance_table.gd` at the project root defines `class_name BalanceTable extends Resource`
+  with `@export` fields covering every table named above: per-rank stat multiplier, per-rank
+  level cap, per-rank equipment affix count, per-rank core socket count, per-rank essence base,
+  per-rank-up essence cost, per-rank summon weight, and one field per building's effect
+  magnitude (Summoning Circle, Forge, Training Hall, Sanctum, Reliquary) — field shapes follow
+  `SYSTEMS.md`'s own table shapes (one array indexed by rank int `0..7` for the rank-indexed
+  tables; the rank-up cost table is indexed by transition, not rank, and is one shorter)
+- One authored `balance.tres` instance at the project root with every value copied from
+  `SYSTEMS.md`'s tables, not invented or approximated
+- A headless check under `tests/` (new script, following `tests/save_roundtrip_check.gd`'s
+  style of driving things directly rather than through the hub UI) loads `balance.tres` and
+  asserts a representative sample of values against `SYSTEMS.md` verbatim — at minimum the SSS
+  stat multiplier, the F and SSS essence bases, the SS→SSS essence cost, and the SSS summon
+  weight — catching a transcription typo the import gate cannot see
+- Grep-checkable: `BalanceTable` does not appear anywhere in `systems/game_session.gd` or
+  `systems/save_service.gd`; `balance.tres` never round-trips through `SaveService`
+- No existing file outside this ticket's scope changes: `heroes/hero.gd`, `hub/summon/summon.gd`,
+  `hub/hub.gd`, and `hub/hub.tscn` are byte-identical to their pre-ticket state
+- Existing tests still pass: P1-02/P1-03 roster and permadeath checks, P2-01a's `def_id`
+  round-trip and legacy-fixture checks
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean
+
+### Files allowed to change
+`balance_table.gd`, `balance.tres`, `tests/`
+
+### Non-goals
+Moving `Hero.RANK_NAMES` off `Hero` and repairing its three call sites (`P2-01d-2`, blocked on
+`godot-architect`'s concurrent ruling on the consumer-access mechanism and on whether that ruling
+makes `hub/hub.gd`/`hub.tscn` a scene↔script boundary change under `CLAUDE.md`); any function
+that consumes `BalanceTable` — `compute_essence_yield`, a real summon roll against the weight
+table, `rank_mult`/`growth` applied to a live `Hero`'s stats, or a building reading its own
+effect field — those land with the tickets that actually need them (`P2-02`, sacrifice,
+buildings, combat). When a building-effect consumer is eventually written (`P2-07`), it must
+compute a local value from `BalanceTable`'s exported arrays (e.g. a `var effective_weight :=
+base_weight * circle_multiplier`) and never write back into those arrays in place —
+`BalanceTable` is one shared Resource instance, and an in-place mutation corrupts every
+reference to it and can persist into `balance.tres` on disk; this ticket's data is read-only by
+construction, but note the constraint here since P2-07 doesn't own this file. Also out of scope:
+`EquipmentDefinition`/`ZoneDefinition` (`P2-01c`/`P2-01b`), `level`/`xp`/equipment slots on
+`Hero`, save-format migrations, salvage, sacrifice, cores, combat, `CombatResult`.
 
 ---
 
