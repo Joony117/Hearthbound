@@ -71,3 +71,32 @@ Never hand-edit one (`AGENTS.md`).
 ### Console binary required for CLI
 `tools/godot/Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows stdout.
 Always use `Godot_v4.7.1-stable_win64_console.exe` for headless and scripted runs.
+
+### GUT lives under `tests/unit/`, not `tests/`
+`-gdir=res://tests` cannot be pointed at the repo root: the three `SceneTree` gate scripts
+(`save_roundtrip_check.gd`, `balance_table_check.gd`, `zone_definition_check.gd`) are not
+`GutTest` subclasses, and GUT tries to load anything under `-gdir` as a test script. GUT tests
+live in `tests/unit/`; the three gate scripts stay in `tests/` unchanged and keep running exactly
+as before (`--headless -s res://tests/<name>.gd`). The Phase-2 GUT gate command is:
+
+```
+./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
+```
+
+Installed: GUT 9.7.1 (`bitwes/Gut`, source zip from the GitHub release tag, not the asset-less
+release page — the tag's zipball is just `addons/gut/`, no demo/example tests bundled). Committed
+under `addons/gut/`, not gitignored; `addons/` was not previously excluded and still isn't. The
+plugin is not enabled in `project.godot`'s `[editor_plugins]` — `gut_cmdln.gd` runs standalone via
+`-s` and never needed it enabled, so no project.godot edit was necessary.
+
+GUT's own `class_name`-declared scripts (`GutTest`, `GutTestCollector`, etc.) get pulled into the
+global script class cache the same as any other `class_name` script, whether or not the plugin is
+"enabled" — confirmed this adds no warnings or errors to `tests/import_gate.ps1`; it still exits 0
+clean with GUT present. `addons/gut/fonts/*.import` sidecars appear on first reimport (GUT ships
+its own runner UI fonts) and are committed like every other `.import`/`.gd.uid` in this repo.
+
+Running `gut_cmdln.gd` directly (not through `import_gate.ps1`) does not redirect `%APPDATA%`, so
+it exercises the real `user://save.json` via the `GameSession`/`SaveService` autoloads on startup
+— confirmed this is read-only (`GameSession._ready()` loads before connecting `roster_changed` to
+`SaveService.save`, so the load's own signal emission never triggers a write). Redirect `%APPDATA%`
+to a temp dir when running GUT manually anyway, for the same reason `import_gate.ps1` does.
