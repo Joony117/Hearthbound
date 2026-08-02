@@ -59,6 +59,33 @@ loading, music, saving, and dialogue. See `DECISIONS.md`.
 
 ---
 
+## Reaching shared Resources
+
+`balance.tres` (rule 9) and every `Definition` Resource (`HeroDefinition`, and later
+`EquipmentDefinition`, `ZoneDefinition`) are authored data, not player state. A consumer reaches
+one with a plain `preload("res://balance.tres")` (or `load()` where the path is only known at
+runtime, e.g. a future `def_id` → `.tres` lookup), assigned to a `const` in whichever script sits
+at the top of a flow, then passed explicitly into pure functions as an argument — the
+`compute_essence_yield(fodder, target, balance: BalanceTable)` shape `CODING_RULES.md` already
+specifies.
+
+No autoload holds or hands out a shared Resource. Godot's `ResourceLoader` caches by path — two
+`preload()`s of the same `.tres` anywhere in the project return the identical object — so there
+is nothing to gain by centralizing the load behind a fourth autoload or behind `GameSession`, and
+real cost to doing so: it would make every consumer's tests depend on booting that autoload
+first, the same "untestable without booting the engine" failure `CODING_RULES.md`'s autoloads
+section already names for methods-on-a-singleton.
+
+Writing into an exported array of a shared Resource in place mutates it for every consumer and
+can persist into the `.tres` on disk (`CODING_RULES.md`, "Resources vs. runtime objects"). That
+hazard is a property of sharing one Resource instance, not of any particular way a consumer
+obtained the reference — treat it the same regardless of whether the reference came from a
+`preload`, a passed-down argument, or (hypothetically) an autoload.
+
+See `DECISIONS.md`, 2026-08-02.
+
+---
+
 ## The combat seam
 
 The single structural decision made before the vertical slice exists, because retrofitting

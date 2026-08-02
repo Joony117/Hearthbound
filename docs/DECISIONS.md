@@ -7,6 +7,79 @@ Newest first.
 
 ---
 
+## 2026-08-02: Consumers reach `balance.tres` via `preload()`, not an autoload or `GameSession`
+
+P2-01d-2 was blocked on this: `RANK_NAMES` "moves onto `BalanceTable`" only fixes where the data
+ends up, not how anything downstream of the top of a call chain gets a `BalanceTable` reference
+to pass into the pure functions `CODING_RULES.md` already specifies.
+
+**Reason:** a repo-wide sweep found zero existing `preload`/`load`/`ResourceLoader.load` call
+sites anywhere in this codebase's `.gd` files — this is a first-precedent decision, not a
+convention lookup — and zero prior sketch of a registry/service-locator pattern in code, ADRs, or
+`TASKS.md`. Godot's `ResourceLoader` caches by path: every `preload("res://balance.tres")`
+anywhere in the project returns the same object, so no single call site needs to own loading it
+and hand out the reference — the coordination problem a `GameSession`-held reference would exist
+to solve doesn't exist. Putting it on `GameSession` instead would grow the one autoload whose
+sole justification is surviving scene changes (`ARCHITECTURE.md`'s autoload table only lists
+roster/inventory/buildings/caches/currencies under its ownership) and would make every
+balance-consuming function's test depend on booting `GameSession` first to obtain it — the exact
+"untestable without booting the engine" failure the three-autoloads ADR already rejects for
+methods on a singleton. P2-01d's own acceptance criteria already assume a standalone headless
+test can `preload`/`load` `balance.tres` directly with no `GameSession` involved; that only holds
+if the production path is the same call.
+
+The mutation hazard of one shared Resource instance (writing into an exported array in place
+corrupts it for every consumer and can persist to disk) is identical under a `preload()`, a
+`GameSession`-held reference, or an explicit pass-down — it is a property of sharing one instance,
+not of how a consumer obtained the reference, so it is not a point against `preload()`
+specifically. `TASKS.md`'s P2-01d ticket already documents the discipline (read-only by
+construction, derive a local value, never write back) at the one consumer that comes close
+(P2-07's building effects); no new enforcement mechanism is being added for it here.
+
+**Rejected:** `BalanceTable` as a fourth autoload — no case exists for a permanently-loaded root
+node over a plain Resource with a cached path. Also rejected: `GameSession` holding a
+`BalanceTable` reference and consumers reading `GameSession.balance` — scope creep on the one
+autoload already at its stated limit, and it reintroduces an engine-boot dependency for testing
+balance-consuming functions that a plain `preload()` doesn't have.
+
+---
+
+## 2026-08-02: `Hero.rank_label()` takes `balance: BalanceTable`, not a UI-side lookup
+
+Follows from the entry above and from `RANK_NAMES` moving off `Hero` (2026-08-01 entry below). A
+sweep found exactly three real consumer call sites of `Hero.RANK_NAMES`/`rank_label()`:
+`hub/summon/summon.gd:17`, `hub/hub.gd:26`, `hub/hub.gd:35` (`heroes/hero.gd:7,20-21` is the
+definition itself, not a consumer) — the prior 2026-08-01 entry's claim that
+`tests/save_roundtrip_check.gd` also references `RANK_NAMES` does not hold; that file has zero
+hits for it.
+
+**Reason:** `rank_label()` stays an instance method on `Hero` and gains a `balance: BalanceTable`
+parameter — `func rank_label(balance: BalanceTable) -> String` — indexing `balance.rank_names`
+instead of the removed `Hero.RANK_NAMES` const. This is the smallest diff at the three real call
+sites (add one argument, once each), it mirrors the exact shape `CODING_RULES.md` already
+prescribes for functions that need balance data, and it keeps "describe this hero" behavior next
+to the `Hero` it describes rather than teaching every UI call site to index a `BalanceTable`
+array (and repeat the clamp) directly.
+
+This is **not** a scene↔script boundary change under `CLAUDE.md`. `hub/hub.tscn`'s only
+`[connection]` entries wire `_on_summon_pressed`/`_on_expedition_pressed` by method name, and the
+`pressed` signal carries no arguments — adding a parameter to an internal call to `rank_label()`
+inside those method bodies renames no node, no `%UniqueName`, and no `[connection]` entry. The
+recommended access shape (a `const` `preload` inside `hub.gd`) needs no new node or unique-name
+binding either. A `verifier` pass on the resulting diff is still reasonable given the file sits on
+that seam, but is not mandated by `CLAUDE.md`'s own definition of boundary item 2 for a diff of
+this shape.
+
+**Rejected:** a shared static helper (e.g. a `RankLabels` free function) ahead of a second real
+consumer — `EquipmentDefinition`/`Item` don't exist until `P2-01c`, and building shared
+infrastructure for a duplication that isn't real yet repeats the ordering the "Skeleton first,
+architecture third" entry below already rejected. Also rejected: a lookup method on `BalanceTable`
+itself — the 2026-08-01 entry already commits `BalanceTable` to holding "only exported data, no
+methods," and the smallest diff that respects that without reopening it keeps the method on
+`Hero`.
+
+---
+
 ## 2026-08-01: `balance.tres` is one `BalanceTable` Resource, not several
 
 P2-01d left the shape of the shared tunables container as an open `godot-architect` call:
