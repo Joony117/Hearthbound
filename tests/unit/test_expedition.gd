@@ -1,8 +1,8 @@
 extends GutTest
 
 const ERROR_MARGIN: float = 0.0001
-const HERO_POWER: float = 146.0
-const HERO_MAX_HP: float = 140.0
+const HERO_POWER: float = 212.0
+const HERO_MAX_HP: float = 280.0
 
 
 func before_each() -> void:
@@ -64,11 +64,13 @@ func test_retreat_at_twenty_five_percent_stops_before_later_waves() -> void:
 	var hero := _add_knight()
 	var expedition := Expedition.new()
 	var team: Array[Hero] = [hero]
+	var team_size_factor := float(team.size()) / 5.0
+	var recommended_power := int(HERO_POWER * 0.75 / (team_size_factor * 0.25))
 	_seed_for_roll_above(0.75)
 
 	var outcome := expedition.resolve(
 		team,
-		_make_zone(int(HERO_POWER * 3.0), 0.25, 2),
+		_make_zone(recommended_power, 0.25, 2),
 	)
 
 	assert_eq(outcome, Expedition.OUTCOME_RETREATED)
@@ -83,7 +85,8 @@ func test_damage_carries_forward_across_two_waves() -> void:
 	var team: Array[Hero] = [hero]
 	seed(1)
 	var enemy_power := 14
-	var per_wave_damage := HERO_MAX_HP * float(enemy_power) / HERO_POWER
+	var team_size_factor := float(team.size()) / 5.0
+	var per_wave_damage := HERO_MAX_HP * (float(enemy_power) * team_size_factor) / HERO_POWER
 
 	var outcome := expedition.resolve(
 		team,
@@ -98,6 +101,40 @@ func test_damage_carries_forward_across_two_waves() -> void:
 		ERROR_MARGIN,
 	)
 	assert_lt(expedition.current_hp[hero], HERO_MAX_HP - per_wave_damage)
+
+
+func test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity() -> void:
+	var solo_hero := Hero.new("Solo Knight", 0)
+	solo_hero.def_id = &"knight"
+	var solo_team: Array[Hero] = [solo_hero]
+	var full_team: Array[Hero] = []
+	for index: int in 5:
+		var hero := Hero.new("Knight %d" % index, 0)
+		hero.def_id = &"knight"
+		full_team.append(hero)
+	var enemy_power := HERO_POWER * 2.5
+	var saw_win: bool = false
+	var saw_loss: bool = false
+
+	for rng_seed: int in range(1, 11):
+		seed(rng_seed)
+		var roll := randf()
+		var expected_win := roll > 0.5
+		seed(rng_seed)
+		var solo_result := QuickResolve.resolve(solo_team, Wave.new(enemy_power))
+		seed(rng_seed)
+		var full_result := QuickResolve.resolve(full_team, Wave.new(enemy_power))
+		var solo_won := solo_result.dead_heroes.is_empty()
+		var full_won := full_result.dead_heroes.is_empty()
+
+		assert_eq(solo_won, expected_win)
+		assert_eq(full_won, expected_win)
+		assert_eq(solo_won, full_won)
+		saw_win = saw_win or expected_win
+		saw_loss = saw_loss or not expected_win
+
+	assert_true(saw_win)
+	assert_true(saw_loss)
 
 
 func _add_knight(hero_name: String = "Knight") -> Hero:
