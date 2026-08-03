@@ -247,6 +247,104 @@ Up to 5 heroes. Waves resolve in order; **HP carries forward between waves**. A 
 `hero_power = ATK + DEF + HP/10 + SPD`, summed across the team. Used for UI warnings and
 quick-resolve scaling only. **Never a hard gate** — let players throw units away if they want.
 
+### Team size scaling
+
+`recommended_power` is authored against the 5-hero reference team in Heroes. Nothing said what a
+smaller team should face, and `P2-03b` ships with exactly one hero — the only team size that
+exists until squad select (`P2-03c`) lands — so the gap stayed silent until it made every
+expedition unwinnable: a wave's win check is `team_power * randf() > enemy_power`, and a
+one-hero team's power is roughly a fifth of the reference team's while `enemy_power` was still
+computed off the full-team `recommended_power`, so most waves demanded `randf()` to exceed values
+above `1.0` — arithmetically impossible, not unlucky.
+
+```
+effective_enemy_power = wave.enemy_power * (team.size() / 5.0)
+```
+
+Applied wherever a `resolve()` implementation compares `wave.enemy_power` against `team_power` —
+not inside `Wave` itself, which has no team parameter and isn't getting one (`P2-03a`'s ramp
+construction is out of scope for this fix, and the ADR still requires the ramp interpolation to
+live in exactly one place). Both combat paths apply the same team-size factor to the same `Wave`
+they already receive, so they stay in agreement without `Wave` needing to know about teams.
+
+At `team.size() == 5` this is a no-op (`5/5 = 1.0`) — a full squad's difficulty is unchanged from
+today's authored figures. The rule only changes anything for team sizes other than 5, which today
+means exactly one case: solo.
+
+**Why linear, not sub-linear.** `hero_power` is already a flat sum across the team with no
+formation or synergy bonus (`heroes/hero.gd:54-67`, `compute_team_power`) — difficulty scaling by
+anything other than the same linear rule would make the two silently disagree. Linear scaling
+also makes per-wave win probability identical at any team size for same-rank/level heroes
+(verified below). A full squad still ends up meaningfully stronger in practice, through a route
+this rule doesn't need to invent: clearing a zone with 5 heroes takes one successful expedition;
+clearing the same headcount solo takes five independent expeditions — five independent
+death-exposure rolls instead of one, since a hero at 0 HP is permanently deleted. That's the
+incentive to field a squad. A difficulty curve that *also* punishes small teams would double that
+incentive and risks re-breaking solo at low ranks, which is the one team size that ships today.
+
+**Rejected: fixed bar regardless of team size.** Today's behavior, and the bug this rule exists
+to fix — arithmetically impossible for solo at every zone (verified: Codex thread
+`019fc92f-cad5-7b91-91df-7852d0794eef`).
+
+**Rejected: sub-linear scaling**, i.e. a small team facing more than its literal headcount share
+of difficulty. Nothing in the `hero_power` model justifies it — there's no synergy term a small
+team is failing to benefit from — and it stacks on top of the run-count penalty above, which is
+already enough incentive on its own. Stacking both risks making solo unwinnable again at exactly
+the rank band (F, low levels) where it's the only option that exists.
+
+**Rejected: leave `enemy_power` fixed and instead change post-win damage distribution per team
+size.** Doesn't touch the win/loss check itself, so solo stays arithmetically impossible at the
+coin flip regardless of what happens to survivors afterward.
+
+> ⚠️ **PROVISIONAL** — linear team-size scaling is arithmetically verified to restore per-wave
+> win probability parity between solo and full-squad play (Codex thread
+> `019fc92f-cad5-7b91-91df-7852d0794eef`), but whether that parity *feels* right once `P2-03c`
+> ships real squad select — whether solo ever feels like a legitimate choice rather than a
+> stopgap — is unplayed. · **Settled by:** `P2-03c` shipping squad select, then a played build
+> comparing solo and squad runs at the same rank.
+
+### Combat's level baseline — found verifying the fix above, not requested
+
+Team-size scaling alone does not make any zone winnable. `recommended_power`'s own calibration
+(Heroes' checkpoint table: `hero_power` at F/level 10, B/level 40, S/level 60 — each rank's level
+cap) assumes a hero computed **at its rank's level cap**. `combat/quick_resolve.gd`'s
+`BASELINE_LEVEL = 0` computes every hero at level 0 instead, because no leveling/XP system exists
+yet (`P2-04a`) and nothing in this document ever said what level to use in its absence.
+
+Verified (Codex thread `019fc92f-cad5-7b91-91df-7852d0794eef`): at level 0, even a full,
+same-rank 5-hero reference team fails **every** wave of Ashfall Reaches and Sundered Vault
+outright, and fails Verdant Outskirts' last trash wave and boss — independent of team size, and
+independent of the fix above. This is the dominant cause of "unwinnable at every rank," not team
+size. Team-size scaling is necessary but was never going to be sufficient by itself.
+
+**Rule, until `P2-04a` ships real leveling:** compute combat stats — quick-resolve and, later,
+the arena — at the hero's rank's level cap (the Ranks table's `Level cap` row: F=10, D=20, C=30,
+B=40, A=50, S=60, SS=70, SSS=80), not level 0. This is exactly the level the checkpoint table
+already assumes, so it costs no rebalance — it makes the implementation match what
+`recommended_power` was already calibrated against, rather than inventing new numbers.
+
+With both fixes applied (verified, same thread): solo and full-squad win probability become
+identical at every wave, and every trash wave becomes winnable at each zone's calibration rank
+for every archetype except Cleric on the Verdant boss (`198` enemy power vs `187` team power — one
+archetype, one zone's boss, short by 6%). Ashfall's boss and Sundered's last two trash waves plus
+its boss remain arithmetically impossible even for a full, same-rank, *ungeared* squad at the
+calibration level — consistent with the recommended-power PROVISIONAL marker below ("real teams
+carry gear on top"): bosses in this design are not meant to be beatable by an ungeared reference
+team at any size, gear is the intended headroom, not more heroes. That sharpens rather than
+resolves that marker — still untested against a played, geared build.
+
+**This is a code change** (`combat/quick_resolve.gd`'s `BASELINE_LEVEL` constant, and whatever
+the arena does once `P2b-01` exists), not a doc-only fix — route to `tech-lead`/`implementer`.
+Until it lands, the team-size rule above is only a partial fix: it stops solo from being uniquely
+broken relative to a full squad, but neither is winnable at level 0.
+
+> ⚠️ **PROVISIONAL** — the rank-cap-level baseline is arithmetically verified to match the
+> checkpoint table it's derived from and to restore winnability at the calibration rank for both
+> team sizes (Codex thread `019fc92f-cad5-7b91-91df-7852d0794eef`), but it's a placeholder for
+> real leveling, not real leveling — nobody has played against it, and `P2-04a`'s actual XP curve
+> will replace it outright rather than tune it. · **Settled by:** `P2-04a` shipping the XP curve
+> (which retires this rule entirely, not just adjusts it), then a played build.
+
 ### The three zones
 
 Three zones carry the entire F→SSS span, so each one covers a wide rank band rather than a
@@ -270,7 +368,13 @@ asked for.
 > ⚠️ **PROVISIONAL** — the recommended power figures (900 / 4,800 / 11,500) are derived from the
 > ungeared reference team in Heroes, not from any fought wave. Whether "recommended" actually
 > predicts a fair fight once `quick_resolve`'s statistical comparison and real gear are both in
-> play is untested. · **Settled by:** both combat paths existing and a played build against them.
+> play is untested. Sharpened by the Team size scaling arithmetic above: it is not just untested,
+> it is arithmetically impossible for an ungeared reference team of any size to beat Ashfall's
+> boss (`1.2×RP`) or Sundered's last two trash waves and boss (`1.0167×`/`1.1×`/`1.3×RP`) at their
+> calibration rank — the team-power deficit is 20%+ in places. That may be intentional
+> boss-needs-gear headroom rather than a bug, but nobody has fought it with real gear to confirm.
+> · **Settled by:** both combat paths existing and a played build against them, with real gear
+> equipped.
 
 ### Retreat threshold
 
