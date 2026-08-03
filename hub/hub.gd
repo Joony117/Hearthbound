@@ -1,6 +1,7 @@
 extends Node3D
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
+const EXPEDITION_ZONE: ZoneDefinition = preload("res://zones/defs/verdant_outskirts.tres")
 
 @onready var _roster_list: ItemList = %RosterList
 @onready var _status: Label = %Status
@@ -27,6 +28,7 @@ func _refresh_roster() -> void:
 	for hero: Hero in GameSession.roster:
 		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
 		_roster_list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
+		_roster_list.set_item_metadata(_roster_list.item_count - 1, hero)
 
 	if previous >= 0 and previous < _roster_list.item_count:
 		_roster_list.select(previous)
@@ -44,9 +46,14 @@ func _on_expedition_pressed() -> void:
 		_status.text = "Select a hero first."
 		return
 
-	var hero: Hero = GameSession.roster[selected[0]]
-	if Expedition.survives():
-		_status.text = "%s came back." % hero.hero_name
-	else:
-		_status.text = "%s did not come back. Gone for good." % hero.hero_name
-		GameSession.kill_hero(hero)
+	var hero := _roster_list.get_item_metadata(selected[0]) as Hero
+	assert(hero != null)
+	var team: Array[Hero] = [hero]
+	var outcome := Expedition.new().resolve(team, EXPEDITION_ZONE)
+	match outcome:
+		Expedition.OUTCOME_COMPLETED:
+			_status.text = "%s cleared Verdant Outskirts." % hero.hero_name
+		Expedition.OUTCOME_RETREATED:
+			_status.text = "%s retreated from Verdant Outskirts." % hero.hero_name
+		Expedition.OUTCOME_DEFEATED:
+			_status.text = "%s did not come back. Gone for good." % hero.hero_name

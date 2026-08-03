@@ -1,0 +1,50 @@
+class_name QuickResolve
+extends RefCounted
+## Stateless statistical combat behind the ADR-fixed combat seam.
+## Per ARCHITECTURE.md rule 7, this file knows nothing about expeditions or rosters.
+
+const BALANCE: BalanceTable = preload("res://balance.tres")
+const BASELINE_LEVEL: int = 0
+
+
+static func resolve(team: Array[Hero], wave: Wave) -> CombatResult:
+	assert(not team.is_empty())
+	assert(wave != null)
+	assert(wave.enemy_power >= 0.0)
+
+	var definitions: Array[HeroDefinition] = []
+	var levels: Array[int] = []
+	var result := CombatResult.new()
+	for hero: Hero in team:
+		var definition := _definition_for(hero)
+		assert(definition != null)
+		definitions.append(definition)
+		levels.append(BASELINE_LEVEL)
+		var stats := Hero.compute_final_stats(hero, definition, BALANCE, BASELINE_LEVEL)
+		result.maximum_hp[hero] = stats[Hero.STAT_HP]
+
+	var team_power := Hero.compute_team_power(team, definitions, levels, BALANCE)
+	assert(team_power > 0.0)
+	var won := wave.enemy_power <= 0.0 or team_power * randf() > wave.enemy_power
+	result.loot_seed = randi()
+
+	if not won:
+		for hero: Hero in team:
+			result.hp_after[hero] = 0.0
+			result.dead_heroes.append(hero)
+		return result
+
+	var damage_fraction := wave.enemy_power / team_power
+	for hero: Hero in team:
+		var hp_after := result.maximum_hp[hero] * (1.0 - damage_fraction)
+		result.hp_after[hero] = hp_after
+		result.survivors.append(hero)
+	return result
+
+
+static func _definition_for(hero: Hero) -> HeroDefinition:
+	var path := "res://heroes/defs/%s.tres" % hero.def_id
+	var definition := load(path) as HeroDefinition
+	if definition == null:
+		push_error("Hero definition did not load as HeroDefinition: %s" % path)
+	return definition

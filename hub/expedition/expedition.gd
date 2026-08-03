@@ -1,11 +1,63 @@
 class_name Expedition
 extends RefCounted
-## ponytail: Phase 1 placeholder. A coin flip - no combat, no stats, no waves, no team.
-## Its only job is proving the permadeath path runs end to end. Replaced by P2-03
-## (quick_resolve.gd behind the CombatResult seam).
+## One expedition run's wave index and transient HP, per the No CombatState ADR.
 
-const SURVIVAL_CHANCE := 0.5
+const RETREAT_THRESHOLD: float = 0.25
+const OUTCOME_COMPLETED: StringName = &"completed"
+const OUTCOME_RETREATED: StringName = &"retreated"
+const OUTCOME_DEFEATED: StringName = &"defeated"
+
+var wave_index: int = -1
+var waves_resolved: int = 0
+var current_hp: Dictionary[Hero, float] = {}
+var maximum_hp: Dictionary[Hero, float] = {}
 
 
-static func survives() -> bool:
-	return randf() < SURVIVAL_CHANCE
+func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
+	assert(team.size() == 1)
+	assert(zone != null)
+	assert(zone.trash_wave_count > 0)
+
+	wave_index = -1
+	waves_resolved = 0
+	current_hp.clear()
+	maximum_hp.clear()
+
+	# The boss index is trash_wave_count, so this bound remains safe in release builds.
+	for next_wave_index: int in range(zone.trash_wave_count + 1):
+		wave_index = next_wave_index
+		var wave := Wave.from_zone(zone, next_wave_index)
+		var result := QuickResolve.resolve(team, wave)
+		waves_resolved += 1
+		var dead_heroes: Array[Hero] = []
+
+		for hero: Hero in team:
+			var fresh_maximum := result.maximum_hp[hero]
+			var damage_taken := fresh_maximum - result.hp_after[hero]
+			if not maximum_hp.has(hero):
+				maximum_hp[hero] = fresh_maximum
+				current_hp[hero] = fresh_maximum
+			current_hp[hero] = maxf(current_hp[hero] - damage_taken, 0.0)
+			if current_hp[hero] <= 0.0:
+				dead_heroes.append(hero)
+
+		if not dead_heroes.is_empty():
+			for hero: Hero in dead_heroes:
+				# The expedition resolver is the sole permadeath writer (architecture rule 8).
+				GameSession.kill_hero(hero)
+			return OUTCOME_DEFEATED
+
+		if next_wave_index < zone.trash_wave_count and _party_hp_fraction(team) <= RETREAT_THRESHOLD:
+			return OUTCOME_RETREATED
+
+	return OUTCOME_COMPLETED
+
+
+func _party_hp_fraction(team: Array[Hero]) -> float:
+	var total_current := 0.0
+	var total_maximum := 0.0
+	for hero: Hero in team:
+		total_current += current_hp[hero]
+		total_maximum += maximum_hp[hero]
+	assert(total_maximum > 0.0)
+	return total_current / total_maximum
