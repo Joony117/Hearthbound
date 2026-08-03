@@ -5,6 +5,12 @@ extends RefCounted
 ## Runtime state points at shared HeroDefinition data by def_id per ARCHITECTURE.md rule 3.
 
 const NO_ARCHETYPE_DEF_ID: StringName = &""
+const STAT_HP: StringName = &"hp"
+const STAT_ATK: StringName = &"atk"
+const STAT_DEF: StringName = &"def"
+const STAT_SPD: StringName = &"spd"
+const STAT_CRIT_RATE: StringName = &"crit_rate"
+const STAT_CRIT_DMG: StringName = &"crit_dmg"
 
 var hero_name: String
 var rank: int
@@ -18,6 +24,47 @@ func _init(p_name: String = "", p_rank: int = 0) -> void:
 
 func rank_label(balance: BalanceTable) -> String:
 	return balance.rank_names[clampi(rank, 0, balance.rank_names.size() - 1)]
+
+
+static func compute_final_stats(
+	hero: Hero,
+	definition: HeroDefinition,
+	balance: BalanceTable,
+	level: int,
+) -> Dictionary[StringName, float]:
+	assert(hero != null)
+	assert(definition != null)
+	assert(balance != null)
+	assert(level >= 0)
+	assert(not balance.stat_multipliers.is_empty())
+
+	var multiplier := balance.stat_multipliers[
+		clampi(hero.rank, 0, balance.stat_multipliers.size() - 1)
+	]
+	return {
+		STAT_HP: (definition.base_hp + definition.hp_growth * level) * multiplier,
+		STAT_ATK: (definition.base_atk + definition.atk_growth * level) * multiplier,
+		STAT_DEF: (definition.base_def + definition.def_growth * level) * multiplier,
+		STAT_SPD: (definition.base_spd + definition.spd_growth * level) * multiplier,
+		STAT_CRIT_RATE: definition.crit_rate,
+		STAT_CRIT_DMG: definition.crit_dmg,
+	}
+
+
+static func compute_team_power(
+	team: Array[Hero],
+	definitions: Array[HeroDefinition],
+	levels: Array[int],
+	balance: BalanceTable,
+) -> float:
+	assert(team.size() == definitions.size())
+	assert(team.size() == levels.size())
+
+	var total := 0.0
+	for index in team.size():
+		var stats := compute_final_stats(team[index], definitions[index], balance, levels[index])
+		total += stats[STAT_ATK] + stats[STAT_DEF] + stats[STAT_HP] / 10.0 + stats[STAT_SPD]
+	return total
 
 
 func to_dict() -> Dictionary:
