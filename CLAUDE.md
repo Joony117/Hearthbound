@@ -3,7 +3,8 @@
 A Godot 4.7.1 GDScript game. `docs/` is the spec set and it is authoritative:
 `GAME_SPEC.md` (what the game is) · `ARCHITECTURE.md` (the nine boundary rules) ·
 `CODING_RULES.md` (how GDScript is written here) · `SYSTEMS.md` (the numbers) ·
-`DECISIONS.md` (ADRs) · `TASKS.md` (tickets, and the delegation payload) ·
+`DECISIONS.md` (ADRs) · `TASKS.md` (the live backlog, and the delegation payload) ·
+`TASKS-DONE.md` (shipped ticket bodies, moved there on `[DONE]`) ·
 `KNOWN_ISSUES.md` (deliberate shortcuts).
 
 **Inheritance.** The global routing rules in `~/.claude/CLAUDE.md` apply here unchanged —
@@ -94,7 +95,7 @@ Nothing edits a document it does not own.
 
 | Change | Route to | Owns |
 |---|---|---|
-| Vague ask → ticket | `tech-lead` | `docs/TASKS.md` |
+| Vague ask → ticket | `tech-lead` | `docs/TASKS.md` (not `TASKS-DONE.md` — the director moves bodies there on `[DONE]`) |
 | Game numbers, feel, scope | `game-designer` | `docs/SYSTEMS.md`, `GAME_SPEC.md`, `KNOWN_ISSUES.md` **except** its `## Environment` section |
 | Boundary moves, autoload count, ADRs | `godot-architect` | `docs/ARCHITECTURE.md`, `DECISIONS.md` |
 | Code | global `implementer` → Codex | `*.gd`, `*.tscn`, `project.godot` |
