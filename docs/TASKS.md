@@ -911,6 +911,12 @@ produce a real loss, retreat, or permanent death.
 - `combat/quick_resolve.gd` and `combat/combat_result.gd` implement the stated seam and
   `CombatResult` contract: survivors, HP after, dead heroes, and loot seed. `combat/` accepts
   explicit inputs and never reaches into `hub/`, `GameSession`, or an autoload for combat state.
+- Grep-checkable: `combat/` constructs no `Wave` of its own. `trash_wave_count`,
+  `trash_wave_start_fraction`, `trash_wave_end_fraction`, and `boss_fraction` appear nowhere under
+  `combat/`, and every `Wave` reaching a `resolve()` came from `Wave.from_zone()`. P2-03a left the
+  ADR's single-interpolation-site rule enforced only by its own file scope — `combat/` did not
+  exist, so the ramp had nowhere else to go. **That stops binding the moment this ticket creates
+  the directory**, and this criterion is what replaces it.
 - The expedition flow replaces the Phase-1 coin flip with ordered quick-resolve waves built by
   P2-03a. The existing single selected hero is passed as a one-hero `team: Array[Hero]`, and the
   flow loads `zones/defs/verdant_outskirts.tres` as its hardcoded zone. Each wave compares team
