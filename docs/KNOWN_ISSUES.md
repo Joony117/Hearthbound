@@ -129,3 +129,46 @@ does, ahead of the `--headless --import` warmup pass). With the daemon down, the
 exactly as before the guard was added — exit 0, zero script errors and warnings, `.godot/` rebuilds
 normally. Stopping the daemon afterward frees the port immediately and a subsequent gate run is
 green again, so an aborted run leaves no residue for the next one to trip over.
+
+### The port-6005 guard misses a stray non-LSP headless process; closed via `ExecutablePath` match
+The port check only catches the LSP daemon (`--editor`, serves 6005). A plain
+`--headless -s <script>` run left alive by something that launched it and never reaped it (e.g. a
+subagent's background job) does not serve any port and slips past that check entirely — observed
+directly: two such processes (the `_console` wrapper plus its spawned child) outlived a subagent
+session with 6005 confirmed free the whole time. A command-line project-path match would have
+missed this exact case too: the leaked process had no `--path` argument at all, only `-s
+<temp-script-path>` from a cwd of `E:\Game` — the project association was never in the command
+line to match against.
+
+Fixed by matching on `ExecutablePath` instead: `tools/godot/` is gitignored and unique per
+checkout, so any process (either binary name) running from that exact folder is this repo's
+engine, regardless of arguments. `import_gate.ps1` now runs a
+`Get-CimInstance Win32_Process -Filter "Name LIKE 'Godot%'"` scan (after the port check, before
+spawning its own two invocations) and aborts naming the PID, binary, and command line if any match
+resolves under `tools/godot/`. Confirmed no false positive: a Godot process running a *different*
+binary copy from a different folder (same script, same `-s` arg, no `--path`) does not match and
+the gate still exits 0. Measured cost: ~20-30ms added per gate run (filtered `Get-CimInstance`
+~32ms vs. plain `Get-Process` ~10ms, 5-run average on this machine) against a run that takes
+several seconds for engine startup — negligible.
+
+Root cause stays open: this is a net that catches the symptom on this gate's own runs, not a fix
+for the underlying leak (a subagent not reaping a background process it launched, or not waiting
+for it to exit before returning). That convention belongs in `AGENTS.md`/agent files, not here.
+
+### Engine state can change between the director's check and the subagent's first command
+Observed directly, not simulated: at the start of a `godot-tester` dispatch that was told "the LSP
+daemon is currently down and port 6005 is free," it was not — both engine processes (`--editor
+--path E:/Game`) were already running, started ~3.5 minutes earlier, with an established
+connection from a `serena-agent` client process.
+
+This was **not** a leaked leftover, which is what it looked like from inside the dispatch. The
+director had verified no Godot process and a free port immediately before dispatching; the daemon
+was started deliberately in the gap between that check and the agent's first command. The lesson
+is about staleness, not leakage: a "daemon is down" statement in a prompt describes the moment it
+was written, and a dispatch that runs the engine should re-verify rather than trust it.
+`Get-Process Godot* | Stop-Process -Force` (the documented convention) cleared
+it and freed the port immediately; the port-6005 guard would have caught a gate run against it
+regardless, but only because that daemon happens to serve a port — the same silent-leftover
+failure mode with a non-LSP headless process is the case above. Anyone dispatching a
+Godot-touching subagent should verify port 6005 and process list directly rather than trusting a
+"daemon is down" assumption carried over from an earlier turn.
