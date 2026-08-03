@@ -61,7 +61,7 @@ static func compute_team_power(
 	assert(team.size() == levels.size())
 
 	var total := 0.0
-	for index in team.size():
+	for index: int in team.size():
 		var stats := compute_final_stats(team[index], definitions[index], balance, levels[index])
 		total += stats[STAT_ATK] + stats[STAT_DEF] + stats[STAT_HP] / 10.0 + stats[STAT_SPD]
 	return total
