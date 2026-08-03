@@ -221,6 +221,7 @@ produces real win/loss/retreat outcomes and permadeath instead of a coin flip. S
 | P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Expanded below. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocks P2-03b. Start here. |
 | P2-03b | `combat/quick_resolve.gd` + `CombatResult` — real waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. Expanded below. GUT 9.7.1 is already installed (`addons/gut/`) — this is the first ticket to add real coverage under `tests/unit/`, not a framework install; the original backlog line's "Add GUT here" is stale. |
 | P2-03c | Expedition setup UI — multi-hero squad select + zone select | `P2-03b` deliberately hardcodes a **one-hero team and Verdant Outskirts**, because `hub.gd`'s roster list is single-select and no zone-selection UI exists. `SYSTEMS.md` specifies up to five heroes per expedition across three authored zones, so that narrowing leaves two-thirds of the designed expedition setup unbuilt. Recorded here so it stays visible: `P2-03b`'s Non-goals name this as a follow-up ticket, and a follow-up nobody wrote down is how a temporary hardcode becomes permanent. |
+| P2-03d | Per-wave damage model — a zone must be clearable | **`game-designer` first.** `SYSTEMS.md` specifies that quick-resolve "compares statistically" and nothing more; the damage rule (`damage = max_hp * enemy_power / team_power`) is an implementing worker's invention. It charges each wave a fraction of **max** HP regardless of current HP, so Verdant's five trash waves cost **2.97× a hero's max HP** in total — every solo archetype at calibration rank retreats after wave 2 of 5, and Cleric dies there. Win, loss, retreat, and death are each individually reachable; **a zone clear is not, at any rank**. Blocks the Phase 2 exit question below, since there is no success path to feel. |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
@@ -893,7 +894,37 @@ fourth autoload.
 
 ---
 
-## P2-03b — Statistical expedition resolution + permadeath          [TODO]
+## P2-03b — Statistical expedition resolution + permadeath          [DONE]
+
+Landed in `35cdc5e`; two follow-up fixes in `f98fe04` and `be34b11`, both after adversarial
+`verifier` passes. The acceptance criteria are met and independently re-verified — but read the
+ceiling below before building on this.
+
+**A wrongful permadeath was reachable in a shipped build** (`f98fe04`). An empty `def_id` is
+supported data, not corruption, and real Phase-1 saves carry it. Sending such a hero on an
+expedition resolved its definition to `null`; the guarding `assert` is stripped in release, and
+Godot 4.7.1's null property read returns a recovery Variant that the VM does not validity-check
+without `DEBUG_ENABLED` — so it propagated through the arithmetic into HP 0, which the death check
+read as a real death and passed to `kill_hero()`. Guarded now by a preflight in
+`Expedition.resolve`, placed there rather than in `hub/hub.gd` because the GUT tests call it
+directly and a UI-only guard would have left that path open.
+
+**The loop was unwinnable at every rank** (`be34b11`). Two independent mismatches, neither
+sufficient alone: `recommended_power` is authored for a five-hero team while this ticket sends
+one, and it is calibrated against heroes at their rank's **level cap** while combat hardcoded
+level 0. Rules in `SYSTEMS.md` (`7d1ca27`); F-rank Knight's first wave went from arithmetically
+impossible to 57.5%.
+
+**Ceiling — `P2-03d` owns it.** Win, loss, retreat, and death are each reachable, and that is what
+this ticket promised. **A zone clear is not.** Damage is charged as a fraction of *max* HP per
+wave, so Verdant's five trash waves total 2.97× a hero's max HP: every solo archetype retreats
+after wave 2 of 5 at calibration rank, and Cleric dies there. The boss is unreachable, so zone
+progression is unreachable. That formula is a worker's invention — `SYSTEMS.md` never specified
+one — which is why it routes to `game-designer` rather than being patched here.
+
+Also known: `Hero.compute_final_stats`'s null-definition guard is unreachable dead code — mutating
+it leaves the suite green, because every production caller filters before it. Harmless, but it is
+not the defense-in-depth layer its artifact claimed.
 
 ### Objective
 Pressing Expedition resolves real ordered waves instead of `Expedition.survives()`'s coin flip:
