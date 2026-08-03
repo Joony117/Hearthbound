@@ -40,6 +40,7 @@ while you are in there.
 - Hand-edit a `.gd.uid`. Godot owns those; let it regenerate them.
 - Reach into a `.tscn` to rename a node or a signal handler without saying so under `DECISIONS` —
   that seam resolves at runtime and nothing will catch the break.
+- Leave a Godot process alive when you return. See below.
 
 ## Evidence
 
@@ -58,6 +59,23 @@ The plain `Godot_v4.7.1-stable_win64.exe` detaches and swallows stdout, so a run
 nothing regardless of what it printed. Always `_console`.
 
 Zero warnings, not just zero errors.
+
+**Reap every engine process you start.** Only one Godot process may run against this project at a
+time — `.godot/` is rebuilt by the gate and that rebuild is not concurrency-safe. Prefer runs that
+exit on their own; if you background one, kill it before you return:
+
+```
+Get-Process Godot* | Stop-Process -Force
+```
+
+Check it, do not assume it. A `--headless -s <script>` run that hangs looks exactly like one that
+finished — this has already happened, twice, and the leftovers outlived the agent that started
+them. The `_console` wrapper spawns a differently-named child, so kill by name rather than by the
+pid you launched.
+
+A leaked process is not your problem to discover; it is the next person's red gate. The gate
+aborts when it finds one running from `tools/godot/`, which converts your leak into someone
+else's blocked run.
 
 ## STATUS
 

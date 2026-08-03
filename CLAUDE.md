@@ -208,6 +208,23 @@ the engine gets invoked, not by whether the file lists collide.
 Practically: when a dispatch will run BUILT, the export, or any `--headless` invocation, it gets
 the engine to itself until it returns. Two Godot-touching agents in one message is a bug.
 
+### Reap what you start
+
+"Until it returns" only holds if the process actually ends when the agent does. Anything that
+starts a Godot process kills it before returning, and **checks rather than assumes** —
+`Get-Process Godot*` must come back empty. A hung `--headless -s <script>` run is
+indistinguishable from a finished one at the call site, which is exactly how this has leaked
+twice: once as two processes that outlived a subagent by hours, once as a daemon nobody
+remembered starting. Kill by name, since the `_console` wrapper spawns a differently-named child.
+
+The cost of a leak lands on someone else. The gate aborts on any process running from
+`tools/godot/`, so a leaked process turns into the next agent's red gate with no obvious cause —
+and before that check existed, it was a silent `.godot/` race instead. This binds subagents and
+the director equally; the same rule is in `AGENTS.md` for Codex workers.
+
+Engine state is also **not stable across turns**. A "daemon is down" claim in a dispatch prompt
+describes when it was written, not when the agent reads it. Re-verify at the point of use.
+
 ### Serena's LSP daemon is a fourth engine consumer
 
 Serena's GDScript backend is an LSP **client**, not a server. It attaches to a running Godot
