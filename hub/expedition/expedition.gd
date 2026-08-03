@@ -6,6 +6,7 @@ const RETREAT_THRESHOLD: float = 0.25
 const OUTCOME_COMPLETED: StringName = &"completed"
 const OUTCOME_RETREATED: StringName = &"retreated"
 const OUTCOME_DEFEATED: StringName = &"defeated"
+const OUTCOME_INVALID_TEAM: StringName = &"invalid_team"
 
 var wave_index: int = -1
 var waves_resolved: int = 0
@@ -22,6 +23,9 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 	waves_resolved = 0
 	current_hp.clear()
 	maximum_hp.clear()
+	for hero: Hero in team:
+		if Hero.definition_for(hero.def_id) == null:
+			return OUTCOME_INVALID_TEAM
 
 	# The boss index is trash_wave_count, so this bound remains safe in release builds.
 	for next_wave_index: int in range(zone.trash_wave_count + 1):

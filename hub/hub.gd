@@ -57,3 +57,8 @@ func _on_expedition_pressed() -> void:
 			_status.text = "%s retreated from Verdant Outskirts." % hero.hero_name
 		Expedition.OUTCOME_DEFEATED:
 			_status.text = "%s did not come back. Gone for good." % hero.hero_name
+		Expedition.OUTCOME_INVALID_TEAM:
+			_status.text = "%s cannot start: %s. Select another hero." % [
+				hero.hero_name,
+				Summon.archetype_label_for(hero.def_id),
+			]

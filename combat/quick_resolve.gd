@@ -16,8 +16,9 @@ static func resolve(team: Array[Hero], wave: Wave) -> CombatResult:
 	var levels: Array[int] = []
 	var result := CombatResult.new()
 	for hero: Hero in team:
-		var definition := _definition_for(hero)
-		assert(definition != null)
+		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
+		if definition == null:
+			return result
 		definitions.append(definition)
 		levels.append(BASELINE_LEVEL)
 		var stats := Hero.compute_final_stats(hero, definition, BALANCE, BASELINE_LEVEL)
@@ -40,11 +41,3 @@ static func resolve(team: Array[Hero], wave: Wave) -> CombatResult:
 		result.hp_after[hero] = hp_after
 		result.survivors.append(hero)
 	return result
-
-
-static func _definition_for(hero: Hero) -> HeroDefinition:
-	var path := "res://heroes/defs/%s.tres" % hero.def_id
-	var definition := load(path) as HeroDefinition
-	if definition == null:
-		push_error("Hero definition did not load as HeroDefinition: %s" % path)
-	return definition

@@ -11,6 +11,7 @@ const STAT_DEF: StringName = &"def"
 const STAT_SPD: StringName = &"spd"
 const STAT_CRIT_RATE: StringName = &"crit_rate"
 const STAT_CRIT_DMG: StringName = &"crit_dmg"
+const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 
 var hero_name: String
 var rank: int
@@ -26,6 +27,17 @@ func rank_label(balance: BalanceTable) -> String:
 	return balance.rank_names[clampi(rank, 0, balance.rank_names.size() - 1)]
 
 
+static func definition_for(p_def_id: StringName) -> HeroDefinition:
+	var path: String = DEF_PATH_TEMPLATE % str(p_def_id)
+	if not ResourceLoader.exists(path):
+		push_error("Missing HeroDefinition for def_id '%s' at %s." % [p_def_id, path])
+		return null
+	var definition: HeroDefinition = ResourceLoader.load(path) as HeroDefinition
+	if definition == null:
+		push_error("Resource for def_id '%s' is not a HeroDefinition: %s." % [p_def_id, path])
+	return definition
+
+
 static func compute_final_stats(
 	hero: Hero,
 	definition: HeroDefinition,
@@ -33,10 +45,12 @@ static func compute_final_stats(
 	level: int,
 ) -> Dictionary[StringName, float]:
 	assert(hero != null)
-	assert(definition != null)
 	assert(balance != null)
 	assert(level >= 0)
 	assert(not balance.stat_multipliers.is_empty())
+	if definition == null:
+		push_error("Cannot compute final stats for hero '%s' without a HeroDefinition." % hero.hero_name)
+		return {}
 
 	var multiplier := balance.stat_multipliers[
 		clampi(hero.rank, 0, balance.stat_multipliers.size() - 1)

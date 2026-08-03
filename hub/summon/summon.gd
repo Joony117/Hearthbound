@@ -2,7 +2,6 @@ class_name Summon
 extends RefCounted
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
-const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 const ARCHETYPE_DEF_IDS: PackedStringArray = ["knight", "rogue", "ranger", "mage", "cleric"]
 const NAMES: PackedStringArray = [
 	"Aldric", "Brenna", "Cassius", "Dara", "Edric", "Fenna", "Gorath", "Hilde",
@@ -49,11 +48,7 @@ static func rank_for_ticket(ticket: int, weights: Array[int], expected_total: in
 
 
 static func definition_for(def_id: StringName) -> HeroDefinition:
-	var path: String = DEF_PATH_TEMPLATE % str(def_id)
-	var definition: HeroDefinition = load(path) as HeroDefinition
-	if definition == null:
-		push_error("Missing HeroDefinition for def_id '%s' at %s." % [def_id, path])
-	return definition
+	return Hero.definition_for(def_id)
 
 
 static func archetype_label_for(def_id: StringName) -> String:

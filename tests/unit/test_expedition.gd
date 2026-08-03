@@ -43,6 +43,23 @@ func test_overwhelming_wave_kills_once_and_shrinks_roster_once() -> void:
 	assert_eq(expedition.waves_resolved, 1)
 
 
+func test_hero_without_archetype_is_refused_without_permadeath() -> void:
+	var hero := Hero.new("Legacy Hero", 0)
+	hero.def_id = Hero.NO_ARCHETYPE_DEF_ID
+	GameSession.add_hero(hero)
+	var before_size: int = GameSession.roster.size()
+	var expedition := Expedition.new()
+	var team: Array[Hero] = [hero]
+
+	var outcome := expedition.resolve(team, _make_zone(1_000_000, 1.0, 1))
+
+	assert_push_error("Missing HeroDefinition for def_id")
+	assert_eq(outcome, Expedition.OUTCOME_INVALID_TEAM)
+	assert_eq(expedition.waves_resolved, 0)
+	assert_eq(GameSession.roster.size(), before_size)
+	assert_true(GameSession.roster.has(hero))
+
+
 func test_retreat_at_twenty_five_percent_stops_before_later_waves() -> void:
 	var hero := _add_knight()
 	var expedition := Expedition.new()
