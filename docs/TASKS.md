@@ -201,15 +201,26 @@ equipment, zone) plus a shared tunables container behind one line. That is a sub
 one behavior, and the tunables container's shape is still an open `godot-architect` call. Split
 into a numbered sequence; `P2-01a` is expanded below and is where to start.
 
+**P2-03 split.** The original backlog line bundled a not-yet-existing `Wave` type, its
+ramp-interpolation rule, a computed hero-stat formula, a new `combat/` directory with two new
+files, and the expedition/permadeath wiring behind one line — a type, a formula, a subsystem
+directory, and a combat loop is not one behavior. Split in two: `P2-03a` builds `Wave` and
+computed hero stats and makes no player-facing change by itself, matching the precedent already
+accepted for `P2-01a`/`P2-01b`/`P2-01d`. `P2-03b` is what makes it visible — pressing Expedition
+produces real win/loss/retreat outcomes and permadeath instead of a coin flip. Start with
+`P2-03a`; nothing in `P2-03b` compiles against a real `Wave` or real stats without it.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Expanded below. Start here — unblocks P2-02. |
-| P2-01b | `ZoneDefinition` Resource + 3 zones authored | Expanded below. Unblocks P2-03. |
+| P2-01b | `ZoneDefinition` Resource + 3 zones authored | Expanded below. Unblocks P2-03a. |
 | P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
 | P2-01d | `BalanceTable` Resource + `balance.tres` authored from `SYSTEMS.md` | Expanded below. Container shape is settled (`DECISIONS.md`, one `BalanceTable`). Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. Does **not** move `Hero.RANK_NAMES` — split out below. |
 | P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites; author the Summoning Circle's two-field schema | Expanded below. Unblocked by `godot-architect`'s ruling on reaching shared Resources without a fourth autoload. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
 | P2-02 | Real weighted summon against `BALANCE.summon_weights`; roster displays hero archetype | Replaces P1-02. Expanded below. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). Equip UI moved out — nothing is equippable yet; see `P2-05a`. |
-| P2-03 | `quick_resolve.gd` — waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. **Add GUT here.** |
+| P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Expanded below. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocks P2-03b. Start here. |
+| P2-03b | `combat/quick_resolve.gd` + `CombatResult` — real waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. Expanded below. GUT 9.7.1 is already installed (`addons/gut/`) — this is the first ticket to add real coverage under `tests/unit/`, not a framework install; the original backlog line's "Add GUT here" is stale. |
+| P2-03c | Expedition setup UI — multi-hero squad select + zone select | `P2-03b` deliberately hardcodes a **one-hero team and Verdant Outskirts**, because `hub.gd`'s roster list is single-select and no zone-selection UI exists. `SYSTEMS.md` specifies up to five heroes per expedition across three authored zones, so that narrowing leaves two-thirds of the designed expedition setup unbuilt. Recorded here so it stays visible: `P2-03b`'s Non-goals name this as a follow-up ticket, and a follow-up nobody wrote down is how a temporary hardcode becomes permanent. |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
@@ -782,6 +793,166 @@ and rank-up preserves an existing hero rather than replacing it, so archetype an
 independent by construction. This ticket proceeds on the only data-supported reading (one shared
 pool of all five archetypes, independent of rank); `SYSTEMS.md`'s wording should be corrected to
 match, but that correction is `game-designer`'s call on its own document, not this ticket's.
+
+---
+
+## P2-03a — Wave construction + computed hero stats                 [TODO]
+
+### Objective
+A zone's authored ramp produces runtime `Wave` instances with a single `enemy_power`, and combat
+has one computed-stat path for deriving each hero's final HP/ATK/DEF/SPD and team `hero_power`.
+This ticket makes no player-facing change by itself: `Expedition.survives()` remains the Phase-1
+coin flip until P2-03b consumes these outputs.
+
+### Existing architecture
+- `ZoneDefinition` (`zones/zone_definition.gd:1-11`) is an authored `Resource` containing only
+  `recommended_power`, trash-wave count, ramp endpoints, boss fraction, and descriptive zone
+  fields; it stores neither per-wave data nor `Wave` construction.
+- The combat seam is fixed at `resolve(team: Array[Hero], wave: Wave) -> CombatResult`
+  (`docs/ARCHITECTURE.md:89-106`). `Wave` is specifically `zones/wave.gd`, a runtime
+  `RefCounted`, not a Definition: it derives one wave's composition from a zone ramp and index
+  (`docs/ARCHITECTURE.md:108-117`; `docs/DECISIONS.md:10-59`). The interpolation must live in
+  exactly one place and both combat implementations must receive the same instance.
+- A wave's contents are one `enemy_power` scalar, not named enemies or per-species stat lines
+  (`docs/SYSTEMS.md:263-268`). `hero_power = ATK + DEF + HP/10 + SPD`, summed across the team,
+  is quick-resolve scaling and a UI-warning input only, never a hard gate
+  (`docs/SYSTEMS.md:244-248`).
+- `Hero` is a runtime `RefCounted` with persisted `hero_name`, `rank`, and `def_id` only
+  (`heroes/hero.gd:1-40`); `HeroDefinition` owns base/growth data and flat crit values
+  (`heroes/hero_definition.gd:1-15`), while `BalanceTable.stat_multipliers` owns rank multipliers
+  (`balance_table.gd:1-20`). `Hero.rank_label(balance)` is the precedent for a `Hero` method
+  receiving `BalanceTable` explicitly (`heroes/hero.gd:19-20`; `docs/DECISIONS.md:100-115`).
+- The final-stat formula is `final = (base + growth * level) * rank_mult + equip_flat`, then
+  `final *= 1.0 + equip_pct` (`docs/SYSTEMS.md:44-47`), but rank/growth apply only to
+  HP/ATK/DEF/SPD. `CRIT_RATE` and `CRIT_DMG` remain flat archetype constants, unaffected by rank
+  or level (`docs/SYSTEMS.md:26-31,73-75`).
+- GUT 9.7.1 is already installed under `addons/gut/`; `tests/unit/test_gut_harness.gd:1-7` is
+  only its disposable harness proof. P2-03 is the first ticket to add real GUT coverage
+  (`CLAUDE.md:48-57`).
+
+### Acceptance criteria
+- `zones/wave.gd` defines `class_name Wave extends RefCounted`; it represents one runtime wave
+  with the `enemy_power` derived from `ZoneDefinition.recommended_power` and the stored trash-ramp
+  or boss fraction, never from hand-authored per-wave `.tres` data.
+- The ramp interpolation is implemented in exactly one place. A caller building a wave for a
+  zone/index receives the same `Wave` object that either combat path can pass to its `resolve()`;
+  neither resolver re-derives the ramp from raw `ZoneDefinition` endpoints.
+- One computed-stat path consumes `Hero`, its resolved `HeroDefinition`, and `BalanceTable` to
+  derive final HP/ATK/DEF/SPD and the team `hero_power` formula from
+  `docs/SYSTEMS.md:44-47,247-248`. The level is a plain computation input or an internal
+  baseline, not persisted state.
+- `CRIT_RATE` and `CRIT_DMG` remain the definition's flat constants: GUT coverage proves rank
+  multiplier and growth affect HP/ATK/DEF/SPD correctly while leaving both crit values untouched.
+- GUT coverage under `tests/unit/` proves trash-ramp interpolation at the first, middle, and last
+  trash indices, plus the boss wave; it also proves the computed-stat and CRIT-exemption cases.
+- `Hero.to_dict`/`from_dict` and `GameSession.to_dict`/`from_dict` are byte-identical to their
+  pre-ticket state; no save payload or version changes.
+- Existing tests still pass, including the prior save-roundtrip, authored-data checks, and the GUT
+  harness; `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1` exits clean
+  with zero script errors and zero warnings; the GUT suite command in `CLAUDE.md:53-57` exits green.
+
+### Files allowed to change
+`zones/wave.gd`, `heroes/hero.gd`, `tests/unit/`
+
+### Non-goals
+`combat/quick_resolve.gd`, `combat/combat_result.gd`, expedition UI wiring, HP carry-forward,
+retreat, and permadeath (P2-03b); `combat/arena/` (P2b-01, which does not exist yet — this
+ticket's shape must remain reusable by it without claiming both paths agree today); equipment,
+`EquipmentDefinition`, `equip_flat`, or `equip_pct` (P2-01c/P2-05a, not authored as combat
+inputs); adding persisted `level`, `xp`, equipment slots, current HP, or any other field to
+`Hero` (P2-04a owns the XP curve, and an inert persisted level would create an unjustified save
+boundary); any change to `Hero.to_dict`/`from_dict`, `GameSession.to_dict`/`from_dict`,
+`SaveService`, or the save format; lost-gear caches and recovery expeditions (P2-04); named enemy
+species, per-species stat lines, or a bestiary (`docs/SYSTEMS.md:263-268`); treating provisional
+recommended-power figures as final balance (`docs/SYSTEMS.md:270-273`); a `CombatState` or any
+fourth autoload.
+
+---
+
+## P2-03b — Statistical expedition resolution + permadeath          [TODO]
+
+### Objective
+Pressing Expedition resolves real ordered waves instead of `Expedition.survives()`'s coin flip:
+heroes carry HP through the expedition, retreat at the authored threshold, and a hero reduced to
+0 HP is permanently removed once through `GameSession.kill_hero()`. A bad expedition can now
+produce a real loss, retreat, or permanent death.
+
+### Existing architecture
+- `hub/expedition/expedition.gd:1-11` is explicitly a Phase-1 coin-flip placeholder, documented
+  as replaced by P2-03's `quick_resolve.gd` behind the `CombatResult` seam. `hub/hub.gd:22-52`
+  refreshes and resolves the roster through `get_selected_items()[0]`: its existing Expedition
+  button supports one selected hero only, then calls `Expedition.survives()` and
+  `GameSession.kill_hero()` on loss.
+- No zone-selection UI exists. This ticket wires the existing single-hero button to the authored
+  Verdant Outskirts zone, `zones/defs/verdant_outskirts.tres`, whose unlock condition is
+  "Available from start" (`zones/defs/verdant_outskirts.tres:14`; `docs/SYSTEMS.md:257-261`).
+- `combat/` does not exist yet. The required seam is two plain functions with the same
+  `resolve(team: Array[Hero], wave: Wave) -> CombatResult` signature
+  (`docs/ARCHITECTURE.md:89-103`); `CombatResult` carries survivors, HP after, dead heroes, and a
+  loot seed (`docs/ARCHITECTURE.md:105-106`). Rule 7 prohibits `combat/` from reaching into
+  `hub/` (`docs/ARCHITECTURE.md:29-30`).
+- P2-03a supplies `Wave`: a runtime `RefCounted` containing a pre-resolved `enemy_power`, built
+  once from `ZoneDefinition`'s ramp and handed unchanged to combat
+  (`docs/ARCHITECTURE.md:108-117`). Quick resolve statistically compares that scalar with team
+  `hero_power`, not a bestiary (`docs/SYSTEMS.md:247-248,263-268`).
+- Waves resolve in order and HP carries forward; the default retreat threshold is 25% party HP
+  (`docs/SYSTEMS.md:244-245,275-280`). Wave index and in-progress HP are expedition-run-scoped
+  state on a `RefCounted`/`Node`, not a fourth autoload or `GameSession`
+  (`docs/DECISIONS.md:195-212`).
+- `GameSession.kill_hero(hero)` is the single roster-removal implementation
+  (`systems/game_session.gd:24-28`). Rule 8 requires the expedition resolver to be the one place
+  applying permadeath (`docs/ARCHITECTURE.md:32-35`); direct roster mutation anywhere else is
+  forbidden.
+- `Hero` persistence remains only name/rank/def_id (`heroes/hero.gd:9-40`), serialized by
+  `GameSession.to_dict`/`from_dict` (`systems/game_session.gd:31-43`). Per-run HP must not enter
+  that save path.
+
+### Acceptance criteria
+- `combat/quick_resolve.gd` and `combat/combat_result.gd` implement the stated seam and
+  `CombatResult` contract: survivors, HP after, dead heroes, and loot seed. `combat/` accepts
+  explicit inputs and never reaches into `hub/`, `GameSession`, or an autoload for combat state.
+- The expedition flow replaces the Phase-1 coin flip with ordered quick-resolve waves built by
+  P2-03a. The existing single selected hero is passed as a one-hero `team: Array[Hero]`, and the
+  flow loads `zones/defs/verdant_outskirts.tres` as its hardcoded zone. Each wave compares team
+  `hero_power` and the supplied wave's `enemy_power` statistically; recommended power remains
+  scaling data, never an expedition-entry hard gate.
+- HP after each wave becomes the next wave's starting HP during that one expedition run. The
+  resolver applies the authored 25% party-HP retreat threshold and returns a retreat outcome
+  without continuing later waves.
+- Each hero reaching 0 HP is passed to `GameSession.kill_hero()` exactly once by the expedition
+  resolver; no file mutates `GameSession.roster` directly. The roster shrinks by exactly the
+  number of distinct dead heroes, and the hub displays the resulting win/loss/retreat outcome.
+- GUT coverage under `tests/unit/` proves a guaranteed-win wave sequence; a guaranteed-loss
+  sequence that kills one hero through `GameSession.kill_hero()` and leaves the roster smaller by
+  exactly one; retreat at the 25% threshold; and correct HP carry-forward across two waves in one
+  expedition run.
+- Existing tests still pass, including P2-03a's Wave/stat tests and the prior save-roundtrip and
+  authored-data checks; `powershell -NoProfile -ExecutionPolicy Bypass -File tests/import_gate.ps1`
+  exits clean with zero script errors and zero warnings; the GUT suite command in
+  `CLAUDE.md:53-57` exits green.
+- `Hero.to_dict`/`from_dict` and `GameSession.to_dict`/`from_dict` are byte-identical to their
+  pre-ticket state; expedition HP and wave state disappear when the run ends and neither changes
+  the save payload or version.
+
+### Files allowed to change
+`combat/quick_resolve.gd`, `combat/combat_result.gd`, `hub/expedition/expedition.gd`,
+`hub/hub.gd`, `tests/unit/`
+
+### Non-goals
+A multi-hero squad-select UI (`hub.gd`'s roster list stays single-select); a zone-select UI (the
+zone is hardcoded to Verdant Outskirts; selecting among the three authored zones is a follow-up
+ticket); `combat/arena/` (P2b-01, which does not exist yet — the seam must remain reusable by it
+without pretending agreement between two implementations is testable today); changing P2-03a's
+Wave-ramp construction or duplicating its interpolation in combat; equipment,
+`EquipmentDefinition`, `equip_flat`, or `equip_pct` (P2-01c/P2-05a, not authored as combat
+inputs); adding `level`, `xp`, equipment slots, current HP, or any other persisted field to
+`Hero` (P2-04a owns the XP curve); lost-gear caches and recovery expeditions (P2-04); named enemy
+species, per-species stat lines, or a bestiary (`docs/SYSTEMS.md:263-268`); actual loot tables or
+loot resolution beyond the `CombatResult` loot-seed contract; any change to
+`Hero.to_dict`/`from_dict`, `GameSession.to_dict`/`from_dict`, `SaveService`, or the save file
+format/version — HP and wave state are in-memory expedition state only; a `CombatState` or any
+fourth autoload; treating provisional recommended-power figures as final balance
+(`docs/SYSTEMS.md:270-273`).
 
 ---
 
