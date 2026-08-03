@@ -796,7 +796,31 @@ match, but that correction is `game-designer`'s call on its own document, not th
 
 ---
 
-## P2-03a — Wave construction + computed hero stats                 [TODO]
+## P2-03a — Wave construction + computed hero stats                 [DONE]
+
+Landed in `ab11d34`, hardened in `32a3f59` after an adversarial `verifier` pass. First ticket to
+add real GUT coverage.
+
+Two things worth carrying into `P2-03b`.
+
+**The single-interpolation-site rule is now a grep, not a promise.** The ADR requires the ramp
+interpolation to live in one place and hand both `resolve()` paths the same `Wave`. This ticket
+satisfied that only because `combat/` did not exist and its file scope kept it that way — which
+stops binding the moment `P2-03b` creates the directory. `P2-03b`'s acceptance criteria carry the
+mechanical replacement (`2f1602f`).
+
+**`Wave.from_zone()` guards `wave_index` with `assert()`, which Godot strips in release.** An
+out-of-range index does not error in a shipped build — `lerpf` extrapolates past
+`trash_wave_end_fraction` and returns a plausible `enemy_power` (index 6/7/10 against a
+five-trash zone yields fraction 1.1/1.2/1.5, silently). The `verifier` judged this consistent with
+`CODING_RULES.md` — `assert` for internal programmer-error invariants, `push_error` at trust
+boundaries, and a wave index is a loop counter — so it is not a defect here. It is a landmine for
+whoever writes `P2-03b`'s wave loop, and Phase 1's exit gate was specifically that the loop works
+in a *shipped* binary.
+
+`compute_team_power()`'s three parallel arrays were left as-is deliberately: no caller exists yet,
+`P2-03b` uses a one-hero team, and multi-hero squad select is `P2-03c`. The correspondence test
+added in `32a3f59` is what protects it until a real caller informs the shape.
 
 ### Objective
 A zone's authored ramp produces runtime `Wave` instances with a single `enemy_power`, and combat
