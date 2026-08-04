@@ -1032,3 +1032,115 @@ The win check itself; the combat seam signature; the 25% threshold; `wave_damage
 any code (this pass wrote none).
 
 ---
+
+## P2-03f — A lost wave hurts instead of wiping the team          [DONE]
+
+### Objective
+Losing a wave costs the party HP proportional to how outmatched it was, instead of killing
+everyone outright. A player can lose a fight in Verdant Outskirts, live, and either push on or
+be pulled out by the retreat threshold — which fires for the first time in a configuration the
+game can actually build.
+
+### Existing architecture
+- `combat/quick_resolve.gd:35-39` is the whole of the loss branch today: `hp_after = 0.0` for
+  every hero and every hero appended to `result.dead_heroes`, regardless of `r`.
+- `r = effective_enemy_power / team_power` is computed at `combat/quick_resolve.gd:41` — *below*
+  the loss branch's early return, so the loss path cannot see it — and drives the *won*-wave
+  damage rule (`clamp(BALANCE.wave_damage_coefficient * r * r * r, 0.0, 1.0)`, line 42). Hoisting
+  that one line above the branch is most of the change. The loss rule is the same expression with
+  a different coefficient — deliberately, so both combat implementations derive it from
+  `(team, wave)` alone.
+- `Expedition.resolve()` (`hub/expedition/expedition.gd:31-57`) has **never branched on whether a
+  wave was won**. It reads `result.maximum_hp` / `result.hp_after`, subtracts the delta from
+  carried `current_hp`, then checks death (`<= 0.0`) and retreat (party fraction `<= 0.25`, trash
+  waves only). It ignores `result.dead_heroes` and `result.survivors` entirely.
+- `BalanceTable` already carries `wave_damage_coefficient`; the new constant follows that pattern.
+- `tests/unit/test_expedition.gd` uses `result.dead_heroes.is_empty()` as a "did we win" proxy in
+  `test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity`. That proxy is only valid
+  while loss implies death.
+
+### Acceptance criteria
+- `combat/quick_resolve.gd`'s loss branch sets `hp_after = maximum_hp * (1.0 -
+  clamp(BALANCE.wave_loss_damage_coefficient * r * r * r, 0.0, 1.0))`, with the same `r` the win
+  check used — not re-derived.
+- `wave_loss_damage_coefficient: float = 1.0` exists on `BalanceTable` and is authored in
+  `balance.tres`. No zone `.tres` value changes.
+- On a lost wave, `CombatResult` bookkeeping matches the win path's shape: a hero whose
+  `hp_after > 0.0` goes in `survivors`, not `dead_heroes`. A hero at `0.0` goes in `dead_heroes`.
+- **`r >= 1` still wipes a full-health team.** F Cleric vs. the Verdant boss (`r = 198/187 =
+  1.058824`) clamps to `1.0` damage and dies from full HP. This is the property the coefficient
+  was chosen for; a test pins it.
+- **`OUTCOME_RETREATED` is reachable and proven by a test**, not by argument. `SYSTEMS.md`
+  § Lost-wave damage gives concrete sequences: F Knight `LWWWL` ends at `24.78%` party HP, F Mage
+  `LLLL` at `21.36%`. Drive one deterministically (seed the RNG or inject the sequence) and assert
+  the outcome.
+- **The Verdant clear is unchanged.** The win-only figures in `SYSTEMS.md` still hold — 5-hero
+  reference team at `27.51%` remaining, F Mage solo at `25.07%`. The existing end-to-end clear
+  assertion (`84.69183285531011` HP, pinned by `P2-03d`) must still pass untouched.
+- **Team-size parity still holds exactly**: solo and five-hero teams of one archetype produce
+  identical `r`, hence identical `damage_fraction` on the loss path too. Assert HP-after equality,
+  not just matching win/loss booleans.
+- `test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity`'s win/loss proxy is replaced
+  with one that does not assume loss implies death.
+- BUILT green (import gate exit 0, zero errors and zero warnings) and the full GUT suite green.
+- Survives save and reload: an expedition that ends in `RETREATED` after a survived loss leaves
+  the roster and hero HP correct across a real save/reload cycle.
+
+### Files allowed to change
+`combat/quick_resolve.gd`, `balance_table.gd`, `balance.tres`, `tests/unit/test_expedition.gd`.
+
+### Non-goals
+- **The win check itself.** `team_power * randf() > effective_enemy_power` is settled; this ticket
+  changes what a loss *costs*, not what decides one.
+- **A fifth `OUTCOME_*` constant.** The ruling explicitly does not need one — `Expedition`'s
+  existing death and retreat checks already cover the graduated-loss case, and
+  `hub/expedition/expedition.gd` should need no edit at all. If implementation shows otherwise,
+  that is a finding to report, not a change to make silently.
+- **The combat seam signature.** `resolve(team: Array[Hero], wave: Wave) -> CombatResult` takes no
+  current-HP input (`DECISIONS.md`, `CLAUDE.md` risky boundary 4). A design that needs current HP
+  inside `QuickResolve` is a `godot-architect` call.
+- **Permadeath's single call site.** `GameSession.kill_hero()` at
+  `hub/expedition/expedition.gd:51` stays the only one (ARCHITECTURE rule 8).
+- The 25% retreat threshold, `wave_damage_coefficient`'s `0.35`, the zone ramps, squad select
+  (`P2-03c`), and the Ashfall/Sundered attrition finding — all out of bounds.
+
+### Findings
+- **`OUTCOME_RETREATED` fires for the first time in a buildable configuration**, proven by a test
+  rather than by argument: `test_graduated_loss_sequence_can_reach_retreat` searches for a seed
+  that forces F Knight's `LWWWL` sequence, then asserts the outcome, that the hero survived with
+  HP above zero and at or below the 25% line, and that permadeath did not fire.
+- **`Expedition` needed no edit at all**, as the ruling predicted. Its death and retreat checks
+  already ran identically regardless of which branch produced the HP delta.
+- **`CombatResult.dead_heroes`/`survivors` have no reader outside `combat/` and the tests.**
+  `Expedition.resolve()` re-derives death from cumulative `current_hp` and ignores both fields.
+  They can therefore disagree with the expedition's own verdict without anything noticing today —
+  fine while one implementation of the seam exists, worth remembering when the arena adds a second.
+- **The "survives save and reload" criterion was satisfied by inspection, not by a disk round-trip.**
+  `Hero.to_dict()`/`GameSession.to_dict()` persist only `{name, rank, def_id}`; `current_hp` is
+  transient inside `Expedition` per the No-CombatState ADR and reaches `SaveService` nowhere
+  (grepped repo-wide, both by the implementer and independently by the verifier). The criterion
+  reduces to "the hero stays in the roster after `RETREATED`," which the retreat test asserts in
+  memory. Recorded because the acceptance line as worded says "a real save/reload cycle" and one
+  was not run.
+- **`_seed_for_rolls_above` returns `-1` on an unfindable sequence and `fail_test()` does not
+  abort GUT.** No false-green risk — the test still fails — but a caller would then run with
+  `seed(-1)` and produce confusing cascading assertions. Diagnostic clarity only; not exercised.
+
+### Verification
+Five mutations, all caught: coefficient `1.0` → `0.9` in `balance.tres`; `r * r * r` → `r * r` on
+the loss path only; clamp upper bound removed; loss branch classifying everyone as `survivors`
+regardless of `hp_after`; full revert to the instant wipe. The arithmetic was re-derived
+independently of `SYSTEMS.md`'s tables — F Cleric's `r = 198/187 = 1.058824` clamping to `1.0`,
+and F Knight's `LWWWL` walked checkpoint by checkpoint (92.35% → 87.72% → 80.38% → 69.41% →
+24.78%) confirming no *earlier* checkpoint crosses the line, which would have made the retreat
+test pass for the wrong reason. `P2-03d`'s pinned end-to-end Verdant clear (`84.69183285531011`
+HP) passes unedited, so the win path is untouched. Codex threads
+`019fce34-6afa-7660-b813-f1ceeaf48112` (implementation), `019fce48-0c98-72b3-8102-8003d2ba66ea`
+(adversarial review).
+
+### Files changed
+`combat/quick_resolve.gd`, `balance_table.gd`, `balance.tres`, `tests/unit/test_expedition.gd`,
+and afterwards `docs/SYSTEMS.md`, `docs/KNOWN_ISSUES.md` (both described the wipe branch as
+current).
+
+---

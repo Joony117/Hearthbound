@@ -47,18 +47,25 @@ acceptable is unknown until both exist.
 `GAME_SPEC.md` requires gamepad as a first-class input path for the arena. Nothing in Phase 1
 addresses it. It must land with the arena in Phase 2b, not be deferred to Phase 5.
 
-### Retreat never fires in the only configuration that exists today
-`SYSTEMS.md` § Retreat threshold: swept exhaustively (solo, Verdant Outskirts, every rank F–SSS,
-all 5 archetypes, all 5 trash checkpoints) and the 25% threshold is never crossed — closest miss
-is 39.9% remaining. `OUTCOME_RETREATED` is unreachable until squad select (`P2-03c`) ships and a
-mixed-rank team can be under-ranked for a zone it's actually allowed into (Ashfall, Sundered —
-verified reachable there). Not a bug in the wave-damage rule itself: it's the joint consequence of
-the win/loss branch making a lost wave an instant full-team wipe (no graduated damage) and the
-damage rule needing to stay cheap enough for a Verdant clear to exist at all — the only erosion
-path retreat has is the same one that has to stay small. Don't "fix" this by nudging the 25%
-threshold or the damage constant; both were tried and rejected with numbers in `SYSTEMS.md`.
-**Revisit in:** `P2-03c` (squad select), or as part of whatever ticket next touches the win/loss
-branch in `combat/quick_resolve.gd`.
+### Retreat only fires at F rank, in the only zone that exists today
+**Was:** retreat never fired at all. Solo, Verdant Outskirts, every rank F–SSS, all 5 archetypes,
+all 5 trash checkpoints — the 25% threshold was never crossed, closest miss 39.9% remaining.
+Cause was the win/loss branch making a lost wave an instant full-team wipe, so HP could only erode
+through *won* waves, and won-wave damage has to stay cheap for a Verdant clear to exist at all.
+
+**Fixed in `P2-03f`** (`a412c4a`): a lost wave now deals `clamp(1.0 * r^3, 0, 1)` graduated damage,
+which gives retreat an erosion pathway independent of the clear-reachability budget.
+`OUTCOME_RETREATED` is reachable and covered by a test that drives F Knight's `LWWWL` sequence.
+
+**What remains:** reachable at F rank only — all 5 F archetypes reach it via some real win/loss
+sequence, none of the 35 D-through-SSS combinations do at any coefficient tested. That is not a
+shortfall of the constant. Verdant's `recommended_power` is fixed at 900 while hero power grows
+`×1.35` per rank, so F is the only rank where its ramp is a fight at all — the *win* branch already
+had that ceiling, and a loss rule tied to the same `r` inherits it. Escaping it means decoupling
+from `r`, which the combat seam forbids. Still don't "fix" this by nudging the 25% threshold or
+`wave_damage_coefficient`; both were tried and rejected with numbers in `SYSTEMS.md`.
+**Revisit in:** `P2-03c` (squad select), which gives retreat mixed-rank rosters and the harder
+zones to bite on.
 
 ---
 
@@ -114,33 +121,20 @@ it exercises the real `user://save.json` via the `GameSession`/`SaveService` aut
 `SaveService.save`, so the load's own signal emission never triggers a write). Redirect `%APPDATA%`
 to a temp dir when running GUT manually anyway, for the same reason `import_gate.ps1` does.
 
-### Serena's GDScript backend is an LSP client, not a server
-It attaches to a Godot editor daemon already listening on `127.0.0.1:6005`; it never launches one
-itself. That daemon is a fourth, persistent engine consumer against this project (`CLAUDE.md`,
-"Serialize engine access"), which is why `tests/import_gate.ps1` now checks the port before
-touching `.godot/` rather than assuming it has the engine to itself.
-
-Start it with `./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --editor --path E:/Game`
-(confirmed this serves LSP). The `_console` wrapper is not what holds the port — it spawns a child
-`Godot_v4.7.1-stable_win64.exe`, and that child process is the one bound to 6005. `Get-Process
-Godot* | Stop-Process -Force` kills both by name, so this only matters if you were trying to target
-one PID specifically.
-
-Serena's built-in GDScript port default is 6008 (Godot 3's); `.serena/project.yml` overrides it to
-6005 via `ls_specific_settings`, and without that override nothing connects at all. Serena also
-connects **once**, at MCP server startup, with no retry (`serena/project.py:512`,
-`get_language_server_manager_or_raise`): if the daemon isn't already listening at that moment,
-every symbolic call fails for the rest of the session with a cached "Could not connect to
-127.0.0.1:6005 within 30.0s" — and starting the daemon afterwards does not help, since Serena never
-looks again. The tell that distinguishes this cached failure from a real timeout: the cached one
-returns *instantly*, not after 30s.
+### A Godot editor serves LSP on 6005 and is a second engine consumer
+`--headless --editor --path E:/Game` serves the LSP port. The `_console` wrapper is not what holds
+it — it spawns a child `Godot_v4.7.1-stable_win64.exe`, and that child is bound to 6005.
+`Get-Process Godot* | Stop-Process -Force` kills both by name, so this only matters if you were
+targeting one PID specifically. Nothing in the workflow starts an editor now (Serena was removed
+2026-08-04, see `DECISIONS.md`), but the guard below stays because a hand-started one still races
+`.godot/`.
 
 ### The LSP guard in `import_gate.ps1` aborts before any `.godot/` write, confirmed
-Verified directly: with the daemon up and 6005 listening, the gate exits 1 immediately and
+Verified directly: with an editor up and 6005 listening, the gate exits 1 immediately and
 `.godot/`'s mtime is unchanged from before the run (the port check is the first thing the script
-does, ahead of the `--headless --import` warmup pass). With the daemon down, the gate behaves
+does, ahead of the `--headless --import` warmup pass). With nothing on the port, the gate behaves
 exactly as before the guard was added — exit 0, zero script errors and warnings, `.godot/` rebuilds
-normally. Stopping the daemon afterward frees the port immediately and a subsequent gate run is
+normally. Stopping the editor afterward frees the port immediately and a subsequent gate run is
 green again, so an aborted run leaves no residue for the next one to trip over.
 
 ### The port-6005 guard misses a stray non-LSP headless process; closed via `ExecutablePath` match

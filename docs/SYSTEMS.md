@@ -499,13 +499,14 @@ code changes.
 ### Lost-wave damage
 
 `P2-03d`'s per-wave damage model fixed what a *won* wave costs. It didn't touch what a *lost* one
-costs, because that branch was out of that ticket's bounds. Today (`combat/quick_resolve.gd:35-39`)
-a lost wave is an instant, unconditional full-team wipe — `hp_after = 0.0` for every hero,
-regardless of `r`. That's an implementer placeholder, not a decision, and it has a real
-consequence proven exhaustively under Retreat threshold below: HP can only erode through *won*
-waves, and won-wave damage is capped specifically to keep a clear survivable, so nothing buildable
-today can ever cross the 25% retreat line. `RETREATED` is dead code in the only configuration the
-game can build.
+costs, because that branch was out of that ticket's bounds. Before this rule, a lost wave was an
+instant, unconditional full-team wipe — `hp_after = 0.0` for every hero, regardless of `r`. That
+was an implementer placeholder, not a decision, and it had a real consequence proven exhaustively
+under Retreat threshold below: HP could only erode through *won* waves, and won-wave damage is
+capped specifically to keep a clear survivable, so nothing buildable could ever cross the 25%
+retreat line. `RETREATED` was dead code in the only configuration the game can build.
+
+**Shipped in `P2-03f` (`a412c4a`)** — the rule below is what the code does now, not a proposal.
 
 **Ruling: replace the instant wipe with graduated damage, same shape as the win rule.**
 
