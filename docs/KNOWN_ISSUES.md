@@ -64,8 +64,12 @@ shortfall of the constant. Verdant's `recommended_power` is fixed at 900 while h
 had that ceiling, and a loss rule tied to the same `r` inherits it. Escaping it means decoupling
 from `r`, which the combat seam forbids. Still don't "fix" this by nudging the 25% threshold or
 `wave_damage_coefficient`; both were tried and rejected with numbers in `SYSTEMS.md`.
-**Revisit in:** `P2-03c` (squad select), which gives retreat mixed-rank rosters and the harder
-zones to bite on.
+**`P2-03c` has since shipped** (`85caa66`), so mixed-rank rosters and the Ashfall/Sundered unlock
+now exist — the enabler is in place. Whether retreat actually fires more widely against them is
+**unverified**: the reachability claim was arithmetic on hypothetical rosters, and nobody has swept
+the real code with a multi-hero mixed-rank team in a harder zone.
+**Revisit in:** the first ticket that sweeps retreat reachability against the shipped squad select,
+or a played build — whichever comes first.
 
 ---
 

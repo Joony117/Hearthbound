@@ -661,6 +661,9 @@ assume loss implies death.
 > tax — the same "close vs. coasting" question Wave damage's own constant is waiting on — and
 > separately, `P2-03c` shipping mixed-rank rosters plus the Ashfall/Sundered unlock, which is what
 > widens `RETREATED`'s reachable footprint past F-rank Verdant rather than this coefficient.
+> **`P2-03c` has since shipped (`85caa66`)**, so that half of the condition is met — but the wider
+> footprint is still *predicted*, not measured: no sweep has been run against the shipped
+> multi-hero path in Ashfall or Sundered. The F-only result above remains the only verified one.
 
 ### The three zones
 

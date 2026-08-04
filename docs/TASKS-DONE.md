@@ -1144,3 +1144,123 @@ and afterwards `docs/SYSTEMS.md`, `docs/KNOWN_ISSUES.md` (both described the wip
 current).
 
 ---
+
+## P2-03c — Expedition setup: multi-hero squad + zone select, with authored zone unlocks   [DONE]
+
+### Objective
+From the hub, pick 1-5 heroes (not always exactly one) and pick a zone (not always Verdant
+Outskirts) before sending an expedition. Ashfall Reaches and Sundered Vault stay unselectable
+until their prerequisite zone has been cleared at least once.
+
+### Existing architecture
+- `hub/hub.gd:4,6,44-64` — `EXPEDITION_ZONE` is hardcoded to `verdant_outskirts.tres`. `%RosterList`
+  is a single-select `ItemList`; `_on_expedition_pressed()` reads `get_selected_items()[0]` into a
+  one-hero `Array[Hero]`.
+- `hub/expedition/expedition.gd:18` — `assert(team.size() == 1)` is the only place team size is
+  constrained. `combat/quick_resolve.gd:31` already computes `effective_enemy_power = wave.enemy_power
+  * (team.size() / 5.0)`, so 2-5 hero teams are numerically supported today — this ticket is the UI
+  that assembles one, not a balance change, and nothing drives `Expedition.resolve()` with more than
+  one hero today (several tests build 5-hero teams directly against `QuickResolve`, not `Expedition`).
+- `zones/zone_definition.gd:1-11` and `zones/defs/*.tres` — three authored zones. `unlock_condition`
+  is free text ("Available from start" / "Clear Verdant Outskirts" / "Clear Ashfall Reaches"),
+  read by nothing; there is no `zone_id` field and no unlock *state* persisted anywhere in the repo.
+- `systems/game_session.gd:8-43` — `GameSession` is the persistent-profile autoload
+  (`ARCHITECTURE.md:50`). It owns one persisted array (`roster`) with mutators (`add_hero`,
+  `kill_hero`) that each call `roster_changed.emit()`, which `SaveService.save()` is connected to
+  (`_ready()`, line 16). A second persisted set follows this exact shape.
+- `docs/SYSTEMS.md:672-676` — the unlock order is linear: Verdant (from start) → Ashfall (needs
+  Verdant cleared) → Sundered (needs Ashfall cleared). `SYSTEMS.md:661-663` already names this
+  ticket as the one that ships the Ashfall/Sundered unlock.
+- `hub/expedition/expedition.gd:49-52` — `Expedition` is already the sole writer of permadeath
+  into `GameSession` (`ARCHITECTURE.md` rule 8); it is the natural place to also write a zone-clear
+  flag on `OUTCOME_COMPLETED`, not `hub.gd`.
+
+### Acceptance criteria
+- `%RosterList` allows selecting 1-5 heroes (`select_mode = SELECT_MULTI`). A new zone selector
+  (e.g. `%ZoneOption`, an `OptionButton`) is added to `hub.tscn` listing all three zones; Ashfall
+  and Sundered are disabled/unselectable until their prerequisite zone has produced
+  `OUTCOME_COMPLETED` at least once for the current save.
+- Pressing Expedition with 0 heroes selected refuses with a status message and does not call
+  `Expedition.resolve()` (same shape as today's "Select a hero first."). With more than 5 selected,
+  refuses with a status message naming the 5-hero cap.
+- `expedition.gd`'s `assert(team.size() == 1)` becomes `assert(team.size() >= 1 and team.size() <=
+  5)`.
+- `ZoneDefinition` gains a `zone_id: StringName` export, authored in each `.tres`
+  (`verdant_outskirts`, `ashfall_reaches`, `sundered_vault`). `GameSession` gains a persisted
+  cleared-zone set and a mutator (mirroring `add_hero`/`kill_hero`'s shape) that `Expedition` calls
+  on `OUTCOME_COMPLETED`.
+- **Survives save and reload**: `GameSession.to_dict()` → `from_dict()` round-trips the
+  cleared-zone set in memory (matching this repo's existing test pattern — no `SaveService`/disk
+  I/O required, see `test_expedition.gd`'s `before_each`). A fresh save (empty roster, nothing
+  cleared) has only Verdant selectable.
+- `tests/unit/test_expedition.gd` gets at least one test that drives `Expedition.resolve()`
+  directly with a 2-5 hero `Array[Hero]` (not just `QuickResolve`) through to `OUTCOME_COMPLETED`,
+  proving the relaxed assert and the win path both work multi-hero end to end through `Expedition`.
+- A new or extended test proves the `GameSession` cleared-zone round trip and that clearing Verdant
+  unlocks Ashfall (and not Sundered) while Sundered stays locked until Ashfall is also cleared.
+- Existing tests still pass. BUILT green (import gate exit 0, zero errors/warnings) and the full
+  GUT suite green.
+
+### Files allowed to change
+`hub/hub.gd`, `hub/hub.tscn`, `hub/expedition/expedition.gd`, `zones/zone_definition.gd`,
+`zones/defs/verdant_outskirts.tres`, `zones/defs/ashfall_reaches.tres`,
+`zones/defs/sundered_vault.tres`, `systems/game_session.gd`, `tests/unit/test_expedition.gd`
+(plus a new `tests/unit/test_game_session.gd` if the implementer prefers a separate file over
+extending `test_expedition.gd`).
+
+### Non-goals
+- Loot (`P2-04`), the equip UI (`P2-05a`), per-hero HP display, retreat-threshold
+  configurability, and any change to `quick_resolve.gd`'s combat formulas — all out of bounds.
+- Enemy species/bestiary authoring — `SYSTEMS.md:678-683` already defers this.
+- No new autoload and no `SceneRouter`-routed expedition-setup scene; squad/zone select stays on
+  the existing hub scene (this is a scene ↔ script seam change per `CLAUDE.md` risky boundary 2 —
+  a new `%ZoneOption` unique-name node and a `select_mode` change on `%RosterList` — a `verifier`
+  pass is required after implementation, on top of the import gate).
+- No retroactive unlock for saves written before this ticket ships — an old save simply starts
+  with only Verdant unlocked, same as a brand-new one.
+- No UI polish beyond function: a working `OptionButton` and multi-select `ItemList` are enough;
+  no confirmation dialog, no drag-drop squad builder, no per-zone artwork.
+- Parsing the authored `unlock_condition` free-text strings — the new `zone_id` field plus a
+  linear Verdant→Ashfall→Sundered check in code is the mechanism; `unlock_condition` remains
+  display-only flavor text.
+
+### Findings
+- **The zone `OptionButton` was matched to zones by widget position**, and the verifier proved it
+  by swapping the Ashfall and Sundered items in `hub.tscn` while leaving `EXPEDITION_ZONES`
+  untouched: the full suite stayed green and the import gate stayed clean. An editor reorder or an
+  inserted item would have sent a team to the wrong zone — a player picking Ashfall (RP 4,800)
+  getting Sundered Vault (RP 11,500), with permadeath on. Fixed by deleting the coupling rather
+  than guarding it: the scene authors no zone items at all, `hub.gd` populates the button from
+  `EXPEDITION_ZONES` and carries each `ZoneDefinition` as item metadata, and zone order has one
+  source. Reverting to positional lookup now fails two tests.
+- **`_refresh_roster()` restored selection by stale list index.** Select heroes 2 and 4 of 5, lose
+  the expedition so both die, and the reselect landed on a survivor who never fought — the next
+  expedition would depart with a team the player never picked. Older than this ticket, but this
+  ticket rewrote that loop and multi-select turns one wrong hero into several, so it shipped here.
+  Now reselects by hero identity.
+- **The scene seam had only reject-path coverage.** The single button-press test selected 6 heroes
+  against the 5-cap, and its `assert_string_contains(status.text, "5")` would have passed on a
+  success message too. Green path added with an exact-match assertion.
+- **`mark_zone_cleared()` emits `roster_changed` though the roster did not change.** Confirmed to
+  reach `SaveService.save()` correctly, so a cleared zone does persist, but it also triggers a
+  needless roster rebuild on every clear and the signal name no longer describes what happened.
+  Deliberately left alone — a second signal is a bigger change than the problem, and this should
+  be a considered call rather than a drive-by.
+- **Save round-trip is in-memory only.** `to_dict()`/`from_dict()` are exercised directly, matching
+  this repo's existing pattern; no disk cycle through `SaveService` was driven. `P2-08` owns that.
+
+### Verification
+Two implementer rounds. The first came back green on both gates and the verifier failed it on the
+two defects above, each reproduced with a live mutation rather than argued. After the rework, both
+gates re-run at director level (import gate exit 0 with zero errors and warnings; GUT 21 tests,
+240 asserts, exit 0) plus an independent mutation: reverting the zone lookup to
+`EXPEDITION_ZONES[_zone_option.selected]` fails 2 tests and exits 1, restored green afterwards.
+Codex threads `019fce59-f95a-70d2-93ed-aefe1561db6b` (implementation, both rounds),
+`019fce6f-af15-7752-9cd5-28034500b8bb` (adversarial review).
+
+### Files changed
+`hub/hub.gd`, `hub/hub.tscn`, `hub/expedition/expedition.gd`, `zones/zone_definition.gd`,
+`zones/defs/verdant_outskirts.tres`, `zones/defs/ashfall_reaches.tres`,
+`zones/defs/sundered_vault.tres`, `systems/game_session.gd`, `tests/unit/test_expedition.gd`
+
+---

@@ -109,8 +109,9 @@ win/loss branch is reachable and provably broken in solo Verdant today, with no 
 dependency, so fixing it first means `P2-03c` inherits correct win/loss semantics rather than the
 other way around.
 
-Both landed: `P2-03e` in `5118853` (the ruling is `SYSTEMS.md` § Lost-wave damage) and `P2-03f`
-in `a412c4a`. `P2-03c` is next, and inherits the corrected win/loss semantics as intended.
+All three landed: `P2-03e` in `5118853` (the ruling is `SYSTEMS.md` § Lost-wave damage), `P2-03f`
+in `a412c4a`, and `P2-03c` in `85caa66` — which inherited the corrected win/loss semantics, as the
+sequencing above intended. The whole `P2-03` group is now shipped.
 
 | # | Objective | Notes |
 |---|---|---|
@@ -122,7 +123,6 @@ in `a412c4a`. `P2-03c` is next, and inherits the corrected win/loss semantics as
 | P2-02 | Real weighted summon against `BALANCE.summon_weights`; roster displays hero archetype | Replaces P1-02. Body in `TASKS-DONE.md`. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). Equip UI moved out — nothing is equippable yet; see `P2-05a`. |
 | P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocked P2-03b. |
 | P2-03b | `combat/quick_resolve.gd` + `CombatResult` — real waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. Body in `TASKS-DONE.md`. GUT 9.7.1 is already installed (`addons/gut/`) — this is the first ticket to add real coverage under `tests/unit/`, not a framework install; the original backlog line's "Add GUT here" is stale. |
-| P2-03c | Expedition setup UI — multi-hero squad select + zone select | `P2-03b` deliberately hardcodes a **one-hero team and Verdant Outskirts**, because `hub.gd`'s roster list is single-select and no zone-selection UI exists. `SYSTEMS.md` specifies up to five heroes per expedition across three authored zones, so that narrowing leaves two-thirds of the designed expedition setup unbuilt. Recorded here so it stays visible: `P2-03b`'s Non-goals name this as a follow-up ticket, and a follow-up nobody wrote down is how a temporary hardcode becomes permanent. |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
@@ -168,6 +168,7 @@ needs to re-read.
 | `P2-03d` | Per-wave damage model — a zone must be clearable | `28115f5` |
 | `P2-03e` | Win/loss branch design ruling — what a lost wave means | `5118853` |
 | `P2-03f` | A lost wave hurts instead of wiping the team | `a412c4a` |
+| `P2-03c` | Expedition setup: multi-hero squad + zone select, with authored zone unlocks | `85caa66` |
 
 ---
 
