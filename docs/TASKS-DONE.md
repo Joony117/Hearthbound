@@ -1,5 +1,10 @@
 # Completed tickets
 
+> **ARCHIVE — do not read this file into context.** ~18k tokens and append-only. Grep it for a
+> specific ticket ID and read only the hit. It is history, not spec: nothing in the live
+> workflow depends on it, and `git log` holds every body in its closing commit. If you find
+> yourself opening it in full, you want `TASKS.md` instead.
+
 Split out of [`TASKS.md`](TASKS.md) so the live backlog stays small — that file is read in
 full by every `tech-lead` dispatch, and these bodies were the bulk of it.
 
@@ -958,5 +963,72 @@ The win/loss check itself (instant-wipe-on-loss is deliberate and out of bounds 
 seam signature; `zones/wave.gd`'s ramp interpolation or any `zones/defs/*.tres` value; the 25%
 retreat threshold; squad select (`P2-03c`); the XP curve that retires the rank-cap level baseline
 (`P2-04a`).
+
+---
+
+## P2-03e — Win/loss branch design ruling, what a lost wave means   [DONE]
+
+Design pass, `game-designer`. Shipped from a backlog row rather than an expanded ticket — like
+`P2-03d`, the body is written at close rather than moved verbatim, so this does not read as a
+missing record.
+
+### Objective
+Rule on what a lost wave means, so `P2-03f` can have checkable acceptance criteria. Two questions:
+does a loss stay a full wipe or deal graduated damage, and if graduated, what ends the expedition
+— the run continues, a forced retreat, or a distinct new outcome (`Expedition`'s `OUTCOME_*`
+constants named none of these).
+
+### The ruling
+Graduated damage, same cubic-in-`r` shape as the win rule, at coefficient `1.0`:
+
+```
+damage_fraction_loss = clamp(1.0 * r^3, 0.0, 1.0)
+```
+
+`1.0` is the minimum coefficient rather than a felt number: it is the smallest value for which a
+mathematically unwinnable wave (`r >= 1`) still clamps to 100% damage, so a guaranteed loss can
+still kill a full-health team. At `L=0.7` F Cleric's Verdant boss deals `83.09%` — a full-health
+team walks away from a "guaranteed" loss, which empties the phrase.
+
+**No fifth outcome.** `Expedition.resolve()` already re-derives death and retreat from cumulative
+`current_hp` after every wave and has never branched on whether the wave was won, so the existing
+four states cover it and `hub/expedition/expedition.gd` needs no edit. `QuickResolve` still takes
+no current-HP input; the combat seam does not move.
+
+### Acceptance criteria
+- Recorded in `SYSTEMS.md` at § Wave damage's rigor — formula, why this shape, named rejections.
+- Numbers recomputed from real `.tres`/`.gd` data, not asserted (Codex thread
+  `019fce28-66c9-7412-a07c-45327b3f2d9c`).
+- Verdant stays clearable with the `P2-03d` margins intact, and team-size parity holds exactly.
+- The § Retreat threshold PROVISIONAL marker is resolved or honestly re-marked.
+
+### Findings
+- **`OUTCOME_RETREATED` becomes reachable in a buildable-today configuration for the first time —
+  but only at F rank.** All five F archetypes reach it via some real win/loss sequence (F Knight
+  `LWWWL` → 24.78% party HP); none of the 35 D-through-SSS combinations do, at any coefficient
+  tested (`0.7`, `1.0`, `1.5`). Not a shortfall of the constant: it is the same rank ceiling the
+  win branch already has, since Verdant's `recommended_power` is fixed at 900 while hero power
+  grows `×1.35` per rank. A loss rule tied to the same `r` inherits it and could only escape by
+  decoupling from `r`, which the combat seam forbids.
+- **A new death route, not a new state.** A chain of unlucky non-guaranteed losses (every `r < 1`)
+  can now drive `current_hp` to `0` without ever hitting a guaranteed-loss wave.
+  `OUTCOME_DEFEATED` already covers it.
+- Losing a wave does not stop progress — the run advances to the next wave, exactly as after a
+  win. That is the ruling's answer to "what ends the expedition": nothing new does; death and the
+  existing retreat threshold do, as they already did.
+
+### Rejections recorded
+`L=0.7` (breaks guaranteed-loss-is-fatal, and reaches fewer combos); `L=1.5` (identical `5/40`
+reachability to `1.0`, so the extra severity on near-miss losses buys nothing); a non-cubic or
+RNG-keyed loss curve (same seam and ramp-shape reasoning § Wave damage already gave); leaving the
+instant wipe for `P2-03c` to mask (masks the symptom, leaves the cause).
+
+### Files changed
+`docs/SYSTEMS.md` — new § Lost-wave damage, and § Retreat threshold rewritten from "dormant" to
+resolved, its closing PROVISIONAL replaced with a narrower one on the unplayed constant.
+
+### Non-goals
+The win check itself; the combat seam signature; the 25% threshold; `wave_damage_coefficient`;
+any code (this pass wrote none).
 
 ---

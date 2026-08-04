@@ -109,6 +109,9 @@ win/loss branch is reachable and provably broken in solo Verdant today, with no 
 dependency, so fixing it first means `P2-03c` inherits correct win/loss semantics rather than the
 other way around.
 
+`P2-03e` landed in `5118853` — the ruling is `SYSTEMS.md` § Lost-wave damage, and `P2-03f` below
+is written from it.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -120,8 +123,7 @@ other way around.
 | P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocked P2-03b. |
 | P2-03b | `combat/quick_resolve.gd` + `CombatResult` — real waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. Body in `TASKS-DONE.md`. GUT 9.7.1 is already installed (`addons/gut/`) — this is the first ticket to add real coverage under `tests/unit/`, not a framework install; the original backlog line's "Add GUT here" is stale. |
 | P2-03c | Expedition setup UI — multi-hero squad select + zone select | `P2-03b` deliberately hardcodes a **one-hero team and Verdant Outskirts**, because `hub.gd`'s roster list is single-select and no zone-selection UI exists. `SYSTEMS.md` specifies up to five heroes per expedition across three authored zones, so that narrowing leaves two-thirds of the designed expedition setup unbuilt. Recorded here so it stays visible: `P2-03b`'s Non-goals name this as a follow-up ticket, and a follow-up nobody wrote down is how a temporary hardcode becomes permanent. |
-| P2-03e | Win/loss branch design ruling — what a lost wave means | Design pass, routes to `game-designer`, not a tech-lead/implementer contract — see the P2-03e split note above. Decides: does a loss deal graduated damage or stay a full wipe; if graduated, what ends the expedition (the run continues, a forced retreat, or a distinct new outcome — `Expedition`'s `OUTCOME_*` constants, `hub/expedition/expedition.gd:6-9`, name none of these today); must not re-break the Verdant clear `P2-03d` just bought or team-size parity (both verified with numbers in `SYSTEMS.md`). Recorded there today as a PROVISIONAL marker under § Retreat threshold — this ticket is what resolves it. Sequence ahead of `P2-03c` (see split note). Start here. |
-| P2-03f | Implement the win/loss branch per `P2-03e`'s ruling | Blocked on `P2-03e` — its Acceptance criteria don't exist until that ruling does, so not expanded yet. Touches `combat/quick_resolve.gd`'s loss branch (`combat/quick_resolve.gd:35-39`) and, if the ruling adds an outcome state, `hub/expedition/expedition.gd`'s `resolve()`. The combat seam stays stateless (`resolve(team, wave) -> CombatResult`, no current-HP input) per the ADR (`DECISIONS.md`, `CLAUDE.md` risky boundary 4) — a ruling that needs current HP as a `QuickResolve` input is a `godot-architect` call, not this ticket's. Must preserve permadeath's single call site (`GameSession.kill_hero()`, `hub/expedition/expedition.gd:51`) and update `tests/unit/test_expedition.gd`'s `test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity`, whose win/loss proxy (`result.dead_heroes.is_empty()`) silently stops meaning "won" the moment a loss stops implying death. |
+| P2-03f | Implement the win/loss branch per `P2-03e`'s ruling | Unblocked — the ruling landed (`5118853`, `SYSTEMS.md` § Lost-wave damage). Expanded below. |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
@@ -136,6 +138,78 @@ other way around.
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3. (See
 P2-09 — that question can't be honestly answered until stone income rate is defined.)
+
+---
+
+## P2-03f — A lost wave hurts instead of wiping the team          [TODO]
+
+### Objective
+Losing a wave costs the party HP proportional to how outmatched it was, instead of killing
+everyone outright. A player can lose a fight in Verdant Outskirts, live, and either push on or
+be pulled out by the retreat threshold — which fires for the first time in a configuration the
+game can actually build.
+
+### Existing architecture
+- `combat/quick_resolve.gd:35-39` is the whole of the loss branch today: `hp_after = 0.0` for
+  every hero and every hero appended to `result.dead_heroes`, regardless of `r`.
+- `r = effective_enemy_power / team_power` is already computed one line above the win check
+  (`combat/quick_resolve.gd:31-32`) and already drives the *won*-wave damage rule
+  (`clamp(BALANCE.wave_damage_coefficient * r * r * r, 0.0, 1.0)`, line 42). The loss rule is the
+  same expression with a different coefficient — deliberately, so both combat implementations
+  derive it from `(team, wave)` alone.
+- `Expedition.resolve()` (`hub/expedition/expedition.gd:31-57`) has **never branched on whether a
+  wave was won**. It reads `result.maximum_hp` / `result.hp_after`, subtracts the delta from
+  carried `current_hp`, then checks death (`<= 0.0`) and retreat (party fraction `<= 0.25`, trash
+  waves only). It ignores `result.dead_heroes` and `result.survivors` entirely.
+- `BalanceTable` already carries `wave_damage_coefficient`; the new constant follows that pattern.
+- `tests/unit/test_expedition.gd` uses `result.dead_heroes.is_empty()` as a "did we win" proxy in
+  `test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity`. That proxy is only valid
+  while loss implies death.
+
+### Acceptance criteria
+- `combat/quick_resolve.gd`'s loss branch sets `hp_after = maximum_hp * (1.0 -
+  clamp(BALANCE.wave_loss_damage_coefficient * r * r * r, 0.0, 1.0))`, with the same `r` the win
+  check used — not re-derived.
+- `wave_loss_damage_coefficient: float = 1.0` exists on `BalanceTable` and is authored in
+  `balance.tres`. No zone `.tres` value changes.
+- On a lost wave, `CombatResult` bookkeeping matches the win path's shape: a hero whose
+  `hp_after > 0.0` goes in `survivors`, not `dead_heroes`. A hero at `0.0` goes in `dead_heroes`.
+- **`r >= 1` still wipes a full-health team.** F Cleric vs. the Verdant boss (`r = 198/187 =
+  1.058824`) clamps to `1.0` damage and dies from full HP. This is the property the coefficient
+  was chosen for; a test pins it.
+- **`OUTCOME_RETREATED` is reachable and proven by a test**, not by argument. `SYSTEMS.md`
+  § Lost-wave damage gives concrete sequences: F Knight `LWWWL` ends at `24.78%` party HP, F Mage
+  `LLLL` at `21.36%`. Drive one deterministically (seed the RNG or inject the sequence) and assert
+  the outcome.
+- **The Verdant clear is unchanged.** The win-only figures in `SYSTEMS.md` still hold — 5-hero
+  reference team at `27.51%` remaining, F Mage solo at `25.07%`. The existing end-to-end clear
+  assertion (`84.69183285531011` HP, pinned by `P2-03d`) must still pass untouched.
+- **Team-size parity still holds exactly**: solo and five-hero teams of one archetype produce
+  identical `r`, hence identical `damage_fraction` on the loss path too. Assert HP-after equality,
+  not just matching win/loss booleans.
+- `test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity`'s win/loss proxy is replaced
+  with one that does not assume loss implies death.
+- BUILT green (import gate exit 0, zero errors and zero warnings) and the full GUT suite green.
+- Survives save and reload: an expedition that ends in `RETREATED` after a survived loss leaves
+  the roster and hero HP correct across a real save/reload cycle.
+
+### Files allowed to change
+`combat/quick_resolve.gd`, `balance_table.gd`, `balance.tres`, `tests/unit/test_expedition.gd`.
+
+### Non-goals
+- **The win check itself.** `team_power * randf() > effective_enemy_power` is settled; this ticket
+  changes what a loss *costs*, not what decides one.
+- **A fifth `OUTCOME_*` constant.** The ruling explicitly does not need one — `Expedition`'s
+  existing death and retreat checks already cover the graduated-loss case, and
+  `hub/expedition/expedition.gd` should need no edit at all. If implementation shows otherwise,
+  that is a finding to report, not a change to make silently.
+- **The combat seam signature.** `resolve(team: Array[Hero], wave: Wave) -> CombatResult` takes no
+  current-HP input (`DECISIONS.md`, `CLAUDE.md` risky boundary 4). A design that needs current HP
+  inside `QuickResolve` is a `godot-architect` call.
+- **Permadeath's single call site.** `GameSession.kill_hero()` at
+  `hub/expedition/expedition.gd:51` stays the only one (ARCHITECTURE rule 8).
+- The 25% retreat threshold, `wave_damage_coefficient`'s `0.35`, the zone ramps, squad select
+  (`P2-03c`), and the Ashfall/Sundered attrition finding — all out of bounds.
 
 ---
 
@@ -165,6 +239,7 @@ needs to re-read.
 | `P2-03a` | Wave construction + computed hero stats | `ab11d34` |
 | `P2-03b` | Statistical expedition resolution + permadeath | `35cdc5e` |
 | `P2-03d` | Per-wave damage model — a zone must be clearable | `28115f5` |
+| `P2-03e` | Win/loss branch design ruling — what a lost wave means | `5118853` |
 
 ---
 
