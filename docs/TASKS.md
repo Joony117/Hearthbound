@@ -92,17 +92,36 @@ accepted for `P2-01a`/`P2-01b`/`P2-01d`. `P2-03b` is what makes it visible — p
 produces real win/loss/retreat outcomes and permadeath instead of a coin flip. Start with
 `P2-03a`; nothing in `P2-03b` compiles against a real `Wave` or real stats without it.
 
+**P2-03e split.** `P2-03d`'s per-wave damage model made `OUTCOME_COMPLETED` reachable but left
+`OUTCOME_RETREATED` provably unreachable in the only configuration the game can build today
+(`SYSTEMS.md` § Retreat threshold, `KNOWN_ISSUES.md`) — a lost wave is an instant full-team wipe,
+so HP only erodes on wins, and won-wave damage has to stay cheap for a clear to exist. Fixing this
+bundles a decision nobody but `game-designer` can make (if a loss becomes survivable, does the
+expedition continue, force a retreat, or end through a new outcome — nothing in `SYSTEMS.md`
+answers that today) with a code change to `combat/quick_resolve.gd` and
+`hub/expedition/expedition.gd` that can't honestly be written before that decision exists —
+checkable acceptance criteria need to know what "loss" means. Split in two: `P2-03e` is the design
+ruling, recorded in `SYSTEMS.md` the way the wave-damage coefficient and its rejections were, not
+an implementer contract. `P2-03f` is the implementer ticket once it lands. Sequence ahead of
+`P2-03c` (squad select): `P2-03c` only builds the mixed-rank rosters that let retreat's *existing*
+threshold fire in Ashfall/Sundered, which masks this symptom without touching its cause; the
+win/loss branch is reachable and provably broken in solo Verdant today, with no squad-select
+dependency, so fixing it first means `P2-03c` inherits correct win/loss semantics rather than the
+other way around.
+
 | # | Objective | Notes |
 |---|---|---|
-| P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Start here — unblocks P2-02. |
+| P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
 | P2-01b | `ZoneDefinition` Resource + 3 zones authored | Body in `TASKS-DONE.md`. Unblocks P2-03a. |
 | P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
 | P2-01d | `BalanceTable` Resource + `balance.tres` authored from `SYSTEMS.md` | Body in `TASKS-DONE.md`. Container shape is settled (`DECISIONS.md`, one `BalanceTable`). Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. Did **not** move `Hero.RANK_NAMES` — split out as `P2-01d-2`. |
 | P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites; author the Summoning Circle's two-field schema | Body in `TASKS-DONE.md`. Unblocked by `godot-architect`'s ruling on reaching shared Resources without a fourth autoload. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
 | P2-02 | Real weighted summon against `BALANCE.summon_weights`; roster displays hero archetype | Replaces P1-02. Body in `TASKS-DONE.md`. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). Equip UI moved out — nothing is equippable yet; see `P2-05a`. |
-| P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocks P2-03b. Start here. |
+| P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocked P2-03b. |
 | P2-03b | `combat/quick_resolve.gd` + `CombatResult` — real waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. Body in `TASKS-DONE.md`. GUT 9.7.1 is already installed (`addons/gut/`) — this is the first ticket to add real coverage under `tests/unit/`, not a framework install; the original backlog line's "Add GUT here" is stale. |
 | P2-03c | Expedition setup UI — multi-hero squad select + zone select | `P2-03b` deliberately hardcodes a **one-hero team and Verdant Outskirts**, because `hub.gd`'s roster list is single-select and no zone-selection UI exists. `SYSTEMS.md` specifies up to five heroes per expedition across three authored zones, so that narrowing leaves two-thirds of the designed expedition setup unbuilt. Recorded here so it stays visible: `P2-03b`'s Non-goals name this as a follow-up ticket, and a follow-up nobody wrote down is how a temporary hardcode becomes permanent. |
+| P2-03e | Win/loss branch design ruling — what a lost wave means | Design pass, routes to `game-designer`, not a tech-lead/implementer contract — see the P2-03e split note above. Decides: does a loss deal graduated damage or stay a full wipe; if graduated, what ends the expedition (the run continues, a forced retreat, or a distinct new outcome — `Expedition`'s `OUTCOME_*` constants, `hub/expedition/expedition.gd:6-9`, name none of these today); must not re-break the Verdant clear `P2-03d` just bought or team-size parity (both verified with numbers in `SYSTEMS.md`). Recorded there today as a PROVISIONAL marker under § Retreat threshold — this ticket is what resolves it. Sequence ahead of `P2-03c` (see split note). Start here. |
+| P2-03f | Implement the win/loss branch per `P2-03e`'s ruling | Blocked on `P2-03e` — its Acceptance criteria don't exist until that ruling does, so not expanded yet. Touches `combat/quick_resolve.gd`'s loss branch (`combat/quick_resolve.gd:35-39`) and, if the ruling adds an outcome state, `hub/expedition/expedition.gd`'s `resolve()`. The combat seam stays stateless (`resolve(team, wave) -> CombatResult`, no current-HP input) per the ADR (`DECISIONS.md`, `CLAUDE.md` risky boundary 4) — a ruling that needs current HP as a `QuickResolve` input is a `godot-architect` call, not this ticket's. Must preserve permadeath's single call site (`GameSession.kill_hero()`, `hub/expedition/expedition.gd:51`) and update `tests/unit/test_expedition.gd`'s `test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity`, whose win/loss proxy (`result.dead_heroes.is_empty()`) silently stops meaning "won" the moment a loss stops implying death. |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
