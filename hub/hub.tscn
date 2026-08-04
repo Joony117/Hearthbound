@@ -120,6 +120,7 @@ text = "ROSTER"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+select_mode = 1
 
 [node name="Bottom" type="VBoxContainer" parent="UI/Root"]
 layout_mode = 1
@@ -143,6 +144,10 @@ autowrap_mode = 3
 [node name="Buttons" type="HBoxContainer" parent="UI/Root/Bottom"]
 layout_mode = 2
 theme_override_constants/separation = 10
+
+[node name="ZoneOption" type="OptionButton" parent="UI/Root/Bottom/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="Summon" type="Button" parent="UI/Root/Bottom/Buttons"]
 layout_mode = 2

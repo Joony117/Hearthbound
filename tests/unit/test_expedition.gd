@@ -3,6 +3,7 @@ extends GutTest
 const ERROR_MARGIN: float = 0.0001
 const HERO_POWER: float = 212.0
 const HERO_MAX_HP: float = 280.0
+const HUB_SCRIPT: GDScript = preload("res://hub/hub.gd")
 
 
 func before_each() -> void:
@@ -21,6 +22,153 @@ func test_zero_power_wave_sequence_completes_with_hero_alive() -> void:
 	assert_true(GameSession.roster.has(hero))
 	assert_eq(expedition.waves_resolved, 3)
 	assert_almost_eq(expedition.current_hp[hero], HERO_MAX_HP, ERROR_MARGIN)
+
+
+func test_five_hero_expedition_completes_and_records_zone_clear() -> void:
+	var team: Array[Hero] = []
+	for hero_index: int in 5:
+		team.append(_add_knight("Knight %d" % hero_index))
+	var enemy_power: int = 100
+	var zone: ZoneDefinition = _make_zone(enemy_power, 1.0, 2)
+	var expedition := Expedition.new()
+	var r: float = float(enemy_power) / (HERO_POWER * team.size())
+	var balance: BalanceTable = preload("res://balance.tres")
+	var per_wave_damage: float = HERO_MAX_HP * balance.wave_damage_coefficient * r * r * r
+	_seed_for_rolls_above(r, 3)
+
+	var outcome: StringName = expedition.resolve(team, zone)
+
+	assert_eq(outcome, Expedition.OUTCOME_COMPLETED)
+	assert_eq(GameSession.roster.size(), 5)
+	assert_true(GameSession.cleared_zone_ids.has(zone.zone_id))
+	for hero: Hero in team:
+		assert_almost_eq(
+			expedition.current_hp[hero],
+			HERO_MAX_HP - per_wave_damage * 3.0,
+			ERROR_MARGIN,
+		)
+		assert_lt(expedition.current_hp[hero], HERO_MAX_HP)
+
+
+func test_cleared_zones_round_trip_old_save_and_linear_unlock_chain() -> void:
+	assert_true(HUB_SCRIPT.is_zone_unlocked(&"verdant_outskirts", GameSession.cleared_zone_ids))
+	assert_false(HUB_SCRIPT.is_zone_unlocked(&"ashfall_reaches", GameSession.cleared_zone_ids))
+	assert_false(HUB_SCRIPT.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
+
+	GameSession.mark_zone_cleared(&"verdant_outskirts")
+	assert_true(HUB_SCRIPT.is_zone_unlocked(&"ashfall_reaches", GameSession.cleared_zone_ids))
+	assert_false(HUB_SCRIPT.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
+	GameSession.mark_zone_cleared(&"ashfall_reaches")
+	assert_true(HUB_SCRIPT.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
+	var saved: Dictionary = GameSession.to_dict()
+
+	GameSession.from_dict({"roster": []})
+	assert_true(GameSession.cleared_zone_ids.is_empty())
+	assert_true(HUB_SCRIPT.is_zone_unlocked(&"verdant_outskirts", GameSession.cleared_zone_ids))
+	assert_false(HUB_SCRIPT.is_zone_unlocked(&"ashfall_reaches", GameSession.cleared_zone_ids))
+	assert_false(HUB_SCRIPT.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
+
+	GameSession.from_dict(saved)
+	assert_true(GameSession.cleared_zone_ids.has(&"verdant_outskirts"))
+	assert_true(GameSession.cleared_zone_ids.has(&"ashfall_reaches"))
+	assert_true(HUB_SCRIPT.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
+
+
+func test_hub_scene_multi_select_zone_locks_and_five_hero_cap() -> void:
+	for hero_index: int in 6:
+		_add_knight("Knight %d" % hero_index)
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var zone_option: OptionButton = hub.get_node("%ZoneOption") as OptionButton
+	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
+	var status: Label = hub.get_node("%Status") as Label
+
+	assert_eq(roster_list.select_mode, ItemList.SELECT_MULTI)
+	assert_eq(zone_option.item_count, 3)
+	assert_false(zone_option.is_item_disabled(0))
+	assert_true(zone_option.is_item_disabled(1))
+	assert_true(zone_option.is_item_disabled(2))
+	for item_index: int in roster_list.item_count:
+		roster_list.select(item_index, false)
+	expedition_button.pressed.emit()
+	assert_eq(status.text, "Select no more than 5 heroes.")
+	assert_eq(GameSession.roster.size(), 6)
+	assert_true(GameSession.cleared_zone_ids.is_empty())
+
+	GameSession.mark_zone_cleared(&"verdant_outskirts")
+	assert_false(zone_option.is_item_disabled(1))
+	assert_true(zone_option.is_item_disabled(2))
+	GameSession.mark_zone_cleared(&"ashfall_reaches")
+	assert_false(zone_option.is_item_disabled(2))
+
+
+func test_zone_selection_uses_metadata_after_option_reorder() -> void:
+	_add_knight()
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var zone_option: OptionButton = hub.get_node("%ZoneOption") as OptionButton
+	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
+	var status: Label = hub.get_node("%Status") as Label
+	var ashfall_zone: ZoneDefinition = zone_option.get_item_metadata(1) as ZoneDefinition
+	assert_not_null(ashfall_zone)
+	var sundered_zone: ZoneDefinition = _make_zone(100, 1.0, 1)
+	sundered_zone.zone_id = &"sundered_vault"
+	sundered_zone.display_name = "Sundered Vault"
+	zone_option.set_item_text(1, sundered_zone.display_name)
+	zone_option.set_item_metadata(1, sundered_zone)
+	zone_option.set_item_text(2, ashfall_zone.display_name)
+	zone_option.set_item_metadata(2, ashfall_zone)
+	GameSession.mark_zone_cleared(&"verdant_outskirts")
+	GameSession.mark_zone_cleared(&"ashfall_reaches")
+	zone_option.select(1)
+	roster_list.select(0)
+	var selected_zone: ZoneDefinition = zone_option.get_item_metadata(zone_option.selected) as ZoneDefinition
+
+	assert_not_null(selected_zone)
+	assert_same(selected_zone, sundered_zone)
+	assert_eq(zone_option.get_item_text(zone_option.selected), selected_zone.display_name)
+	_seed_for_rolls_above(20.0 / HERO_POWER, 2)
+	expedition_button.pressed.emit()
+	assert_eq(status.text, "1-hero team cleared Sundered Vault.")
+
+
+func test_roster_refresh_does_not_select_survivors_after_selected_heroes_die() -> void:
+	var hero_a: Hero = _add_knight("A")
+	var hero_b: Hero = _add_knight("B")
+	var hero_c: Hero = _add_knight("C")
+	var hero_d: Hero = _add_knight("D")
+	var hero_e: Hero = _add_knight("E")
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var zone_option: OptionButton = hub.get_node("%ZoneOption") as OptionButton
+	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
+	var lethal_zone: ZoneDefinition = _make_zone(1_000_000, 1.0, 1)
+	lethal_zone.zone_id = &"verdant_outskirts"
+	lethal_zone.display_name = "Lethal Zone"
+	zone_option.set_item_text(0, lethal_zone.display_name)
+	zone_option.set_item_metadata(0, lethal_zone)
+	roster_list.select(1, false)
+	roster_list.select(3, false)
+	seed(1)
+
+	expedition_button.pressed.emit()
+
+	assert_eq(GameSession.roster.size(), 3)
+	assert_true(GameSession.roster.has(hero_a))
+	assert_false(GameSession.roster.has(hero_b))
+	assert_true(GameSession.roster.has(hero_c))
+	assert_false(GameSession.roster.has(hero_d))
+	assert_true(GameSession.roster.has(hero_e))
+	assert_true(roster_list.get_selected_items().is_empty())
 
 
 func test_overwhelming_wave_kills_once_and_shrinks_roster_once() -> void:
@@ -275,6 +423,7 @@ func _add_knight(hero_name: String = "Knight") -> Hero:
 
 func _make_zone(recommended_power: int, fraction: float, trash_wave_count: int) -> ZoneDefinition:
 	var zone := ZoneDefinition.new()
+	zone.zone_id = &"test_zone"
 	zone.recommended_power = recommended_power
 	zone.trash_wave_count = trash_wave_count
 	zone.trash_wave_start_fraction = fraction

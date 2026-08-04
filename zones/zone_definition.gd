@@ -1,6 +1,7 @@
 class_name ZoneDefinition
 extends Resource
 
+@export var zone_id: StringName = &""
 @export var display_name: String = ""
 @export var recommended_power: int = 0
 @export var trash_wave_count: int = 0

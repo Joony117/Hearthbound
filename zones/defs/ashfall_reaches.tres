@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+zone_id = "ashfall_reaches"
 display_name = "Ashfall Reaches"
 recommended_power = 4800
 trash_wave_count = 6

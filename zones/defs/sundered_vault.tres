@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+zone_id = "sundered_vault"
 display_name = "Sundered Vault"
 recommended_power = 11500
 trash_wave_count = 7

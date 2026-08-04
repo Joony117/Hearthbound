@@ -15,8 +15,9 @@ var maximum_hp: Dictionary[Hero, float] = {}
 
 
 func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
-	assert(team.size() == 1)
+	assert(team.size() >= 1 and team.size() <= 5)
 	assert(zone != null)
+	assert(zone.zone_id != &"")
 	assert(zone.trash_wave_count > 0)
 
 	wave_index = -1
@@ -54,6 +55,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 		if next_wave_index < zone.trash_wave_count and _party_hp_fraction(team) <= RETREAT_THRESHOLD:
 			return OUTCOME_RETREATED
 
+	GameSession.mark_zone_cleared(zone.zone_id)
 	return OUTCOME_COMPLETED
 
 

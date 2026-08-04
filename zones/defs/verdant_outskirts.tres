@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+zone_id = "verdant_outskirts"
 display_name = "Verdant Outskirts"
 recommended_power = 900
 trash_wave_count = 5

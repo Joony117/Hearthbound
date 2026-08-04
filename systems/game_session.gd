@@ -8,6 +8,7 @@ extends Node
 signal roster_changed
 
 var roster: Array[Hero] = []
+var cleared_zone_ids: Dictionary[StringName, bool] = {}
 
 
 func _ready() -> void:
@@ -18,6 +19,14 @@ func _ready() -> void:
 
 func add_hero(hero: Hero) -> void:
 	roster.append(hero)
+	roster_changed.emit()
+
+
+func mark_zone_cleared(zone_id: StringName) -> void:
+	assert(zone_id != &"")
+	if cleared_zone_ids.has(zone_id):
+		return
+	cleared_zone_ids[zone_id] = true
 	roster_changed.emit()
 
 
@@ -32,12 +41,21 @@ func to_dict() -> Dictionary:
 	var entries: Array[Dictionary] = []
 	for hero: Hero in roster:
 		entries.append(hero.to_dict())
-	return {"roster": entries}
+	var cleared_entries: Array[String] = []
+	for zone_id: StringName in cleared_zone_ids:
+		cleared_entries.append(str(zone_id))
+	cleared_entries.sort()
+	return {"roster": entries, "cleared_zone_ids": cleared_entries}
 
 
 func from_dict(data: Dictionary) -> void:
 	roster.clear()
+	cleared_zone_ids.clear()
 	for entry: Variant in data.get("roster", []):
 		if entry is Dictionary:
 			roster.append(Hero.from_dict(entry))
+	# Variant is required while validating untrusted save entries.
+	for zone_id: Variant in data.get("cleared_zone_ids", []):
+		if zone_id is String:
+			cleared_zone_ids[StringName(zone_id as String)] = true
 	roster_changed.emit()
