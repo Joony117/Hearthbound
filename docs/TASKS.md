@@ -103,7 +103,6 @@ produces real win/loss/retreat outcomes and permadeath instead of a coin flip. S
 | P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocks P2-03b. Start here. |
 | P2-03b | `combat/quick_resolve.gd` + `CombatResult` — real waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. Body in `TASKS-DONE.md`. GUT 9.7.1 is already installed (`addons/gut/`) — this is the first ticket to add real coverage under `tests/unit/`, not a framework install; the original backlog line's "Add GUT here" is stale. |
 | P2-03c | Expedition setup UI — multi-hero squad select + zone select | `P2-03b` deliberately hardcodes a **one-hero team and Verdant Outskirts**, because `hub.gd`'s roster list is single-select and no zone-selection UI exists. `SYSTEMS.md` specifies up to five heroes per expedition across three authored zones, so that narrowing leaves two-thirds of the designed expedition setup unbuilt. Recorded here so it stays visible: `P2-03b`'s Non-goals name this as a follow-up ticket, and a follow-up nobody wrote down is how a temporary hardcode becomes permanent. |
-| P2-03d | Per-wave damage model — a zone must be clearable | **`game-designer` first.** `SYSTEMS.md` specifies that quick-resolve "compares statistically" and nothing more; the damage rule (`damage = max_hp * enemy_power / team_power`) is an implementing worker's invention. It charges each wave a fraction of **max** HP regardless of current HP, so Verdant's five trash waves cost **2.97× a hero's max HP** in total — every solo archetype at calibration rank retreats after wave 2 of 5, and Cleric dies there. Win, loss, retreat, and death are each individually reachable; **a zone clear is not, at any rank**. Blocks the Phase 2 exit question below, since there is no success path to feel. |
 | P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
@@ -146,6 +145,7 @@ needs to re-read.
 | `P2-02` | Real weighted summon + archetype roster display | `0556ce0` |
 | `P2-03a` | Wave construction + computed hero stats | `ab11d34` |
 | `P2-03b` | Statistical expedition resolution + permadeath | `35cdc5e` |
+| `P2-03d` | Per-wave damage model — a zone must be clearable | `28115f5` |
 
 ---
 

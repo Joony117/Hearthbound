@@ -901,3 +901,62 @@ fourth autoload; treating provisional recommended-power figures as final balance
 (`docs/SYSTEMS.md:270-273`).
 
 ---
+
+## P2-03d — Per-wave damage model, a zone must be clearable      [DONE]
+
+Landed in `28115f5`.
+
+Shipped from a backlog row rather than an expanded ticket body — the defect was already stated
+precisely enough to act on, and the design work it needed went to `game-designer` rather than to
+a `tech-lead` ticket. Recorded here so the Completed table's promise holds.
+
+### Objective
+Make `OUTCOME_COMPLETED` reachable. `SYSTEMS.md` specified that quick-resolve "compares
+statistically" and nothing more, so the damage rule shipped with `P2-03b` was an implementing
+worker's invention: `damage = max_hp * enemy_power / team_power`, charged against **max** HP
+every wave regardless of current HP. Verdant's five trash waves cost `2.97×` a hero's max HP, so
+win, loss, retreat and death were each individually reachable while a zone clear was not, at any
+rank. That blocked the Phase 2 exit question — there was no success path to feel.
+
+### What landed
+`damage_fraction = clamp(BALANCE.wave_damage_coefficient * r^3, 0.0, 1.0)`, `r` being the same
+`effective_enemy_power / team_power` the win check already computes. One new authored constant
+(`wave_damage_coefficient = 0.35`); no zone `.tres` value changed. The full rule, its arithmetic
+verification, and the rejected alternatives are in `docs/SYSTEMS.md` § Wave damage — that is the
+spec, this is only the record that it shipped.
+
+### Findings this produced
+- **Retreat is unreachable in the only configuration the game can build today** (solo, Verdant,
+  any rank F–SSS — swept exhaustively, zero crossings of the 25% line). A lost wave is an instant
+  wipe, so HP erodes only on *wins*, and won-wave damage must stay cheap for the clear to exist:
+  one pathway serving two competing jobs. Neither the coefficient nor the threshold fixes it
+  without re-breaking the clear; both were tried with numbers. `KNOWN_ISSUES.md`, and
+  `SYSTEMS.md` § Retreat threshold names the win/loss branch as the more plausible target.
+- **Ashfall and Sundered reference teams still cannot survive their own trash** even winning
+  every roll — Ashfall dies on trash wave 6, Sundered retreats on wave 5. One constant tuned
+  against Verdant does not stretch to zones designed to demand gear. Sharpens the existing
+  recommended-power PROVISIONAL marker rather than resolving it.
+- The clamp is provably unreachable at the authored coefficient (a win requires `randf() > r`, so
+  `r < 1`, so `0.35 * r^3 < 0.35`). Kept to match the spec, recorded as genuinely untested — the
+  green suite does not cover that branch.
+
+### Verification
+Five mutations against the formula (exponent swap, coefficient hardcode, damage-never-applied,
+full linear revert, carry-forward removal) — all five caught. Three coverage gaps found by the
+verifier pass and closed: the carry-forward test's discrimination margin went from `~2.3×`
+`ERROR_MARGIN` to `~500,000×`; the authored coefficient is now pinned to a literal alongside a
+hardcoded end-to-end Verdant clear figure (`84.69183285531011` HP) rather than only to values
+re-derived from the same resource production reads; team-size parity now asserts HP-after
+equality instead of only matching win/loss booleans.
+
+### Files changed
+`balance_table.gd`, `balance.tres`, `combat/quick_resolve.gd`, `tests/unit/test_expedition.gd`,
+`docs/SYSTEMS.md`, `docs/KNOWN_ISSUES.md`
+
+### Non-goals
+The win/loss check itself (instant-wipe-on-loss is deliberate and out of bounds here); the combat
+seam signature; `zones/wave.gd`'s ramp interpolation or any `zones/defs/*.tres` value; the 25%
+retreat threshold; squad select (`P2-03c`); the XP curve that retires the rank-cap level baseline
+(`P2-04a`).
+
+---
