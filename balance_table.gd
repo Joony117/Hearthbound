@@ -12,6 +12,7 @@ extends Resource
 
 @export var summoning_circle_multiplier_per_level: float = 0.15
 @export var wave_damage_coefficient: float = 0.35
+@export var wave_loss_damage_coefficient: float = 1.0
 @export var summoning_circle_level_cap: int = 5
 @export var forge_enhance_cap_per_level: int = 3
 @export var forge_enhance_cap_max: int = 15

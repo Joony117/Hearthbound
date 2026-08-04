@@ -14,6 +14,7 @@ summon_weights = Array[int]([4000, 2700, 1700, 1000, 450, 120, 28, 2])
 rank_names = PackedStringArray("F", "D", "C", "B", "A", "S", "SS", "SSS")
 summoning_circle_multiplier_per_level = 0.15
 wave_damage_coefficient = 0.35
+wave_loss_damage_coefficient = 1.0
 summoning_circle_level_cap = 5
 forge_enhance_cap_per_level = 3
 forge_enhance_cap_max = 15

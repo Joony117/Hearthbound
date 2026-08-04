@@ -31,14 +31,23 @@ static func resolve(team: Array[Hero], wave: Wave) -> CombatResult:
 	var effective_enemy_power := wave.enemy_power * (float(team.size()) / 5.0)
 	var won := effective_enemy_power <= 0.0 or team_power * randf() > effective_enemy_power
 	result.loot_seed = randi()
+	var r := effective_enemy_power / team_power
 
 	if not won:
+		var damage_fraction: float = clamp(
+			BALANCE.wave_loss_damage_coefficient * r * r * r,
+			0.0,
+			1.0,
+		)
 		for hero: Hero in team:
-			result.hp_after[hero] = 0.0
-			result.dead_heroes.append(hero)
+			var hp_after := result.maximum_hp[hero] * (1.0 - damage_fraction)
+			result.hp_after[hero] = hp_after
+			if hp_after > 0.0:
+				result.survivors.append(hero)
+			else:
+				result.dead_heroes.append(hero)
 		return result
 
-	var r := effective_enemy_power / team_power
 	var damage_fraction: float = clamp(BALANCE.wave_damage_coefficient * r * r * r, 0.0, 1.0)
 	for hero: Hero in team:
 		var hp_after := result.maximum_hp[hero] * (1.0 - damage_fraction)
