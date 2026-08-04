@@ -496,6 +496,171 @@ code changes.
 > meant to stay attrition-gated through late trash pre-gear (consistent with the existing
 > boss-headroom reasoning) or need their own ramp/RP retuning, which is a separate pass.
 
+### Lost-wave damage
+
+`P2-03d`'s per-wave damage model fixed what a *won* wave costs. It didn't touch what a *lost* one
+costs, because that branch was out of that ticket's bounds. Today (`combat/quick_resolve.gd:35-39`)
+a lost wave is an instant, unconditional full-team wipe — `hp_after = 0.0` for every hero,
+regardless of `r`. That's an implementer placeholder, not a decision, and it has a real
+consequence proven exhaustively under Retreat threshold below: HP can only erode through *won*
+waves, and won-wave damage is capped specifically to keep a clear survivable, so nothing buildable
+today can ever cross the 25% retreat line. `RETREATED` is dead code in the only configuration the
+game can build.
+
+**Ruling: replace the instant wipe with graduated damage, same shape as the win rule.**
+
+```
+r = effective_enemy_power / team_power        # the same r, unchanged
+damage_fraction_loss = clamp(1.0 * r^3, 0.0, 1.0)
+```
+
+Applied exactly the way the win rule already is: `hp_after = maximum_hp * (1.0 - damage_fraction_loss)`,
+fed into the *same* Expedition pipeline that already runs after a won wave
+(`hub/expedition/expedition.gd:38-57`) — subtract the delta from current HP, check for death
+(`current_hp <= 0`), check for retreat (party fraction `<= 0.25`, trash waves only), otherwise
+continue. `QuickResolve` still takes no current-HP input and stays a pure function of
+`(team, wave)` — the combat seam does not move.
+
+**Why the coefficient is `1.0`, not tuned by feel.** `1.0` is the *minimum* value for which a
+mathematically-unwinnable wave (`r >= 1`, the win check is unsatisfiable regardless of the roll)
+still clamps to `100%` damage — i.e., a guaranteed loss can still kill a full-health team outright,
+which is what "guaranteed loss" already meant under the old instant-wipe branch and what F Cleric's
+boss death (below, and already documented under Wave damage) depends on. Below `1.0` that
+guarantee breaks: verified at `L=0.7`, F Cleric's guaranteed-loss boss (`r=198/187=1.058824`) deals
+only `83.09%` damage — survivable even at full HP, which contradicts calling it a guaranteed loss
+with real stakes. `1.0` is the smallest constant that doesn't break that property, so nothing larger
+is doing useful work at `r>=1` (already clamped) and nothing smaller is honest about what
+"guaranteed loss" means.
+
+**No fifth outcome needed.** This answers the ticket's second question directly: the run does not
+gain a new state. `Expedition.resolve()` already re-derives death and retreat from cumulative
+`current_hp` after *every* wave, win or lose (`hub/expedition/expedition.gd:44-55`) — it has never
+branched on whether a wave was won. Folding the loss branch into the same damage-then-check
+pipeline the win branch already uses means `OUTCOME_COMPLETED` / `OUTCOME_RETREATED` /
+`OUTCOME_DEFEATED` / `OUTCOME_INVALID_TEAM` (`hub/expedition/expedition.gd:6-9`) cover the ruling
+unchanged. What does change: `CombatResult.dead_heroes`/`survivors`/`hp_after` currently assume
+"lost the wave" means "dead" (`combat/quick_resolve.gd:35-39`); a graduated loss needs the same
+survivor/hp_after bookkeeping the win branch already does, not the old unconditional dead_heroes
+fill. `tests/unit/test_expedition.gd`'s `result.dead_heroes.is_empty()` win/loss proxy breaks for
+the same reason — already flagged in `docs/TASKS.md`'s `P2-03f` line; this confirms it's real, not
+speculative.
+
+**Verified (Codex thread `019fce28-66c9-7412-a07c-45327b3f2d9c`, recomputed independently from
+`heroes/defs/*.tres`, `balance.tres`, `zones/defs/verdant_outskirts.tres`, `heroes/hero.gd`,
+`zones/wave.gd` — not trusted from this document or the prior thread):**
+
+*Retreat reachability, exhaustive sweep* — all `2^5 = 32` win/loss sequences across Verdant's 5
+trash waves, all 40 archetype/rank combinations, `L=1.0`:
+
+| Archetype/rank | Shortest sequence reaching `(0%, 25%]` | HP at that checkpoint |
+|---|---|---:|
+| Knight F | `LWWWL` (wave 5) | 24.78% |
+| Rogue F | `LWWLL` (wave 5) | 24.66% |
+| Ranger F | `LWWWL` (wave 5) | 23.71% |
+| Mage F | `LLLL` (wave 4) | 21.36% |
+| Cleric F | `WLWL` (wave 4) | 20.46% |
+| All D–SSS, all 5 archetypes (35 combos) | none | — |
+
+`RETREATED` is reachable — for the first time in a buildable-today configuration — but only at F
+rank: all 5 F archetypes reach it via some real win/loss sequence, and every D-through-SSS combo
+(35 of 40) does not, at any `L` tested (`0.7`, `1.0`, `1.5` all produce the same F-only footprint).
+This isn't a shortfall of the constant — it's the same fact Retreat threshold already established
+about the *win* branch: F is "the only rank where Verdant's ramp is even a fight," because
+`recommended_power` is fixed at 900 while a hero's own power grows geometrically with rank
+(Ranks, above). A loss branch that scales with the same `r` inherits the same rank ceiling the win
+branch already has; it couldn't do otherwise without decoupling from `r` entirely, which the
+combat-seam constraint (pure function of `team, wave`) rules out.
+
+*Win-only clear numbers, reproduced from real data, unchanged* (this rule only touches the loss
+branch):
+
+| Case | Team power | Full-clear win damage | HP remaining |
+|---|---:|---:|---:|
+| 5-hero reference team | 1,046.50 | 0.724874 | 27.51% |
+| Knight solo | 212.00 | 0.697529 | 30.25% |
+| Rogue solo | 229.50 | 0.549822 | 45.02% |
+| Ranger solo | 211.00 | 0.707494 | 29.25% |
+| Mage solo | 207.00 | 0.749305 | 25.07% |
+| Cleric solo (trash only) | 187.00 | 0.600885 | 39.91% |
+
+Matches the Wave damage table above to shown precision — Verdant stays clearable with the same
+27.5%/30.3%/45.0%/29.3%/25.1% margins; F Mage's one-point-from-unreachable margin is untouched.
+
+*Team-size parity, reproduced* — Verdant boss, Knight archetype: solo `r = 198/212 = 0.933962`,
+five Knights `r = 990/1060 = 0.933962` — identical, so identical `damage_fraction_loss =
+0.814682` either way (same property the win rule already had; this rule inherits it for free by
+also being a pure function of `r`).
+
+*Guaranteed-loss-is-fatal, reproduced* — F Cleric vs. Verdant boss, `r = 198/187 = 1.058824`:
+`clamp(1.0 * r^3, 0, 1) = clamp(1.187055, 0, 1) = 1.0`. Still fatal at full HP, same as the old
+instant-wipe branch produced for this case — the death path Wave damage already documented
+(clear every trash wave, still permadeath at the boss) is unchanged by this ruling.
+
+**A death path this ruling adds, not present before:** because losses now erode HP gradually
+instead of always wiping instantly, a chain of unlucky *non-guaranteed* losses in trash (every
+`r<1`, so individually winnable) can now also drive `current_hp` to `0` without ever hitting a
+guaranteed-loss wave — e.g. two bad rolls compounding on top of partial win damage. This doesn't
+need a new outcome: `OUTCOME_DEFEATED` already covers `current_hp <= 0` regardless of source
+(`hub/expedition/expedition.gd:45-46`). It's a new *route* to an existing state, not a new state,
+and it sits alongside the two death routes Wave damage already named (guaranteed-loss-wave death,
+and won-wave attrition once Ashfall/Sundered rosters exist).
+
+**Rejected: `L=0.7`.** Reaches fewer combos (`4/40` vs. `1.0`'s `5/40` — Ranger F does not reach
+retreat at this coefficient) and, more importantly, breaks the guaranteed-loss-is-fatal property
+this ruling is built around: F Cleric's guaranteed-loss boss only deals `83.09%` damage at `L=0.7`,
+survivable at full HP. A "guaranteed loss" that a full-health team can walk away from isn't
+guaranteed to cost anything in particular, which undercuts the whole reason `r>=1` is called a
+guaranteed loss rather than just a hard fight.
+
+**Rejected: `L=1.5`.** Reaches the identical `5/40` combos `1.0` does — no additional reachability
+bought — just via shorter sequences and earlier, lower checkpoints (e.g. Cleric F reaches
+`(0%,25%]` in 3 waves at `21.32%` instead of 4 waves at `20.46%`). Same logic that picked `1.0` as
+the minimum sufficient value applies here in reverse: `1.5` spends extra severity on near-miss
+losses (`r<1`) without unlocking anything `1.0` doesn't already unlock, since `r>=1` is clamped to
+`1.0` either way. Punishing losses further than the minimum the guaranteed-loss property requires
+isn't free — it just means every non-fatal loss along the way hurts more for no stated reason.
+
+**Rejected: a different curve shape for the loss branch (linear/quadratic in `r`, or an
+RNG-keyed magnitude).** Same reasoning as Wave damage's own rejections of these, inherited rather
+than re-argued: a non-cubic loss curve would flatten the same "cheap when the mismatch is small,
+expensive when it's not" differentiation cubic buys for wins, and an RNG-keyed magnitude (e.g. tying
+loss severity to how badly the `randf()` roll missed) isn't portable to the arena for the same
+reason given there — no single scalar roll exists on a player-controlled fight, and the combat seam
+requires both paths derive the same result from `(team, wave)` alone.
+
+**Rejected: leave the instant wipe and wait for `P2-03c`.** This is the alternative `docs/TASKS.md`
+named as this ticket's other exit and explicitly did not take: `P2-03c` only builds the mixed-rank
+rosters that let the *existing* threshold fire in Ashfall/Sundered — it masks the symptom (no
+buildable-today roster to trigger retreat) without touching the cause (the branch that makes
+retreat unreachable by construction wherever it's tried). The win/loss branch is reachable and
+provably broken in solo Verdant today, with no squad-select dependency, so ruling on it now means
+`P2-03c` inherits correct win/loss semantics instead of building mixed rosters on top of a branch
+that still needs fixing later.
+
+**Implementation note.** Code change to `combat/quick_resolve.gd`'s loss branch (lines 35-39
+today) plus `CombatResult` population on that path — route to `tech-lead`/`implementer`
+(`P2-03f`). One new balance constant, following `wave_damage_coefficient`'s pattern: a
+`wave_loss_damage_coefficient: float = 1.0` field in `BalanceTable`/`balance.tres`. The cubic
+exponent stays a formula-shape choice written into the rule, same footing as the win rule's own
+exponent. No `Expedition` outcome-state change and no zone `.tres` change. `Expedition`'s existing
+death/retreat checks (`hub/expedition/expedition.gd:44-55`) need no edit — they already run
+identically regardless of which branch produced the HP delta; only `CombatResult`'s
+survivor/dead_heroes bookkeeping on the loss path needs to match the win path's shape, and
+`tests/unit/test_expedition.gd`'s win/loss proxy (named above) needs a replacement that doesn't
+assume loss implies death.
+
+> ⚠️ **PROVISIONAL** — `1.0` is arithmetically the minimum coefficient that keeps the
+> guaranteed-loss-is-fatal property intact, and it's verified to make `RETREATED` reachable for
+> every F-rank solo Verdant archetype without re-breaking the Wave damage clear margins or
+> team-size parity. Nobody has played a single lost wave against this number, and the reachable
+> footprint is narrow by construction (F rank only — D and above never reach it, at any tested
+> coefficient, because Verdant's fixed 900 RP falls behind rank-scaled hero power past F).
+> · **Settled by:** a played build at F rank to feel whether losing a wave for roughly `2.9×` a
+> win's damage at the same `r` (`1.0` vs. `0.35`) reads as a real, felt gamble or as an arbitrary
+> tax — the same "close vs. coasting" question Wave damage's own constant is waiting on — and
+> separately, `P2-03c` shipping mixed-rank rosters plus the Ashfall/Sundered unlock, which is what
+> widens `RETREATED`'s reachable footprint past F-rank Verdant rather than this coefficient.
+
 ### The three zones
 
 Three zones carry the entire F→SSS span, so each one covers a wide rank band rather than a
@@ -543,27 +708,37 @@ under-ranked for what it's facing (verified above: a concrete Ashfall roster ret
 HP, another dies by attrition on trash wave 6 — both real outcomes of the Wave damage rule, once
 squad select and the Ashfall unlock exist to build those rosters).
 
-**It has no trigger in the only configuration the game can build today.** Solo, Verdant
-Outskirts, any rank F through SSS — swept exhaustively (Codex thread `019fc9fc-1c10-7a40-aa8e-
-90640c1d3911`, second pass): 40 archetype/rank combinations, 200 trash-wave checkpoints, zero
-crossings of the 25% line. The closest is F Cleric after the last trash wave, at 39.9% remaining
-— 14.9 points of margin still between it and the threshold. Every rank above F collapses toward
-negligible damage almost immediately (D tops out at 6–12% total trash damage; C and above are
-under 3%), because Verdant's `recommended_power` is fixed at 900 while a hero's own power grows
-geometrically with rank (`×1.35` per rank, Ranks above) — so F is the only rank where Verdant's
-ramp is even a fight, and even there, the worst archetype stops 15 points short.
+**Historical finding, now superseded below:** under the old instant-wipe loss branch, this
+threshold had no trigger in the only configuration the game could build. Solo, Verdant Outskirts,
+any rank F through SSS — swept exhaustively (Codex thread `019fc9fc-1c10-7a40-aa8e-90640c1d3911`,
+second pass): 40 archetype/rank combinations, 200 trash-wave checkpoints, zero crossings of the
+25% line. The closest was F Cleric after the last trash wave, at 39.9% remaining. Every rank above
+F collapsed toward negligible damage almost immediately, because Verdant's `recommended_power` is
+fixed at 900 while a hero's own power grows geometrically with rank (`×1.35` per rank, Ranks
+above) — F was the only rank where Verdant's ramp was even a fight.
 
-**Why:** a lost wave is an instant, full-team wipe (`combat/quick_resolve.gd` — `won == false`
-sets every hero's `hp_after` to `0.0`), not graduated damage. HP can therefore only erode through
-*won* waves, and a won wave's damage is capped by `0.35 * r^3` — capped there specifically
-because Verdant's own clear has to stay survivable (Wave damage, above). Those two constraints
-both have to hold at once: the only erosion pathway available to retreat is the same pathway that
-has to stay cheap enough for a clear to exist. At Verdant's specific ramp (5 waves, tops out at
-`r=0.9` for trash), that leaves every archetype short of 25% cumulative damage by construction —
-this isn't a coincidence of the constant chosen, it's what the two requirements jointly imply for
-this ramp. The win/loss branch that makes losses instant wipes instead of heavy-but-survivable
-damage is out of this document's bounds for this ticket (the win/loss check is settled) — named
-here because it's the more plausible target for an actual fix than anything below.
+**Why it was dormant:** a lost wave was an instant, full-team wipe (`combat/quick_resolve.gd` —
+`won == false` set every hero's `hp_after` to `0.0`), not graduated damage. HP could therefore
+only erode through *won* waves, and a won wave's damage is capped by `0.35 * r^3` — capped there
+specifically because Verdant's own clear has to stay survivable (Wave damage, above). Those two
+constraints both had to hold at once: the only erosion pathway available to retreat was the same
+pathway that has to stay cheap enough for a clear to exist. At Verdant's specific ramp (5 waves,
+tops out at `r=0.9` for trash), that left every archetype short of 25% cumulative damage by
+construction.
+
+**Resolved by `P2-03e` (Lost-wave damage, above).** The loss branch is no longer an instant wipe —
+it's graduated damage on the same `r`, coefficient `1.0`. That gives retreat a second erosion
+pathway independent of the win-branch's clear-reachability budget, and it's now reachable: all 5
+F-rank solo-Verdant archetypes reach `(0%, 25%]` via some real win/loss sequence (table above,
+Codex thread `019fce28-66c9-7412-a07c-45327b3f2d9c`). It stays unreachable at D rank and above,
+for the same structural reason it was unreachable everywhere before — Verdant's fixed 900 RP falls
+behind rank-scaled hero power past F, so there's no fight left for either branch to erode HP in.
+That's not a shortfall of this fix; it's the pre-existing rank-vs-RP mismatch showing through
+unchanged.
+
+**The two rejections below predate `P2-03e`'s ruling and are kept as the record of why tuning
+existing constants alone couldn't fix this** — they're still individually correct, just no longer
+the live question now that the loss branch itself changed (Lost-wave damage, above).
 
 **Rejected: raise `0.35`.** Already explored under Wave damage — F Mage sits at 25.1% remaining
 after a full clear, one point of margin from becoming the *first* archetype for whom the clear
@@ -587,19 +762,24 @@ one archetype's one checkpoint in the one zone that's reachable today would also
 eagerly in Ashfall and Sundered, where the current 25% already produces real, meaningful retreats
 (above). A global change to fix a local gap.
 
-> ⚠️ **PROVISIONAL** — retreat is dormant in solo Verdant at every rank, as a direct arithmetic
-> consequence of the Wave damage rule plus the instant-wipe-on-loss branch, not a deliberate
-> design choice made ahead of time. Neither the damage constant nor the threshold can fix it
-> without re-breaking something else this ticket was asked to protect (see rejections above). The
-> honest state today: `COMPLETED` and `DEFEATED` are both reachable in solo Verdant;
-> `RETREATED` is not, anywhere in that space. It becomes reachable once mixed-rank rosters exist
-> (`P2-03c` squad select) and a team can be meaningfully under-ranked for a zone it's actually
-> allowed into (Ashfall, Sundered) — both already verified above. · **Settled by:** either
-> `P2-03c` shipping (retreat then has real rosters to bite on, even if never in Verdant alone), or
-> a design decision to change the win/loss branch so a lost wave does heavy-but-survivable damage
-> instead of an instant wipe — which would give retreat an erosion pathway independent of the
-> clear-reachability budget, but that branch is out of this ticket's bounds and belongs to
-> whoever owns `combat/quick_resolve.gd`'s win check next.
+> ⚠️ **RESOLVED, by `P2-03e`'s ruling (Lost-wave damage, above).** Retreat was dormant in solo
+> Verdant at every rank, as a direct arithmetic consequence of the Wave damage rule plus the
+> instant-wipe-on-loss branch — not a deliberate design choice. The fix was the win/loss branch
+> itself: a lost wave now deals graduated damage (`clamp(1.0 * r^3, 0, 1)`, same `r`) instead of
+> an instant wipe, which gives retreat an erosion pathway independent of the win branch's
+> clear-reachability budget. Verified: `COMPLETED`, `DEFEATED`, and now `RETREATED` are all
+> reachable in solo Verdant — but `RETREATED` only at F rank (all 5 archetypes; D-through-SSS
+> reach none, at any coefficient tested), for the same structural reason F was already the only
+> rank where Verdant's ramp is a real fight. No `P2-03c` dependency remains for retreat to exist
+> in solo Verdant at all; `P2-03c` (mixed-rank rosters) and the Ashfall/Sundered unlock are still
+> what widens the reachable footprint past F-rank Verdant — that half of the original `Settled by`
+> still holds.
+>
+> ⚠️ **PROVISIONAL, narrower scope than before** — the `1.0` coefficient and the resulting F-only
+> footprint are arithmetically verified (Codex thread `019fce28-66c9-7412-a07c-45327b3f2d9c`,
+> cross-referenced in Lost-wave damage above) but unplayed. **Settled by:** a played build at F
+> rank to feel whether a graduated loss reads as a real gamble, and `P2-03c` shipping to widen
+> where retreat can fire beyond F-rank Verdant.
 
 ---
 
