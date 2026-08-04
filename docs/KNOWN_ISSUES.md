@@ -47,6 +47,19 @@ acceptable is unknown until both exist.
 `GAME_SPEC.md` requires gamepad as a first-class input path for the arena. Nothing in Phase 1
 addresses it. It must land with the arena in Phase 2b, not be deferred to Phase 5.
 
+### Retreat never fires in the only configuration that exists today
+`SYSTEMS.md` § Retreat threshold: swept exhaustively (solo, Verdant Outskirts, every rank F–SSS,
+all 5 archetypes, all 5 trash checkpoints) and the 25% threshold is never crossed — closest miss
+is 39.9% remaining. `OUTCOME_RETREATED` is unreachable until squad select (`P2-03c`) ships and a
+mixed-rank team can be under-ranked for a zone it's actually allowed into (Ashfall, Sundered —
+verified reachable there). Not a bug in the wave-damage rule itself: it's the joint consequence of
+the win/loss branch making a lost wave an instant full-team wipe (no graduated damage) and the
+damage rule needing to stay cheap enough for a Verdant clear to exist at all — the only erosion
+path retreat has is the same one that has to stay small. Don't "fix" this by nudging the 25%
+threshold or the damage constant; both were tried and rejected with numbers in `SYSTEMS.md`.
+**Revisit in:** `P2-03c` (squad select), or as part of whatever ticket next touches the win/loss
+branch in `combat/quick_resolve.gd`.
+
 ---
 
 ## Environment

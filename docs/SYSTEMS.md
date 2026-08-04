@@ -345,6 +345,157 @@ broken relative to a full squad, but neither is winnable at level 0.
 > will replace it outright rather than tune it. · **Settled by:** `P2-04a` shipping the XP curve
 > (which retires this rule entirely, not just adjusts it), then a played build.
 
+### Wave damage
+
+The rule above (team-size scaling) and the one before it (level baseline) fix whether a wave can
+be *won*. Neither says what a won wave *costs*. The rule that shipped with `P2-03b` was an
+implementer's placeholder, never a design decision:
+
+```
+damage_fraction = effective_enemy_power / team_power
+hp_after = maximum_hp * (1.0 - damage_fraction)
+```
+
+This charges a **fixed fraction of max HP equal to the wave's raw power ratio**, win or lose how
+narrowly. Since `recommended_power` is pinned to the reference team's `hero_power` (Heroes,
+above), that ratio tracks the zone's authored ramp fraction almost exactly at calibration rank —
+Verdant Outskirts' five trash waves (50%→90% of RP) sum to `0.5+0.6+0.7+0.8+0.9 ≈ 2.97×` max HP
+before the boss is even reached. A hero can win *every single wave* and still be mathematically
+guaranteed to die partway through trash. No zone clear exists at any rank — the game has a
+success path (`OUTCOME_COMPLETED`) that plain arithmetic proves unreachable.
+
+**New rule:**
+
+```
+r = effective_enemy_power / team_power        # same r the win check already uses
+damage_fraction = clamp(0.35 * r^3, 0.0, 1.0)
+```
+
+`r` is exactly the value already computed for the win/loss check (`combat/quick_resolve.gd`),
+post team-size scaling — no new input, no current-HP dependency, so it fits the stateless seam
+(`resolve(team, wave) -> CombatResult`) unchanged and is identical to derive in a future arena
+implementation, since it only needs `effective_enemy_power` and `team_power`, both of which the
+arena must already compute to run the same win condition.
+
+**Why cubic, not linear or quadratic.** A wave a hero can comfortably beat should barely scratch
+it; a wave that's a near-even fight should hurt. Cubing sharpens that gap far more than the
+alternatives at the same target margin — at Verdant calibration (5-hero reference team), the
+first trash wave (`r≈0.43`) costs `2.8%` max HP under the cubic rule versus `8.6%` under a
+linear rule tuned to hit the same zone-clear total, and the ramp's hardest wave (the boss,
+`r≈0.95`) costs `29.6%` versus `18.9%` — roughly a `10.6×` spread cubic vs. `2.2×` linear between
+the ramp's easiest and hardest hits. Linear compression makes every wave cost *roughly the same*
+regardless of where it sits on the ramp, which erases the ramp's own point (waves are authored to
+get harder). Cubic keeps that shape while still landing in a survivable total.
+
+**Verified (Codex thread `019fc9fc-1c10-7a40-aa8e-90640c1d3911`, checkpoints recomputed
+independently from base/growth/rank data, not trusted from this document):**
+
+| Case (Verdant, calibration = F/lvl10) | Team power | Cumulative damage, full clear (5 trash + boss) | HP remaining |
+|---|---:|---:|---:|
+| 5-hero reference team | 1,046.50 | 0.7249 | 27.5% |
+| Knight solo | 212.00 | 0.6975 | 30.3% |
+| Rogue solo | 229.50 | 0.5498 | 45.0% |
+| Ranger solo | 211.00 | 0.7075 | 29.3% |
+| Mage solo | 207.00 | 0.7493 | 25.1% |
+| Cleric solo (trash only) | 187.00 | 0.6009 | 39.9% |
+
+A full zone clear is now arithmetically reachable — not guaranteed (the win/loss coin flip is
+still the gate on each wave, unchanged by this ticket), but a hero who wins every roll survives
+with real margin instead of being dead by construction. Cleric solo still cannot win the Verdant
+boss at all (`r=1.0588` — the win check itself fails, `6%` short) — pre-existing, called out
+already, and unrelated to the damage rule; trash-only Cleric solo survives comfortably (39.9%
+remaining) up to that wall.
+
+**Team-size parity holds exactly**, as it must (Team size scaling above claims per-wave win
+probability parity; this rule must not silently break it). Verdant boss, Knight archetype:
+solo `r = 198/212 = 0.933962…`, five Knights `r = 990/1060 = 0.933962…` — identical `r`, so
+identical `damage_fraction = 0.285139` both ways.
+
+**Retreat is not reachable in the only configuration that exists today** (solo, Verdant
+Outskirts, any rank F–SSS — squad select is unbuilt (`P2-03c`) and every other zone is locked
+behind a Verdant clear, so nothing else is constructible yet). An earlier draft of this section
+claimed retreat was proven reachable using a 5-hero mixed-rank Ashfall roster; that roster cannot
+be built by the game that ships today, so it does not stand as proof of criterion 3. Corrected —
+see **Retreat threshold**, below, for the full accounting: this rule's own arithmetic, swept
+exhaustively across all 40 archetype/rank combinations and 200 trash checkpoints in solo Verdant,
+never crosses the 25% line. That mixed-rank Ashfall example is kept there, relabeled honestly, as
+evidence retreat *will* be reachable once squad select and the Ashfall unlock exist — not as
+evidence for today.
+
+**Death remains reachable today**, and not only through attrition. F Cleric solo can win all
+five Verdant trash waves (ending at 39.9% HP, per the table above) and then face the boss at
+`r = 198/187 = 1.0588` — a guaranteed loss (`r≥1` makes the win check unsatisfiable, independent
+of this damage rule) that wipes the team outright regardless of remaining HP. That is a real,
+buildable-today death path: clear every trash wave, survive with margin, still permadeath at the
+boss. Attrition-driven death (cumulative damage reaching 1.0 across multiple *won* waves, without
+ever hitting a guaranteed-loss wave) is a separate, real failure mode this rule also produces —
+demonstrated below with the same Ashfall example, again honestly labeled as future-reachable
+rather than proof for today, since it needs the same unbuilt squad select and zone unlock.
+
+**A new finding, not requested but surfaced verifying this rule:** the same arithmetic run
+against Ashfall Reaches and Sundered Vault at *their own* calibration ranks shows their reference
+teams cannot survive attrition through trash even winning every roll — Ashfall's reference team
+dies on trash wave 6 (before ever reaching its already-known-unwinnable boss); Sundered's
+reference team is forced to retreat on trash wave 5. Every individual wave up to that point is
+still winnable in isolation (`r<1`); it is the *stack* of six-to-seven near-parity wins in a row
+that exceeds the HP budget, same shape as the original Verdant bug, just not fully absorbed by a
+constant tuned against Verdant alone. This sharpens rather than contradicts the existing
+recommended-power finding below ("bosses are not meant to be beatable by an ungeared reference
+team… gear is the intended headroom") — it extends that same reasoning from "the boss" to "the
+back half of trash, too," for the two harder zones. Retuning `0.35` upward would fix Ashfall/
+Sundered but push Verdant's total damage down toward risk-free (see rejected alternatives), and
+tuning it down loses attrition-death reachability entirely (below `k≈0.25`, no wave can ever
+chain enough damage to kill before the 25% retreat line intervenes first). One constant cannot
+serve a zone meant to be an ungeared-clearable tutorial and two zones meant to demand gear
+progression from that tutorial's loot — this is not a defect in the formula, it is what "each
+zone covers a wide rank band" (The three zones, below) already implies, made concrete.
+
+**Rejected: linear (`p=1`).** At a `k` tuned to the same Verdant-clear target (`k≈0.20`, sum
+`0.7912`), every wave costs a similar proportion of the total regardless of where it sits on the
+ramp — a `2.2×` spread between the easiest and hardest wave versus cubic's `10.6×`. Flattens the
+ramp's own difficulty curve into near-uniform cost per wave, which undercuts the reason the ramp
+is authored as a ramp at all.
+
+**Rejected: quadratic (`p=2`).** Sits between linear and cubic on both the differentiation
+question and the reachability tuning — `k≈0.22` lands Verdant reference-team damage at `0.6118`,
+survivable but with less separation between "comfortable win" and "nail-biter" than cubic gives
+at a comparable margin. No numeric defect, just a weaker fit to the "cheap when easy, expensive
+when close" feel than cubic at the same target total.
+
+**Rejected: tie damage magnitude to the win-check's own `randf()` roll** (e.g.
+`damage_fraction = r / roll` for the roll that decided the win), so a narrowly-won fight costs
+more than a comfortably-won one at the *same* `r`. Mathematically sound and even more textured,
+but not portable to the arena: a live, player-controlled fight (`P2b-01`) has no single scalar
+"roll" to hand back symmetrically with quick-resolve's coin flip, and the combat seam requires
+both paths produce comparable results from the same `(team, wave)` inputs. A pure function of
+`r` alone is derivable by both; a formula keyed to quick-resolve's internal RNG draw is not.
+
+**Rejected: leave `recommended_power` or the wave ramp fractions untouched but change the
+*shape* of team_power/enemy_power comparison itself** (e.g. non-linear enemy scaling). Out of
+this ticket's bounds — the win/loss check is settled, and reshaping it risks re-breaking the
+team-size parity the previous ticket just established. This ticket is about what a *won* wave
+costs, not whether it's won.
+
+**Implementation note.** This is a code change to `combat/quick_resolve.gd`'s post-win branch
+(lines 41-45 today), not a doc-only fix — route to `tech-lead`/`implementer`. It needs **one new
+balance constant** — a `wave_damage_coefficient: float = 0.35` field, following the pattern of
+every other tunable number in this document living in `balance.tres`. The cubic exponent is a
+formula-shape choice, not a tunable magnitude — same footing as the team-size rule's `/5.0`,
+which is written into the rule rather than authored as data. **No zone `.tres` value needs to
+change** — `recommended_power` and the wave ramp fractions (`trash_wave_start_fraction`,
+`trash_wave_end_fraction`, `boss_fraction`) are untouched; only the post-win damage formula in
+code changes.
+
+> ⚠️ **PROVISIONAL** — `0.35` is arithmetically the best-fitting constant found for making Verdant
+> clearable with real (not trivial) margin while keeping retreat and death reachable elsewhere,
+> but it was solved for Verdant specifically and knowingly leaves Ashfall and Sundered
+> attrition-gated through trash, not just at the boss (see finding above). Nobody has played a
+> single wave against this number. · **Settled by:** a played build at Verdant calibration rank to
+> feel whether 27.5% margin on a full clear is "close" or "coasting," which is the actual
+> question a constant can't answer by itself — then a decision on whether Ashfall/Sundered are
+> meant to stay attrition-gated through late trash pre-gear (consistent with the existing
+> boss-headroom reasoning) or need their own ramp/RP retuning, which is a separate pass.
+
 ### The three zones
 
 Three zones carry the entire F→SSS span, so each one covers a wide rank band rather than a
@@ -373,8 +524,13 @@ asked for.
 > boss (`1.2×RP`) or Sundered's last two trash waves and boss (`1.0167×`/`1.1×`/`1.3×RP`) at their
 > calibration rank — the team-power deficit is 20%+ in places. That may be intentional
 > boss-needs-gear headroom rather than a bug, but nobody has fought it with real gear to confirm.
-> · **Settled by:** both combat paths existing and a played build against them, with real gear
-> equipped.
+> Sharpened by the Wave damage arithmetic above: it isn't only the boss — Ashfall's and Sundered's
+> reference teams die or retreat to cumulative trash attrition before even reaching their
+> (separately unwinnable) boss, even winning every individual roll. Every trash wave stays
+> individually winnable; it's the stack of six-to-seven near-parity wins in a row that exceeds the
+> HP budget. Consistent with "gear is the intended headroom," just extended further into the zone
+> than previously shown. · **Settled by:** both combat paths existing and a played build against
+> them, with real gear equipped.
 
 ### Retreat threshold
 
@@ -382,7 +538,68 @@ Each expedition carries a retreat threshold, default: bail at 25% party HP.
 
 Three lines of code. It converts permadeath from something that happens *to* the player into
 something they gambled on, which is the difference between the mechanic feeling unfair and
-feeling tense.
+feeling tense — that's the intent, and it's real in the zones where a mixed-rank team can be
+under-ranked for what it's facing (verified above: a concrete Ashfall roster retreats at 13.1%
+HP, another dies by attrition on trash wave 6 — both real outcomes of the Wave damage rule, once
+squad select and the Ashfall unlock exist to build those rosters).
+
+**It has no trigger in the only configuration the game can build today.** Solo, Verdant
+Outskirts, any rank F through SSS — swept exhaustively (Codex thread `019fc9fc-1c10-7a40-aa8e-
+90640c1d3911`, second pass): 40 archetype/rank combinations, 200 trash-wave checkpoints, zero
+crossings of the 25% line. The closest is F Cleric after the last trash wave, at 39.9% remaining
+— 14.9 points of margin still between it and the threshold. Every rank above F collapses toward
+negligible damage almost immediately (D tops out at 6–12% total trash damage; C and above are
+under 3%), because Verdant's `recommended_power` is fixed at 900 while a hero's own power grows
+geometrically with rank (`×1.35` per rank, Ranks above) — so F is the only rank where Verdant's
+ramp is even a fight, and even there, the worst archetype stops 15 points short.
+
+**Why:** a lost wave is an instant, full-team wipe (`combat/quick_resolve.gd` — `won == false`
+sets every hero's `hp_after` to `0.0`), not graduated damage. HP can therefore only erode through
+*won* waves, and a won wave's damage is capped by `0.35 * r^3` — capped there specifically
+because Verdant's own clear has to stay survivable (Wave damage, above). Those two constraints
+both have to hold at once: the only erosion pathway available to retreat is the same pathway that
+has to stay cheap enough for a clear to exist. At Verdant's specific ramp (5 waves, tops out at
+`r=0.9` for trash), that leaves every archetype short of 25% cumulative damage by construction —
+this isn't a coincidence of the constant chosen, it's what the two requirements jointly imply for
+this ramp. The win/loss branch that makes losses instant wipes instead of heavy-but-survivable
+damage is out of this document's bounds for this ticket (the win/loss check is settled) — named
+here because it's the more plausible target for an actual fix than anything below.
+
+**Rejected: raise `0.35`.** Already explored under Wave damage — F Mage sits at 25.1% remaining
+after a full clear, one point of margin from becoming the *first* archetype for whom the clear
+itself stops being reachable. Pushing `0.35` up to buy retreat headroom for the worst case spends
+the exact margin criterion 2 (a clear must be reachable) was tuned to protect. This would trade
+one dead mechanic for the other, which is precisely what this ticket's acceptance criteria warn
+against.
+
+**Rejected: raise the 25% threshold to catch F Cleric specifically.** The
+closest miss (F Cleric, 39.9% remaining) is real, so a threshold somewhere in `(39.9%, 62.7%]`
+would catch it — but the sweep shows every threshold below `62.7%` remaining can only ever
+fire at the *last* trash checkpoint (wave 5, immediately before the boss), never earlier: F
+Cleric's own wave-4 checkpoint sits at 62.7% remaining and wave-5 at 39.9%, a 22.8-point gap with
+nothing in between for any other archetype or rank to land in either. Reaching genuine
+multi-checkpoint graduation (a retreat that can fire at wave 2 for one team and wave 4 for
+another, which is what "gambled on" implies) needs a threshold at roughly 62.7% remaining or
+higher — i.e., "retreat if you've lost more than a third of your HP," which would fire
+constantly, on nearly every real run, turning retreat from a last-resort gamble into background
+noise. And this threshold is shared by every zone, not scoped to Verdant — raising it to serve
+one archetype's one checkpoint in the one zone that's reachable today would also fire far more
+eagerly in Ashfall and Sundered, where the current 25% already produces real, meaningful retreats
+(above). A global change to fix a local gap.
+
+> ⚠️ **PROVISIONAL** — retreat is dormant in solo Verdant at every rank, as a direct arithmetic
+> consequence of the Wave damage rule plus the instant-wipe-on-loss branch, not a deliberate
+> design choice made ahead of time. Neither the damage constant nor the threshold can fix it
+> without re-breaking something else this ticket was asked to protect (see rejections above). The
+> honest state today: `COMPLETED` and `DEFEATED` are both reachable in solo Verdant;
+> `RETREATED` is not, anywhere in that space. It becomes reachable once mixed-rank rosters exist
+> (`P2-03c` squad select) and a team can be meaningfully under-ranked for a zone it's actually
+> allowed into (Ashfall, Sundered) — both already verified above. · **Settled by:** either
+> `P2-03c` shipping (retreat then has real rosters to bite on, even if never in Verdant alone), or
+> a design decision to change the win/loss branch so a lost wave does heavy-but-survivable damage
+> instead of an instant wipe — which would give retreat an erosion pathway independent of the
+> clear-reachability budget, but that branch is out of this ticket's bounds and belongs to
+> whoever owns `combat/quick_resolve.gd`'s win check next.
 
 ---
 

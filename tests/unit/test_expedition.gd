@@ -65,17 +65,25 @@ func test_retreat_at_twenty_five_percent_stops_before_later_waves() -> void:
 	var expedition := Expedition.new()
 	var team: Array[Hero] = [hero]
 	var team_size_factor := float(team.size()) / 5.0
-	var recommended_power := int(HERO_POWER * 0.75 / (team_size_factor * 0.25))
-	_seed_for_roll_above(0.75)
+	var r := 0.9
+	var recommended_power := int(HERO_POWER * r / (team_size_factor * 0.5))
+	var balance: BalanceTable = preload("res://balance.tres")
+	var wave_damage_coefficient: float = balance.wave_damage_coefficient
+	var per_wave_damage_fraction := wave_damage_coefficient * r * r * r
+	_seed_for_rolls_above(r, 3)
 
 	var outcome := expedition.resolve(
 		team,
-		_make_zone(recommended_power, 0.25, 2),
+		_make_zone(recommended_power, 0.5, 3),
 	)
 
 	assert_eq(outcome, Expedition.OUTCOME_RETREATED)
-	assert_eq(expedition.waves_resolved, 1)
-	assert_almost_eq(expedition.current_hp[hero], HERO_MAX_HP * 0.25, ERROR_MARGIN)
+	assert_eq(expedition.waves_resolved, 3)
+	assert_almost_eq(
+		expedition.current_hp[hero],
+		HERO_MAX_HP * (1.0 - 3.0 * per_wave_damage_fraction),
+		ERROR_MARGIN,
+	)
 	assert_true(GameSession.roster.has(hero))
 
 
@@ -83,10 +91,13 @@ func test_damage_carries_forward_across_two_waves() -> void:
 	var hero := _add_knight()
 	var expedition := Expedition.new()
 	var team: Array[Hero] = [hero]
-	seed(1)
-	var enemy_power := 14
+	var enemy_power := 848
 	var team_size_factor := float(team.size()) / 5.0
-	var per_wave_damage := HERO_MAX_HP * (float(enemy_power) * team_size_factor) / HERO_POWER
+	var r := (float(enemy_power) * team_size_factor) / HERO_POWER
+	var balance: BalanceTable = preload("res://balance.tres")
+	var wave_damage_coefficient: float = balance.wave_damage_coefficient
+	var per_wave_damage: float = HERO_MAX_HP * clamp(wave_damage_coefficient * r * r * r, 0.0, 1.0)
+	_seed_for_rolls_above(r, 2)
 
 	var outcome := expedition.resolve(
 		team,
@@ -101,6 +112,44 @@ func test_damage_carries_forward_across_two_waves() -> void:
 		ERROR_MARGIN,
 	)
 	assert_lt(expedition.current_hp[hero], HERO_MAX_HP - per_wave_damage)
+
+
+func test_authored_damage_coefficient_and_verdant_full_clear_hp() -> void:
+	var balance: BalanceTable = preload("res://balance.tres")
+	assert_eq(balance.wave_damage_coefficient, 0.35)
+
+	var hero := _add_knight()
+	var expedition := Expedition.new()
+	var team: Array[Hero] = [hero]
+	var verdant_outskirts: ZoneDefinition = preload("res://zones/defs/verdant_outskirts.tres")
+	_seed_for_rolls_above(
+		198.0 / HERO_POWER,
+		6,
+		[90.0 / HERO_POWER, 108.0 / HERO_POWER, 126.0 / HERO_POWER, 144.0 / HERO_POWER, 162.0 / HERO_POWER, 198.0 / HERO_POWER],
+	)
+
+	var outcome := expedition.resolve(team, verdant_outskirts)
+
+	assert_eq(outcome, Expedition.OUTCOME_COMPLETED)
+	assert_almost_eq(expedition.current_hp[hero], 84.69183285531011, ERROR_MARGIN)
+
+
+func test_won_wave_uses_cubic_damage_fraction() -> void:
+	var hero := Hero.new("Knight", 0)
+	hero.def_id = &"knight"
+	var team: Array[Hero] = [hero]
+	var enemy_power := 100.0
+	var team_size_factor := float(team.size()) / 5.0
+	var r := (enemy_power * team_size_factor) / HERO_POWER
+	var balance: BalanceTable = preload("res://balance.tres")
+	var wave_damage_coefficient: float = balance.wave_damage_coefficient
+	_seed_for_rolls_above(r, 1)
+
+	var result := QuickResolve.resolve(team, Wave.new(enemy_power))
+	var expected_hp: float = HERO_MAX_HP * (1.0 - clamp(wave_damage_coefficient * r * r * r, 0.0, 1.0))
+
+	assert_true(result.dead_heroes.is_empty())
+	assert_almost_eq(result.hp_after[hero], expected_hp, ERROR_MARGIN)
 
 
 func test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity() -> void:
@@ -130,6 +179,9 @@ func test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity() -> void:
 		assert_eq(solo_won, expected_win)
 		assert_eq(full_won, expected_win)
 		assert_eq(solo_won, full_won)
+		if solo_won:
+			for hero: Hero in full_team:
+				assert_almost_eq(solo_result.hp_after[solo_hero], full_result.hp_after[hero], ERROR_MARGIN)
 		saw_win = saw_win or expected_win
 		saw_loss = saw_loss or not expected_win
 
@@ -154,10 +206,24 @@ func _make_zone(recommended_power: int, fraction: float, trash_wave_count: int) 
 	return zone
 
 
-func _seed_for_roll_above(minimum_roll: float) -> void:
-	for candidate: int in range(1000):
+func _seed_for_rolls_above(
+	minimum_roll: float,
+	wave_count: int,
+	per_wave_minimum_rolls: Array[float] = [],
+) -> void:
+	assert(per_wave_minimum_rolls.is_empty() or per_wave_minimum_rolls.size() == wave_count)
+	for candidate: int in range(10000):
 		seed(candidate)
-		if randf() > minimum_roll:
+		var all_won: bool = true
+		for wave_index: int in wave_count:
+			var roll := randf()
+			randi()
+			var required_roll := minimum_roll
+			if not per_wave_minimum_rolls.is_empty():
+				required_roll = per_wave_minimum_rolls[wave_index]
+			if roll <= required_roll:
+				all_won = false
+		if all_won:
 			seed(candidate)
 			return
-	fail_test("No deterministic seed produced the required roll.")
+	fail_test("No deterministic seed produced the required sequence of rolls.")

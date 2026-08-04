@@ -38,7 +38,8 @@ static func resolve(team: Array[Hero], wave: Wave) -> CombatResult:
 			result.dead_heroes.append(hero)
 		return result
 
-	var damage_fraction := effective_enemy_power / team_power
+	var r := effective_enemy_power / team_power
+	var damage_fraction: float = clamp(BALANCE.wave_damage_coefficient * r * r * r, 0.0, 1.0)
 	for hero: Hero in team:
 		var hp_after := result.maximum_hp[hero] * (1.0 - damage_fraction)
 		result.hp_after[hero] = hp_after
