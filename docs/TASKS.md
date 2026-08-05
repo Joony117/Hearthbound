@@ -176,8 +176,8 @@ above.
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-04d | Expedition clears can drop a real item into inventory | Body in `TASKS-DONE.md`. Unblocked `P2-05a`. Roll order is **slot then rank** — the ruling left it open, this pinned it. First disk-level proof that an `Item` survives JSON (`rank` decodes as `float` and `from_dict`'s `int()` absorbs it); read its Findings before writing another one-off `-s` check, which cannot statically name `Expedition`. |
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4. Needs `P2-04c` (item type) and `P2-04d` (something to salvage) — presupposes items exist, same as equip does. |
-| P2-05a | Equip UI for authored equipment | **Unblocked — this is next.** Items now exist, persist, and arrive on their own (`P2-04d`), so there is something in `GameSession.inventory` to equip. Note the gap it will hit: nothing defines what a rank-`N` item *does* to combat power — `SYSTEMS.md` has the slot→primary-stat table but no magnitude, and `P2-04b` explicitly left that out of scope. Depends on `P2-04c` directly, not on `P2-05` — salvage presupposes items exist just as much as equip does, so gating equip behind salvage was backwards. Corrected from the original note, which assumed item instances would come from `P2-05`. Split out of `P2-02`'s original backlog line, which named equip UI before equipment, loot, or item instances existed. |
-| P2-04e | Lost-gear cache created on hero permadeath | Needs `P2-05a` (equip) — only equipped gear can be lost. Hooks the sole permadeath call site, `GameSession.kill_hero()` (`ARCHITECTURE.md` r8) — do not add a second one. |
+| P2-05a | Equip UI for authored equipment | **Full body below — not split.** Assignment, persistence, and an ugly UI ship now; wiring equipped gear into `compute_final_stats`/`compute_team_power` is an explicit non-goal, since no ticket has ever authored what a rank-`N` item contributes (`P2-04b` left it out of scope on purpose) and no acceptance criterion here needs that number to be checkable. That gap is now `game-designer`'s to rule on next, same shape as `P2-03e`/`P2-04b`, not yet its own numbered ticket. Depends on `P2-04c` directly, not on `P2-05` — salvage presupposes items exist just as much as equip does, so gating equip behind salvage was backwards. |
+| P2-04e | Lost-gear cache created on hero permadeath | Needs `P2-05a` (equip) — only equipped gear can be lost. Hooks the sole permadeath call site, `GameSession.kill_hero()` (`ARCHITECTURE.md` r8) — do not add a second one. `P2-05a`'s interim behavior at that same call site (equipped items return to `GameSession.inventory` on death) is exactly what this ticket replaces with the cache; it is not a second removal path to reconcile. |
 | P2-04f | Recovery expedition — damage roll + cache decay | Needs `P2-04e` (a cache to target). Blocked on two more design gaps: `power_deficit_penalty` in the damage formula (already PROVISIONAL in `SYSTEMS.md`) and a "turn" concept, which doesn't exist anywhere in the codebase today despite the decay clock being turn-denominated. |
 | P2-06 | Sacrifice → essence → rank up, with dupe resonance | |
 | P2-07 | Five buildings as five integers | |
@@ -189,6 +189,142 @@ above.
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3. (See
 P2-09 — that question can't be honestly answered until stone income rate is defined.)
+
+---
+
+## P2-05a — Equip UI for authored equipment                              [TODO]
+
+### Objective
+A player can equip an item out of `GameSession.inventory` onto a hero's matching slot through a
+real (ugly) hub panel, unequip it back, and both the assignment and the inventory survive a real
+save/reload cycle. Equipping changes nothing about combat — no formula exists yet for what a
+rank-`N` item contributes to a hero's stats, and inventing one here would be authoring a balance
+number as an implementer instead of shipping the ticket in front of it.
+
+### Existing architecture
+- `Item` (`equipment/item.gd:1-51`) is `def_id: StringName` + `rank: int`, `RefCounted`, with
+  `to_dict`/`from_dict` and `static definition_for(def_id) -> EquipmentDefinition`, which
+  `push_error`s and returns `null` on a bad id rather than silently defaulting
+  (`CODING_RULES.md:121-122`). An item's slot is **not** stored on `Item` — it is always read off
+  `Item.definition_for(item.def_id).slot`. Do not add a second place to store it.
+- `EquipmentDefinition.Slot` (`equipment/equipment_definition.gd:4`) has 10 values, one authored
+  `.tres` per slot under `equipment/defs/`.
+- `GameSession` (`systems/game_session.gd:10-11`) owns `inventory: Array[Item]` — the single pool
+  of *unequipped* items. `add_item()` (line 26) is the only mutator that emits `roster_changed`,
+  which is what `SaveService.save` is wired to; appending to the array directly persists nothing.
+  `kill_hero()` (line 41) is the sole permadeath call site (`ARCHITECTURE.md` r8) — this ticket
+  adds one line of behavior to it, not a second removal path.
+- `Hero` (`heroes/hero.gd:16-18, 84-101`) has three fields today and no equipment slot at all.
+  `to_dict`/`from_dict` is the per-instance serialization pattern this ticket extends.
+- `ARCHITECTURE.md:33-35` names "gear duplicated into a cache *and* left equipped" as exactly the
+  rot the one-writer-one-path rule exists to prevent — the ownership rule below is required by
+  that rule, not a style choice.
+- `P2-04c`'s Findings (`TASKS-DONE.md`): `Dictionary.get(key, default)` only substitutes on a
+  *missing* key, never an explicit `null` — `GameSession._array_field()` was written to guard
+  exactly that for `roster`/`inventory`/`cleared_zone_ids`. `Hero.from_dict` predates that fix and
+  has no array field yet; the new `equipped` field must use the same guard, not reintroduce the
+  bug `P2-04c` just fixed.
+- `hub/hub.tscn`/`hub/hub.gd`: `%RosterList` (multi-select, hero in metadata) is the only list
+  that exists. There is no inventory or equip UI anywhere — a dropped item is currently named once
+  in `%Status` and then invisible forever (`P2-04d`).
+
+### Decision — where equipped gear lives
+On `Hero`, not a `GameSession`-keyed mapping. `Hero` has no stable id field, and heroes are
+rebuilt fresh from the save array on load — a `GameSession`-side `Dictionary` keyed by object
+identity doesn't survive that round trip, and keying by roster index isn't stable either, since
+`kill_hero()` removing an entry is the entire point of permadeath. Storing equip state on `Hero`
+lets it travel through `to_dict`/`from_dict` and through death with the hero, with no separate
+bookkeeping to keep in sync.
+
+```gdscript
+# heroes/hero.gd
+var equipped: Dictionary[int, Item] = {}   # keyed by EquipmentDefinition.Slot; sparse — only filled slots present
+```
+
+Serialized as an array of entries, matching the shape `GameSession` already uses for
+`cleared_zone_ids` rather than a raw `Dictionary` (JSON dictionary keys are strings only, and this
+sidesteps that):
+
+```gdscript
+# Hero.to_dict() adds:
+"equipped": [{"slot": slot, "item": equipped[slot].to_dict()} for each populated slot]
+```
+
+`from_dict` reads that array the same guarded way `_array_field()` does (missing or explicit-null
+key → empty), validates `int(entry.get("slot", -1))` against the `Slot` range, and skips (with
+`push_error`) rather than crashes on an out-of-range slot — same shape as the `def_id` guard
+already in `Hero.from_dict`/`Item.from_dict`.
+
+### Decision — ownership and displacement
+An `Item` instance is in exactly one of `GameSession.inventory` or one hero's `equipped[slot]`,
+never both, never on two heroes. This is enforced structurally, not by a runtime check: the equip
+action only ever sources from `%InventoryList`, which lists `GameSession.inventory` and nothing
+else — an item already equipped on some hero is not offered, so double-equipping isn't reachable
+through the UI.
+
+Equipping into a slot that already holds an item **displaces** it: remove the old item from
+`hero.equipped[slot]` and append it to `GameSession.inventory`, then remove the new item from
+`inventory` and write it into `hero.equipped[slot]`. Net effect is a swap — neither item is ever
+duplicated or destroyed.
+
+### Decision — a dead hero's equipped items
+`P2-04e` (the lost-gear cache) has not landed. Until it does, `kill_hero()` moves every item out
+of the dying hero's `equipped` dict into `GameSession.inventory` before erasing the hero from
+`roster` — no item vanishes, and this ticket does not build any part of a cache. `P2-04e`'s job
+when it lands is to replace that inventory-return with the cache hook, at the same call site.
+
+### Decision — UI
+Two plain `ItemList`s and two buttons, added to `hub/hub.tscn` under `UI/Root`, same register as
+the existing `%RosterList`/`%ZoneOption` — no drag-and-drop, no icons, no tooltip:
+- `%InventoryList` (single-select) — lists `GameSession.inventory`, label `rank_label + " " +
+  definition.display_name`, item in metadata.
+- `%EquippedList` (single-select) — lists the currently-selected hero's `equipped` slots, label
+  `slot name + rank_label + display_name`; refreshes on `roster_changed` and on roster selection
+  change.
+- `Equip` / `Unequip` buttons, wired the same way `Summon`/`Expedition` are (`[connection]`
+  blocks to `_on_equip_pressed`/`_on_unequip_pressed`).
+- Equip requires exactly one hero selected in `%RosterList` and one item selected in
+  `%InventoryList`; anything else is a `%Status` message, matching `_on_expedition_pressed`'s
+  existing empty-selection guard style, not a crash.
+
+### Acceptance criteria
+- Equipping moves the selected item out of `GameSession.inventory` into the selected hero's
+  `equipped[slot]` (slot read from `Item.definition_for(item.def_id).slot`); it disappears from
+  `%InventoryList` and a row appears in `%EquippedList` for that hero.
+- Equipping into an already-filled slot displaces the previous occupant back into
+  `GameSession.inventory` (it reappears in `%InventoryList`) without duplicating or destroying
+  either item.
+- Unequipping returns the item to `GameSession.inventory` and clears that slot in `%EquippedList`.
+- An `Item` is never simultaneously present in `GameSession.inventory` and in any hero's
+  `equipped` — covered by a GUT test that equips an item and asserts
+  `GameSession.inventory.has(item) == false`.
+- Calling `GameSession.kill_hero()` on an equipped hero leaves every item it was wearing in
+  `GameSession.inventory` afterward — none lost, none duplicated.
+- **Survives save and reload:** equip an item, round-trip `GameSession.to_dict()` →
+  `from_dict()` (or a real `SaveService.save()` → `load_game()` cycle), and the same hero has the
+  same item in the same slot afterward. A save with no `"equipped"` key on a hero (pre-ticket
+  save) loads with that hero's `equipped` empty, not an error.
+- `Hero.compute_final_stats()` and `Hero.compute_team_power()` return identical output before and
+  after equipping the same team — equipping causes no combat-number change as a side effect.
+- Existing GUT suite (`tests/unit/`) still passes; import gate (`tests/import_gate.ps1`) is clean.
+
+### Files allowed to change
+`heroes/hero.gd`, `systems/game_session.gd`, `hub/hub.tscn`, `hub/hub.gd`, new file(s) under
+`tests/unit/`.
+
+### Non-goals
+- Equipped items affecting `compute_final_stats`/`compute_team_power`/combat resolution. No
+  number exists for what a rank-`N` item contributes — `SYSTEMS.md` has the slot→primary-stat
+  table but no magnitude, and `P2-04b` explicitly left this out of scope. Authoring one is
+  `game-designer`'s call, the same shape as `P2-03e`/`P2-04b`; wiring it in is a follow-up
+  implementer ticket once that ruling exists.
+- The lost-gear cache and recovery expedition (`P2-04e`/`P2-04f`) — neither exists yet; on death,
+  equipped items return to `GameSession.inventory`, not a cache.
+- Enhance levels, affixes, cores, salvage (`P2-05`) — untouched fields, no UI for them.
+- A hero-id/UUID scheme, or any `GameSession`-side equipped-items mapping — rejected above in
+  favor of storing equip state on `Hero`.
+- A designed inventory screen, drag-and-drop, tooltips, icons, sorting, or filtering.
+- Any change to `EquipmentDefinition` or the 10 authored `.tres` resources.
 
 ---
 
