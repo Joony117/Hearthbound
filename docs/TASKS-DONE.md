@@ -1804,3 +1804,84 @@ generous.
 
 ### Files changed
 `docs/SYSTEMS.md`
+
+---
+
+## P2-05c — Equipped gear changes combat power                          [DONE]
+
+Implementer ticket. `P2-05b` already ruled every number this needed — `SYSTEMS.md` § Primary stat
+magnitude was the contract, and nothing here was a fresh design call.
+
+### Objective
+Equipping an item raises the hero's stats and the team's power. Before this, a player could fill
+all ten slots and no number on any screen moved — `P2-05a` shipped assignment and persistence with
+combat effect as an explicit non-goal. This closed that.
+
+### Existing architecture
+- `Hero.compute_final_stats` (`heroes/hero.gd:42`) is the single point where a hero's numbers are
+  produced. `QuickResolve.resolve` (`combat/quick_resolve.gd:26`) and `compute_team_power` both go
+  through it, and nothing re-derives stats anywhere else — so gear applied there reaches combat
+  with no second call site to keep in sync.
+- `hero.equipped` is `Dictionary[int, Item]` keyed by `EquipmentDefinition.Slot`, sparse, already
+  persisted (`P2-05a`). The function already receives the `Hero`, so **no signature change was
+  needed** on either static function; per-item lookup goes through `Item.definition_for()`.
+- `EquipmentDefinition.PrimaryStat` (ordinals 0-5) and `Hero`'s six `STAT_*` `StringName`s are the
+  same six stats under two spellings; the mapping is positional and needed no authored table.
+- `tests/unit/test_equipment.gd:115` asserted both functions were byte-identical across an equip.
+  That assertion was this ticket's target, not a constraint to preserve.
+
+### Acceptance criteria
+1. Three new `BalanceTable` fields, present in both `balance_table.gd` and `balance.tres`:
+   `equip_pct_per_rank` `[0.04, 0.054, 0.0728, 0.0984, 0.1328, 0.1792, 0.242, 0.3268]`,
+   `equip_crit_pct_per_rank` `[0.015, 0.02025, 0.0273, 0.0369, 0.0498, 0.0672, 0.09075, 0.12255]`,
+   `equip_crit_rate_cap = 0.75`.
+2. Non-crit slots sum into one per-stat `equip_pct`, applied as a single `* (1.0 + equip_pct)`
+   after `rank_mult`. Worked example: `base_hp 100 / hp_growth 10`, rank `2`, level `5` → ungeared
+   `HP = 273.0`; one rank-`4` head item → `309.2544`.
+3. `necklace` adds `equip_crit_pct_per_rank[rank]` flat to `CRIT_RATE`, `ring` the same to
+   `CRIT_DMG` — no `rank_mult`, no `equip_pct`.
+4. `CRIT_RATE` clamped to `equip_crit_rate_cap`.
+5. Fully same-rank-geared team power is exactly `(1.0 + 2.0 * equip_pct_per_rank[rank])` times the
+   ungeared power.
+6. `test_equipping_does_not_change_combat_stats_or_team_power` inverted, not deleted, and split.
+7. Gear survives save and reload.
+8. `tests/balance_table_check.gd` checks the new `.tres` values.
+9. BUILT green and the full GUT suite passes.
+
+### Non-goals
+No `compute_team_power` formula change, no new field on `Item` or `EquipmentDefinition`, no
+Enhancement/affixes/Cores, no UI change, no move of the recommended-power figures.
+
+### Findings
+**No signature change was needed, and the ticket's own framing was wrong about that.** The backlog
+row predicted "the seam is an extra argument, not new state" — but `compute_final_stats` already
+takes the `Hero`, and `Hero.equipped` has been on it since `P2-05a`. Gear needed nothing threaded
+through; `Item.definition_for()` resolves each item's `EquipmentDefinition` at the point of use.
+Every call site is untouched, `combat/` is untouched, and `QuickResolve` picked up geared numbers
+for free because it already routed through this one function.
+
+**The crit-blindness of `compute_team_power` is now an assertion, not a comment.**
+`test_equipping_changes_hp_and_team_power_but_ring_is_crit_blind` equips a ring and asserts team
+power does *not* move. `SYSTEMS.md` flagged this as a real gap for `tech-lead`; pinning it in a
+test means the eventual fix has to delete an assertion deliberately rather than discover the
+behavior as a bug.
+
+**Gear routing is coupled to two enum orderings.** `equip_pct` is indexed by `PrimaryStat` ordinal
+and `Hero.STAT_NAMES` mirrors it positionally, so reordering either enum silently routes gear to
+the wrong stat with a green import gate. `tests/unit/test_equipment.gd` is the only thing that
+would notice; a comment at `heroes/hero.gd:70` says so.
+
+**The GUT command in `CLAUDE.md` was run with `APPDATA` redirected to a scratch path**, not
+verbatim. `P2-05a` established that a plain GUT run overwrites the real `user://save.json`, and
+`tests/import_gate.ps1` already does the same redirect for the same reason. The Codex worker
+additionally reported the verbatim command crashing before test discovery on a `user://logs`
+failure; that was not reproduced outside its sandbox and is recorded here as a worker observation,
+not an environment fact.
+
+**Verified by re-run, not by relay.** Import gate exit 0 with zero `SCRIPT ERROR`/`ERROR:`/
+`WARNING` lines; GUT 40/40 tests, 9308 assertions, exit 0. Both re-run by the director after the
+worker returned, and again after the review fix-up.
+
+### Files changed
+`balance_table.gd`, `balance.tres`, `heroes/hero.gd`, `tests/unit/test_equipment.gd`,
+`tests/balance_table_check.gd`

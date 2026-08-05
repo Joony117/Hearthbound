@@ -175,6 +175,12 @@ unbeatable by an ungeared S/60 team — becomes satisfiable by a fully-geared on
 Expeditions/combat-seam questions; route them through `tech-lead` if they turn out to matter once
 `P2-05c` makes gear visible.
 
+`P2-05c` landed in `b5525e7`, so gear is now visible and both flagged items are live rather than
+hypothetical. The crit-blindness one is pinned by a test that asserts a ring moves `CRIT_DMG` and
+leaves team power alone — deliberate, so whoever fixes it deletes an assertion on purpose instead
+of filing a bug. The whole `P2-05a`/`b`/`c` group is shipped; `P2-04e` (lost-gear cache) and
+`P2-05` (salvage) are what remain unblocked in the equipment line.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -192,7 +198,7 @@ Expeditions/combat-seam questions; route them through `tech-lead` if they turn o
 | P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4. Needs `P2-04c` (item type) and `P2-04d` (something to salvage) — presupposes items exist, same as equip does. |
 | P2-05a | Equip UI for authored equipment | Body in `TASKS-DONE.md`. Not split — assignment, persistence and an ugly UI shipped; combat effect stayed an explicit non-goal, since no ticket has ever authored what a rank-`N` item contributes. That gap is now `P2-05b`'s. Unblocked `P2-04e`. Corrected a false `KNOWN_ISSUES.md` claim: a plain GUT run **does** overwrite the real `user://save.json`. Read its Findings before trusting another in-memory `to_dict`/`from_dict` test as save-boundary evidence — `slot` reaches disk as `8.0`, and only the disk leg proves the float branch. |
 | P2-05b | What a rank-`N` item contributes to a hero's stat | Body in `TASKS-DONE.md`; the ruling itself is `SYSTEMS.md` § Primary stat magnitude. Three new `BalanceTable` fields — `equip_pct_per_rank` (`0.04 × rank_mult`, eight non-crit slots, two per stat summing into one `equip_pct`), `equip_crit_pct_per_rank` (`0.015 × rank_mult`, necklace/ring, via `equip_flat`), `equip_crit_rate_cap = 0.75`. Not a reuse of `stat_multipliers`: same ratios, own scalar, so a hero-curve retune can't silently reprice every item. Unblocked `P2-05c`. |
-| P2-05c | Equipped gear changes combat power | **Unblocked — this is next.** `P2-05b` ruled the magnitude. Wires `Hero.equipped` into `compute_final_stats`/`compute_team_power` (`heroes/hero.gd`) — both are `static` and take everything as arguments, so the seam is an extra argument, not new state. Also authors the three `BalanceTable` fields + `balance.tres`, and clamps `CRIT_RATE` against `equip_crit_rate_cap` (the ruling names the cap; nothing enforces it yet). `P2-05a` left a test asserting both functions are byte-identical across an equip; that test is what this ticket deliberately inverts. Neither `Item` nor `EquipmentDefinition` needs a new field. |
+| P2-05c | Equipped gear changes combat power | Body in `TASKS-DONE.md`. **No signature change was needed** — this row predicted "the seam is an extra argument"; `compute_final_stats` already takes the `Hero`, and `equipped` has been on it since `P2-05a`, so gear applies in one function and `combat/` was never touched. `compute_team_power`'s crit-blindness is now pinned by an assertion (a ring moves `CRIT_DMG` and not team power), so the eventual fix has to delete it deliberately. Gear routing is indexed by `PrimaryStat` ordinal with `Hero.STAT_NAMES` mirroring it positionally — reordering either enum misroutes gear with a green gate, and only `tests/unit/test_equipment.gd` notices. |
 | P2-04e | Lost-gear cache created on hero permadeath | Needs `P2-05a` (equip) — only equipped gear can be lost. Hooks the sole permadeath call site, `GameSession.kill_hero()` (`ARCHITECTURE.md` r8) — do not add a second one. `P2-05a`'s interim behavior at that same call site (equipped items return to `GameSession.inventory` on death) is exactly what this ticket replaces with the cache; it is not a second removal path to reconcile. |
 | P2-04f | Recovery expedition — damage roll + cache decay | Needs `P2-04e` (a cache to target). Blocked on two more design gaps: `power_deficit_penalty` in the damage formula (already PROVISIONAL in `SYSTEMS.md`) and a "turn" concept, which doesn't exist anywhere in the codebase today despite the decay clock being turn-denominated. |
 | P2-06 | Sacrifice → essence → rank up, with dupe resonance | |
@@ -242,6 +248,7 @@ needs to re-read.
 | `P2-04d` | Expedition clears drop a real, banded item into inventory | `2fbdddf` |
 | `P2-05a` | Equip UI for authored equipment | `0760d83` |
 | `P2-05b` | Equipment magnitude ruling — what a rank-`N` item contributes | `c092fc3` |
+| `P2-05c` | Equipped gear changes a hero's stats and team power | `b5525e7` |
 
 ---
 
