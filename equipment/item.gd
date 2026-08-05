@@ -16,6 +16,10 @@ func _init(p_def_id: StringName = NO_EQUIPMENT_DEF_ID, p_rank: int = 0) -> void:
 	rank = p_rank
 
 
+func rank_label(balance: BalanceTable) -> String:
+	return balance.rank_names[clampi(rank, 0, balance.rank_names.size() - 1)]
+
+
 static func definition_for(p_def_id: StringName) -> EquipmentDefinition:
 	var path: String = DEF_PATH_TEMPLATE % str(p_def_id)
 	if not ResourceLoader.exists(path):

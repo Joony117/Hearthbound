@@ -101,10 +101,17 @@ func _on_expedition_pressed() -> void:
 	var zone: ZoneDefinition = _zone_option.get_item_metadata(_zone_option.selected) as ZoneDefinition
 	assert(zone != null)
 	assert(is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids))
-	var outcome: StringName = Expedition.new().resolve(team, zone)
+	var expedition := Expedition.new()
+	var outcome: StringName = expedition.resolve(team, zone)
 	match outcome:
 		Expedition.OUTCOME_COMPLETED:
-			_status.text = "%d-hero team cleared %s." % [team.size(), zone.display_name]
+			var definition: EquipmentDefinition = Item.definition_for(expedition.loot.def_id)
+			if definition == null:
+				_status.text = "%d-hero team cleared %s, but its item definition is missing." % [team.size(), zone.display_name]
+			else:
+				_status.text = "%d-hero team cleared %s. Found %s %s." % [
+					team.size(), zone.display_name, expedition.loot.rank_label(BALANCE), definition.display_name,
+				]
 		Expedition.OUTCOME_RETREATED:
 			_status.text = "%d-hero team retreated from %s." % [team.size(), zone.display_name]
 		Expedition.OUTCOME_DEFEATED:

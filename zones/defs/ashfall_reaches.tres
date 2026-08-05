@@ -12,4 +12,6 @@ trash_wave_start_fraction = 0.5
 trash_wave_end_fraction = 1.0
 boss_fraction = 1.2
 loot_emphasis = "Gold, C–A parts, moderate Summon Stones, first A+ drops"
+loot_rank_min = 2
+loot_rank_max = 4
 unlock_condition = "Clear Verdant Outskirts"

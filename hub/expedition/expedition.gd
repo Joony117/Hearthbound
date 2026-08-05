@@ -2,6 +2,7 @@ class_name Expedition
 extends RefCounted
 ## One expedition run's wave index and transient HP, per the No CombatState ADR.
 
+const BALANCE: BalanceTable = preload("res://balance.tres")
 const RETREAT_THRESHOLD: float = 0.25
 const OUTCOME_COMPLETED: StringName = &"completed"
 const OUTCOME_RETREATED: StringName = &"retreated"
@@ -12,6 +13,7 @@ var wave_index: int = -1
 var waves_resolved: int = 0
 var current_hp: Dictionary[Hero, float] = {}
 var maximum_hp: Dictionary[Hero, float] = {}
+var loot: Item = null
 
 
 func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
@@ -24,15 +26,19 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 	waves_resolved = 0
 	current_hp.clear()
 	maximum_hp.clear()
+	loot = null
 	for hero: Hero in team:
 		if Hero.definition_for(hero.def_id) == null:
 			return OUTCOME_INVALID_TEAM
 
 	# The boss index is trash_wave_count, so this bound remains safe in release builds.
+	var boss_loot_seed: int = 0
 	for next_wave_index: int in range(zone.trash_wave_count + 1):
 		wave_index = next_wave_index
 		var wave := Wave.from_zone(zone, next_wave_index)
-		var result := QuickResolve.resolve(team, wave)
+		var result: CombatResult = QuickResolve.resolve(team, wave)
+		if next_wave_index == zone.trash_wave_count:
+			boss_loot_seed = result.loot_seed
 		waves_resolved += 1
 		var dead_heroes: Array[Hero] = []
 
@@ -56,7 +62,31 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 			return OUTCOME_RETREATED
 
 	GameSession.mark_zone_cleared(zone.zone_id)
+	loot = roll_loot(zone, BALANCE, boss_loot_seed)
+	GameSession.add_item(loot)
 	return OUTCOME_COMPLETED
+
+
+static func roll_loot(zone: ZoneDefinition, balance: BalanceTable, loot_seed: int) -> Item:
+	assert(zone != null)
+	assert(balance != null)
+	assert(zone.loot_rank_min >= 0 and zone.loot_rank_min <= zone.loot_rank_max)
+	assert(zone.loot_rank_max < balance.summon_weights.size())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = loot_seed
+	var slots: PackedStringArray = EquipmentDefinition.Slot.keys()
+	# Slot first fixes the seeded drop sequence while keeping the independent rolls uniform.
+	var def_id: StringName = StringName(slots[rng.randi_range(0, slots.size() - 1)].to_lower())
+	var weights: Array[int] = []
+	var total_weight: int = 0
+	for rank: int in balance.summon_weights.size():
+		var weight: int = balance.summon_weights[rank] if rank >= zone.loot_rank_min and rank <= zone.loot_rank_max else 0
+		weights.append(weight)
+		total_weight += weight
+	assert(total_weight > 0)
+	var rank: int = Summon.rank_for_ticket(rng.randi_range(0, total_weight - 1), weights, total_weight)
+	assert(rank >= 0)
+	return Item.new(def_id, rank)
 
 
 func _party_hp_fraction(team: Array[Hero]) -> float:
