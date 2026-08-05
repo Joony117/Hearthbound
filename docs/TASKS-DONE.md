@@ -1684,3 +1684,123 @@ that line with the lost-gear cache hook — it does not add a second path to rec
 ### Files changed
 `heroes/hero.gd`, `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`,
 `tests/unit/test_equipment.gd` (new), `docs/KNOWN_ISSUES.md`
+
+---
+
+## P2-05b — What a rank-`N` item contributes to a hero's stat            [DONE]
+
+Design pass, `game-designer`. A ruling recorded in `SYSTEMS.md`, not an implementer contract —
+`P2-05c` is the ticket that consumes it. Same shape as `P2-04b`/`P2-03e`.
+
+### Objective
+Rule on what equipping a rank-`N` item actually does to a hero's stats, so `P2-05c` can have
+checkable acceptance criteria. Today a player can equip a full ten slots and every number on the
+screen is unchanged, because no ticket has ever authored a magnitude. `SYSTEMS.md` § Equipment
+gives each slot a primary stat and Enhancement gives `+8%` per level — `+8%` of nothing.
+
+### The questions to rule on
+1. **How large is an item's primary stat at rank `N`, and through which channel?** The hero
+   formula (`SYSTEMS.md:45-46`) already names two: `equip_flat`, added after `rank_mult`, and
+   `equip_pct`, multiplied at the end. Both are named and neither has ever carried a value. Rule
+   on which channel the primary stat uses and what the rank-`N` magnitude is. If both channels
+   are kept, say what distinguishes them — an unused channel is worse than a deleted one.
+2. **What do the two crit slots contribute?** `necklace` → `CRIT_RATE` and `ring` → `CRIT_DMG`
+   are 2 of the 10 slots and cannot be skipped. They are the case the generic curve breaks:
+   `SYSTEMS.md:26-31` already established that `rank_mult` must **not** apply to crit stats,
+   because a 15% base at `×8.17` is 122.55% — a cap violation, and already 90.75% one rank
+   earlier. Whatever this ticket rules for the other eight slots hits that same wall here. Also
+   name the `CRIT_RATE` cap explicitly if the ruling depends on one; `SYSTEMS.md` implies a cap
+   in that passage and states one nowhere.
+3. **Where does the number live?** `BalanceTable` is the settled shared-tunables container
+   (`DECISIONS.md`, one `BalanceTable`), and `stat_multipliers` is already a rank-indexed array of
+   exactly the right shape — but it is the *hero* rank curve, so reusing it is a decision with a
+   justification, not a default. The alternatives are a new rank-indexed field on `BalanceTable`
+   or a per-slot magnitude on `EquipmentDefinition` (which today carries `slot`, `primary_stat`,
+   `display_name` and no numbers at all). Rule on which, because `P2-05c`'s "Files allowed to
+   change" cannot be written without it.
+4. **How much of a geared hero's power is gear?** A hero wears ten items, so the per-item number
+   is multiplied by ten before it reaches `hero_power`. State the intended gear share at a named
+   checkpoint. Without it the magnitude is unanchored, and `P2-05c` has nothing to assert against
+   beyond "the number went up."
+
+### Existing architecture
+- `Hero.compute_final_stats` (`heroes/hero.gd:42-66`) is `static`, takes hero + definition +
+  balance + level, and applies `stat_multipliers[rank]` to HP/ATK/DEF/SPD only; `CRIT_RATE` and
+  `CRIT_DMG` pass through as archetype constants. `compute_team_power` (line 69) sums
+  `ATK + DEF + HP/10 + SPD` — note **crit contributes nothing to `hero_power`**, so a ruling that
+  puts real value in the two jewelry slots makes `hero_power` an increasingly poor proxy for team
+  strength. Say so if it does; `P2-05c` needs to know whether it is wiring one function or two.
+- `Item` (`equipment/item.gd:10-11`) is `def_id: StringName` + `rank: int` and nothing else. Any
+  ruling that needs a third field per item is a different ticket — say so rather than assuming it.
+- `EquipmentDefinition` (`equipment/equipment_definition.gd`) is `slot` + `primary_stat` +
+  `display_name`, one authored `.tres` per slot under `equipment/defs/`. `PrimaryStat` and
+  `Hero`'s six `STAT_*` constants are the same six stats under two spellings.
+- `Hero.equipped` (`heroes/hero.gd:19`) is `Dictionary[int, Item]` keyed by `Slot`, sparse,
+  persisted, shipped in `P2-05a`. Every slot a hero has filled is already reachable.
+- `BalanceTable` (`balance_table.gd`) holds eight rank-indexed arrays and thirteen scalars.
+  `equipment_affix_counts` and `core_socket_counts` are authored there and have **no consumer** —
+  affixes and Cores do not exist. Do not let the affix column pull this ruling into inventing one.
+- The verified ungeared `hero_power` checkpoints (`SYSTEMS.md:91-103`) are the calibration
+  reference: 1,046.5 / 4,803.2 / 11,453.1 for a five-hero team at F·10, B·40, S·60. The three
+  zones' recommended power (900 / 4,800 / 11,500) is pinned against exactly those ungeared
+  numbers, and `SYSTEMS.md:809` marks that PROVISIONAL. A gear magnitude changes what those
+  figures mean — rule on whether recommended power moves, or explicitly leave it and say why.
+
+### Acceptance criteria
+- Recorded in `SYSTEMS.md` § Equipment as a formula or table with named rejections, the way
+  § Wave damage, § Lost-wave damage and § Loot table were.
+- All four questions above answered. Question 2 answered *separately* from question 1 if the
+  general rule does not survive contact with the crit cap.
+- Every number is either derived from something already in `SYSTEMS.md` or marked
+  `⚠️ PROVISIONAL` with a real **Settled by** clause. Unfelt is expected here; undefined is not.
+- Arithmetic checked against the real authored data — `balance.tres`, the five archetype stat
+  lines, the ten `equipment/defs/*.tres` — not asserted. Show the ten-slot total at a checkpoint.
+- Names which file each number lives in, so `P2-05c`'s scope can be written without reopening it.
+- States the effect on the three recommended-power figures, or states that they hold and why.
+- Says whether `compute_team_power` stays a usable proxy once the jewelry slots carry value.
+
+### Non-goals
+No code. No `.tres` edits — `P2-05c` authors the fields once their shape is ruled. No affixes and
+no Cores, whatever `equipment_affix_counts`/`core_socket_counts` suggest. No enhancement levels:
+`Item` has no enhance level and `P2-05` owns that system — note only that the base ruled here is
+what `+8%` per level will later compound on. No salvage rates, no set bonuses, no per-archetype
+gear preference, no drop-rate revisit (`P2-04b` settled that). No new stat.
+
+### Findings
+The ruling is `SYSTEMS.md` § Primary stat magnitude. All four questions answered, four rejections
+recorded, the whole section marked PROVISIONAL on the target band rather than on the arithmetic.
+
+**Question 2 did split from question 1, as the ticket anticipated — but not for the reason it
+gave.** The ticket predicted the crit slots would break the general curve on the cap. They do not:
+at `base_pct = 4%`, running crit through `equip_pct` reaches `15% × 1.3268 = 19.9%` at SSS, nowhere
+near the `122%` violation `rank_mult` produced in § Ranks. The separation holds on legibility
+instead — `equip_pct` is a relative modifier and `CRIT_RATE`/`CRIT_DMG` are already percentages, so
+routing them through it is a percentage of a percentage. Same shape of problem, different severity,
+same answer. Anyone reopening this should know the cap argument alone would not have forced it.
+
+**Three new `BalanceTable` fields, and `equip_flat` survives.** `equip_pct_per_rank` and
+`equip_crit_pct_per_rank` share `stat_multipliers`' eight ratios with their own scalars
+(`0.04`, `0.015`) — deliberately independent arrays, so a hero-curve retune does not silently
+reprice every item in the game. Plus `equip_crit_rate_cap = 0.75`, named because question 2
+depends on a cap existing and `SYSTEMS.md` had only ever implied one. The formula's `equip_flat`
+channel is *not* dead after all: the eight non-crit slots reject it, the two crit slots use it.
+
+**Recommended power holds; two consequences flagged rather than fixed.** 900 / 4,800 / 11,500 were
+already pinned to the ungeared baseline, so this quantifies the intended headroom instead of moving
+the anchor (`+19.75%` geared at B, `+35.3%` at S; gear share `7.41% → 16.44% → 26.38% → 39.53%`
+across F/B/S/SSS). Both flagged items are out of this ticket's scope and belong to `tech-lead`:
+`compute_team_power` stays permanently blind to the necklace and ring, since crit is not in its
+`ATK + DEF + HP/10 + SPD` formula — a hero in best-in-slot SSS jewelry reads identically to one with
+both slots empty. And Sundered Vault's `130%`-of-RP boss, proven arithmetically unbeatable by an
+ungeared S/60 team, becomes satisfiable by a fully-geared one (`r = 0.9609`) — the first number
+behind the "gear is the intended headroom" reading.
+
+**Corrected on director review.** The Enhancement headroom check labelled `×2.2` as the compounded
+reading of `+8%`/level when it is the additive one (`1.08^15 = ×3.172`). Both are now stated —
+full-Enhanced Rogue lands at `53.88%` compounded or `41.97%` additive — so the `75%` cap holds
+either way and the ruling does not depend on which reading `P2-05` eventually picks. The
+compounded case spends 21 of the 60 available points rather than 33; the margin is real, not
+generous.
+
+### Files changed
+`docs/SYSTEMS.md`
