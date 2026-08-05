@@ -1334,3 +1334,85 @@ real `SaveService.save()` → raw-JSON inspection → `load_game()` cycle, plus 
 `tests/unit/test_item.gd`, `tests/unit/test_item.gd.uid`
 
 ---
+
+## P2-04b — Equipment loot table: which item a cleared zone yields      [DONE]
+
+Design pass, `game-designer`. A ruling recorded in `SYSTEMS.md`, not an implementer contract —
+`P2-04d` is the ticket that consumes it. Same shape as `P2-03e`.
+
+### Objective
+Rule on what a cleared zone drops, so `P2-04d` can have checkable acceptance criteria. Today
+`ZoneDefinition.loot_emphasis` is free prose — `"Gold, F–C parts, light Summon Stones"` — which
+names a feel, not a distribution, and no code can act on it.
+
+### The questions to rule on
+1. **Does a clear drop equipment at all, or only sometimes?** A flat rate, or one that scales
+   with the zone.
+2. **Which slot.** Uniform across the ten `Slot` values, or weighted.
+3. **What rank.** `Item.rank` exists and nothing sets it. Zones already carry an authored rank
+   feel in `loot_emphasis` (`F–C` in Verdant, `C–A` in Ashfall, `S–SSS` in Sundered) — that
+   band is the natural input, but it is prose today and must become a distribution.
+4. **Where the numbers live.** `BalanceTable` is the settled shared-tunables container
+   (`DECISIONS.md`, one `BalanceTable`), but a per-zone drop rate is arguably `ZoneDefinition`'s.
+   Rule on which, because `P2-04d` has to read it from somewhere.
+
+### Existing architecture
+- `ZoneDefinition.loot_emphasis` (`zones/zone_definition.gd:11`) is a free-text `String`, authored
+  in all three `zones/defs/*.tres`. Whatever this ticket rules replaces or supplements it; note
+  `tests/zone_definition_check.gd` asserts its exact current text and will need updating by
+  whoever implements, not by this ticket.
+- `CombatResult.loot_seed` (`combat/combat_result.gd:8`) is already set on every resolve
+  (`combat/quick_resolve.gd:33`) and has **no consumer**. It exists precisely so a drop roll can
+  be deterministic per expedition — rule on whether the drop is seeded from it.
+- `Item` (`equipment/item.gd`) exists as of `P2-04c`: `def_id: StringName` + `rank: int`, and
+  `def_id` resolves 1:1 to `equipment/defs/<slot>.tres`. A drop must be expressible as those two
+  fields and nothing more — anything richer is a different ticket.
+- `BalanceTable`'s rank table is the existing home for rank-indexed arrays; `stat_multipliers`
+  and `summon_weights` are the precedent for a per-rank distribution's shape.
+- `GameSession.mark_zone_cleared()` is where a clear is already recorded, and `add_item()` is
+  the only mutator that persists inventory.
+
+### Acceptance criteria
+- Recorded in `SYSTEMS.md` as a formula or table with named rejections, the way § Wave damage
+  and § Lost-wave damage were.
+- Every number is either derived from something already in `SYSTEMS.md` or marked
+  `⚠️ PROVISIONAL` with a real **Settled by** clause. Unfelt is fine and expected here; undefined
+  is not.
+- The ruling names which file each number lives in (`balance.tres` vs `ZoneDefinition`), so
+  `P2-04d`'s "Files allowed to change" can be written without reopening the question.
+- Arithmetic checked against the real `.tres` data, not asserted — the three authored zones and
+  the ten authored slots.
+- States whether the drop is seeded from `loot_seed` or rolled independently.
+
+### Non-goals
+No code. No `.tres` edits — `P2-04d` authors the fields once their shape is ruled. No stat
+magnitude for equipment (what a rank-`N` item *does* is a separate gap, and neither this ticket
+nor `P2-04d` needs it). No affixes, no Cores, no salvage rates, no `power_deficit_penalty` and no
+turn clock — those belong to `P2-05`/`P2-04f` and are tracked there.
+
+### Findings
+The ruling is `SYSTEMS.md` § Loot table. All four questions answered, six rejections recorded.
+
+**No new `BalanceTable` field.** The rank curve is `summon_weights` reused verbatim, sliced to a
+per-zone band and renormalized; slot uniformity and the guaranteed drop are formula-shape, not
+magnitudes. The only new authored data anywhere is two `int` fields on `ZoneDefinition`
+(`loot_rank_min`/`loot_rank_max`), which is `P2-04d`'s to add.
+
+**`loot_emphasis` is supplemented, not replaced** — it stays as zone-select display copy, and the
+bands are a checked transcription of it (`F–C` → `0..2`, `C–A` → `2..4`, `S–SSS` → `5..7`). So
+`tests/zone_definition_check.gd`'s exact-text assertion needs no change, contrary to what this
+ticket's own "Existing architecture" note anticipated.
+
+**The Summoning precedent is close but not identical.** The Summoning Circle scales the A–SSS
+block and renormalizes all eight weights; the loot band *drops* out-of-band ranks entirely. Same
+array, same renormalize step, different operation — the doc says so explicitly, because reading
+it as "the same slice" sends the next implementer looking for a slice that isn't there.
+
+**Left for `P2-04d`:** the RNG call order. Slot and rank are independent, so the ruling doesn't
+order them — but code needs a fixed order for the `loot_seed` to reproduce. Pick one; it is not
+a design question.
+
+### Files changed
+`docs/SYSTEMS.md`
+
+---
