@@ -112,23 +112,83 @@ func test_legacy_hero_without_equipped_key_loads_empty() -> void:
 	assert_true(GameSession.roster[0].equipped.is_empty())
 
 
-func test_equipping_does_not_change_combat_stats_or_team_power() -> void:
+func test_equipping_changes_hp_and_team_power_but_ring_is_crit_blind() -> void:
 	var definition := _make_definition()
 	var balance := BalanceTable.new()
 	var hero := Hero.new("Combat Hero", 2)
 	var team: Array[Hero] = [hero]
 	var definitions: Array[HeroDefinition] = [definition]
 	var levels: Array[int] = [5]
+	var head := Item.new(&"head", 4)
 	var item := Item.new(&"ring", 4)
 	var stats_before: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
 	var power_before: float = Hero.compute_team_power(team, definitions, levels, balance)
 
+	hero.equipped[EquipmentDefinition.Slot.HEAD] = head
+	var stats_with_head: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
+	var power_with_head: float = Hero.compute_team_power(team, definitions, levels, balance)
+	assert_almost_eq(stats_before[Hero.STAT_HP], 273.0, 0.0001)
+	assert_almost_eq(stats_with_head[Hero.STAT_HP], 309.2544, 0.0001)
+	assert_almost_eq(power_with_head, power_before + (stats_with_head[Hero.STAT_HP] - stats_before[Hero.STAT_HP]) / 10.0, 0.0001)
+
+	hero.equipped[EquipmentDefinition.Slot.RING] = item
+	var stats_with_ring: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
+	assert_almost_eq(stats_with_ring[Hero.STAT_CRIT_DMG], stats_before[Hero.STAT_CRIT_DMG] + 0.0498, 0.0001)
+	assert_almost_eq(Hero.compute_team_power(team, definitions, levels, balance), power_with_head, 0.0001)
+
+
+func test_same_stat_equipment_sums_before_multiplying() -> void:
+	var definition := _make_definition()
+	var balance := BalanceTable.new()
+	var hero := Hero.new("Stacked Hero", 2)
+	hero.equipped[EquipmentDefinition.Slot.HEAD] = Item.new(&"head", 4)
+	hero.equipped[EquipmentDefinition.Slot.LEGS] = Item.new(&"legs", 4)
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
+	assert_almost_eq(stats[Hero.STAT_HP], 273.0 * (1.0 + 0.1328 + 0.1328), 0.0001)
+
+
+func test_crit_rate_is_capped_by_equipped_necklace() -> void:
+	var definition := _make_definition()
+	definition.crit_rate = 0.7
+	var hero := Hero.new("Capped Hero", 2)
+	hero.equipped[EquipmentDefinition.Slot.NECKLACE] = Item.new(&"necklace", 7)
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, BalanceTable.new(), 5)
+	assert_almost_eq(stats[Hero.STAT_CRIT_RATE], 0.75, 0.0001)
+
+
+func test_full_same_rank_gear_scales_team_power() -> void:
+	var definition := _make_definition()
+	var balance := BalanceTable.new()
+	var hero := Hero.new("Fully Equipped Hero", 2)
+	var team: Array[Hero] = [hero]
+	var definitions: Array[HeroDefinition] = [definition]
+	var levels: Array[int] = [5]
+	var power_before: float = Hero.compute_team_power(team, definitions, levels, balance)
+	for def_id: StringName in [&"head", &"chest", &"legs", &"gloves", &"boots", &"main_hand", &"off_hand", &"necklace", &"ring", &"belt"]:
+		var equipment_definition: EquipmentDefinition = Item.definition_for(def_id)
+		hero.equipped[equipment_definition.slot] = Item.new(def_id, 4)
+
+	var expected_multiplier: float = 1.0 + 2.0 * balance.equip_pct_per_rank[4]
+	assert_almost_eq(Hero.compute_team_power(team, definitions, levels, balance), power_before * expected_multiplier, 0.0001)
+
+
+func test_equipped_item_round_trip_keeps_geared_stats() -> void:
+	var definition := _make_definition()
+	var balance := BalanceTable.new()
+	var hero := Hero.new("Geared Saved Hero", 2)
+	hero.def_id = &"mage"
+	var item := Item.new(&"head", 4)
+
 	GameSession.add_hero(hero)
 	GameSession.add_item(item)
 	GameSession.equip_item(hero, item)
+	GameSession.from_dict(GameSession.to_dict())
 
-	assert_eq(Hero.compute_final_stats(hero, definition, balance, 5), stats_before)
-	assert_eq(Hero.compute_team_power(team, definitions, levels, balance), power_before)
+	var reloaded_hero: Hero = GameSession.roster[0]
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(reloaded_hero, definition, balance, 5)
+	assert_almost_eq(stats[Hero.STAT_HP], 309.2544, 0.0001)
 
 
 func _count_item(hero: Hero, item: Item) -> int:

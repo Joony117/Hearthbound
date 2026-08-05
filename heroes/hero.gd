@@ -11,6 +11,7 @@ const STAT_DEF: StringName = &"def"
 const STAT_SPD: StringName = &"spd"
 const STAT_CRIT_RATE: StringName = &"crit_rate"
 const STAT_CRIT_DMG: StringName = &"crit_dmg"
+const STAT_NAMES: Array[StringName] = [STAT_HP, STAT_ATK, STAT_DEF, STAT_SPD, STAT_CRIT_RATE, STAT_CRIT_DMG]
 const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 
 var hero_name: String
@@ -49,6 +50,8 @@ static func compute_final_stats(
 	assert(balance != null)
 	assert(level >= 0)
 	assert(not balance.stat_multipliers.is_empty())
+	assert(not balance.equip_pct_per_rank.is_empty())
+	assert(not balance.equip_crit_pct_per_rank.is_empty())
 	if definition == null:
 		push_error("Cannot compute final stats for hero '%s' without a HeroDefinition." % hero.hero_name)
 		return {}
@@ -56,7 +59,7 @@ static func compute_final_stats(
 	var multiplier := balance.stat_multipliers[
 		clampi(hero.rank, 0, balance.stat_multipliers.size() - 1)
 	]
-	return {
+	var final_stats: Dictionary[StringName, float] = {
 		STAT_HP: (definition.base_hp + definition.hp_growth * level) * multiplier,
 		STAT_ATK: (definition.base_atk + definition.atk_growth * level) * multiplier,
 		STAT_DEF: (definition.base_def + definition.def_growth * level) * multiplier,
@@ -64,6 +67,30 @@ static func compute_final_stats(
 		STAT_CRIT_RATE: definition.crit_rate,
 		STAT_CRIT_DMG: definition.crit_dmg,
 	}
+	# SYSTEMS.md "Primary stat magnitude": eight slots feed a per-stat equip_pct that sums before a
+	# single multiply; necklace/ring add flat to the two crit stats and skip equip_pct entirely.
+	# Indexed by PrimaryStat ordinal, which STAT_NAMES mirrors positionally - reordering either enum
+	# routes gear to the wrong stat, and only tests/unit/test_equipment.gd would notice.
+	var equip_pct: Array[float] = [0.0, 0.0, 0.0, 0.0]
+	for item: Item in hero.equipped.values():
+		var equipment_definition: EquipmentDefinition = Item.definition_for(item.def_id)
+		if equipment_definition == null:
+			continue
+		var primary_stat: int = equipment_definition.primary_stat
+		if primary_stat < EquipmentDefinition.PrimaryStat.CRIT_RATE:
+			var pct_index: int = clampi(item.rank, 0, balance.equip_pct_per_rank.size() - 1)
+			equip_pct[primary_stat] += balance.equip_pct_per_rank[pct_index]
+		else:
+			var crit_pct_index: int = clampi(item.rank, 0, balance.equip_crit_pct_per_rank.size() - 1)
+			var crit_pct: float = balance.equip_crit_pct_per_rank[crit_pct_index]
+			if primary_stat == EquipmentDefinition.PrimaryStat.CRIT_RATE:
+				final_stats[STAT_CRIT_RATE] += crit_pct
+			else:
+				final_stats[STAT_CRIT_DMG] += crit_pct
+	for index: int in equip_pct.size():
+		final_stats[STAT_NAMES[index]] *= 1.0 + equip_pct[index]
+	final_stats[STAT_CRIT_RATE] = minf(final_stats[STAT_CRIT_RATE], balance.equip_crit_rate_cap)
+	return final_stats
 
 
 static func compute_team_power(

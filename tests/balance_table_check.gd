@@ -31,6 +31,10 @@ func _check_values(balance: BalanceTable) -> int:
 		return _fail("SSS summon weight", "2", str(balance.summon_weights[7]))
 	if balance.rank_names != EXPECTED_RANK_NAMES:
 		return _fail("rank_names", str(EXPECTED_RANK_NAMES), str(balance.rank_names))
+	if balance.equip_pct_per_rank[7] != 0.3268:
+		return _fail("SSS equipment percentage", "0.3268", str(balance.equip_pct_per_rank[7]))
+	if balance.equip_crit_rate_cap != 0.75:
+		return _fail("equipment crit rate cap", "0.75", str(balance.equip_crit_rate_cap))
 	if balance.summoning_circle_multiplier_per_level != 0.15:
 		return _fail("summoning_circle_multiplier_per_level", "0.15", str(balance.summoning_circle_multiplier_per_level))
 	if balance.summoning_circle_level_cap != 5:
