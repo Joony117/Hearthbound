@@ -1511,3 +1511,176 @@ rather than a parallel array of ten strings that can drift from it.
 `equipment/item.gd`, `tests/unit/test_loot.gd` (new), `tests/unit/test_expedition.gd`
 
 ---
+
+## P2-05a — Equip UI for authored equipment                              [DONE]
+
+### Objective
+A player can equip an item out of `GameSession.inventory` onto a hero's matching slot through a
+real (ugly) hub panel, unequip it back, and both the assignment and the inventory survive a real
+save/reload cycle. Equipping changes nothing about combat — no formula exists yet for what a
+rank-`N` item contributes to a hero's stats, and inventing one here would be authoring a balance
+number as an implementer instead of shipping the ticket in front of it.
+
+### Existing architecture
+- `Item` (`equipment/item.gd:1-51`) is `def_id: StringName` + `rank: int`, `RefCounted`, with
+  `to_dict`/`from_dict` and `static definition_for(def_id) -> EquipmentDefinition`, which
+  `push_error`s and returns `null` on a bad id rather than silently defaulting
+  (`CODING_RULES.md:121-122`). An item's slot is **not** stored on `Item` — it is always read off
+  `Item.definition_for(item.def_id).slot`. Do not add a second place to store it.
+- `EquipmentDefinition.Slot` (`equipment/equipment_definition.gd:4`) has 10 values, one authored
+  `.tres` per slot under `equipment/defs/`.
+- `GameSession` (`systems/game_session.gd:10-11`) owns `inventory: Array[Item]` — the single pool
+  of *unequipped* items. `add_item()` (line 26) is the only mutator that emits `roster_changed`,
+  which is what `SaveService.save` is wired to; appending to the array directly persists nothing.
+  `kill_hero()` (line 41) is the sole permadeath call site (`ARCHITECTURE.md` r8) — this ticket
+  adds one line of behavior to it, not a second removal path.
+- `Hero` (`heroes/hero.gd:16-18, 84-101`) has three fields today and no equipment slot at all.
+  `to_dict`/`from_dict` is the per-instance serialization pattern this ticket extends.
+- `ARCHITECTURE.md:33-35` names "gear duplicated into a cache *and* left equipped" as exactly the
+  rot the one-writer-one-path rule exists to prevent — the ownership rule below is required by
+  that rule, not a style choice.
+- `P2-04c`'s Findings (`TASKS-DONE.md`): `Dictionary.get(key, default)` only substitutes on a
+  *missing* key, never an explicit `null` — `GameSession._array_field()` was written to guard
+  exactly that for `roster`/`inventory`/`cleared_zone_ids`. `Hero.from_dict` predates that fix and
+  has no array field yet; the new `equipped` field must use the same guard, not reintroduce the
+  bug `P2-04c` just fixed.
+- `hub/hub.tscn`/`hub/hub.gd`: `%RosterList` (multi-select, hero in metadata) is the only list
+  that exists. There is no inventory or equip UI anywhere — a dropped item is currently named once
+  in `%Status` and then invisible forever (`P2-04d`).
+
+### Decision — where equipped gear lives
+On `Hero`, not a `GameSession`-keyed mapping. `Hero` has no stable id field, and heroes are
+rebuilt fresh from the save array on load — a `GameSession`-side `Dictionary` keyed by object
+identity doesn't survive that round trip, and keying by roster index isn't stable either, since
+`kill_hero()` removing an entry is the entire point of permadeath. Storing equip state on `Hero`
+lets it travel through `to_dict`/`from_dict` and through death with the hero, with no separate
+bookkeeping to keep in sync.
+
+```gdscript
+# heroes/hero.gd
+var equipped: Dictionary[int, Item] = {}   # keyed by EquipmentDefinition.Slot; sparse — only filled slots present
+```
+
+Serialized as an array of entries, matching the shape `GameSession` already uses for
+`cleared_zone_ids` rather than a raw `Dictionary` (JSON dictionary keys are strings only, and this
+sidesteps that):
+
+```gdscript
+# Hero.to_dict() adds:
+"equipped": [{"slot": slot, "item": equipped[slot].to_dict()} for each populated slot]
+```
+
+`from_dict` reads that array the same guarded way `_array_field()` does (missing or explicit-null
+key → empty), validates `int(entry.get("slot", -1))` against the `Slot` range, and skips (with
+`push_error`) rather than crashes on an out-of-range slot — same shape as the `def_id` guard
+already in `Hero.from_dict`/`Item.from_dict`.
+
+### Decision — ownership and displacement
+An `Item` instance is in exactly one of `GameSession.inventory` or one hero's `equipped[slot]`,
+never both, never on two heroes. This is enforced structurally, not by a runtime check: the equip
+action only ever sources from `%InventoryList`, which lists `GameSession.inventory` and nothing
+else — an item already equipped on some hero is not offered, so double-equipping isn't reachable
+through the UI.
+
+Equipping into a slot that already holds an item **displaces** it: remove the old item from
+`hero.equipped[slot]` and append it to `GameSession.inventory`, then remove the new item from
+`inventory` and write it into `hero.equipped[slot]`. Net effect is a swap — neither item is ever
+duplicated or destroyed.
+
+### Decision — a dead hero's equipped items
+`P2-04e` (the lost-gear cache) has not landed. Until it does, `kill_hero()` moves every item out
+of the dying hero's `equipped` dict into `GameSession.inventory` before erasing the hero from
+`roster` — no item vanishes, and this ticket does not build any part of a cache. `P2-04e`'s job
+when it lands is to replace that inventory-return with the cache hook, at the same call site.
+
+### Decision — UI
+Two plain `ItemList`s and two buttons, added to `hub/hub.tscn` under `UI/Root`, same register as
+the existing `%RosterList`/`%ZoneOption` — no drag-and-drop, no icons, no tooltip:
+- `%InventoryList` (single-select) — lists `GameSession.inventory`, label `rank_label + " " +
+  definition.display_name`, item in metadata.
+- `%EquippedList` (single-select) — lists the currently-selected hero's `equipped` slots, label
+  `slot name + rank_label + display_name`; refreshes on `roster_changed` and on roster selection
+  change.
+- `Equip` / `Unequip` buttons, wired the same way `Summon`/`Expedition` are (`[connection]`
+  blocks to `_on_equip_pressed`/`_on_unequip_pressed`).
+- Equip requires exactly one hero selected in `%RosterList` and one item selected in
+  `%InventoryList`; anything else is a `%Status` message, matching `_on_expedition_pressed`'s
+  existing empty-selection guard style, not a crash.
+
+### Acceptance criteria
+- Equipping moves the selected item out of `GameSession.inventory` into the selected hero's
+  `equipped[slot]` (slot read from `Item.definition_for(item.def_id).slot`); it disappears from
+  `%InventoryList` and a row appears in `%EquippedList` for that hero.
+- Equipping into an already-filled slot displaces the previous occupant back into
+  `GameSession.inventory` (it reappears in `%InventoryList`) without duplicating or destroying
+  either item.
+- Unequipping returns the item to `GameSession.inventory` and clears that slot in `%EquippedList`.
+- An `Item` is never simultaneously present in `GameSession.inventory` and in any hero's
+  `equipped` — covered by a GUT test that equips an item and asserts
+  `GameSession.inventory.has(item) == false`.
+- Calling `GameSession.kill_hero()` on an equipped hero leaves every item it was wearing in
+  `GameSession.inventory` afterward — none lost, none duplicated.
+- **Survives save and reload:** equip an item, round-trip `GameSession.to_dict()` →
+  `from_dict()` (or a real `SaveService.save()` → `load_game()` cycle), and the same hero has the
+  same item in the same slot afterward. A save with no `"equipped"` key on a hero (pre-ticket
+  save) loads with that hero's `equipped` empty, not an error.
+- `Hero.compute_final_stats()` and `Hero.compute_team_power()` return identical output before and
+  after equipping the same team — equipping causes no combat-number change as a side effect.
+- Existing GUT suite (`tests/unit/`) still passes; import gate (`tests/import_gate.ps1`) is clean.
+
+### Files allowed to change
+`heroes/hero.gd`, `systems/game_session.gd`, `hub/hub.tscn`, `hub/hub.gd`, new file(s) under
+`tests/unit/`.
+
+### Non-goals
+- Equipped items affecting `compute_final_stats`/`compute_team_power`/combat resolution. No
+  number exists for what a rank-`N` item contributes — `SYSTEMS.md` has the slot→primary-stat
+  table but no magnitude, and `P2-04b` explicitly left this out of scope. Authoring one is
+  `game-designer`'s call, the same shape as `P2-03e`/`P2-04b`; wiring it in is a follow-up
+  implementer ticket once that ruling exists.
+- The lost-gear cache and recovery expedition (`P2-04e`/`P2-04f`) — neither exists yet; on death,
+  equipped items return to `GameSession.inventory`, not a cache.
+- Enhance levels, affixes, cores, salvage (`P2-05`) — untouched fields, no UI for them.
+- A hero-id/UUID scheme, or any `GameSession`-side equipped-items mapping — rejected above in
+  favor of storing equip state on `Hero`.
+- A designed inventory screen, drag-and-drop, tooltips, icons, sorting, or filtering.
+- Any change to `EquipmentDefinition` or the 10 authored `.tres` resources.
+
+### Findings
+**A plain GUT run overwrites the real `user://save.json`.** `KNOWN_ISSUES.md` claimed the opposite
+— "confirmed this is read-only" — and that claim was reasoning about *startup* only. It is correct
+that `GameSession._ready()` loads before connecting `roster_changed` to `SaveService.save`, so the
+load's own emission never writes back. But the connection is live by the time any test runs, and
+every test file's `before_each()` calls `GameSession.from_dict(...)`, whose emission does reach
+`SaveService.save`. Measured here: a plain run left the real save at an empty roster. The note is
+corrected. Redirect `%APPDATA%` when running GUT by hand — `tests/import_gate.ps1` already does, and
+this is the reason it does.
+
+**The in-memory round-trip test could not have caught the `slot` JSON type.** `to_dict()` straight
+into `from_dict()` never touches JSON, so the field types it round-trips are the ones it was handed.
+Driven to disk by hand: `"slot": 8.0` is what lands in the file, and `Hero.from_dict`'s
+`elif raw_slot is float:` branch is what reads it back as an `int`. Same trap `P2-04d` recorded for
+`Item.rank`, one field over — an in-memory round-trip test is not evidence about the save boundary,
+and the acceptance criterion that permits one ("or a real `SaveService` cycle") is weaker than it
+looks. Prefer the disk leg for the next serialized field.
+
+**Equip state had nowhere durable to live except `Hero`.** A `GameSession`-side mapping was the
+obvious shape and does not survive: `Hero` carries no stable id, heroes are rebuilt fresh from the
+save array on load, so object identity is gone across a reload — and a roster-index key is not
+stable either, because `kill_hero()` removing an entry is the entire point of permadeath. This is
+worth remembering before proposing any other per-hero side table.
+
+**The one-item-one-owner invariant is enforced by the caller, not the API.** `equip_item()` is
+public and reachable with an item from anywhere; called twice with the same item, it duplicates it
+into both `inventory` and `equipped`. Nothing in the shipped UI can reach that, because the
+inventory list is rebuilt from `GameSession.inventory` alone and never offers an equipped item. The
+ticket chose that structurally rather than adding a runtime check; the constraint is now a comment
+on the function, since the next caller is where it breaks.
+
+**`kill_hero()` grew behavior instead of a sibling.** Returning a dead hero's gear to inventory
+happens inside the sole permadeath call site, before `roster.erase()`. `P2-04e` replaces exactly
+that line with the lost-gear cache hook — it does not add a second path to reconcile.
+
+### Files changed
+`heroes/hero.gd`, `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`,
+`tests/unit/test_equipment.gd` (new), `docs/KNOWN_ISSUES.md`
