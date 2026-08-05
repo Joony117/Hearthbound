@@ -208,6 +208,127 @@ one crit stat:
 | necklace | CRIT_RATE |
 | ring | CRIT_DMG |
 
+### Loot table — which item a cleared zone yields
+
+`P2-04b`. `Item` (`equipment/item.gd`) is `def_id: StringName + rank: int` and nothing else
+(`P2-04c`) — a drop is exactly one instance of that shape. Placed here, ahead of Enhancement,
+because enhancement needs an item to already exist.
+
+**Ruling, in order of the ticket's four questions:**
+
+**1. Drop rate — guaranteed, one item, flat across all three zones.** A successful expedition
+(`Expedition.resolve()` reaching `OUTCOME_COMPLETED`, `hub/expedition/expedition.gd:58-59`, the
+same call site as `mark_zone_cleared()`) yields exactly one `Item`. Not zone-scaled, not
+probabilistic on the "does it drop" question — only *which* item is randomized (slot, rank
+below). `RETREATED` and `DEFEATED` yield nothing; only a full clear does.
+
+**2. Slot — uniform across all ten `Slot` values (10% each).** No existing number in this
+document weights one slot over another — Primary stat per slot (above) treats all ten
+symmetrically (2 HP / 2 DEF / 2 SPD / 2 ATK / 2 crit slots), so there's no established asymmetry
+to carry into a drop weighting. `def_id` follows the slot directly: each `Slot` has exactly one
+authored `EquipmentDefinition` today (`equipment/defs/<slot_name>.tres`), so rolling a slot *is*
+rolling a `def_id` — no second roll needed.
+
+**3. Rank — reuse `summon_weights`, sliced to the zone's band and renormalized.** Each zone
+carries a rank band as two new `int` fields, `loot_rank_min` / `loot_rank_max` (rank indices,
+`0..7`, inclusive), matching the band each zone's `loot_emphasis` prose already names:
+
+| Zone | Band (prose) | `loot_rank_min` | `loot_rank_max` |
+|---|---|---|---|
+| Verdant Outskirts | F–C | 0 | 2 |
+| Ashfall Reaches | C–A | 2 | 4 |
+| Sundered Vault | S–SSS | 5 | 7 |
+
+Within the band, a rank's drop weight is `BALANCE.summon_weights[i]` for `i` in
+`[loot_rank_min, loot_rank_max]`, renormalized so the band sums to 1.0. The Summoning Circle
+already renormalizes this same array after reweighting it (Summoning, above) — note it scales a
+block and renormalizes all eight, where this *drops* the out-of-band ranks entirely, so the two
+are the same array and the same renormalize step, not the same operation. No new weight table is
+authored; the existing rank-rarity curve is reused verbatim.
+
+Verified against `summon_weights = [4000, 2700, 1700, 1000, 450, 120, 28, 2]`
+(`balance.tres`) and the three authored zones (`zones/defs/*.tres` — bands above match each
+zone's authored `loot_emphasis` band exactly):
+
+| Zone | Ranks (band) | Weights | Sum | Renormalized |
+|---|---|---|---:|---|
+| Verdant Outskirts | F, D, C | 4000, 2700, 1700 | 8400 | 47.62% / 32.14% / 20.24% |
+| Ashfall Reaches | C, B, A | 1700, 1000, 450 | 3150 | 53.97% / 31.75% / 14.29% |
+| Sundered Vault | S, SS, SSS | 120, 28, 2 | 150 | 80.00% / 18.67% / 1.33% |
+
+Each row sums to exactly 1.0 (verified as exact fractions: Verdant `10/21 + 9/28 + 17/84 = 1`;
+Ashfall `34/63 + 20/63 + 1/7 = 1`; Sundered `4/5 + 14/75 + 1/75 = 1` — Codex thread
+`019fcff0-e9de-7622-9c81-4d1391557dbf`). Sundered's own top end stays true to the "near-mythical"
+feel Summoning already established: an SSS-rank drop is 1.33% *of a Sundered clear*, not 1.33% of
+all drops everywhere — expected clears to a first SSS-rank item of *any* slot from Sundered is
+`1/0.013333 ≈ 75`; to a *specific* slot at SSS (e.g. a Sundered main-hand at SSS) is
+`1/(0.013333 * 0.10) = 750` (same thread).
+
+**4. Where the numbers live.**
+
+| Number | File | Notes |
+|---|---|---|
+| `loot_rank_min` / `loot_rank_max` per zone | `ZoneDefinition` (→ `zones/defs/*.tres`) | New fields. Genuinely per-zone, per the ticket's own framing. |
+| Rank weights within the band | Nowhere new — derived at runtime from `BalanceTable.summon_weights` (already in `balance.tres`) | Slice-and-renormalize is a formula, same footing as the Summoning Circle's own renormalization (written into the rule, not authored as a second table). |
+| Slot uniformity (1/10) | Nowhere — formula-shape (`10` is `EquipmentDefinition.Slot`'s fixed size, an ADR-settled count, not a tunable) | No `BalanceTable` field. |
+| Guaranteed one-item-per-clear | Nowhere — formula-shape, written into the drop rule itself | Same footing as the team-size `/5.0` divisor and the win/loss cubic exponent (Expeditions, above): a shape choice, not a magnitude. |
+
+`P2-04d`'s "files allowed to change" follows directly: `ZoneDefinition` (`zones/zone_definition.gd`
++ the three `.tres`, two new fields) and whatever loot-roll code it adds. `BalanceTable`/
+`balance.tres` need no new field for this ticket.
+
+**`loot_emphasis` is supplemented, not replaced.** The prose stays — it is display copy for the
+zone-select UI, unaffected by whether a machine-readable band also exists — and the band above is
+a direct, checked transcription of that prose (`F–C` → `0..2`, `C–A` → `2..4`, `S–SSS` → `5..7`),
+not a reinterpretation of it. `tests/zone_definition_check.gd`'s exact-text assertion on
+`loot_emphasis` is therefore untouched by this ruling; `P2-04d` only adds the two new fields.
+
+**Seeded from `CombatResult.loot_seed`, specifically the boss wave's result.** `loot_seed` is set
+on every `QuickResolve.resolve()` call (`combat/quick_resolve.gd:33`) and `Expedition.resolve()`
+calls `resolve()` once per wave in a loop, discarding each wave's `CombatResult` except for
+bookkeeping (`hub/expedition/expedition.gd:32-58`). `mark_zone_cleared()` fires immediately after
+the loop's last iteration — the boss wave (`wave_index == zone.trash_wave_count`) — so the boss
+wave's `CombatResult.loot_seed` is the one in scope at exactly the point the drop must be rolled,
+and is the only one that exists once per clear rather than once per wave. Seed a
+`RandomNumberGenerator` with it; roll slot and rank from that generator.
+
+**Rejected: chance-based drop (e.g. a flat 70% "does it drop at all" roll).** Nothing in this
+document names a scarcity goal for equipment acquisition itself — the rank/slot rolls already
+supply rarity variance, and salvage/parts (above) already gate re-gearing speed. A dry roll on
+top adds a frustration axis with no stated purpose. Revisit only if `P2-04d`/`P2-05a` surface
+inventory bloat as a real problem.
+
+**Rejected: more than one item per clear, scaled by zone.** The ticket's own framing is singular
+("which item a cleared zone yields"), and none of the four questions asked about count. Adding a
+per-zone item count is scope this ticket wasn't asked to rule on.
+
+**Rejected: weighted slot distribution.** No basis exists to prefer one slot over another — the
+Primary stat per slot table (above) is already symmetric across all ten slots — so weighting one
+would be an arbitrary number invented for this ticket alone, which the acceptance criteria
+explicitly rule out ("undefined is not [fine]").
+
+**Rejected: an independently-authored rank-drop curve**, rather than reusing `summon_weights`.
+Would need its own justification and its own from-scratch PROVISIONAL marker; reusing the game's
+one already-tuned rarity curve costs nothing new, stays internally consistent (an SSS is
+near-mythical everywhere it appears, not just in Summoning), and reuses the array the Summoning
+Circle already renormalizes in this same document.
+
+**Rejected: rolling independently instead of seeding from `loot_seed`.** `loot_seed` exists in
+`CombatResult` with **no consumer** specifically for this (`docs/TASKS.md` P2-04b's own
+"Existing architecture" note) — using it costs nothing and makes a clear's drop reproducible from
+the same expedition data, for free.
+
+**Rejected: seeding from every wave's `loot_seed` (e.g. XOR-combining all of them).** Only the
+boss wave's `CombatResult` is in scope where the clear is actually recorded, and a clear happens
+exactly once per expedition — there is exactly one natural seed, not several to combine.
+
+> ⚠️ **PROVISIONAL** — the rank/slot arithmetic above is verified against real `.tres` data and
+> internally consistent with Summoning's existing rarity curve, but nobody has played against a
+> guaranteed one-item-per-clear rate: whether it reads as generous or floods inventory once
+> `P2-04d` wires drops into a real run and `P2-05` (salvage) exists to absorb the flow is unfelt.
+> · **Settled by:** `P2-04d` shipping drops end-to-end, then a played build across all three
+> zones once salvage exists to close the loop on unwanted items.
+
 ### Enhancement
 
 - `cost(n → n+1) = 2 + n` parts of matching rank, plus gold
