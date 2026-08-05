@@ -92,6 +92,22 @@ yet. Godot owns these and they are committed like every other `.gd.uid` in the r
 appearing after a cold-cache gate run is expected, and should be committed rather than ignored.
 Never hand-edit one (`AGENTS.md`).
 
+### A `-s` script compiles before the autoloads register — and hangs if it fails
+`--headless -s <script>` loads and compiles that script *before* `SceneRouter`/`SaveService`/
+`GameSession` exist as identifiers. Any dependency it names statically that references an autoload
+at compile time therefore fails with `Identifier not found: GameSession` — `hub/expedition/
+expedition.gd` does, and has since `P2-03b`. Worse than the error: the run then **hangs** instead
+of exiting, because the script's own `quit()` is never reached, and a hung `-s` run is
+indistinguishable from a finished one at the call site.
+
+This is why `tests/save_roundtrip_check.gd` reaches everything through `root.get_node()` and
+`.call()` strings rather than static types. `load()` the script inside the deferred callback and
+it compiles normally, since the autoloads are up by then. GUT is unaffected — `gut_cmdln.gd` loads
+test scripts after `_ready()`, which is why `tests/unit/*` can name `Expedition` freely.
+
+Measured 2026-08-04 during `P2-04d`; the hung process had to be reaped with
+`Get-Process Godot* | Stop-Process -Force`.
+
 ### Console binary required for CLI
 `tools/godot/Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows stdout.
 Always use `Godot_v4.7.1-stable_win64_console.exe` for headless and scripted runs.

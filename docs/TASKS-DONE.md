@@ -1416,3 +1416,98 @@ a design question.
 `docs/SYSTEMS.md`
 
 ---
+
+## P2-04d — Expedition clears can drop a real item into inventory      [DONE]
+
+### Objective
+Clearing a zone drops exactly one `Item` into `GameSession.inventory`, and the hub says which
+one. First player-visible ticket in the `P2-04` group.
+
+### Existing architecture
+- **The rule is already written.** `SYSTEMS.md` § Loot table is `P2-04b`'s complete ruling:
+  one guaranteed item per `OUTCOME_COMPLETED`, slot uniform over the ten `EquipmentDefinition.Slot`
+  values, rank drawn from `BALANCE.summon_weights` **sliced to the zone's band and renormalized**,
+  seeded from the boss wave's `CombatResult.loot_seed`. Nothing here is a design call; deviating
+  from that section is a rejection, not a judgment.
+- `Item` (`equipment/item.gd`) is `def_id: StringName + rank: int`, with `definition_for()` doing
+  the `res://equipment/defs/<def_id>.tres` lookup. `GameSession.add_item()` already appends and
+  emits `roster_changed` (which saves).
+- `Expedition.resolve()` (`hub/expedition/expedition.gd:32-59`) loops `trash_wave_count + 1` waves;
+  the last iteration is the boss. `result` is block-scoped to the loop body, so the boss wave's
+  `loot_seed` has to be hoisted to survive past it. `mark_zone_cleared()` fires immediately after.
+- `def_id` **is** the slot: each `Slot` has exactly one authored `.tres`, named for it
+  (`main_hand` → `equipment/defs/main_hand.tres`). Rolling a slot is rolling a `def_id`.
+- `Summon.rank_for_ticket(ticket, weights, total)` (`hub/summon/summon.gd:27`) already maps a
+  weighted ticket to a rank index, with the guards. Reuse it; do not write a second cumulative walk.
+
+### Implementation decisions (fixed here, not open)
+- **Roll slot first, then rank**, from one `RandomNumberGenerator` seeded with the boss
+  `loot_seed`. The ruling left the order open only because the two are independent — it still has
+  to be pinned for `loot_seed` to reproduce a drop. Slot first. Comment it.
+- The roll is a **static pure function** `Expedition.roll_loot(zone, balance, loot_seed) -> Item`,
+  not a new file — `Summon.roll()`'s shape. Band slicing is a masked copy of `summon_weights`
+  (out-of-band entries zeroed) handed to `Summon.rank_for_ticket`; that renormalizes implicitly.
+- The ten slots come from `EquipmentDefinition.Slot.keys()`, lowercased — not a hardcoded list of
+  ten strings alongside the enum that already holds them.
+- `roll_loot` + `GameSession.add_item()` are called from `resolve()` at the `mark_zone_cleared()`
+  call site. The dropped `Item` is also held on the instance (`var loot: Item = null`) so the hub
+  can name it; that is transient per-run state, same as `waves_resolved`.
+
+### Acceptance criteria
+- Verdant/Ashfall/Sundered carry `loot_rank_min`/`loot_rank_max` of `0/2`, `2/4`, `5/7`.
+- A completed expedition adds exactly one `Item` to `GameSession.inventory`; `RETREATED`,
+  `DEFEATED` and `INVALID_TEAM` add none.
+- The same `loot_seed` and zone produce the same `def_id` and `rank` every time.
+- Every rank the roll can return for a zone is inside that zone's band, and over many seeds all
+  three in-band ranks and all ten slots are reachable.
+- All ten rolled `def_id`s resolve to a real `EquipmentDefinition` — no `push_error`.
+- The hub status line after a clear names the item's rank and display name.
+- **Survives save and reload**: the dropped item is in `inventory` after a
+  `to_dict()` → `from_dict()` round-trip.
+- Existing tests still pass. `tests/unit/test_expedition.gd:138` asserts the exact cleared-status
+  text and will need the new suffix.
+
+### Files allowed to change
+`zones/zone_definition.gd`, `zones/defs/*.tres` (all three), `hub/expedition/expedition.gd`,
+`hub/hub.gd`, `equipment/item.gd` (a `rank_label(balance)` mirroring `Hero.rank_label`),
+`tests/unit/test_loot.gd` (new), `tests/unit/test_expedition.gd`.
+
+### Non-goals
+No `balance.tres` field (the ruling is explicit — the rank curve is `summon_weights` reused). No
+inventory UI, no equipping (`P2-05a`), no salvage (`P2-05`), no lost-gear cache (`P2-04e`). No
+change to `loot_emphasis` or to `tests/zone_definition_check.gd`'s exact-text assertion — the band
+supplements the prose. No second item, no drop-chance roll, no per-slot weighting: all three are
+explicitly rejected in `SYSTEMS.md` § Loot table.
+
+### Findings
+**An `Item` had never reached disk before this ticket.** `P2-04c` proved the inventory round-trip
+through `GameSession.to_dict()`/`from_dict()` in memory only, and `tests/save_roundtrip_check.gd`
+covers heroes exclusively — so the JSON leg was untested for items. Driven by hand here against a
+redirected `%APPDATA%`: a Sundered Vault drop at `loot_seed = 7` (`gloves`, rank 6) wrote to a real
+`user://save.json` and came back with `rank` as `int`, not the `float` JSON numbers decode to.
+`Item.from_dict`'s `int(data.get("rank", 0))` is what absorbs that, and it is now known to be
+load-bearing rather than defensive.
+
+**A `-s` script cannot statically reference `Expedition`.** With `--headless -s <script>`, the
+script compiles *before* the autoloads register, so any dependency naming `GameSession` at compile
+time fails with `Identifier not found: GameSession` — and the run then **hangs** rather than
+exiting, because `quit()` is never reached. `expedition.gd` has named `GameSession` since `P2-03b`,
+so this is not new, but it is why `tests/save_roundtrip_check.gd` reaches everything through
+`root.get_node()` and `.call()` strings instead of static types. `load()` the script at runtime
+inside the deferred callback and it compiles fine. Worth knowing before writing the next one-off
+disk check; GUT is unaffected, since it loads test scripts after the autoloads exist.
+
+**The retreat branch is not deterministic without seeding.** `test_loot.gd`'s retreat case wins its
+wave ~5.7% of the time; three consecutive wins would have produced `COMPLETED` and a spurious
+failure at roughly 1-in-5500 runs. Seeded, the way `test_expedition.gd` already does everywhere.
+
+**`EquipmentDefinition.Slot.keys()` assigns cleanly to a `PackedStringArray`** and lowercases to
+the ten authored `.tres` filenames exactly — so the slot list has one home (the ADR-settled enum)
+rather than a parallel array of ten strings that can drift from it.
+
+### Files changed
+`zones/zone_definition.gd`, `zones/defs/verdant_outskirts.tres`, `zones/defs/ashfall_reaches.tres`,
+`zones/defs/sundered_vault.tres`, `hub/expedition/expedition.gd`, `hub/hub.gd`,
+`equipment/item.gd`, `tests/unit/test_loot.gd` (new), `tests/unit/test_expedition.gd`
+
+---
