@@ -136,10 +136,17 @@ clean with GUT present. `addons/gut/fonts/*.import` sidecars appear on first rei
 its own runner UI fonts) and are committed like every other `.import`/`.gd.uid` in this repo.
 
 Running `gut_cmdln.gd` directly (not through `import_gate.ps1`) does not redirect `%APPDATA%`, so
-it exercises the real `user://save.json` via the `GameSession`/`SaveService` autoloads on startup
-— confirmed this is read-only (`GameSession._ready()` loads before connecting `roster_changed` to
-`SaveService.save`, so the load's own signal emission never triggers a write). Redirect `%APPDATA%`
-to a temp dir when running GUT manually anyway, for the same reason `import_gate.ps1` does.
+it exercises the real `user://save.json` via the `GameSession`/`SaveService` autoloads. **It
+overwrites that file.** Startup itself is read-only — `GameSession._ready()` loads before
+connecting `roster_changed` to `SaveService.save`, so the load's own emission never writes back —
+but the connection is live by the time any test runs, and every test file's `before_each()`
+(`test_loot.gd`, `test_item.gd`, `test_expedition.gd`, `test_equipment.gd`) calls
+`GameSession.from_dict(...)`, whose emission does reach `SaveService.save`. Measured 2026-08-04
+verifying `P2-05a`: a plain GUT run left the real save at an empty roster.
+
+The earlier claim here that the run was read-only was reasoning about startup only and did not
+survive measurement. Redirect `%APPDATA%` to a temp dir when running GUT manually, the same way
+`import_gate.ps1` does — this is a real-save-destroying command otherwise, not merely untidy.
 
 ### A Godot editor serves LSP on 6005 and is a second engine consumer
 `--headless --editor --path E:/Game` serves the LSP port. The `_console` wrapper is not what holds

@@ -28,6 +28,29 @@ func add_item(item: Item) -> void:
 	roster_changed.emit()
 
 
+## An Item is in `inventory` or on exactly one hero, never both. That is enforced by the caller:
+## the only equip path offers items from `inventory` alone, so an already-equipped one is never
+## reachable. Calling this with an item from anywhere else duplicates it (docs/TASKS.md P2-05a).
+func equip_item(hero: Hero, item: Item) -> void:
+	var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+	if definition == null:
+		return
+	var slot: int = definition.slot
+	inventory.erase(item)
+	if hero.equipped.has(slot):
+		inventory.append(hero.equipped[slot])
+	hero.equipped[slot] = item
+	roster_changed.emit()
+
+
+func unequip_item(hero: Hero, slot: int) -> void:
+	if not hero.equipped.has(slot):
+		return
+	inventory.append(hero.equipped[slot])
+	hero.equipped.erase(slot)
+	roster_changed.emit()
+
+
 func mark_zone_cleared(zone_id: StringName) -> void:
 	assert(zone_id != &"")
 	if cleared_zone_ids.has(zone_id):
@@ -39,6 +62,9 @@ func mark_zone_cleared(zone_id: StringName) -> void:
 ## The single place a hero leaves the roster. See docs/ARCHITECTURE.md rule 8 - permadeath
 ## reachable from more than one call site is how this game rots.
 func kill_hero(hero: Hero) -> void:
+	for item: Item in hero.equipped.values():
+		inventory.append(item)
+	hero.equipped.clear()
 	roster.erase(hero)
 	roster_changed.emit()
 

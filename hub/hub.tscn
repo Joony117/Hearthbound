@@ -122,6 +122,57 @@ layout_mode = 2
 size_flags_vertical = 3
 select_mode = 1
 
+[node name="EquipmentPanel" type="PanelContainer" parent="UI/Root"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 312.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -112.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Columns" type="HBoxContainer" parent="UI/Root/EquipmentPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Inventory" type="VBoxContainer" parent="UI/Root/EquipmentPanel/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Header" type="Label" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+layout_mode = 2
+text = "INVENTORY"
+
+[node name="InventoryList" type="ItemList" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+select_mode = 0
+
+[node name="Equip" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+layout_mode = 2
+text = "Equip"
+
+[node name="Equipped" type="VBoxContainer" parent="UI/Root/EquipmentPanel/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Header" type="Label" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
+layout_mode = 2
+text = "EQUIPPED"
+
+[node name="EquippedList" type="ItemList" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+select_mode = 0
+
+[node name="Unequip" type="Button" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
+layout_mode = 2
+text = "Unequip"
+
 [node name="Bottom" type="VBoxContainer" parent="UI/Root"]
 layout_mode = 1
 anchor_top = 1.0
@@ -165,5 +216,8 @@ modulate = Color(1, 1, 1, 0.4)
 [node name="PauseMenu" parent="." instance=ExtResource("2_pause")]
 unique_name_in_owner = true
 
+[connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
+[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Equip" to="." method="_on_equip_pressed"]
+[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]

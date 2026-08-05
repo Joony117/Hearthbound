@@ -16,6 +16,7 @@ const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 var hero_name: String
 var rank: int
 var def_id: StringName
+var equipped: Dictionary[int, Item] = {}
 
 
 func _init(p_name: String = "", p_rank: int = 0) -> void:
@@ -82,7 +83,19 @@ static func compute_team_power(
 
 
 func to_dict() -> Dictionary:
-	return {"name": hero_name, "rank": rank, "def_id": str(def_id)}
+	var equipped_slots: Array[int] = []
+	for slot: int in equipped:
+		equipped_slots.append(slot)
+	equipped_slots.sort()
+	var equipped_entries: Array[Dictionary] = []
+	for slot: int in equipped_slots:
+		equipped_entries.append({"slot": slot, "item": equipped[slot].to_dict()})
+	return {
+		"name": hero_name,
+		"rank": rank,
+		"def_id": str(def_id),
+		"equipped": equipped_entries,
+	}
 
 
 static func from_dict(data: Dictionary) -> Hero:
@@ -90,12 +103,49 @@ static func from_dict(data: Dictionary) -> Hero:
 	if not data.has("def_id"):
 		# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.
 		hero.def_id = NO_ARCHETYPE_DEF_ID
-		return hero
-	# Save-file fields remain Variant until their types are validated.
-	var raw_def_id: Variant = data["def_id"]
-	if raw_def_id is String:
-		hero.def_id = StringName(raw_def_id as String)
 	else:
-		push_error("Invalid hero def_id: expected String, got %s." % type_string(typeof(raw_def_id)))
-		hero.def_id = NO_ARCHETYPE_DEF_ID
+		# Save-file fields remain Variant until their types are validated.
+		var raw_def_id: Variant = data["def_id"]
+		if raw_def_id is String:
+			hero.def_id = StringName(raw_def_id as String)
+		else:
+			push_error("Invalid hero def_id: expected String, got %s." % type_string(typeof(raw_def_id)))
+			hero.def_id = NO_ARCHETYPE_DEF_ID
+
+	# Dictionary.get() does not replace an explicit null from a hand-edited or corrupt save.
+	# Save-file fields remain Variant until their types are validated.
+	var raw_equipped: Variant = data.get("equipped")
+	if raw_equipped == null:
+		return hero
+	if not raw_equipped is Array:
+		push_error("Invalid hero equipped: expected Array, got %s." % type_string(typeof(raw_equipped)))
+		return hero
+
+	var equipped_entries: Array = raw_equipped as Array
+	for raw_entry: Variant in equipped_entries:
+		if not raw_entry is Dictionary:
+			push_error("Invalid equipped entry: expected Dictionary, got %s." % type_string(typeof(raw_entry)))
+			continue
+		var entry: Dictionary = raw_entry as Dictionary
+		# Save-file fields remain Variant until their types are validated.
+		var raw_slot: Variant = entry.get("slot")
+		var slot: int = -1
+		if raw_slot is int:
+			slot = raw_slot as int
+		elif raw_slot is float:
+			# JSON has no int type - a slot written as int decodes off disk as float.
+			var float_slot: float = raw_slot as float
+			if is_finite(float_slot) and float_slot == floorf(float_slot):
+				slot = int(float_slot)
+		if slot < 0 or slot >= EquipmentDefinition.Slot.size():
+			push_error("Invalid equipped slot: expected an integer from 0 to %d, got '%s'." % [EquipmentDefinition.Slot.size() - 1, raw_slot])
+			continue
+		# Save-file fields remain Variant until their types are validated.
+		var raw_item: Variant = entry.get("item")
+		if not raw_item is Dictionary:
+			push_error("Invalid equipped item for slot %d: expected Dictionary, got %s." % [slot, type_string(typeof(raw_item))])
+			continue
+		if hero.equipped.has(slot):
+			push_error("Duplicate equipped slot %d; keeping the last entry." % slot)
+		hero.equipped[slot] = Item.from_dict(raw_item as Dictionary)
 	return hero
