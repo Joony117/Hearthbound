@@ -113,20 +113,120 @@ All three landed: `P2-03e` in `5118853` (the ruling is `SYSTEMS.md` § Lost-wave
 in `a412c4a`, and `P2-03c` in `85caa66` — which inherited the corrected win/loss semantics, as the
 sequencing above intended. The whole `P2-03` group is now shipped.
 
+**P2-04 split.** The original line bundled four things behind one row: item instances existing at
+all (no runtime type exists anywhere — `heroes/hero.gd` has three fields and no equipment slot;
+`equipment/equipment_definition.gd` is a shared per-slot template carrying no rank and no runtime
+state), a way for one to enter the game (an equipment loot table — `zones/zone_definition.gd`'s
+only loot field is a free-text `loot_emphasis` string like "Gold, F–C parts, light Summon Stones",
+and `P2-01c`'s own note already flagged this: "no loot table exists before P2-04"), a lost-gear
+cache created on hero death, and a distinct recovery-expedition mission type with a damage roll
+and a decay clock. That is a type, a missing design input, a permadeath hook, and a second mission
+type behind one line — not one behavior. Splitting it also surfaces two more missing design inputs
+`SYSTEMS.md`'s own "Death and gear recovery" section already half-names: `power_deficit_penalty`
+in the damage-roll formula is explicitly marked PROVISIONAL with no value (`SYSTEMS.md:805-815`),
+and the turn clock both it and the cache-expiry rule are denominated in **does not exist**. Note
+the shape of that second gap: a turn-denominated *tunable* is already authored
+(`reliquary_decay_turns_bonus`, `balance_table.gd:22` and `balance.tres:24`), so it reads as
+settled — but nothing anywhere increments a turn, and no counter exists to bonus. The number is
+real and the thing it measures is not. Neither gap blocks the earliest tickets below, so they're
+flagged against the tickets that actually need them rather than gating the whole split.
+
+Split into: `P2-04b` is the flagged design gap — an authored equipment loot table (drop rate +
+rank/slot selection per zone) to replace `loot_emphasis`'s prose, the same "found, not authored"
+shape already used for `P2-04a`/`P2-09`. `P2-04c` is the item-instance foundation — a runtime
+`Item` type (`ARCHITECTURE.md`'s project-layout diagram and `DECISIONS.md`'s equipment entries
+already name this file and this shape, analogous to `Hero`) plus `GameSession.inventory`
+persistence, no loot roll, no equip, no UI attached — the same non-player-facing exception already
+used for `P2-01a`/`P2-03a`. It needs neither `P2-04b` nor a combat-facing stat-magnitude formula
+(equipping's effect on combat power isn't in this backlog line at all), so it can proceed today,
+in parallel with the design ruling rather than waiting on it. `P2-04d` is what makes `P2-04c`
+visible — an expedition clear can drop a real item into inventory — and is the first ticket that
+does need `P2-04b`'s table. `P2-05a` (equip UI) is resequenced to depend on `P2-04c` directly
+rather than on `P2-05`: `P2-05` (salvage) presupposes items exist just as much as equipping does,
+so gating equip behind salvage was backwards — corrected below. `P2-04e` is the lost-gear cache
+itself — it needs equip to exist first, since only equipped gear can be lost, and it hooks the
+sole permadeath call site (`ARCHITECTURE.md` r8) rather than adding a second one. `P2-04f` is the
+recovery expedition with its damage roll and decay, which is where `power_deficit_penalty` and the
+missing turn concept actually bite.
+
+`P2-04c` landed first in `0349a4c`, being the only ticket in the group buildable without a design
+ruling. Items now exist and persist, so `P2-04b` is what the rest of the group is waiting on:
+`P2-04d` cannot drop an item without a table saying which one, and `P2-05a`/`P2-04e`/`P2-04f`
+queue behind that. It is a design ruling, not an implementer contract — same shape as `P2-03e`.
+
+## P2-04b — Equipment loot table: which item a cleared zone yields      [TODO]
+
+Design pass, `game-designer`. A ruling recorded in `SYSTEMS.md`, not an implementer contract —
+`P2-04d` is the ticket that consumes it. Same shape as `P2-03e`.
+
+### Objective
+Rule on what a cleared zone drops, so `P2-04d` can have checkable acceptance criteria. Today
+`ZoneDefinition.loot_emphasis` is free prose — `"Gold, F–C parts, light Summon Stones"` — which
+names a feel, not a distribution, and no code can act on it.
+
+### The questions to rule on
+1. **Does a clear drop equipment at all, or only sometimes?** A flat rate, or one that scales
+   with the zone.
+2. **Which slot.** Uniform across the ten `Slot` values, or weighted.
+3. **What rank.** `Item.rank` exists and nothing sets it. Zones already carry an authored rank
+   feel in `loot_emphasis` (`F–C` in Verdant, `C–A` in Ashfall, `S–SSS` in Sundered) — that
+   band is the natural input, but it is prose today and must become a distribution.
+4. **Where the numbers live.** `BalanceTable` is the settled shared-tunables container
+   (`DECISIONS.md`, one `BalanceTable`), but a per-zone drop rate is arguably `ZoneDefinition`'s.
+   Rule on which, because `P2-04d` has to read it from somewhere.
+
+### Existing architecture
+- `ZoneDefinition.loot_emphasis` (`zones/zone_definition.gd:11`) is a free-text `String`, authored
+  in all three `zones/defs/*.tres`. Whatever this ticket rules replaces or supplements it; note
+  `tests/zone_definition_check.gd` asserts its exact current text and will need updating by
+  whoever implements, not by this ticket.
+- `CombatResult.loot_seed` (`combat/combat_result.gd:8`) is already set on every resolve
+  (`combat/quick_resolve.gd:33`) and has **no consumer**. It exists precisely so a drop roll can
+  be deterministic per expedition — rule on whether the drop is seeded from it.
+- `Item` (`equipment/item.gd`) exists as of `P2-04c`: `def_id: StringName` + `rank: int`, and
+  `def_id` resolves 1:1 to `equipment/defs/<slot>.tres`. A drop must be expressible as those two
+  fields and nothing more — anything richer is a different ticket.
+- `BalanceTable`'s rank table is the existing home for rank-indexed arrays; `stat_multipliers`
+  and `summon_weights` are the precedent for a per-rank distribution's shape.
+- `GameSession.mark_zone_cleared()` is where a clear is already recorded, and `add_item()` is
+  the only mutator that persists inventory.
+
+### Acceptance criteria
+- Recorded in `SYSTEMS.md` as a formula or table with named rejections, the way § Wave damage
+  and § Lost-wave damage were.
+- Every number is either derived from something already in `SYSTEMS.md` or marked
+  `⚠️ PROVISIONAL` with a real **Settled by** clause. Unfelt is fine and expected here; undefined
+  is not.
+- The ruling names which file each number lives in (`balance.tres` vs `ZoneDefinition`), so
+  `P2-04d`'s "Files allowed to change" can be written without reopening the question.
+- Arithmetic checked against the real `.tres` data, not asserted — the three authored zones and
+  the ten authored slots.
+- States whether the drop is seeded from `loot_seed` or rolled independently.
+
+### Non-goals
+No code. No `.tres` edits — `P2-04d` authors the fields once their shape is ruled. No stat
+magnitude for equipment (what a rank-`N` item *does* is a separate gap, and neither this ticket
+nor `P2-04d` needs it). No affixes, no Cores, no salvage rates, no `power_deficit_penalty` and no
+turn clock — those belong to `P2-05`/`P2-04f` and are tracked there.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
 | P2-01b | `ZoneDefinition` Resource + 3 zones authored | Body in `TASKS-DONE.md`. Unblocks P2-03a. |
-| P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before P2-04 (lost-gear caches); no item instances authored yet — no loot table exists before P2-04. |
+| P2-01c | `EquipmentDefinition` Resource + 10-slot enum | Needed before the `P2-04` group (lost-gear caches); no item instances authored yet — no loot table exists before `P2-04c`/`P2-04b`. |
 | P2-01d | `BalanceTable` Resource + `balance.tres` authored from `SYSTEMS.md` | Body in `TASKS-DONE.md`. Container shape is settled (`DECISIONS.md`, one `BalanceTable`). Needed before P2-02 can consume real summon weights — sequence before or alongside P2-02, not after. Did **not** move `Hero.RANK_NAMES` — split out as `P2-01d-2`. |
 | P2-01d-2 | Move `Hero.RANK_NAMES` onto `BalanceTable`; repair its three call sites; author the Summoning Circle's two-field schema | Body in `TASKS-DONE.md`. Unblocked by `godot-architect`'s ruling on reaching shared Resources without a fourth autoload. Not required before P2-02 — P2-02 already replaces `hub/summon/summon.gd` wholesale and can read a rank count off `BalanceTable`'s rank table directly, so this can trail P2-02 instead of gating it. |
 | P2-02 | Real weighted summon against `BALANCE.summon_weights`; roster displays hero archetype | Replaces P1-02. Body in `TASKS-DONE.md`. Carries the `def_id` → `HeroDefinition` lookup — `godot-architect` returned `cannot-judge` on this seam because no lookup consumer exists yet, but named this the ticket that builds one. A `def_id` matching no `HeroDefinition` must fail loudly, not silently default (`CODING_RULES.md:121-122`). Equip UI moved out — nothing is equippable yet; see `P2-05a`. |
 | P2-03a | `Wave` construction (ramp interpolation) + computed hero stats | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-01b`/`P2-01d`. Unblocked P2-03b. |
 | P2-03b | `combat/quick_resolve.gd` + `CombatResult` — real waves, HP carry-forward, retreat threshold, permadeath | Replaces P1-03. Body in `TASKS-DONE.md`. GUT 9.7.1 is already installed (`addons/gut/`) — this is the first ticket to add real coverage under `tests/unit/`, not a framework install; the original backlog line's "Add GUT here" is stale. |
-| P2-04 | Lost-gear caches on death + recovery expeditions with damage rolls and decay | |
+| P2-04b | Equipment loot table — drop rate + rank/slot distribution per zone | **Body above — this is next.** Design ruling, `game-designer`, same shape as `P2-03e`. Replaces `loot_emphasis`'s free text with a real distribution. Blocks `P2-04d` and everything queued behind it. |
+| P2-04c | Runtime `Item` type + `GameSession.inventory` persistence | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-03a`. Unblocked `P2-04d` and `P2-05a`. Fixed a pre-existing `from_dict` crash on an explicit `null` field, inherited from `Hero`'s shape — see its Findings before copying that pattern again. |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
-| P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4 |
-| P2-05a | Equip UI for authored equipment | Sequences after `P2-05` — needs item instances to exist before a hero has anything to equip. Split out of `P2-02`'s original backlog line, which named equip UI before equipment, loot, or item instances existed. |
+| P2-04d | Expedition clears can drop a real item into inventory | Needs `P2-04b` (the loot table) and `P2-04c` (the type to drop). First player-visible ticket in the `P2-04` group. |
+| P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4. Needs `P2-04c` (item type) and `P2-04d` (something to salvage) — presupposes items exist, same as equip does. |
+| P2-05a | Equip UI for authored equipment | Depends on `P2-04c` directly, not on `P2-05` — salvage presupposes items exist just as much as equip does, so gating equip behind salvage was backwards. Corrected from the original note, which assumed item instances would come from `P2-05`. Split out of `P2-02`'s original backlog line, which named equip UI before equipment, loot, or item instances existed. |
+| P2-04e | Lost-gear cache created on hero permadeath | Needs `P2-05a` (equip) — only equipped gear can be lost. Hooks the sole permadeath call site, `GameSession.kill_hero()` (`ARCHITECTURE.md` r8) — do not add a second one. |
+| P2-04f | Recovery expedition — damage roll + cache decay | Needs `P2-04e` (a cache to target). Blocked on two more design gaps: `power_deficit_penalty` in the damage formula (already PROVISIONAL in `SYSTEMS.md`) and a "turn" concept, which doesn't exist anywhere in the codebase today despite the decay clock being turn-denominated. |
 | P2-06 | Sacrifice → essence → rank up, with dupe resonance | |
 | P2-07 | Five buildings as five integers | |
 | P2-08 | Full save/load round-trip through `SaveService` | |
@@ -169,6 +269,7 @@ needs to re-read.
 | `P2-03e` | Win/loss branch design ruling — what a lost wave means | `5118853` |
 | `P2-03f` | A lost wave hurts instead of wiping the team | `a412c4a` |
 | `P2-03c` | Expedition setup: multi-hero squad + zone select, with authored zone unlocks | `85caa66` |
+| `P2-04c` | Runtime `Item` type + persistent inventory | `0349a4c` |
 
 ---
 

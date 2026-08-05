@@ -1264,3 +1264,73 @@ Codex threads `019fce59-f95a-70d2-93ed-aefe1561db6b` (implementation, both round
 `zones/defs/sundered_vault.tres`, `systems/game_session.gd`, `tests/unit/test_expedition.gd`
 
 ---
+
+## P2-04c — Runtime `Item` type + persistent inventory              [DONE]
+
+### Objective
+An item instance can exist, be held in the player's persistent inventory, and survive a real
+save/reload cycle. No UI, no loot roll, no equipping onto a `Hero` — this ticket makes the type
+and its storage real so the tickets that need it (`P2-04d` loot, `P2-05a` equip) have something to
+build on, the same non-player-facing role `P2-01a`/`P2-03a` played for their sequences.
+
+### Existing architecture
+- `Hero` (`heroes/hero.gd`) is the existing pattern for runtime state pointing at a shared
+  Definition by `def_id`: a `DEF_PATH_TEMPLATE` plus `definition_for()` that `push_error`s and
+  returns `null` on a bad id rather than silently defaulting — match this shape, don't invent a
+  second lookup convention.
+- `EquipmentDefinition` is the shared per-slot template — 10 `.tres` files under
+  `equipment/defs/`, one per `Slot` enum value, filenames matching the enum names exactly. That
+  1:1 naming is the same shape `Hero.DEF_PATH_TEMPLATE` already relies on.
+- `docs/ARCHITECTURE.md:50`'s autoload table already scopes `GameSession` to own "roster,
+  inventory, buildings, caches, currencies" — `inventory` is not an open boundary question.
+- `combat/combat_result.gd:8`'s `loot_seed` is already wired but has no consumer — not read here;
+  that's `P2-04d`.
+
+### Acceptance criteria
+- `equipment/item.gd` defines `Item` (`RefCounted`) with `def_id: StringName` and `rank: int`.
+- A bad or unresolvable `def_id` fails loudly (`push_error`), never silently defaults.
+- `GameSession.inventory: Array[Item]` exists; `to_dict()`/`from_dict()` include it.
+- Inventory is mutated through a method that emits `roster_changed` — that signal is the only
+  thing wired to `SaveService.save`, so appending to the array directly persists nothing.
+- **Survives save and reload** through a real `SaveService.save()` → `load_game()` cycle.
+- A save written before this ticket (no `"inventory"` key) loads without error, empty inventory.
+- GUT coverage under `tests/unit/`; existing tests still pass; import gate clean.
+
+### Findings
+- **A pre-existing crash in `GameSession.from_dict`, inherited by copying `Hero`'s shape.**
+  `Dictionary.get(key, default)` substitutes the default only when the key is *absent*, never
+  when it is present holding `null`. So an explicit `"roster": null` in a hand-edited or corrupt
+  save reached `for entry in ...` as Nil and threw
+  `SCRIPT ERROR: Unable to iterate on object of type 'Nil'.` — engine-repro'd on `roster` and
+  `cleared_zone_ids`, both of which predate this ticket. State was never corrupted (execution
+  continues, the field ends up empty) but the logged error is exactly the class this repo's
+  `BUILT` definition treats as gate-failing, and no gate could reach it because none feeds a
+  malformed save. Fixed once in `_array_field()` for all three fields rather than three times
+  inline. **The ticket's own "reuse `Hero`'s shape" instruction is what propagated it** — worth
+  remembering the next time a ticket says to copy an existing pattern.
+- **The turn clock does not exist, and an authored tunable hides that.**
+  `reliquary_decay_turns_bonus` is a real value in `balance.tres` and `balance_table.gd`, so
+  turn-denominated decay reads as settled — but nothing anywhere increments a turn, and there is
+  no counter to bonus. The number is real and the thing it measures is not. `P2-04f` is where
+  this bites.
+- **Real-file save coverage is deliberately not in the GUT suite.** A GUT test driving
+  `SaveService` would clobber the real `user://save.json` on every run — the GUT command does not
+  redirect `%APPDATA%` the way `tests/import_gate.ps1` does (`KNOWN_ISSUES.md` § Environment).
+  The on-disk path was proven by implementer and verifier with throwaway drivers; the committed
+  GUT test covers the dict layer, where the key-symmetry failure would actually live, and the
+  shared file plumbing stays covered for all fields by `tests/save_roundtrip_check.gd`.
+
+### Verification
+Import gate exit 0, zero errors and warnings. GUT 25 tests, 253 asserts, exit 0 — re-run at
+director level after every edit, including the two post-implementation fixes. Verifier drove a
+real `SaveService.save()` → raw-JSON inspection → `load_game()` cycle, plus typed-array poisoning
+(string, number, nested array, explicit null), save→load→save byte-identity, and confirmed all 10
+`equipment/defs/*.tres` filenames match `EquipmentDefinition.Slot` 1:1. Codex threads
+`019fcfa1-ccc5-7821-9ea7-2988000eddeb` (implementation),
+`019fcfad-fb09-7312-8ee4-2b90c707b0d1` (adversarial review).
+
+### Files changed
+`equipment/item.gd`, `equipment/item.gd.uid`, `systems/game_session.gd`,
+`tests/unit/test_item.gd`, `tests/unit/test_item.gd.uid`
+
+---
