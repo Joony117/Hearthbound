@@ -329,6 +329,200 @@ exactly once per expedition — there is exactly one natural seed, not several t
 > · **Settled by:** `P2-04d` shipping drops end-to-end, then a played build across all three
 > zones once salvage exists to close the loop on unwanted items.
 
+### Primary stat magnitude — what a rank-`N` item contributes
+
+`P2-05b`. Rules what equipping a rank-`N` item actually does to `Hero.compute_final_stats`
+(`heroes/hero.gd:42-66`). Placed here, ahead of Enhancement, because Enhancement's `+8%` per
+level needs a base magnitude to compound on — same reasoning as Loot table's placement ahead of
+it.
+
+**Ruling, in order of the ticket's four questions:**
+
+**1. Channel and magnitude — the eight non-crit slots use `equip_pct`, not `equip_flat`.**
+
+```
+equip_pct_per_rank[i] = 0.04 * rank_mult[i]
+```
+
+| Rank | F | D | C | B | A | S | SS | SSS |
+|---|---|---|---|---|---|---|---|---|
+| `equip_pct_per_rank` | 4.00% | 5.40% | 7.28% | 9.84% | 13.28% | 17.92% | 24.20% | 32.68% |
+
+A rank-`N` item in `head` / `legs` / `chest` / `off_hand` / `main_hand` / `gloves` / `boots` /
+`belt` adds `equip_pct_per_rank[item.rank]` to its slot's primary stat's `equip_pct`. Two slots
+feed each of HP/ATK/DEF/SPD (Primary stat per slot, above), and their contributions **sum**
+before the formula's single `final *= 1.0 + equip_pct` multiply — the formula already names
+`equip_pct` as one scalar per stat, and summing same-stat item contributions into it before that
+multiply is the only reading that doesn't need a second multiply pass per item.
+
+`equip_pct` over `equip_flat` for these eight slots because `equip_pct` is self-scaling: one
+curve serves HP (base 80–140), ATK (base 16–34), DEF (base 10–24) and SPD (base 90–110) at once,
+because a *percentage* of each archetype's own stat is meaningful regardless of that stat's raw
+size. `equip_flat` would need four separately-authored rank-indexed tables — one per stat's own
+scale, since a flat bonus sized right for HP (hundreds) is either negligible or absurd applied to
+DEF (tens) — for the same job one `equip_pct` curve already does. This makes `equip_flat`,
+named in the hero formula and never given a magnitude anywhere, the unused channel the ticket
+itself calls "worse than a deleted one" for these eight slots specifically — see Where the
+numbers live, below, for what still uses it.
+
+**New `BalanceTable` field, not a reuse of `stat_multipliers`.** `equip_pct_per_rank` shares
+`stat_multipliers`' 8 ratios (`1.00, 1.35, 1.82, 2.46, 3.32, 4.48, 6.05, 8.17`) scaled by a
+`base_pct = 0.04` — a deliberately *independent* array, not a live reference to the hero curve.
+A literal reuse would mean any future retune of `stat_multipliers` (hero balance) silently
+reprices every piece of equipment in the game in the same pass — exactly the kind of one-field-
+reprices-another coupling the essence/parts/enhancement note warns about, just between hero and
+equipment instead of within equipment. An independent field with the same *shape* keeps a
+familiar, already-vetted growth curve without wiring the two systems together.
+
+Verified against the real archetype data (`heroes/defs/*.tres`) and `balance.tres`'s
+`stat_multipliers`, full ten-slot same-rank gear, at all three existing checkpoints (Codex thread
+`019fd35a-8937-7ae2-9038-324f4bcfdd6e`, ungeared baselines reproduced independently and matched
+the published `1,046.5` / `4,803.15` / `11,453.12` team totals before rounding):
+
+| Checkpoint | Ungeared team power | Fully-geared team power (10 same-rank slots) | Gear share |
+|---|---:|---:|---:|
+| F, lvl 10 | 1,046.50 | 1,130.22 | 7.41% |
+| B, lvl 40 | 4,803.15 | 5,748.41 | 16.44% |
+| S, lvl 60 | 11,453.12 | 15,557.92 | 26.38% |
+
+Per-archetype breakdown is identical proportionally at every checkpoint — HP/ATK/DEF/SPD each
+get exactly two items, so every archetype's power gets the same `(1 + 2 * equip_pct_per_rank[i])`
+factor regardless of its own stat spread (full per-archetype table in the Codex thread). At SSS
+(not run through Codex, but the same formula on the same ratios, so it's arithmetic, not a new
+claim): `q = 2 * 32.68% = 65.36%`, gear share `= 0.6536 / 1.6536 = 39.53%` — gear share climbs
+with rank because `equip_pct_per_rank` is itself rank-scaled, same shape as the hero's own curve.
+
+**Rejected: `equip_flat` for the eight non-crit slots.** Needs four separately-authored
+rank-indexed tables (one per stat scale) to do what one `equip_pct` curve already does across
+all eight — more surface area, no benefit, and it doesn't auto-adapt to the archetype variance
+already baked into each archetype's own base/growth line the way a percentage does.
+
+**Rejected: reusing `stat_multipliers` directly** (i.e. `equip_pct_per_rank = stat_multipliers`
+verbatim, or a runtime reference to the same array). Ties equipment magnitude to hero-curve
+retunes with no independent knob — named as the risk to avoid in the ticket's own framing of this
+question ("a decision with a justification, not a default"). A new field with matching ratios and
+its own scalar keeps both curves visible and independently tunable.
+
+**2. The two crit slots — answered separately; `equip_flat`, no `equip_pct`, no `rank_mult`.**
+
+```
+equip_crit_pct_per_rank[i] = 0.015 * rank_mult[i]
+```
+
+| Rank | F | D | C | B | A | S | SS | SSS |
+|---|---|---|---|---|---|---|---|---|
+| `equip_crit_pct_per_rank` | 1.50% | 2.03% | 2.73% | 3.69% | 4.98% | 6.72% | 9.08% | 12.26% |
+
+`necklace` adds `equip_crit_pct_per_rank[item.rank]` **percentage points** directly to
+`CRIT_RATE`; `ring` adds the same table's value as a **flat decimal** directly to `CRIT_DMG`
+(`+0.1226` at SSS, i.e. `+12.26%` more crit damage). Neither passes through `rank_mult` — Ranks
+already rules `rank_mult` and `growth` apply to HP/ATK/DEF/SPD only, and CRIT_RATE/CRIT_DMG "move
+only by equipment" — this ruling is that move, and it stays consistent with the existing rule
+rather than reopening it. Crit stats also skip `equip_pct` entirely, for a different reason than
+the cap: `equip_pct` is a *relative* modifier appropriate for stats measured in absolute units
+(a percentage of an HP pool means something); CRIT_RATE/CRIT_DMG are already percentages, so
+running them through `equip_pct` would be a percentage-of-a-percentage a player has to mentally
+unpack twice for one number, where "+12.26 points" reads at a glance. This is the same "don't run
+a relative multiplier through an already-relative stat" principle Ranks' rejection of `rank_mult`
+on crit stands on — not the identical failure (the magnitude chosen here doesn't hit the literal
+122% cap-violation Ranks found), but the same shape of problem, and it is answered the same way:
+route crit stats around the channel that causes it.
+
+**`CRIT_RATE` cap: 75%, named explicitly since this ruling depends on one existing.** Verified
+against the highest-base-`CRIT_RATE` archetype (Rogue, 15%) at every checkpoint, full same-rank
+gear (Codex thread above): `16.50%` (F) / `18.69%` (B) / `21.72%` (S) / `27.26%` (SSS, computed
+directly — `15% + 12.26pp`). Comfortably under 75% at every rank on the base ruled here.
+**Enhancement headroom check, since `+8%`/level will compound on this base and this ticket's own
+non-goals forbid ruling on Enhancement itself.** Enhancement's `+8%` per level has two possible
+readings and `Item` carries no enhance level today, so both are checked here rather than settled:
+compounded (`1.08^15 = ×3.172`) or additive (`1 + 0.08 * 15 = ×2.2`). Rogue's SSS necklace
+contribution grows from `12.26pp` to `38.88pp` compounded or `26.97pp` additive, landing
+full-Enhanced Rogue `CRIT_RATE` at `53.88%` or `41.97%` respectively. **Both clear `75%`**, so the
+cap holds under either reading and this ruling does not depend on which one `P2-05` picks — but
+the compounded reading spends 21 of the 60 available points, not 33, so the margin is real rather
+than generous. `P2-05`/Enhancement's own pass settles the reading and should re-verify against
+real authored numbers rather than trust this extrapolation.
+
+**Rejected: applying the general `equip_pct` rule uniformly to crit slots.** At the magnitude
+chosen for the other eight slots (`base_pct = 4%`), crit doesn't literally blow the cap the way
+`rank_mult` did in Ranks (`15% * 1.3268 = 19.9%` at SSS, not `122%`) — so the cap-violation
+argument alone doesn't force a separate channel here the way it did for `rank_mult`. It's ruled
+separately anyway on the legibility ground above (a relative modifier on an already-relative
+stat), which is a real cost even where it isn't a hard violation.
+
+**3. Where the numbers live.**
+
+| Number | File | Notes |
+|---|---|---|
+| `equip_pct_per_rank` (8 floats, HP/ATK/DEF/SPD slots) | `BalanceTable` (→ `balance.tres`) | New field. Same shape as `stat_multipliers`, independently scaled — not a reuse. |
+| `equip_crit_pct_per_rank` (8 floats, necklace/ring) | `BalanceTable` (→ `balance.tres`) | New field. Serves both crit stats — `CRIT_RATE` reads it as percentage points, `CRIT_DMG` reads it as a flat decimal; same underlying curve, two units at the point of use. |
+| `equip_crit_rate_cap = 0.75` | `BalanceTable` (→ `balance.tres`) | New scalar. Named because question 2 depends on it; not yet enforced by any clamp in code — `P2-05c` needs to clamp `final_crit_rate` against it, since headroom is real but not infinite once Enhancement stacks on top. |
+| Two-item-per-stat summation rule (HP/ATK/DEF/SPD) | Nowhere new — formula-shape, written into `compute_final_stats`'s equip_pct accumulation | Same footing as the loot table's slot-uniformity rule: `2` is fixed by Primary stat per slot's authored table, not a tunable. |
+| `equip_flat` channel for the eight non-crit slots | Nowhere — deliberately unused | Named in the hero formula, ruled against for these slots (see rejection above). Still used by the two crit slots. |
+
+`P2-05c`'s "files allowed to change" follows directly: `BalanceTable`/`balance_table.gd` (three
+new fields above) + `balance.tres`, and `Hero.compute_final_stats` to read `Hero.equipped`,
+look up each `Item`'s `EquipmentDefinition.primary_stat`, and accumulate into `equip_pct` or
+`equip_flat` per the channel ruled here. No `EquipmentDefinition` change and no `Item` change —
+both already carry everything this ruling needs (`slot`, `primary_stat`, `def_id`, `rank`).
+
+**Rejected: a per-slot magnitude authored on `EquipmentDefinition`** (ten `.tres` files each
+carrying their own rank-indexed array). Primary stat per slot already established all ten slots
+are symmetric within their stat group — two HP slots, two DEF, two ATK, two SPD, one each crit —
+so the magnitude curve has no per-slot variation to express. Ten copies of the same eight numbers
+(or two, since crit needs its own) is pure duplication with a real cost: retuning the curve later
+means editing ten files instead of one `BalanceTable` field, and the ten copies can drift out of
+sync with each other. Same reasoning the loot table ruling already used to reject a per-zone
+rank-drop curve: one already-justified shared curve costs nothing new and stays consistent by
+construction.
+
+**4. Gear share of power, and what it means for recommended power and `compute_team_power`.**
+
+**Recommended power figures (900 / 4,800 / 11,500) hold, unchanged.** They were already pinned to
+the *ungeared* reference team by explicit prior design intent ("real teams carry gear on top,"
+The three zones, above) — this ruling doesn't move that anchor, it quantifies what was already
+implied by it. At calibration rank, an ungeared team sits at or just below recommended power
+(`4,803.15` vs `4,800` at B; `11,453.12` vs `11,500` at S — both within a fraction of a percent);
+a fully same-rank-geared team clears it with real margin (`5,748.41`, `+19.75%` over RP at B;
+`15,557.92`, `+35.3%` over RP at S). That gap **is** the headroom the existing PROVISIONAL marker
+on recommended power already named as the intended reading ("bosses are not meant to be beatable
+by an ungeared reference team… gear is the intended headroom") — this ruling is the first time
+that headroom has a checkable number attached to it, not a reason to move the anchor itself.
+
+**Notable implication, not independently re-verified here (out of this ticket's combat scope):**
+Sundered Vault's boss sits at `130%` of RP (`14,950`), proven arithmetically impossible for an
+ungeared S/60 team (`11,453.12 < 14,950`, Expeditions above). A fully same-rank-geared S/60 team
+(`15,557.92`) clears that bar (`r = 14,950 / 15,557.92 = 0.9609 < 1`, so the win check is
+satisfiable again, though still a narrow roll). This is the specific mechanism the "gear is the
+intended headroom" reasoning predicted, now with a real number behind it — but it's a power-ratio
+observation, not a played or simulated combat result, and full ten-slot same-rank gear on every
+hero is a best case, not what a typical mid-progression roster carries.
+
+**`compute_team_power` stays a usable-but-incomplete proxy.** It sums `ATK + DEF + HP/10 + SPD`
+(`heroes/hero.gd:81`) — exactly the four stats the eight non-crit slots feed, and none of what
+the two crit slots feed. Under this ruling, `hero_power`/`team_power` becomes visible to 8 of a
+hero's 10 equipped slots (up from 0 before this ticket — equipping anything previously changed no
+number at all) but stays permanently blind to the necklace and ring: a hero with best-in-slot
+SSS crit gear (`CRIT_RATE +12.26pp`, `CRIT_DMG +12.26%`) reads identically in `hero_power` to the
+same hero with both jewelry slots empty, even though crit is a real damage-output difference in
+any eventual per-hit combat model. This is a real gap, worth flagging plainly per the ticket's own
+question rather than routing around it silently — but fixing `compute_team_power`'s formula is an
+Expeditions/combat-seam change, out of this equipment-magnitude ticket's scope and forbidden by
+its own non-goals ("no code"). Flagged here for `tech-lead` to pick up if crit-blind power reads
+as a real problem once `P2-05c` ships it and jewelry gear is actually equippable.
+
+> ⚠️ **PROVISIONAL** — `base_pct = 4%` and `base_crit = 1.5%` are arithmetically checked against
+> real archetype and rank data (Codex thread `019fd35a-8937-7ae2-9038-324f4bcfdd6e`) to land gear
+> share in a chosen 20–30% target band at the S/60 checkpoint while keeping the highest-crit
+> archetype comfortably under the 75% `CRIT_RATE` cap, but the 20–30% target itself is a design
+> guess — nobody has played against a hero that is 16–40% stronger for being fully same-rank
+> geared, and no combat model exists yet where crit being invisible to `hero_power` has a felt
+> consequence. · **Settled by:** `P2-05c` wiring this into `Hero.compute_final_stats` and
+> `Item`/`EquipmentDefinition` lookups, then a played build across at least the B and S
+> checkpoints to feel whether the gear-share curve reads as "gear matters" or "gear dominates" —
+> and separately, whatever ships the arena/real damage model, to find out whether a crit-blind
+> `hero_power` is a cosmetic gap or a UI lie players notice.
+
 ### Enhancement
 
 - `cost(n → n+1) = 2 + n` parts of matching rank, plus gold
