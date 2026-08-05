@@ -18,3 +18,4 @@ export/
 *.tmp
 .DS_Store
 Thumbs.db
+.serena/

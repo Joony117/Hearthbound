@@ -305,3 +305,23 @@ phases, as its own change.
 Six is enough for meaningful gear differentiation and few enough to actually tune.
 
 **Rejected:** separate magic/physical attack and defence lines, accuracy/evasion, resistances.
+
+---
+
+## 2026-08-04: Serena removed; built-in Read/Grep/Edit are the tools
+
+Serena's MCP server is unregistered, its hooks deleted, and the "symbolic tools are primary"
+mandate is gone from `~/.claude/CLAUDE.md`, both project agent files, and the three global ones.
+`.serena/` is deleted and gitignored.
+
+**Reason:** measured 13 Serena calls against 289 built-in file operations in this repo (4.3%),
+and 0 of 357 in the other project on this machine. Three causes, none of them discipline:
+its LSP daemon cannot coexist with `import_gate.ps1` (both want `.godot/`), so the mandated
+tool was unavailable by design in every session that runs the gate; the game is ~550 lines
+across 25 files, where `get_symbols_overview` on a 22-line file costs more than reading it; and
+the rule charged a self-check on *every* `Read`/`Glob`/`Grep`/`Edit` call to route 13 of them.
+The `import_gate.ps1` port-6005 guard stays — a hand-started editor still races `.godot/`.
+
+**Rejected:** keeping the server registered without the mandate (still pays the prefix and the
+`initial_instructions` pull for a tool nothing reaches for); scoping the mandate off for this
+repo only (the other project ignored it 357 times out of 357).

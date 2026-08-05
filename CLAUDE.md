@@ -4,8 +4,10 @@ A Godot 4.7.1 GDScript game. `docs/` is the spec set and it is authoritative:
 `GAME_SPEC.md` (what the game is) · `ARCHITECTURE.md` (the nine boundary rules) ·
 `CODING_RULES.md` (how GDScript is written here) · `SYSTEMS.md` (the numbers) ·
 `DECISIONS.md` (ADRs) · `TASKS.md` (the live backlog, and the delegation payload) ·
-`TASKS-DONE.md` (shipped ticket bodies, moved there on `[DONE]`) ·
 `KNOWN_ISSUES.md` (deliberate shortcuts).
+
+`docs/TASKS-DONE.md` is **archive, not spec** — 78 shipped ticket bodies, ~18k tokens, append-only.
+Grep it; never read it into context. Nothing in the live workflow depends on it.
 
 **Inheritance.** The global routing rules in `~/.claude/CLAUDE.md` apply here unchanged —
 cheapest-sufficient-path routing, the Codex tiers, `~/.claude/WORKER-CONTRACT.md`. This file adds
@@ -92,6 +94,13 @@ failure this seam exists to prevent.
 ## Who owns what
 
 Nothing edits a document it does not own.
+
+**This table assigns judgment, not dispatch.** It says whose call a change is — not that a
+subagent must be spawned to type it. Markdown is rung 1 of the global ladder at any size: the
+director writes it directly. Route to a role when you actually need its *judgment* — a balance
+number that does not exist, a boundary call, a vague ask that needs scoping — then apply the
+answer yourself. Spawning a role to perform an edit you already know how to make costs a
+15–25k cold start and buys nothing.
 
 | Change | Route to | Owns |
 |---|---|---|
@@ -182,6 +191,11 @@ contract, not a replacement for it.
   reconcile in either direction.
 - **One Godot process against this project at a time.** See below — this one is not obvious and
   has already bitten twice.
+- **One ticket per session, then `/clear`.** `docs/TASKS.md` is written so a cold session
+  reloads a ticket in one Read. Carrying a finished ticket's context into the next one is pure
+  cost: it is re-read on every remaining turn and answers nothing. Measured here — average
+  context 221k per call, peak 566k, against 605k of tool output in the entire project history.
+  The spec set exists to make sessions disposable; use it that way.
 
 ## Serialize engine access
 
@@ -226,42 +240,11 @@ the director equally; the same rule is in `AGENTS.md` for Codex workers.
 Engine state is also **not stable across turns**. A "daemon is down" claim in a dispatch prompt
 describes when it was written, not when the agent reads it. Re-verify at the point of use.
 
-### Serena's LSP daemon is a fourth engine consumer
+### A running Godot editor also counts
 
-Serena's GDScript backend is an LSP **client**, not a server. It attaches to a running Godot
-editor on `127.0.0.1:6005` (`.serena/project.yml` sets this; Serena's built-in default is Godot
-3's 6008, which never connects). That daemon is a fourth thing running the engine against this
-project — and the only *persistent* one, so it does not fit the "gets the engine to itself until
-it returns" model above.
-
-```bash
-# start — verified: --headless --editor does serve the LSP
-./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --editor --path E:/Game
-# stop
-Get-Process Godot* | Stop-Process -Force
-```
-
-The `_console` wrapper spawns `Godot_v4.7.1-stable_win64.exe`, and that child is what holds the
-port — kill by name, not by the pid you launched.
-
-**The daemon must already be listening when Serena's MCP server starts.** The connection is made
-once, at project activation, and there is no retry: start the daemon afterwards and every
-symbolic call fails for the rest of the session with a cached
-`Could not connect to 127.0.0.1:6005 within 30.0s`. It returns *instantly*, which is how you tell
-a cached failure from a real timeout. Reconnecting the MCP server is the only fix — waiting is
-not one.
-
-**Serena up and BUILT are mutually exclusive.** `tests/import_gate.ps1` aborts with exit 1 when
-6005 is listening rather than racing the daemon on `.godot/`, whose rebuild is not
-concurrency-safe. So a session runs one way or the other:
-
-> daemon up → start Claude Code → symbolic work → stop daemon → run the gate
-
-After that stop, Serena stays dead until the next session. That is the design, not a fault.
-`godot-tester` and any dispatch that runs BUILT, GUT, or the export therefore never get Serena
-tools — the daemon must be down for their whole window.
-
-Codex workers never see Serena; they read `AGENTS.md`, which needs no change for any of this.
+`tests/import_gate.ps1` aborts with exit 1 if a Godot editor is listening on `127.0.0.1:6005`,
+rather than racing it on `.godot/`. Nothing in the workflow starts one now, so a red gate with
+that message means a stray editor is up — `Get-Process Godot* | Stop-Process -Force`, then re-run.
 
 ## Export
 
