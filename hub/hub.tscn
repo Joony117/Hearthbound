@@ -165,6 +165,14 @@ layout_mode = 2
 text = "Parts"
 autowrap_mode = 2
 
+[node name="ConvertRankOption" type="OptionButton" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Convert" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+layout_mode = 2
+text = "Convert 3 -> 1"
+
 [node name="Equipped" type="VBoxContainer" parent="UI/Root/EquipmentPanel/Columns"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -229,6 +237,7 @@ unique_name_in_owner = true
 [connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Equip" to="." method="_on_equip_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Salvage" to="." method="_on_salvage_pressed"]
+[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Convert" to="." method="_on_convert_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]

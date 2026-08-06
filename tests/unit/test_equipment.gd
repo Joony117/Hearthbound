@@ -83,6 +83,32 @@ func test_salvage_clamps_a_corrupt_rank() -> void:
 	assert_eq(GameSession.parts[0], 3)
 
 
+func test_convert_parts_spends_three_parts_for_one_of_the_next_rank() -> void:
+	GameSession.parts[2] = 3
+
+	assert_true(GameSession.convert_parts(2))
+	for rank_index: int in GameSession.parts.size():
+		assert_eq(GameSession.parts[rank_index], 1 if rank_index == 3 else 0)
+
+
+func test_convert_parts_refuses_insufficient_parts_without_writing() -> void:
+	GameSession.parts[2] = 2
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+
+	assert_false(GameSession.convert_parts(2))
+	assert_eq(GameSession.parts, parts_before)
+
+
+func test_convert_parts_refuses_top_and_negative_ranks_without_writing() -> void:
+	var top_rank: int = GameSession.parts.size() - 1
+	GameSession.parts[top_rank] = 3
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+
+	assert_false(GameSession.convert_parts(top_rank))
+	assert_false(GameSession.convert_parts(-1))
+	assert_eq(GameSession.parts, parts_before)
+
+
 func test_kill_hero_moves_all_equipped_items_to_lost_cache() -> void:
 	var hero := Hero.new("Doomed Hero", 2)
 	var ring := Item.new(&"ring", 1)

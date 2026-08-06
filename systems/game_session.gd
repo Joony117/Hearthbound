@@ -66,6 +66,15 @@ func salvage_item(item: Item) -> void:
 	roster_changed.emit()
 
 
+func convert_parts(rank: int) -> bool:
+	if rank < 0 or rank >= parts.size() - 1 or parts[rank] < 3:
+		return false
+	parts[rank] -= 3
+	parts[rank + 1] += 1
+	roster_changed.emit()
+	return true
+
+
 func mark_zone_cleared(zone_id: StringName) -> void:
 	assert(zone_id != &"")
 	if cleared_zone_ids.has(zone_id):

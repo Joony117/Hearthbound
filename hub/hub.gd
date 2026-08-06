@@ -11,6 +11,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _roster_list: ItemList = %RosterList
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _parts: Label = %Parts
+@onready var _convert_rank_option: OptionButton = %ConvertRankOption
 @onready var _equipped_list: ItemList = %EquippedList
 @onready var _zone_option: OptionButton = %ZoneOption
 @onready var _status: Label = %Status
@@ -27,6 +28,7 @@ func _ready() -> void:
 	_refresh_inventory()
 	_refresh_parts()
 	_refresh_equipped()
+	_populate_convert_ranks()
 	_populate_zones()
 	_refresh_zone_unlocks()
 	_status.text = "Summon a hero, then send it out. It might not come back."
@@ -107,6 +109,13 @@ func _populate_zones() -> void:
 		_zone_option.set_item_metadata(_zone_option.item_count - 1, zone)
 
 
+func _populate_convert_ranks() -> void:
+	_convert_rank_option.clear()
+	for rank_index: int in GameSession.parts.size() - 1:
+		_convert_rank_option.add_item("%s -> %s" % [BALANCE.rank_names[rank_index], BALANCE.rank_names[rank_index + 1]])
+		_convert_rank_option.set_item_metadata(_convert_rank_option.item_count - 1, rank_index)
+
+
 func _refresh_zone_unlocks() -> void:
 	for zone_index: int in _zone_option.item_count:
 		var zone: ZoneDefinition = _zone_option.get_item_metadata(zone_index) as ZoneDefinition
@@ -171,6 +180,15 @@ func _on_salvage_pressed() -> void:
 	var rank_label: String = item.rank_label(BALANCE)
 	GameSession.salvage_item(item)
 	_status.text = "Salvaged %s item into 3 %s parts." % [rank_label, rank_label]
+
+
+func _on_convert_pressed() -> void:
+	var selected_rank: int = _convert_rank_option.get_item_metadata(_convert_rank_option.selected) as int
+	var rank_label: String = BALANCE.rank_names[selected_rank]
+	if GameSession.convert_parts(selected_rank):
+		_status.text = "Converted 3 %s parts into 1 %s part." % [rank_label, BALANCE.rank_names[selected_rank + 1]]
+	else:
+		_status.text = "Need 3 %s parts to convert." % rank_label
 
 
 func _on_unequip_pressed() -> void:

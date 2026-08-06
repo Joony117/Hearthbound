@@ -55,7 +55,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, parts, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, parts, part conversion, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -173,6 +173,34 @@ func _check_parts_round_trip() -> int:
 		var loaded_expected: int = 3 if rank_index == SALVAGED_ITEM_RANK else 0
 		if _parts()[rank_index] != loaded_expected:
 			return _fail("parts after disk reload at rank %d" % rank_index, str(loaded_expected), str(_parts()[rank_index]))
+
+	if not _game_session.call("convert_parts", SALVAGED_ITEM_RANK):
+		return _fail("part conversion", "convert_parts() == true", "convert_parts() == false")
+	# Do not save explicitly: conversion must persist through roster_changed's autosave.
+	save_file = FileAccess.open(_save_path, FileAccess.READ)
+	if save_file == null:
+		return _fail("converted parts raw save file open", "readable", error_string(FileAccess.get_open_error()))
+	parsed = JSON.parse_string(save_file.get_as_text())
+	if parsed is not Dictionary:
+		return _fail("converted parts raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
+	raw_parts = (parsed as Dictionary).get("parts")
+	if raw_parts is not Array:
+		return _fail("converted raw save JSON parts shape", "Array", type_string(typeof(raw_parts)))
+	raw_parts_array = raw_parts as Array
+	if raw_parts_array.size() != _parts().size():
+		return _fail("converted raw save JSON parts rank count", str(_parts().size()), str(raw_parts_array.size()))
+	for rank_index: int in _parts().size():
+		var converted_raw_expected: int = 1 if rank_index == SALVAGED_ITEM_RANK + 1 else 0
+		if int(raw_parts_array[rank_index]) != converted_raw_expected:
+			return _fail("converted raw save JSON parts at rank %d" % rank_index, str(converted_raw_expected), str(raw_parts_array[rank_index]))
+
+	_parts().fill(0)
+	if not _save_service.call("load_game"):
+		return _fail("converted parts disk reload", "load_game() == true", "load_game() == false")
+	for rank_index: int in _parts().size():
+		var converted_loaded_expected: int = 1 if rank_index == SALVAGED_ITEM_RANK + 1 else 0
+		if _parts()[rank_index] != converted_loaded_expected:
+			return _fail("converted parts after disk reload at rank %d" % rank_index, str(converted_loaded_expected), str(_parts()[rank_index]))
 	return 0
 
 
