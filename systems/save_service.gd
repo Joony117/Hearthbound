@@ -34,7 +34,9 @@ func load_game() -> bool:
 
 	# ponytail: version is written and read but never migrated. Phase 5 owns migration; the
 	# field exists now because retrofitting it onto shipped saves is the expensive version.
-	var version := int((parsed as Dictionary).get("version", 0))
+	# Same untrusted shape the domain from_dict()s decode, so it uses the same guard: an explicit
+	# "version": null is not a missing key, and int() throws on it before any of them run.
+	var version := Item.int_field(parsed as Dictionary, "version", 0, "save")
 	if version > SAVE_VERSION:
 		push_error("Save is from a newer build (v%d > v%d); refusing to load." % [version, SAVE_VERSION])
 		return false

@@ -37,8 +37,8 @@ func to_dict() -> Dictionary:
 
 
 static func from_dict(data: Dictionary) -> Item:
-	var item := Item.new(NO_EQUIPMENT_DEF_ID, _int_field(data, "rank", 0))
-	item.enhance_level = _int_field(data, "enhance_level", 0)
+	var item := Item.new(NO_EQUIPMENT_DEF_ID, int_field(data, "rank", 0))
+	item.enhance_level = int_field(data, "enhance_level", 0)
 	if not data.has("def_id"):
 		# No save predates this field - Item ships with it. A missing key means a corrupt or
 		# hand-edited entry, and empty keeps it inert rather than resolving to a wrong slot.
@@ -52,7 +52,11 @@ static func from_dict(data: Dictionary) -> Item:
 	return item
 
 
-static func _int_field(data: Dictionary, key: String, fallback: int) -> int:
+## Scalar analogue of GameSession._array_field(): Dictionary.get()'s default only applies to a
+## *missing* key, so an explicit "rank": null from a hand-edited save reaches int() and throws.
+## Public because Hero.from_dict decodes the same untrusted shape; the project layout has no
+## home for a save-decode util, and Hero already depends on Item.
+static func int_field(data: Dictionary, key: String, fallback: int, subject: String = "item") -> int:
 	# Save-file fields remain Variant until their types are validated.
 	var value: Variant = data.get(key)
 	if value == null:
@@ -63,5 +67,5 @@ static func _int_field(data: Dictionary, key: String, fallback: int) -> int:
 		var float_value: float = value as float
 		if is_finite(float_value) and float_value == floorf(float_value):
 			return int(float_value)
-	push_error("Invalid item %s: expected an integer, got '%s'." % [key, value])
+	push_error("Invalid %s %s: expected an integer, got '%s'." % [subject, key, value])
 	return fallback

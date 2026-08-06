@@ -274,6 +274,19 @@ a save containing `"rank": null` and hands `null` back into `inventory`. That pr
 and adding `enhance_level` in the same shape doubled it; `Item._int_field()` now fixes both.
 `Hero.from_dict` and `LostCache.from_dict` still carry it — that is `P2-11`.
 
+`P2-11` closed that thread, and **half its premise was wrong**. `LostCache.from_dict` never
+crashed: it type-validates every field it reads and contains no `int()` at all, so an explicit
+`null` was already caught, reported and defaulted. Grepping for the pattern instead of trusting
+the row found the real second site — `SaveService.load_game()`'s `version` read, which the row
+never named and which crashes **at boot, before any `from_dict` runs**. The red-proof turned up a
+third consequence nobody predicted: a `null` `Hero` appended to `roster` poisons
+`GameSession.to_dict()` two lines later, because `from_dict` ends in `roster_changed.emit()` →
+`SaveService.save()`. That crash unwinds *before* `FileAccess.open`, so the corrupt file survives
+instead of being truncated — luck, not design. `Item._int_field` is now public as
+`Item.int_field(data, key, fallback, subject)` and used at all three sites: `systems/` is
+autoloads only and the layout has no home for a save-decode util, so the alternative was copying
+thirteen lines twice.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -290,7 +303,7 @@ and adding `enhance_level` in the same shape doubled it; `Item._int_field()` now
 | P2-04d | Expedition clears can drop a real item into inventory | Body in `TASKS-DONE.md`. Unblocked `P2-05a`. Roll order is **slot then rank** — the ruling left it open, this pinned it. First disk-level proof that an `Item` survives JSON (`rank` decodes as `float` and `from_dict`'s `int()` absorbs it); read its Findings before writing another one-off `-s` check, which cannot statically name `Expedition`. |
 | P2-05d | Salvage an unwanted item into parts | Body in `TASKS-DONE.md`. `parts` is a fixed 8-element `Array[int]` indexed by rank, which sidesteps the JSON int-key trap rather than working around it. **Read its Findings before writing another `assert()` on a value that can come from a save file** — asserts are stripped in release, so the first pass was unguarded in the only build a player runs, and a negative rank did not even throw: it credited SSS while displaying F. |
 | P2-05e | Enhancement design ruling — the `+8%` reading, and what gold is | No body — this was a backlog row, and the ruling itself is `SYSTEMS.md` § Enhancement. Additive `+8%`, gold struck, cap flat at 15; took the cap question too, which the row had left to `P2-07`. Also corrected a stale `SYSTEMS.md` line claiming nothing clamps `CRIT_RATE` against `equip_crit_rate_cap` — `P2-05c` shipped that clamp (`heroes/hero.gd:92`). Unblocked `P2-05f`, opened `P2-10`. |
-| P2-05f | Enhancement — `Item.enhance_level`, `+8%`/level, parts-only cost | Body in `TASKS-DONE.md`. Closes the `P2-05` group. Shipped exactly `P2-05e`'s terms. **Read its Findings before writing a ticket that hands an autoload a balance number** — criterion 3 as written specified a signature that could only be satisfied by violating `ARCHITECTURE.md` § "Reaching shared Resources", and no gate could tell. `salvage_item`/`enhance_item` now take `balance: BalanceTable` explicitly. Also fixed `Item.from_dict`'s explicit-`null` crash on `rank` (pre-existing) and `enhance_level` via `_int_field()`; the same defect survives in `Hero`/`LostCache` as `P2-11`. |
+| P2-05f | Enhancement — `Item.enhance_level`, `+8%`/level, parts-only cost | Body in `TASKS-DONE.md`. Closes the `P2-05` group. Shipped exactly `P2-05e`'s terms. **Read its Findings before writing a ticket that hands an autoload a balance number** — criterion 3 as written specified a signature that could only be satisfied by violating `ARCHITECTURE.md` § "Reaching shared Resources", and no gate could tell. `salvage_item`/`enhance_item` now take `balance: BalanceTable` explicitly. Also fixed `Item.from_dict`'s explicit-`null` crash on `rank` (pre-existing) and `enhance_level` via `_int_field()`; the same defect survived elsewhere as `P2-11`, which found `LostCache` was already safe and `SaveService` was not. |
 | P2-05g | 3:1 part conversion | Body in `TASKS-DONE.md`. Sited in the Inventory column, **not** the Forge — buildings have no panel until `P2-07`, so siting it there meant inventing one inside this ticket. Confirms `OptionButton.selected` is never `-1` while items exist, which `%ZoneOption` had been assuming unwritten. Read its Findings before adding another persisted mutation: the disk leg deliberately omits an explicit `save` so a missing `roster_changed.emit()` fails it. |
 | P2-05a | Equip UI for authored equipment | Body in `TASKS-DONE.md`. Not split — assignment, persistence and an ugly UI shipped; combat effect stayed an explicit non-goal, since no ticket has ever authored what a rank-`N` item contributes. That gap is now `P2-05b`'s. Unblocked `P2-04e`. Corrected a false `KNOWN_ISSUES.md` claim: a plain GUT run **does** overwrite the real `user://save.json`. Read its Findings before trusting another in-memory `to_dict`/`from_dict` test as save-boundary evidence — `slot` reaches disk as `8.0`, and only the disk leg proves the float branch. |
 | P2-05b | What a rank-`N` item contributes to a hero's stat | Body in `TASKS-DONE.md`; the ruling itself is `SYSTEMS.md` § Primary stat magnitude. Three new `BalanceTable` fields — `equip_pct_per_rank` (`0.04 × rank_mult`, eight non-crit slots, two per stat summing into one `equip_pct`), `equip_crit_pct_per_rank` (`0.015 × rank_mult`, necklace/ring, via `equip_flat`), `equip_crit_rate_cap = 0.75`. Not a reuse of `stat_multipliers`: same ratios, own scalar, so a hero-curve retune can't silently reprice every item. Unblocked `P2-05c`. |
@@ -301,7 +314,6 @@ and adding `enhance_level` in the same shape doubled it; `Item._int_field()` now
 | P2-07 | Five buildings as five integers | |
 | P2-08 | Full save/load round-trip through `SaveService` | |
 | P2-10 | Gold — what it is and how a player gets it | Found by `game-designer` during `P2-05e`, deliberately not authored there — an income rate is a design input, not something a ruling can pick. Gold is named in three zones' loot-table Reward prose and was named in Enhancement's and Buildings' cost lines; it has no `BalanceTable` field, no `GameSession` currency, and zero hits in `*.gd`/`*.tres`/`*.tscn`. `P2-05e` struck it from both cost lines rather than price a currency with no source. Add it back there once this lands. Same shape as `P2-09`/`P2-04a`. |
-| P2-11 | `Hero.from_dict` and `LostCache.from_dict` crash on an explicit JSON `null` | Found by `verifier` during `P2-05f`, fixed there for `Item` only and deliberately not widened. `Dictionary.get(key, default)` substitutes on a **missing** key, never on an explicit `null`, so `int(data.get("rank", 0))` against `"rank": null` throws `Nonexistent 'int' constructor` and `from_dict` returns `null` into `roster`/`lost_caches`, where the next field read throws again. No caller null-checks. `Item._int_field()` (`equipment/item.gd`) is the fix shape — the scalar analogue of `GameSession._array_field()`. Reproduced against real project code, not inferred. Reachable only from a hand-edited or corrupt save, which is exactly the input every `from_dict` in this repo already claims to defend against. |
 | P2-09 | Summon Stone income rate — how a player actually acquires stones | Found by `game-designer`, deliberately not authored by it — a design input, not a Resource-authoring task. Nothing defines acquisition rate today, which makes the verified ~327-pull spine number unvalidatable against real play time: the ratio is sound, the pacing is unknowable without this. Needed before the Phase 2 exit question below can be honestly answered. |
 | P2b-01 | Minimum playable arena: capsules, WASD + mouse, one attack, one dodge, one enemy | Same `CombatResult` |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
@@ -352,6 +364,7 @@ needs to re-read.
 | `P2-05g` | 3:1 part conversion | `4595b3f` |
 | `P2-05e` | Enhancement design ruling — the `+8%` reading, and what gold is | `7ac7459` |
 | `P2-05f` | Enhancement — spend parts to make one item stronger | `b6b5c47` |
+| `P2-11` | An explicit JSON `null` no longer crashes the load path | `PENDING` |
 
 ---
 

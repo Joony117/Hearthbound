@@ -131,7 +131,7 @@ func to_dict() -> Dictionary:
 
 
 static func from_dict(data: Dictionary) -> Hero:
-	var hero := Hero.new(str(data.get("name", "?")), int(data.get("rank", 0)))
+	var hero := Hero.new(str(data.get("name", "?")), Item.int_field(data, "rank", 0, "hero"))
 	if not data.has("def_id"):
 		# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.
 		hero.def_id = NO_ARCHETYPE_DEF_ID

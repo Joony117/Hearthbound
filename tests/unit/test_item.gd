@@ -47,3 +47,31 @@ func test_malformed_save_fields_load_empty_without_erroring() -> void:
 
 	GameSession.from_dict({"inventory": [42, "junk", null, []]})
 	assert_true(GameSession.inventory.is_empty())
+
+
+func test_explicit_null_fields_decode_into_roster_and_lost_caches() -> void:
+	# A null scalar must not abort from_dict, which would append null into these arrays and throw
+	# again on the next field read. LostCache already type-validates every field; Hero did not.
+	GameSession.from_dict({
+		"roster": [{"name": "Ash", "rank": null}],
+		"lost_caches": [{"hero_name": "Ash", "zone_id": "ashfall", "items": null}],
+	})
+
+	assert_push_error("Invalid lost cache items")
+	assert_eq(GameSession.roster.size(), 1)
+	assert_not_null(GameSession.roster[0])
+	assert_eq(GameSession.roster[0].rank, 0)
+	assert_eq(GameSession.lost_caches.size(), 1)
+	assert_not_null(GameSession.lost_caches[0])
+	assert_true(GameSession.lost_caches[0].items.is_empty())
+
+
+func test_explicit_null_version_loads_from_disk_instead_of_crashing_at_boot() -> void:
+	# load_game() reads version before any from_dict, so this one crashes earlier than the rest.
+	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	file.store_string('{"version": null, "roster": [{"name": "Ash", "rank": 2}]}')
+	file.close()
+
+	assert_true(SaveService.load_game())
+	assert_eq(GameSession.roster.size(), 1)
+	assert_eq(GameSession.roster[0].rank, 2)
