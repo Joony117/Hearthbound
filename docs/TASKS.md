@@ -304,7 +304,7 @@ needs to re-read.
 | `P2-05b` | Equipment magnitude ruling — what a rank-`N` item contributes | `c092fc3` |
 | `P2-05c` | Equipped gear changes a hero's stats and team power | `b5525e7` |
 | `P2-04e` | Lost-gear cache created on hero permadeath | `3885a14` |
-| `P2-05d` | Salvage an unwanted item into parts | _pending_ |
+| `P2-05d` | Salvage an unwanted item into parts | `5deb84e` |
 
 ---
 
