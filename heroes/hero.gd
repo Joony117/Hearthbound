@@ -77,12 +77,17 @@ static func compute_final_stats(
 		if equipment_definition == null:
 			continue
 		var primary_stat: int = equipment_definition.primary_stat
+		var enhance_multiplier: float = 1.0 + balance.enhance_pct_per_level * clampi(
+			item.enhance_level,
+			0,
+			balance.forge_enhance_cap_max,
+		)
 		if primary_stat < EquipmentDefinition.PrimaryStat.CRIT_RATE:
 			var pct_index: int = clampi(item.rank, 0, balance.equip_pct_per_rank.size() - 1)
-			equip_pct[primary_stat] += balance.equip_pct_per_rank[pct_index]
+			equip_pct[primary_stat] += balance.equip_pct_per_rank[pct_index] * enhance_multiplier
 		else:
 			var crit_pct_index: int = clampi(item.rank, 0, balance.equip_crit_pct_per_rank.size() - 1)
-			var crit_pct: float = balance.equip_crit_pct_per_rank[crit_pct_index]
+			var crit_pct: float = balance.equip_crit_pct_per_rank[crit_pct_index] * enhance_multiplier
 			if primary_stat == EquipmentDefinition.PrimaryStat.CRIT_RATE:
 				final_stats[STAT_CRIT_RATE] += crit_pct
 			else:

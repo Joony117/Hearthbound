@@ -58,13 +58,64 @@ func test_unequip_returns_item_to_inventory_and_clears_slot() -> void:
 
 func test_salvage_removes_inventory_item_and_credits_only_its_rank() -> void:
 	var item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
 	GameSession.add_item(item)
 
-	GameSession.salvage_item(item)
+	GameSession.salvage_item(item, balance)
 
 	assert_false(GameSession.inventory.has(item))
 	for rank_index: int in GameSession.parts.size():
 		assert_eq(GameSession.parts[rank_index], 3 if rank_index == item.rank else 0)
+
+
+func test_enhance_uses_the_cost_ladder() -> void:
+	var item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
+	GameSession.add_item(item)
+	GameSession.parts[item.rank] = 5
+
+	assert_true(GameSession.enhance_item(item, balance))
+	assert_eq(item.enhance_level, 1)
+	assert_eq(GameSession.parts[item.rank], 3)
+	assert_true(GameSession.enhance_item(item, balance))
+	assert_eq(item.enhance_level, 2)
+	assert_eq(GameSession.parts[item.rank], 0)
+
+
+func test_enhance_refuses_at_cap_without_writing() -> void:
+	var item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
+	item.enhance_level = balance.forge_enhance_cap_max
+	GameSession.add_item(item)
+	GameSession.parts[item.rank] = 99
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+
+	assert_false(GameSession.enhance_item(item, balance))
+	assert_eq(item.enhance_level, balance.forge_enhance_cap_max)
+	assert_eq(GameSession.parts, parts_before)
+
+
+func test_enhance_refuses_insufficient_parts_without_writing() -> void:
+	var item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
+	GameSession.add_item(item)
+	GameSession.parts[item.rank] = 1
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+
+	assert_false(GameSession.enhance_item(item, balance))
+	assert_eq(item.enhance_level, 0)
+	assert_eq(GameSession.parts, parts_before)
+
+
+func test_salvage_credits_enhance_level() -> void:
+	var item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
+	item.enhance_level = 4
+	GameSession.add_item(item)
+
+	GameSession.salvage_item(item, balance)
+
+	assert_eq(GameSession.parts[item.rank], 7)
 
 
 ## Item.from_dict never validates rank, and assert() is stripped in release - so a hand-edited
@@ -73,14 +124,22 @@ func test_salvage_removes_inventory_item_and_credits_only_its_rank() -> void:
 func test_salvage_clamps_a_corrupt_rank() -> void:
 	var above := Item.new(&"ring", 99)
 	var below := Item.new(&"ring", -1)
+	var balance := BalanceTable.new()
 	GameSession.add_item(above)
 	GameSession.add_item(below)
 
-	GameSession.salvage_item(above)
-	GameSession.salvage_item(below)
+	GameSession.salvage_item(above, balance)
+	GameSession.salvage_item(below, balance)
 
 	assert_eq(GameSession.parts[GameSession.parts.size() - 1], 3)
 	assert_eq(GameSession.parts[0], 3)
+
+
+func test_item_from_dict_defaults_explicit_null_enhance_level() -> void:
+	var item: Item = Item.from_dict({"def_id": "ring", "rank": 3, "enhance_level": null})
+
+	assert_not_null(item)
+	assert_eq(item.enhance_level, 0)
 
 
 func test_convert_parts_spends_three_parts_for_one_of_the_next_rank() -> void:
@@ -234,6 +293,33 @@ func test_same_stat_equipment_sums_before_multiplying() -> void:
 
 	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
 	assert_almost_eq(stats[Hero.STAT_HP], 273.0 * (1.0 + 0.1328 + 0.1328), 0.0001)
+
+
+func test_enhanced_non_crit_contribution_scales_before_summing() -> void:
+	var definition := _make_definition()
+	var balance := BalanceTable.new()
+	var hero := Hero.new("Enhanced HP Hero", 2)
+	var head := Item.new(&"head", 4)
+	head.enhance_level = 3
+	hero.equipped[EquipmentDefinition.Slot.HEAD] = head
+	hero.equipped[EquipmentDefinition.Slot.LEGS] = Item.new(&"legs", 4)
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
+	var enhanced_contribution: float = 0.1328 * (1.0 + 0.08 * 3.0)
+	assert_almost_eq(stats[Hero.STAT_HP], 273.0 * (1.0 + enhanced_contribution + 0.1328), 0.0001)
+
+
+func test_enhanced_crit_contribution_scales_before_adding() -> void:
+	var definition := _make_definition()
+	var balance := BalanceTable.new()
+	var hero := Hero.new("Enhanced Crit Hero", 2)
+	var necklace := Item.new(&"necklace", 4)
+	necklace.enhance_level = 3
+	hero.equipped[EquipmentDefinition.Slot.NECKLACE] = necklace
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
+	var enhanced_contribution: float = 0.0498 * (1.0 + 0.08 * 3.0)
+	assert_almost_eq(stats[Hero.STAT_CRIT_RATE], 0.15 + enhanced_contribution, 0.0001)
 
 
 func test_crit_rate_is_capped_by_equipped_necklace() -> void:

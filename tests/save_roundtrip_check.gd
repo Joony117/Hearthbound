@@ -13,6 +13,9 @@ const MALFORMED_HERO_RANK := 5
 const DOOMED_ITEM_DEF_ID := &"ring"
 const DOOMED_ITEM_RANK := 3
 const SALVAGED_ITEM_RANK := 5
+const ENHANCED_ITEM_DEF_ID := &"head"
+const ENHANCED_ITEM_RANK := 4
+const ENHANCED_ITEM_LEVEL := 3
 
 var _game_session: Node
 var _save_service: Node
@@ -55,7 +58,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, parts, part conversion, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, parts, part conversion, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -72,6 +75,9 @@ func _run() -> int:
 	var parts_code: int = _check_parts_round_trip()
 	if parts_code != 0:
 		return parts_code
+	var enhanced_equipment_code: int = _check_enhanced_equipment_round_trip()
+	if enhanced_equipment_code != 0:
+		return enhanced_equipment_code
 	return _check_permadeath_and_version()
 
 
@@ -143,8 +149,9 @@ func _check_new_format_round_trip() -> int:
 
 func _check_parts_round_trip() -> int:
 	var salvaged_item := Item.new(DOOMED_ITEM_DEF_ID, SALVAGED_ITEM_RANK)
+	var balance := BalanceTable.new()
 	_game_session.call("add_item", salvaged_item)
-	_game_session.call("salvage_item", salvaged_item)
+	_game_session.call("salvage_item", salvaged_item, balance)
 	_save_service.call("save")
 
 	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
@@ -201,6 +208,65 @@ func _check_parts_round_trip() -> int:
 		var converted_loaded_expected: int = 1 if rank_index == SALVAGED_ITEM_RANK + 1 else 0
 		if _parts()[rank_index] != converted_loaded_expected:
 			return _fail("converted parts after disk reload at rank %d" % rank_index, str(converted_loaded_expected), str(_parts()[rank_index]))
+	return 0
+
+
+func _check_enhanced_equipment_round_trip() -> int:
+	var hero: Hero = _find_hero(SECOND_HERO_NAME, SECOND_HERO_RANK)
+	if hero == null:
+		return _fail("hero selected for enhanced equipment", "%s:%d" % [SECOND_HERO_NAME, SECOND_HERO_RANK], _roster_summary())
+	var item := Item.new(ENHANCED_ITEM_DEF_ID, ENHANCED_ITEM_RANK)
+	item.enhance_level = ENHANCED_ITEM_LEVEL
+	var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+	if definition == null:
+		return _fail("enhanced equipment definition", str(ENHANCED_ITEM_DEF_ID), "missing")
+	_game_session.call("add_item", item)
+	_game_session.call("equip_item", hero, item)
+	_save_service.call("save")
+
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
+	if save_file == null:
+		return _fail("enhanced equipment raw save file open", "readable", error_string(FileAccess.get_open_error()))
+	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
+	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	if parsed is not Dictionary:
+		return _fail("enhanced equipment raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
+	# Save-file fields remain Variant until their types are validated.
+	var raw_roster: Variant = (parsed as Dictionary).get("roster")
+	if raw_roster is not Array:
+		return _fail("enhanced equipment raw save roster shape", "Array", type_string(typeof(raw_roster)))
+	var raw_enhance_level: int = -1
+	for raw_hero: Variant in raw_roster as Array:
+		if raw_hero is not Dictionary:
+			continue
+		var hero_entry: Dictionary = raw_hero as Dictionary
+		if str(hero_entry.get("name")) != SECOND_HERO_NAME:
+			continue
+		# Save-file fields remain Variant until their types are validated.
+		var raw_equipped: Variant = hero_entry.get("equipped")
+		if raw_equipped is not Array:
+			return _fail("enhanced equipment raw save equipped shape", "Array", type_string(typeof(raw_equipped)))
+		for raw_equipped_entry: Variant in raw_equipped as Array:
+			if raw_equipped_entry is not Dictionary:
+				continue
+			# Save-file fields remain Variant until their types are validated.
+			var raw_item: Variant = (raw_equipped_entry as Dictionary).get("item")
+			if raw_item is Dictionary and str((raw_item as Dictionary).get("def_id")) == str(ENHANCED_ITEM_DEF_ID):
+				raw_enhance_level = int((raw_item as Dictionary).get("enhance_level", -1))
+	if raw_enhance_level != ENHANCED_ITEM_LEVEL:
+		return _fail("enhanced equipment level in raw save JSON", str(ENHANCED_ITEM_LEVEL), str(raw_enhance_level))
+
+	_roster().clear()
+	if not _save_service.call("load_game"):
+		return _fail("enhanced equipment disk reload", "load_game() == true", "load_game() == false")
+	var reloaded_hero: Hero = _find_hero(SECOND_HERO_NAME, SECOND_HERO_RANK)
+	if reloaded_hero == null:
+		return _fail("enhanced equipment hero after disk reload", "%s:%d" % [SECOND_HERO_NAME, SECOND_HERO_RANK], _roster_summary())
+	if not reloaded_hero.equipped.has(definition.slot):
+		return _fail("enhanced equipment slot after disk reload", str(definition.slot), "missing")
+	var reloaded_item: Item = reloaded_hero.equipped[definition.slot]
+	if reloaded_item.enhance_level != ENHANCED_ITEM_LEVEL:
+		return _fail("enhanced equipment level after disk reload", str(ENHANCED_ITEM_LEVEL), str(reloaded_item.enhance_level))
 	return 0
 
 

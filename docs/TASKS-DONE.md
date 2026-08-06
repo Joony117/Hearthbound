@@ -2209,3 +2209,141 @@ implementer's own GUT run had hung without output, which reproduced nowhere else
 ### Files changed
 `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
 `tests/unit/test_equipment.gd`
+
+---
+
+## P2-05f — Enhancement: spend parts to make one item stronger          [DONE]
+
+### Objective
+
+Select an item in the Inventory column, press **Enhance**, and it gains a level — costing
+parts of its own rank, raising the stat it gives the hero wearing it, and raising what it
+returns when salvaged. Visible in the item's list entry, in the parts readout, and in the
+hero's stats.
+
+### Existing architecture
+
+- `Item` (`equipment/item.gd`) is `RefCounted` with `def_id` and `rank`, and a
+  `to_dict`/`from_dict` pair. `from_dict` does **not** validate `rank` — every consumer
+  `clampi`s before use instead (`Item.rank_label`, `Hero.compute_final_stats`,
+  `GameSession.salvage_item`). Read `P2-05d`'s Findings: an `assert()` is not a guard for
+  anything arriving from a save file, because release exports strip it.
+- `Hero.compute_final_stats` (`heroes/hero.gd:74-92`) already applies gear: eight non-crit
+  slots accumulate into `equip_pct[]` (indexed by `PrimaryStat` ordinal, which `STAT_NAMES`
+  mirrors positionally) and get one multiply at the end; necklace/ring add `equip_crit_pct`
+  flat to the two crit stats, then `CRIT_RATE` is clamped to `equip_crit_rate_cap`.
+- `GameSession.parts` is a fixed 8-element `Array[int]` indexed by rank.
+  `salvage_item()` credits a flat `3`; `convert_parts(rank) -> bool` is the shape to copy for
+  a spend that can fail — validate, mutate, `roster_changed.emit()`, return `bool`.
+- The Inventory column of `hub/hub.tscn` holds `InventoryList`, `Equip`, `Salvage`, `%Parts`,
+  `%ConvertRankOption`, `Convert`, each wired by a `[connection]` block to a `_on_*_pressed`
+  handler in `hub/hub.gd`. Adding a button is a scene↔script seam change.
+- The ruling is `SYSTEMS.md` § Enhancement (`P2-05e`). It is settled; do not re-derive it.
+
+### Acceptance criteria
+
+1. New `BalanceTable` field `enhance_pct_per_level: float = 0.08`, authored into
+   `balance.tres`. No other new field — the cap is the existing `forge_enhance_cap_max`.
+2. `Item.enhance_level: int`, default `0`, in `to_dict`/`from_dict` in the same shape `rank`
+   uses (`int(data.get(...))`, which absorbs the float a JSON integer decodes as off disk).
+3. `GameSession.enhance_item(item: Item) -> bool` — returns `false` without writing anything
+   when the item is not in `inventory`, when `enhance_level` is already at
+   `balance.forge_enhance_cap_max`, or when `parts[item.rank]` is short. On success it spends
+   `2 + enhance_level` parts **of the item's own rank**, increments `enhance_level`, and emits
+   `roster_changed`.
+4. `Hero.compute_final_stats` scales each item's own contribution *before* the existing
+   per-stat summation: `contribution * (1.0 + balance.enhance_pct_per_level * enhance_level)`,
+   applied to `equip_pct_per_rank[rank]` for the eight non-crit slots **and** to
+   `equip_crit_pct_per_rank[rank]` for necklace/ring. Not a second multiply after the sum.
+5. `salvage_item` yields `3 + enhance_level` parts, replacing the flat `3`.
+6. `enhance_level` is `clampi`ed to `[0, balance.forge_enhance_cap_max]` at each of those
+   three read sites, for the same reason `rank` is — it arrives unvalidated from a save, and a
+   negative one would shrink a stat or credit negative parts.
+7. An **Enhance** button in the Inventory column, wired like `Salvage`. On success the status
+   line names the item, its new level, and what it cost; on refusal it says which of the three
+   reasons applied. `InventoryList` and `EquippedList` entries show the level when non-zero
+   (e.g. `A Ashen Greaves +3`).
+8. GUT coverage in `tests/unit/test_equipment.gd`: the cost ladder (`0→1` costs 2, `1→2` costs
+   3), refusal at the cap without writing, refusal on insufficient parts without writing,
+   a `+8%`-per-level stat change on a non-crit slot and on a crit slot, and **salvage at a
+   non-zero `enhance_level`** — the term `P2-05d` could not test.
+9. `tests/save_roundtrip_check.gd`: an enhanced item survives a **real disk** save/reload with
+   its level intact, asserted against the raw JSON as the parts check already is. An in-memory
+   `to_dict`/`from_dict` pair is not evidence here — see `P2-05a` and `P2-04e`.
+10. BUILT green (zero errors, zero warnings) and the full GUT suite green.
+
+### Files allowed to change
+
+`equipment/item.gd` · `balance_table.gd` · `balance.tres` · `heroes/hero.gd` ·
+`systems/game_session.gd` · `hub/hub.gd` · `hub/hub.tscn` · `tests/unit/test_equipment.gd` ·
+`tests/save_roundtrip_check.gd`
+
+### Non-goals
+
+- **Gold.** Struck by `P2-05e`; it has no source. `P2-10` owns it. Cost is parts only.
+- **`forge_level`.** The cap is flat `forge_enhance_cap_max`. `forge_enhance_cap_per_level`
+  stays authored and unread until `P2-07`.
+- **Enhancing equipped gear.** Inventory-only, matching `salvage_item`'s existing reachability
+  note. Unequip first.
+- Enhancement affecting anything but the item's own primary-stat contribution — no new affix,
+  no socket, no rank change.
+- A Forge panel. `P2-05g` already sited these controls in the Inventory column for exactly
+  this reason; buildings have no panel until `P2-07`.
+
+### Findings
+
+**Criterion 3's signature was wrong, and the review caught it — an autoload must not hold a
+shared Resource.** The first pass gave `GameSession` a
+`const BALANCE = preload("res://balance.tres")` so `enhance_item` could read
+`forge_enhance_cap_max`, justified as matching `hub/hub.gd`'s existing const. That
+justification is wrong: `hub.gd` is a scene script. `ARCHITECTURE.md` § "Reaching shared
+Resources" prohibits this and names `GameSession` in the prohibition — *"nothing to gain by
+centralizing the load behind a fourth autoload or behind `GameSession`"* — because it makes
+every consumer's tests depend on booting that autoload. There was no functional bug
+(`ResourceLoader` caches by path), which is exactly why the import gate and all 53 tests
+stayed green over it. Corrected to the shape the same paragraph prescribes and
+`Hero.compute_final_stats` already uses: `balance: BalanceTable` passed in explicitly, on both
+`enhance_item` and `salvage_item`. **The ticket asked for the wrong signature and nobody caught
+it until review** — criterion 3 as written specified `enhance_item(item: Item) -> bool`, which
+cannot read a balance number without violating the rule.
+
+That correction changed an **autoload signature**, which is the `P2-04e` trap: `salvage_item`'s
+second caller is dynamic (`tests/save_roundtrip_check.gd` via
+`_game_session.call("salvage_item", …)`), invisible to a grep for `salvage_item(` and invisible
+to the import gate. The runtime script is the only thing that catches it, and it did.
+
+**`Dictionary.get(key, default)` does not defend against an explicit `null`** — only against a
+missing key. `int(data.get("rank", 0))` therefore throws `Invalid call. Nonexistent 'int'
+constructor.` on a save containing `"rank": null`, and `from_dict` returns `null` into
+`inventory`/`equipped`, where the next `.def_id` read throws again. This defect **predated the
+ticket** on `rank`; adding `enhance_level` in the same shape doubled it. Fixed for both fields
+with one `Item._int_field()` helper — the scalar analogue of `GameSession._array_field()`,
+which `P2-04c` added for exactly this on Array fields. `Hero.from_dict` and
+`LostCache.from_dict` still carry it on their own scalar fields; that is `P2-11`.
+
+**The status-string handler duplicates the rule.** `hub.gd`'s `_on_enhance_pressed` re-checks
+all three of `enhance_item`'s preconditions so it can name which one fired, then calls
+`enhance_item` and discards its `bool`. Judged a maintenance hazard rather than a live bug —
+same clamp bounds, same rank index, same cost formula, no intervening mutation — but it is two
+sources of truth for one rule, and the honest fix is a reason code on the return rather than a
+second copy of the checks. Left as-is deliberately; whoever adds a fourth precondition must
+remember to add it twice.
+
+**The `+N` suffix in both `ItemList`s reads `item.enhance_level` unclamped**, so a corrupt save
+displays an out-of-range level. Cosmetic by design — all three *gameplay* read sites clamp per
+criterion 6, and clamping the display too would hide the corruption from the only place a
+player could notice it.
+
+**Verified by re-run, not by relay.** Import gate exit 0 with zero
+`SCRIPT ERROR`/`ERROR:`/`WARNING` lines; GUT 54/54, 9360 asserts, exit 0 (was 51);
+`save_roundtrip_check.gd` exit 0 with `enhanced equipment` named in its `PASS:` line, run with
+`%APPDATA%` redirected so the real `user://save.json` was never touched. All three re-run by
+the director after the implementer and the verifier each reported them, and again after the
+fix-up. The arithmetic was checked independently against `SYSTEMS.md` § Enhancement's worked
+example — SSS necklace at `+15` yields `+26.96pp` additive, exact match. `Get-Process Godot*`
+empty after every run.
+
+### Files changed
+`balance_table.gd`, `balance.tres`, `equipment/item.gd`, `heroes/hero.gd`,
+`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
+`tests/unit/test_equipment.gd`

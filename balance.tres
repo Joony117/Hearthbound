@@ -15,6 +15,7 @@ rank_names = PackedStringArray("F", "D", "C", "B", "A", "S", "SS", "SSS")
 equip_pct_per_rank = Array[float]([0.04, 0.054, 0.0728, 0.0984, 0.1328, 0.1792, 0.242, 0.3268])
 equip_crit_pct_per_rank = Array[float]([0.015, 0.02025, 0.0273, 0.0369, 0.0498, 0.0672, 0.09075, 0.12255])
 equip_crit_rate_cap = 0.75
+enhance_pct_per_level = 0.08
 summoning_circle_multiplier_per_level = 0.15
 wave_damage_coefficient = 0.35
 wave_loss_damage_coefficient = 1.0

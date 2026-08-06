@@ -61,10 +61,11 @@ func _refresh_inventory() -> void:
 	_inventory_list.clear()
 	for item: Item in GameSession.inventory:
 		var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+		var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
 		if definition == null:
-			_inventory_list.add_item("%s [Missing definition: %s]" % [item.rank_label(BALANCE), item.def_id])
+			_inventory_list.add_item("%s [Missing definition: %s]%s" % [item.rank_label(BALANCE), item.def_id, enhance_suffix])
 		else:
-			_inventory_list.add_item("%s %s" % [item.rank_label(BALANCE), definition.display_name])
+			_inventory_list.add_item("%s %s%s" % [item.rank_label(BALANCE), definition.display_name, enhance_suffix])
 		_inventory_list.set_item_metadata(_inventory_list.item_count - 1, item)
 
 
@@ -86,10 +87,11 @@ func _refresh_equipped() -> void:
 		assert(item != null)
 		var slot_name: String = (EquipmentDefinition.Slot.keys()[slot] as String).capitalize()
 		var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+		var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
 		if definition == null:
-			_equipped_list.add_item("%s %s [Missing definition: %s]" % [slot_name, item.rank_label(BALANCE), item.def_id])
+			_equipped_list.add_item("%s %s [Missing definition: %s]%s" % [slot_name, item.rank_label(BALANCE), item.def_id, enhance_suffix])
 		else:
-			_equipped_list.add_item("%s %s %s" % [slot_name, item.rank_label(BALANCE), definition.display_name])
+			_equipped_list.add_item("%s %s %s%s" % [slot_name, item.rank_label(BALANCE), definition.display_name, enhance_suffix])
 		_equipped_list.set_item_metadata(_equipped_list.item_count - 1, slot)
 
 
@@ -178,8 +180,34 @@ func _on_salvage_pressed() -> void:
 	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
 	assert(item != null)
 	var rank_label: String = item.rank_label(BALANCE)
-	GameSession.salvage_item(item)
-	_status.text = "Salvaged %s item into 3 %s parts." % [rank_label, rank_label]
+	GameSession.salvage_item(item, BALANCE)
+	_status.text = "Salvaged %s item into %d %s parts." % [rank_label, 3 + clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max), rank_label]
+
+
+func _on_enhance_pressed() -> void:
+	var selected: PackedInt32Array = _inventory_list.get_selected_items()
+	if selected.size() != 1:
+		_status.text = "Select exactly one inventory item."
+		return
+	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
+	assert(item != null)
+	if not GameSession.inventory.has(item):
+		_status.text = "Cannot enhance: item is no longer in inventory."
+		return
+	var enhance_level: int = clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max)
+	if enhance_level >= BALANCE.forge_enhance_cap_max:
+		_status.text = "Cannot enhance: item is already at the +%d cap." % BALANCE.forge_enhance_cap_max
+		return
+	var rank_index: int = clampi(item.rank, 0, GameSession.parts.size() - 1)
+	var cost: int = 2 + enhance_level
+	var rank_label: String = BALANCE.rank_names[rank_index]
+	if GameSession.parts[rank_index] < cost:
+		_status.text = "Cannot enhance: need %d %s parts." % [cost, rank_label]
+		return
+	GameSession.enhance_item(item, BALANCE)
+	var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+	var item_name: String = definition.display_name if definition != null else str(item.def_id)
+	_status.text = "Enhanced %s to +%d for %d %s parts." % [item_name, item.enhance_level, cost, rank_label]
 
 
 func _on_convert_pressed() -> void:

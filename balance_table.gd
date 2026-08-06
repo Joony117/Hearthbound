@@ -12,6 +12,7 @@ extends Resource
 @export var equip_pct_per_rank: Array[float] = [0.04, 0.054, 0.0728, 0.0984, 0.1328, 0.1792, 0.242, 0.3268]
 @export var equip_crit_pct_per_rank: Array[float] = [0.015, 0.02025, 0.0273, 0.0369, 0.0498, 0.0672, 0.09075, 0.12255]
 @export var equip_crit_rate_cap: float = 0.75
+@export var enhance_pct_per_level: float = 0.08
 
 @export var summoning_circle_multiplier_per_level: float = 0.15
 @export var wave_damage_coefficient: float = 0.35
