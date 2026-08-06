@@ -56,7 +56,7 @@ func test_unequip_returns_item_to_inventory_and_clears_slot() -> void:
 	assert_eq(_count_item(hero, item), 1)
 
 
-func test_kill_hero_returns_all_equipped_items_to_inventory() -> void:
+func test_kill_hero_moves_all_equipped_items_to_lost_cache() -> void:
 	var hero := Hero.new("Doomed Hero", 2)
 	var ring := Item.new(&"ring", 1)
 	var necklace := Item.new(&"necklace", 3)
@@ -66,14 +66,49 @@ func test_kill_hero_returns_all_equipped_items_to_inventory() -> void:
 	GameSession.add_item(necklace)
 	GameSession.equip_item(hero, ring)
 	GameSession.equip_item(hero, necklace)
-	GameSession.kill_hero(hero)
+	GameSession.kill_hero(hero, &"doomed_zone")
 
 	assert_false(GameSession.roster.has(hero))
 	assert_true(hero.equipped.is_empty())
-	assert_true(GameSession.inventory.has(ring))
-	assert_true(GameSession.inventory.has(necklace))
-	assert_eq(_count_inventory_item(ring), 1)
-	assert_eq(_count_inventory_item(necklace), 1)
+	assert_false(GameSession.inventory.has(ring))
+	assert_false(GameSession.inventory.has(necklace))
+	assert_eq(GameSession.lost_caches.size(), 1)
+	var cache: LostCache = GameSession.lost_caches[0]
+	assert_eq(cache.hero_name, "Doomed Hero")
+	assert_eq(cache.zone_id, &"doomed_zone")
+	assert_true(cache.items.has(ring))
+	assert_true(cache.items.has(necklace))
+
+
+func test_lost_cache_survives_game_session_round_trip() -> void:
+	var hero := Hero.new("Cached Hero", 2)
+	var ring := Item.new(&"ring", 1)
+	var necklace := Item.new(&"necklace", 3)
+
+	GameSession.add_hero(hero)
+	GameSession.add_item(ring)
+	GameSession.add_item(necklace)
+	GameSession.equip_item(hero, ring)
+	GameSession.equip_item(hero, necklace)
+	GameSession.kill_hero(hero, &"cache_zone")
+	GameSession.from_dict(GameSession.to_dict())
+
+	assert_eq(GameSession.lost_caches.size(), 1)
+	var cache: LostCache = GameSession.lost_caches[0]
+	assert_eq(cache.hero_name, "Cached Hero")
+	assert_eq(cache.zone_id, &"cache_zone")
+	assert_eq(cache.items.size(), 2)
+	assert_true(_has_item(cache.items, &"ring", 1))
+	assert_true(_has_item(cache.items, &"necklace", 3))
+
+
+func test_kill_hero_without_equipped_items_creates_no_lost_cache() -> void:
+	var hero := Hero.new("Ungeared Hero", 2)
+
+	GameSession.add_hero(hero)
+	GameSession.kill_hero(hero, &"empty_zone")
+
+	assert_true(GameSession.lost_caches.is_empty())
 
 
 func test_equipped_item_survives_game_session_round_trip() -> void:
@@ -205,6 +240,13 @@ func _count_inventory_item(item: Item) -> int:
 		if inventory_item == item:
 			count += 1
 	return count
+
+
+func _has_item(items: Array[Item], def_id: StringName, rank: int) -> bool:
+	for item: Item in items:
+		if item.def_id == def_id and item.rank == rank:
+			return true
+	return false
 
 
 func _make_definition() -> HeroDefinition:

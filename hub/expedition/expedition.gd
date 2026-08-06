@@ -55,7 +55,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 		if not dead_heroes.is_empty():
 			for hero: Hero in dead_heroes:
 				# The expedition resolver is the sole permadeath writer (architecture rule 8).
-				GameSession.kill_hero(hero)
+				GameSession.kill_hero(hero, zone.zone_id)
 			return OUTCOME_DEFEATED
 
 		if next_wave_index < zone.trash_wave_count and _party_hp_fraction(team) <= RETREAT_THRESHOLD:

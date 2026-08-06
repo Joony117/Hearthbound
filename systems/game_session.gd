@@ -9,6 +9,7 @@ signal roster_changed
 
 var roster: Array[Hero] = []
 var inventory: Array[Item] = []
+var lost_caches: Array[LostCache] = []
 var cleared_zone_ids: Dictionary[StringName, bool] = {}
 
 
@@ -61,9 +62,12 @@ func mark_zone_cleared(zone_id: StringName) -> void:
 
 ## The single place a hero leaves the roster. See docs/ARCHITECTURE.md rule 8 - permadeath
 ## reachable from more than one call site is how this game rots.
-func kill_hero(hero: Hero) -> void:
-	for item: Item in hero.equipped.values():
-		inventory.append(item)
+func kill_hero(hero: Hero, zone_id: StringName) -> void:
+	if not hero.equipped.is_empty():
+		var cache := LostCache.new(hero.hero_name, zone_id)
+		for item: Item in hero.equipped.values():
+			cache.items.append(item)
+		lost_caches.append(cache)
 	hero.equipped.clear()
 	roster.erase(hero)
 	roster_changed.emit()
@@ -76,6 +80,9 @@ func to_dict() -> Dictionary:
 	var inventory_entries: Array[Dictionary] = []
 	for item: Item in inventory:
 		inventory_entries.append(item.to_dict())
+	var lost_cache_entries: Array[Dictionary] = []
+	for cache: LostCache in lost_caches:
+		lost_cache_entries.append(cache.to_dict())
 	var cleared_entries: Array[String] = []
 	for zone_id: StringName in cleared_zone_ids:
 		cleared_entries.append(str(zone_id))
@@ -83,6 +90,7 @@ func to_dict() -> Dictionary:
 	return {
 		"roster": entries,
 		"inventory": inventory_entries,
+		"lost_caches": lost_cache_entries,
 		"cleared_zone_ids": cleared_entries,
 	}
 
@@ -90,6 +98,7 @@ func to_dict() -> Dictionary:
 func from_dict(data: Dictionary) -> void:
 	roster.clear()
 	inventory.clear()
+	lost_caches.clear()
 	cleared_zone_ids.clear()
 	for entry: Variant in _array_field(data, "roster"):
 		if entry is Dictionary:
@@ -97,6 +106,9 @@ func from_dict(data: Dictionary) -> void:
 	for entry: Variant in _array_field(data, "inventory"):
 		if entry is Dictionary:
 			inventory.append(Item.from_dict(entry))
+	for entry: Variant in _array_field(data, "lost_caches"):
+		if entry is Dictionary:
+			lost_caches.append(LostCache.from_dict(entry))
 	for zone_id: Variant in _array_field(data, "cleared_zone_ids"):
 		if zone_id is String:
 			cleared_zone_ids[StringName(zone_id as String)] = true
@@ -105,7 +117,7 @@ func from_dict(data: Dictionary) -> void:
 
 ## Dictionary.get()'s default only applies to a *missing* key, so an explicit "roster": null
 ## in a hand-edited or corrupt save reaches the loop as Nil and errors out. Coerce here rather
-## than at each call site - all three fields have the same untrusted shape.
+## than at each call site - all persisted collection fields have the same untrusted shape.
 static func _array_field(data: Dictionary, key: String) -> Array:
 	# Variant is required while validating untrusted save entries.
 	var value: Variant = data.get(key)

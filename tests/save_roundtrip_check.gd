@@ -10,6 +10,8 @@ const PREEXISTING_HERO_NAME := "Preexisting Cyra"
 const PREEXISTING_HERO_RANK := 4
 const MALFORMED_HERO_NAME := "Malformed Dain"
 const MALFORMED_HERO_RANK := 5
+const DOOMED_ITEM_DEF_ID := &"ring"
+const DOOMED_ITEM_RANK := 3
 
 var _game_session: Node
 var _save_service: Node
@@ -139,7 +141,10 @@ func _check_permadeath_and_version() -> int:
 	var doomed_hero: Hero = _find_hero(FIRST_HERO_NAME, FIRST_HERO_RANK)
 	if doomed_hero == null:
 		return _fail("hero selected for permadeath", "%s:%d" % [FIRST_HERO_NAME, FIRST_HERO_RANK], _roster_summary())
-	_game_session.call("kill_hero", doomed_hero)
+	var doomed_item := Item.new(DOOMED_ITEM_DEF_ID, DOOMED_ITEM_RANK)
+	_game_session.call("add_item", doomed_item)
+	_game_session.call("equip_item", doomed_hero, doomed_item)
+	_game_session.call("kill_hero", doomed_hero, &"save_roundtrip")
 	_save_service.call("save")
 
 	_roster().clear()
@@ -151,6 +156,21 @@ func _check_permadeath_and_version() -> int:
 		return _fail("permanently killed hero after disk reload", "absent", _roster_summary())
 	if not _has_hero(SECOND_HERO_NAME, SECOND_HERO_RANK):
 		return _fail("surviving hero after permadeath disk reload", "%s:%d" % [SECOND_HERO_NAME, SECOND_HERO_RANK], _roster_summary())
+	var lost_caches: Array[LostCache] = _game_session.get("lost_caches")
+	if lost_caches.size() != 1:
+		return _fail("lost cache count after permadeath disk reload", "1", str(lost_caches.size()))
+	var lost_cache: LostCache = lost_caches[0]
+	if lost_cache.hero_name != FIRST_HERO_NAME:
+		return _fail("lost cache hero name after disk reload", FIRST_HERO_NAME, lost_cache.hero_name)
+	if lost_cache.zone_id != &"save_roundtrip":
+		return _fail("lost cache zone ID after disk reload", "save_roundtrip", str(lost_cache.zone_id))
+	if lost_cache.items.size() != 1:
+		return _fail("lost cache item count after disk reload", "1", str(lost_cache.items.size()))
+	var lost_item: Item = lost_cache.items[0]
+	if lost_item.def_id != DOOMED_ITEM_DEF_ID:
+		return _fail("lost cache item def_id after disk reload", str(DOOMED_ITEM_DEF_ID), str(lost_item.def_id))
+	if lost_item.rank != DOOMED_ITEM_RANK:
+		return _fail("lost cache item rank after disk reload", str(DOOMED_ITEM_RANK), str(lost_item.rank))
 
 	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
 	if save_file == null:
