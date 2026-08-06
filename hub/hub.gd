@@ -9,6 +9,9 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 ]
 
 @onready var _roster_list: ItemList = %RosterList
+@onready var _fodder_option: OptionButton = %FodderOption
+@onready var _target_option: OptionButton = %TargetOption
+@onready var _essence: Label = %Essence
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _parts: Label = %Parts
 @onready var _convert_rank_option: OptionButton = %ConvertRankOption
@@ -20,11 +23,13 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 
 func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_roster)
+	GameSession.roster_changed.connect(_refresh_essence)
 	GameSession.roster_changed.connect(_refresh_inventory)
 	GameSession.roster_changed.connect(_refresh_parts)
 	GameSession.roster_changed.connect(_refresh_equipped)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	_refresh_roster()
+	_refresh_essence()
 	_refresh_inventory()
 	_refresh_parts()
 	_refresh_equipped()
@@ -55,6 +60,24 @@ func _refresh_roster() -> void:
 		_roster_list.set_item_metadata(item_index, hero)
 		if selected_heroes.has(hero):
 			_roster_list.select(item_index, false)
+	_refresh_hero_option(_fodder_option)
+	_refresh_hero_option(_target_option)
+
+
+func _refresh_hero_option(option: OptionButton) -> void:
+	var selected_hero: Hero = option.get_selected_metadata() as Hero if option.selected >= 0 else null
+	option.clear()
+	for hero: Hero in GameSession.roster:
+		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
+		option.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
+		option.set_item_metadata(option.item_count - 1, hero)
+	# add_item() auto-selects index 0 on a cleared button. Re-selecting by identity after the
+	# loop is what stops a sacrificed hero's slot silently retargeting whoever took its place.
+	option.select(GameSession.roster.find(selected_hero))
+
+
+func _refresh_essence() -> void:
+	_essence.text = "Essence: %d" % GameSession.essence
 
 
 func _refresh_inventory() -> void:
@@ -147,6 +170,48 @@ func _on_summon_pressed() -> void:
 	var hero := Summon.roll()
 	GameSession.add_hero(hero)
 	_status.text = "Summoned %s, rank %s." % [hero.hero_name, hero.rank_label(BALANCE)]
+
+
+func _on_sacrifice_pressed() -> void:
+	var fodder: Hero = _fodder_option.get_selected_metadata() as Hero if _fodder_option.selected >= 0 else null
+	var target: Hero = _target_option.get_selected_metadata() as Hero if _target_option.selected >= 0 else null
+	if fodder == null or target == null:
+		_status.text = "Select both a fodder hero and a target hero."
+		return
+	if fodder == target:
+		_status.text = "A hero cannot be sacrificed into itself."
+		return
+	if not GameSession.roster.has(fodder):
+		_status.text = "Cannot sacrifice: fodder is no longer in the roster."
+		return
+	if not fodder.equipped.is_empty():
+		_status.text = "Unequip the fodder hero before sacrificing it."
+		return
+	var essence_yield: int = Hero.compute_essence_yield(fodder, target, BALANCE)
+	var fodder_name: String = fodder.hero_name
+	if GameSession.sacrifice_hero(fodder, target, BALANCE):
+		_status.text = "Sacrificed %s for %d essence." % [fodder_name, essence_yield]
+	else:
+		_status.text = "Cannot sacrifice the selected hero."
+
+
+func _on_rank_up_pressed() -> void:
+	var hero: Hero = _selected_hero()
+	if hero == null:
+		_status.text = "Select exactly one hero to rank up."
+		return
+	if hero.rank >= BALANCE.rank_up_essence_costs.size():
+		_status.text = "%s is already at the highest rank." % hero.hero_name
+		return
+	var cost: int = Hero.compute_rank_up_cost(hero, BALANCE)
+	if GameSession.essence < cost:
+		_status.text = "Cannot rank up %s: need %d essence." % [hero.hero_name, cost]
+		return
+	var hero_name: String = hero.hero_name
+	if GameSession.rank_up_hero(hero, BALANCE):
+		_status.text = "Ranked %s up to %s for %d essence." % [hero_name, hero.rank_label(BALANCE), cost]
+	else:
+		_status.text = "Cannot rank up the selected hero."
 
 
 func _on_roster_list_multi_selected(_index: int, _selected: bool) -> void:

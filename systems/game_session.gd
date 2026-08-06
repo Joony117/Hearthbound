@@ -10,6 +10,7 @@ signal roster_changed
 var roster: Array[Hero] = []
 var inventory: Array[Item] = []
 var parts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0]
+var essence: int = 0
 var lost_caches: Array[LostCache] = []
 var cleared_zone_ids: Dictionary[StringName, bool] = {}
 
@@ -100,6 +101,28 @@ func mark_zone_cleared(zone_id: StringName) -> void:
 	roster_changed.emit()
 
 
+func sacrifice_hero(fodder: Hero, target: Hero, balance: BalanceTable) -> bool:
+	if fodder == target or not roster.has(fodder) or not fodder.equipped.is_empty():
+		return false
+	essence += Hero.compute_essence_yield(fodder, target, balance)
+	if fodder.def_id == target.def_id and fodder.def_id != Hero.NO_ARCHETYPE_DEF_ID:
+		target.resonance += 1
+	kill_hero(fodder, &"")
+	return true
+
+
+func rank_up_hero(hero: Hero, balance: BalanceTable) -> bool:
+	if hero.rank >= balance.rank_up_essence_costs.size():
+		return false
+	var cost: int = Hero.compute_rank_up_cost(hero, balance)
+	if essence < cost:
+		return false
+	essence -= cost
+	hero.rank += 1
+	roster_changed.emit()
+	return true
+
+
 ## The single place a hero leaves the roster. See docs/ARCHITECTURE.md rule 8 - permadeath
 ## reachable from more than one call site is how this game rots.
 func kill_hero(hero: Hero, zone_id: StringName) -> void:
@@ -131,6 +154,7 @@ func to_dict() -> Dictionary:
 		"roster": entries,
 		"inventory": inventory_entries,
 		"parts": parts.duplicate(),
+		"essence": essence,
 		"lost_caches": lost_cache_entries,
 		"cleared_zone_ids": cleared_entries,
 	}
@@ -140,6 +164,7 @@ func from_dict(data: Dictionary) -> void:
 	roster.clear()
 	inventory.clear()
 	parts.fill(0)
+	essence = 0
 	lost_caches.clear()
 	cleared_zone_ids.clear()
 	for entry: Variant in _array_field(data, "roster"):
@@ -163,6 +188,7 @@ func from_dict(data: Dictionary) -> void:
 			push_error("Invalid parts count at rank %d: expected a non-negative integer, got '%s'." % [rank_index, saved_count])
 			continue
 		parts[rank_index] = count
+	essence = maxi(Item.int_field(data, "essence", 0, "game session"), 0)
 	for entry: Variant in _array_field(data, "lost_caches"):
 		if entry is Dictionary:
 			lost_caches.append(LostCache.from_dict(entry))

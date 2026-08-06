@@ -16,6 +16,10 @@ const SALVAGED_ITEM_RANK := 5
 const ENHANCED_ITEM_DEF_ID := &"head"
 const ENHANCED_ITEM_RANK := 4
 const ENHANCED_ITEM_LEVEL := 3
+const SACRIFICE_FODDER_NAME := "Roundtrip Fodder"
+const SACRIFICE_FODDER_RANK := 1
+const SACRIFICE_ESSENCE := 75
+const SACRIFICE_RESONANCE := 1
 
 var _game_session: Node
 var _save_service: Node
@@ -58,7 +62,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, parts, part conversion, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, parts, part conversion, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -72,6 +76,9 @@ func _run() -> int:
 	var round_trip_code: int = _check_new_format_round_trip()
 	if round_trip_code != 0:
 		return round_trip_code
+	var sacrifice_code: int = _check_sacrifice_round_trip()
+	if sacrifice_code != 0:
+		return sacrifice_code
 	var parts_code: int = _check_parts_round_trip()
 	if parts_code != 0:
 		return parts_code
@@ -95,6 +102,37 @@ func _check_legacy_save() -> int:
 		return _fail("pre-existing hero identity after disk reload", "%s:%d" % [PREEXISTING_HERO_NAME, PREEXISTING_HERO_RANK], _roster_summary())
 	if legacy_hero.def_id != &"":
 		return _fail("legacy hero default def_id", "empty", str(legacy_hero.def_id))
+	if legacy_hero.resonance != 0:
+		return _fail("legacy hero default resonance", "0", str(legacy_hero.resonance))
+	if _essence() != 0:
+		return _fail("essence after pre-existing disk reload", "0", str(_essence()))
+	return 0
+
+
+func _check_sacrifice_round_trip() -> int:
+	var target: Hero = _find_hero(FIRST_HERO_NAME, FIRST_HERO_RANK)
+	if target == null:
+		return _fail("sacrifice target", "%s:%d" % [FIRST_HERO_NAME, FIRST_HERO_RANK], _roster_summary())
+	var fodder := Hero.new(SACRIFICE_FODDER_NAME, SACRIFICE_FODDER_RANK)
+	fodder.def_id = target.def_id
+	_game_session.call("add_hero", fodder)
+	if not _game_session.call("sacrifice_hero", fodder, target, BalanceTable.new()):
+		return _fail("sacrifice before disk reload", "sacrifice_hero() == true", "sacrifice_hero() == false")
+	_save_service.call("save")
+
+	_game_session.set("essence", 0)
+	_roster().clear()
+	if not _save_service.call("load_game"):
+		return _fail("sacrifice disk reload", "load_game() == true", "load_game() == false")
+	if _essence() != SACRIFICE_ESSENCE:
+		return _fail("essence after sacrifice disk reload", str(SACRIFICE_ESSENCE), str(_essence()))
+	var reloaded_target: Hero = _find_hero(FIRST_HERO_NAME, FIRST_HERO_RANK)
+	if reloaded_target == null:
+		return _fail("sacrifice target after disk reload", "%s:%d" % [FIRST_HERO_NAME, FIRST_HERO_RANK], _roster_summary())
+	if reloaded_target.resonance != SACRIFICE_RESONANCE:
+		return _fail("resonance after sacrifice disk reload", str(SACRIFICE_RESONANCE), str(reloaded_target.resonance))
+	if _find_hero(SACRIFICE_FODDER_NAME, SACRIFICE_FODDER_RANK) != null:
+		return _fail("sacrificed fodder after disk reload", "absent", _roster_summary())
 	return 0
 
 
@@ -407,6 +445,10 @@ func _roster() -> Array[Hero]:
 
 func _parts() -> Array[int]:
 	return _game_session.get("parts")
+
+
+func _essence() -> int:
+	return _game_session.get("essence")
 
 
 func _fail(check_name: String, expected: String, actual: String) -> int:

@@ -17,6 +17,7 @@ const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 var hero_name: String
 var rank: int
 var def_id: StringName
+var resonance: int = 0
 var equipped: Dictionary[int, Item] = {}
 
 
@@ -114,6 +115,21 @@ static func compute_team_power(
 	return total
 
 
+static func compute_essence_yield(fodder: Hero, target: Hero, balance: BalanceTable) -> int:
+	var essence_yield: int = balance.essence_bases[
+		clampi(fodder.rank, 0, balance.essence_bases.size() - 1)
+	]
+	if fodder.def_id == target.def_id and fodder.def_id != NO_ARCHETYPE_DEF_ID:
+		essence_yield *= 3
+	return essence_yield
+
+
+static func compute_rank_up_cost(hero: Hero, balance: BalanceTable) -> int:
+	return balance.rank_up_essence_costs[
+		clampi(hero.rank, 0, balance.rank_up_essence_costs.size() - 1)
+	]
+
+
 func to_dict() -> Dictionary:
 	var equipped_slots: Array[int] = []
 	for slot: int in equipped:
@@ -126,12 +142,14 @@ func to_dict() -> Dictionary:
 		"name": hero_name,
 		"rank": rank,
 		"def_id": str(def_id),
+		"resonance": resonance,
 		"equipped": equipped_entries,
 	}
 
 
 static func from_dict(data: Dictionary) -> Hero:
-	var hero := Hero.new(str(data.get("name", "?")), Item.int_field(data, "rank", 0, "hero"))
+	var hero := Hero.new(str(data.get("name", "?")), maxi(Item.int_field(data, "rank", 0, "hero"), 0))
+	hero.resonance = maxi(Item.int_field(data, "resonance", 0, "hero"), 0)
 	if not data.has("def_id"):
 		# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.
 		hero.def_id = NO_ARCHETYPE_DEF_ID

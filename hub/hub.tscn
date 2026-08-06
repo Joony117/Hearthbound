@@ -122,6 +122,30 @@ layout_mode = 2
 size_flags_vertical = 3
 select_mode = 1
 
+[node name="Essence" type="Label" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Essence: 0"
+
+[node name="FodderOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="TargetOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SacrificeButtons" type="HBoxContainer" parent="UI/Root/RosterPanel/VBox"]
+layout_mode = 2
+
+[node name="Sacrifice" type="Button" parent="UI/Root/RosterPanel/VBox/SacrificeButtons"]
+layout_mode = 2
+text = "Sacrifice"
+
+[node name="RankUp" type="Button" parent="UI/Root/RosterPanel/VBox/SacrificeButtons"]
+layout_mode = 2
+text = "Rank Up Selected"
+
 [node name="EquipmentPanel" type="PanelContainer" parent="UI/Root"]
 layout_mode = 1
 anchor_right = 1.0
@@ -239,6 +263,8 @@ modulate = Color(1, 1, 1, 0.4)
 unique_name_in_owner = true
 
 [connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
+[connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice" to="." method="_on_sacrifice_pressed"]
+[connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/RankUp" to="." method="_on_rank_up_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Equip" to="." method="_on_equip_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Salvage" to="." method="_on_salvage_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Enhance" to="." method="_on_enhance_pressed"]
