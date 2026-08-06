@@ -2094,3 +2094,118 @@ fix-up. `Get-Process Godot*` empty after every run.
 ### Files changed
 `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
 `tests/unit/test_equipment.gd`
+
+---
+
+## P2-05g — 3:1 part conversion                             [DONE]
+
+### Objective
+
+Three parts of rank N become one part of rank N+1, on a button press in the hub, and the new
+totals survive save and reload.
+
+### Existing architecture
+
+- `GameSession.parts` is a fixed 8-element `Array[int]` indexed by rank
+  (`systems/game_session.gd:12`), already persisted and already validated on load
+  (`from_dict`, `game_session.gd:125-139`). **No new persisted field is needed.**
+- `GameSession.salvage_item()` (`game_session.gd:57`) is the precedent for a parts mutation:
+  mutate, then `roster_changed.emit()`, which is what triggers the autosave
+  (`_ready`, `game_session.gd:20`).
+- `BALANCE.rank_names` is `F D C B A S SS SSS` (`balance.tres:14`), positionally the same index
+  space as `parts`. `hub/hub.gd:_refresh_parts()` already renders every rank off that pairing.
+- The Forge is a `MeshInstance3D` with a `Label3D` and no UI (`hub/hub.tscn:51`); buildings
+  become real in `P2-07`.
+
+### Siting decision
+
+**The control goes in the Inventory column of `EquipmentPanel`, under the existing `Parts`
+label** — not on the Forge. `P2-07` is what gives the Forge a panel to host anything; siting it
+there now means inventing that panel inside this ticket. Parts are displayed in the Inventory
+column today, so the action sits where its currency already is, and `P2-07` moves both together.
+
+### Acceptance criteria
+
+- A rank selector offers the seven convertible source ranks (`F`–`SS`). `SSS` is not offered:
+  nothing exists above it.
+- Pressing Convert with ≥3 parts of the chosen rank spends exactly 3 and credits exactly 1 of the
+  next rank. One press, one conversion — not a drain-everything button.
+- Pressing Convert with fewer than 3 says so in `%Status` and changes no counts.
+- The `Parts` label reflects the new totals immediately.
+- The new totals survive a real save and reload — the disk leg, not an in-memory
+  `to_dict`/`from_dict` pair (`P2-05a` Findings).
+- Conversion is refused for a source rank outside `0..parts.size() - 2`, with no write. The rank
+  comes from a UI selector today, but `parts` indices and `assert()` have history here: an
+  `assert()` is not a guard (`P2-05d` Findings).
+- Import gate exit 0, zero warnings. Existing GUT tests still pass, plus new coverage for the
+  three cases above (success, insufficient, refused rank).
+
+### Files allowed to change
+
+`systems/game_session.gd` · `hub/hub.gd` · `hub/hub.tscn` · `tests/unit/test_equipment.gd` ·
+`tests/save_roundtrip_check.gd` — the disk-leg criterion above cannot be met without it, and
+`P2-05d` touched the same file for the same reason.
+
+### Non-goals
+
+- No Forge building UI, no building levels — that is `P2-07`.
+- No downward conversion, no bulk convert, no conversion cost or loss beyond the authored 3:1.
+- No `Item.enhance_level`, no enhancement — `P2-05f`, blocked on `P2-05e`.
+- No new `BalanceTable` field. The rule is `3`, authored in `SYSTEMS.md` § Material economy as
+  the whole system; a tunable for it is a number nobody has asked to tune.
+
+---
+
+### Findings
+
+**The Forge could not host this, and that is a sequencing fact rather than a preference.**
+`hub/hub.tscn`'s five buildings are `MeshInstance3D` + `Label3D` decoration with no panel, no
+input and no script; `P2-07` is what makes them real. Siting conversion "at the Forge" as
+`SYSTEMS.md` words it would have meant inventing that panel inside this ticket. It sits under the
+`Parts` label in the Inventory column instead — where its currency is already displayed — and
+`P2-07` moves the action and the readout together. Any later ticket that reads `SYSTEMS.md`
+§ Material economy literally should expect this.
+
+**`OptionButton.selected` cannot be `-1` once items exist**, so `_on_convert_pressed()`'s
+unguarded `get_item_metadata(_convert_rank_option.selected)` is safe. The first `add_item()`
+auto-selects index 0 and nothing reverts it while the list is non-empty; `_populate_convert_ranks()`
+runs in `_ready()`, before any press is reachable. Verified empirically in a headless probe, not
+assumed — `_on_expedition_pressed()` had already been relying on the same property for
+`%ZoneOption` without anyone writing down why it holds.
+
+**The disk leg is load-bearing precisely because it does not call `save`.**
+`_check_parts_round_trip()` converts and then reads raw JSON off disk, so the autosave
+(`roster_changed` → `SaveService.save`, wired in `GameSession._ready()`) is the thing under test.
+A mutation that forgets to emit persists nothing while every in-memory assertion still passes —
+that is the gap that reopened `P2-04e`. Copy this shape, not an explicit-save one, for the next
+persisted mutation.
+
+**`hub.tscn` has an accidental smoke test and it should not be mistaken for coverage.**
+`tests/unit/test_expedition.gd` instantiates the hub scene for unrelated reasons, so a
+`%ConvertRankOption` that failed to resolve would redden the suite at `_ready()`. That is the only
+thing standing behind the scene↔script seam here: **no test presses the Convert button.** The
+button handler's metadata cast and its two `%Status` strings rest on structural inspection.
+
+**One press converts one batch**, deliberately — not `parts[rank] / 3`. `SYSTEMS.md` authors a
+3→1 exchange and nothing else; a drain-everything button is a UX decision nobody has made.
+
+**Rank 7 refuses structurally, not incidentally.** The guard is
+`rank < 0 or rank >= parts.size() - 1 or parts[rank] < 3` — SSS is excluded because there is no
+rank above it to credit, and the selector never offers it. Not an `assert()`: `P2-05d` shipped that
+mistake once, and asserts are stripped from release exports.
+
+**Pre-existing tension, not introduced here:** `convert_parts` is an instance method on the
+`GameSession` autoload, the shape `CODING_RULES.md:93-94` calls the bad pattern. Every mutator in
+that file has it (`add_hero`, `add_item`, `equip_item`, `unequip_item`, `salvage_item`), so
+matching the precedent was correct for this ticket — but the file now has six of them and no
+ticket owns the reconciliation.
+
+**Verified by re-run, not by relay.** Import gate exit 0 with zero `SCRIPT ERROR`/`ERROR:`/`WARNING`
+lines; GUT 47/47 exit 0 (was 44); `save_roundtrip_check.gd` exit 0 with its `PASS:` line naming
+part conversion. All three re-run by the director after the implementer reported them; the
+implementer's own GUT run had hung without output, which reproduced nowhere else.
+`Get-Process Godot*` empty after every run.
+
+### Files changed
+`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
+`tests/unit/test_equipment.gd`

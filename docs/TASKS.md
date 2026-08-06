@@ -232,6 +232,16 @@ still does not validate `rank`, so every future consumer of it inherits the same
 codebase's answer is `clampi` before indexing, which `Item.rank_label` and `Hero.compute_final_stats`
 already did and salvage now does too.
 
+`P2-05g` then landed in `4595b3f`, so parts have somewhere to go and the `P2-05` group is down to
+enhancement alone — `P2-05e` (the ruling) and `P2-05f` (the code), in that order. Its open siting
+question resolved to **not the Forge**: `hub/hub.tscn`'s five buildings are decoration with no
+panel until `P2-07`, so the control sits under the `Parts` label in the Inventory column and moves
+with the readout when buildings become real. Any later ticket taking `SYSTEMS.md`'s "at the Forge"
+literally should expect that. It also left one gap on the record: **no test presses the Convert
+button.** `tests/unit/test_expedition.gd` instantiates `hub.tscn` for unrelated reasons, which
+reddens the suite if a `%UniqueName` stops resolving — that accident is the only thing behind the
+scene↔script seam here, and it is not coverage of the handler.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -249,7 +259,7 @@ already did and salvage now does too.
 | P2-05d | Salvage an unwanted item into parts | Body in `TASKS-DONE.md`. `parts` is a fixed 8-element `Array[int]` indexed by rank, which sidesteps the JSON int-key trap rather than working around it. **Read its Findings before writing another `assert()` on a value that can come from a save file** — asserts are stripped in release, so the first pass was unguarded in the only build a player runs, and a negative rank did not even throw: it credited SSS while displaying F. |
 | P2-05e | Enhancement design ruling — the `+8%` reading, and what gold is | Design gap, `game-designer`. Two inputs `SYSTEMS.md` names but never values: which of the two `+8%` readings applies (its own headroom check computes both and defers), and gold — which appears in every zone's `loot_emphasis` prose and in Enhancement's cost line, and exists nowhere else. Blocks `P2-05f`. |
 | P2-05f | Enhancement — `Item.enhance_level`, `+8%`/level, parts+gold cost | Blocked on `P2-05e`. Also owns `Item.enhance_level` and salvage's `+ enhance_level` term, deliberately left out of `P2-05d` (see the split note — `P2-04e`/`turn_lost` precedent). Cap `min(15, forge_level * 3)` needs `P2-07` or a ruling that it is flat until buildings exist. |
-| P2-05g | 3:1 part conversion at the Forge | Needs `P2-05d`. Rule is fully authored and needs no ruling (`SYSTEMS.md` § Material economy); only its siting is open, since the Forge is `P2-07`. |
+| P2-05g | 3:1 part conversion | Body in `TASKS-DONE.md`. Sited in the Inventory column, **not** the Forge — buildings have no panel until `P2-07`, so siting it there meant inventing one inside this ticket. Confirms `OptionButton.selected` is never `-1` while items exist, which `%ZoneOption` had been assuming unwritten. Read its Findings before adding another persisted mutation: the disk leg deliberately omits an explicit `save` so a missing `roster_changed.emit()` fails it. |
 | P2-05a | Equip UI for authored equipment | Body in `TASKS-DONE.md`. Not split — assignment, persistence and an ugly UI shipped; combat effect stayed an explicit non-goal, since no ticket has ever authored what a rank-`N` item contributes. That gap is now `P2-05b`'s. Unblocked `P2-04e`. Corrected a false `KNOWN_ISSUES.md` claim: a plain GUT run **does** overwrite the real `user://save.json`. Read its Findings before trusting another in-memory `to_dict`/`from_dict` test as save-boundary evidence — `slot` reaches disk as `8.0`, and only the disk leg proves the float branch. |
 | P2-05b | What a rank-`N` item contributes to a hero's stat | Body in `TASKS-DONE.md`; the ruling itself is `SYSTEMS.md` § Primary stat magnitude. Three new `BalanceTable` fields — `equip_pct_per_rank` (`0.04 × rank_mult`, eight non-crit slots, two per stat summing into one `equip_pct`), `equip_crit_pct_per_rank` (`0.015 × rank_mult`, necklace/ring, via `equip_flat`), `equip_crit_rate_cap = 0.75`. Not a reuse of `stat_multipliers`: same ratios, own scalar, so a hero-curve retune can't silently reprice every item. Unblocked `P2-05c`. |
 | P2-05c | Equipped gear changes combat power | Body in `TASKS-DONE.md`. **No signature change was needed** — this row predicted "the seam is an extra argument"; `compute_final_stats` already takes the `Hero`, and `equipped` has been on it since `P2-05a`, so gear applies in one function and `combat/` was never touched. `compute_team_power`'s crit-blindness is now pinned by an assertion (a ring moves `CRIT_DMG` and not team power), so the eventual fix has to delete it deliberately. Gear routing is indexed by `PrimaryStat` ordinal with `Hero.STAT_NAMES` mirroring it positionally — reordering either enum misroutes gear with a green gate, and only `tests/unit/test_equipment.gd` notices. |
@@ -305,6 +315,7 @@ needs to re-read.
 | `P2-05c` | Equipped gear changes a hero's stats and team power | `b5525e7` |
 | `P2-04e` | Lost-gear cache created on hero permadeath | `3885a14` |
 | `P2-05d` | Salvage an unwanted item into parts | `5deb84e` |
+| `P2-05g` | 3:1 part conversion | `4595b3f` |
 
 ---
 
