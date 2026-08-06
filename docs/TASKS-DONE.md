@@ -1885,3 +1885,129 @@ worker returned, and again after the review fix-up.
 ### Files changed
 `balance_table.gd`, `balance.tres`, `heroes/hero.gd`, `tests/unit/test_equipment.gd`,
 `tests/balance_table_check.gd`
+
+---
+
+## P2-04e — Lost-gear cache created on hero permadeath                   [DONE]
+
+Route: **implementer, then verifier — mandatory, not optional.** This ticket changes the
+signature of the sole permadeath call site (`ARCHITECTURE.md` r8) and adds a new persisted
+field, both named as risky-boundary changes in `CLAUDE.md` (§ Permadeath, § Save round-trip).
+
+### Objective
+A hero's equipped gear survives their death instead of quietly reappearing in the shared
+inventory. Before this, `kill_hero()` dumped every equipped item straight into
+`GameSession.inventory` — `P2-05a`'s deliberate interim behavior, standing in for "gear is
+recoverable" until something real existed to lose it into. This ticket replaced that dump
+with a persisted `LostCache`, so the observable change is: **a dead hero's gear no longer
+shows up in the equip screen's inventory list.** It is held instead, not deleted — the screen
+to browse or reclaim a cache is `P2-04f`'s, the same way `P2-04c` made `Item` persist with no
+UI attached and `P2-04d` made the next ticket responsible for surfacing it.
+
+### Existing architecture
+- `GameSession.kill_hero(hero)` (`systems/game_session.gd:64`) is the only call site permitted
+  to remove a hero from the roster (`ARCHITECTURE.md` r8). Its body — return every
+  `hero.equipped` item to `inventory`, clear `equipped`, erase from `roster`, emit
+  `roster_changed` — is exactly what this ticket replaced, not a second path to reconcile.
+  `hub/expedition/expedition.gd:58` is its only caller, inside `Expedition.resolve(team, zone)`,
+  so `zone` (and `zone.zone_id`) is already in scope there.
+- `Item` (`equipment/item.gd`) is the precedent for a small `RefCounted` runtime type with its
+  own `to_dict`/`from_dict`, matching `Hero`'s shape. `GameSession` already persists three
+  fields the same way — `roster`, `inventory`, `cleared_zone_ids` — each built inside
+  `to_dict`/collected inside `from_dict`, guarded on the read side by the shared `_array_field`
+  helper for an untrusted or hand-edited save.
+- `SYSTEMS.md` § Death and gear recovery (line 1105) authors the cache's shape as
+  `LostCache { hero_name, zone_id, items[], turn_lost }`. No `turn` concept exists anywhere in
+  the codebase to stamp `turn_lost` with — see Non-goals.
+- `ARCHITECTURE.md` r8's own cautionary example is this exact bug: "gear duplicated into a
+  cache *and* left equipped." The cache must be built from the same items that get cleared out
+  of `hero.equipped`, in the same call, not a second pass over the hero.
+
+### Acceptance criteria
+1. New `equipment/lost_cache.gd`: `class_name LostCache`, `extends RefCounted`, fields
+   `hero_name: String`, `zone_id: StringName`, `items: Array[Item]`. No `turn_lost` field (see
+   Non-goals).
+2. `GameSession.kill_hero(hero: Hero, zone_id: StringName) -> void` — signature gains
+   `zone_id`. It builds one `LostCache` from `hero.equipped.values()` and appends it to a new
+   `GameSession.lost_caches: Array[LostCache]`, then clears `hero.equipped` as before. If
+   `hero.equipped` is empty (a hero with nothing geared), no cache is created.
+3. `hub/expedition/expedition.gd:58` updates its sole call to `GameSession.kill_hero(hero,
+   zone.zone_id)`. `tests/save_roundtrip_check.gd:142` calls it dynamically —
+   `_game_session.call("kill_hero", doomed_hero)` — so it does not fail at import and must be
+   updated too, or the disk-level permadeath check breaks at runtime with the gate still green.
+   That is the second caller, and `.call()` is why grep for `kill_hero(` alone misses it.
+4. `GameSession.inventory` no longer gains anything on death — the item that moved is the
+   destination, not the fact that it moves.
+5. `lost_caches` persists through `GameSession.to_dict()`/`from_dict()`, following the existing
+   `roster`/`inventory`/`cleared_zone_ids` pattern (including the `_array_field` guard on read).
+6. `tests/unit/test_equipment.gd:59`'s `test_kill_hero_returns_all_equipped_items_to_inventory`
+   is **inverted, not deleted** — same shape as `P2-05c`'s treatment of
+   `test_equipping_does_not_change_combat_stats_or_team_power`. The new version asserts a dead
+   hero's items land in a `LostCache` on `GameSession.lost_caches` (not `inventory`), tagged
+   with the right `hero_name`/`zone_id`, and that `hero.equipped` ends up empty.
+7. A new test proves a cache survives a real save/reload: kill a geared hero, round-trip
+   `GameSession` through `to_dict`/`from_dict`, and assert the reloaded `lost_caches` entry has
+   the same `hero_name`, `zone_id`, and item `def_id`/`rank` pairs.
+8. A test proves a hero who dies with nothing equipped creates no cache entry.
+9. Existing GUT suite passes, including every other `test_equipment.gd` case unmodified by
+   this ticket.
+10. BUILT green (`tests/import_gate.ps1`, zero errors/warnings) and the full GUT suite green.
+11. `verifier` re-runs both commands above independently and confirms the `kill_hero` signature
+    change reaches its only real call site correctly — this is the mandatory boundary pass, not
+    an optional one.
+
+### Files allowed to change
+`equipment/lost_cache.gd` (new), `systems/game_session.gd`, `hub/expedition/expedition.gd`,
+`tests/unit/test_equipment.gd` (or a new `tests/unit/test_lost_cache.gd`, implementer's call),
+`tests/save_roundtrip_check.gd` (the `.call("kill_hero", ...)` argument only — nothing else).
+
+### Non-goals
+No recovery expedition, no damage roll, no cache decay/expiry clock, no `turn_lost` field and
+no turn counter to back it — all `P2-04f`, which is explicitly blocked on both the counter and
+`power_deficit_penalty`. No UI screen listing or browsing `lost_caches` — `P2-04f`'s
+recovery-target picker is the first thing that needs to enumerate them, so building a viewer
+here would be thrown away. No salvage of cached items (`P2-05`). No change to
+`compute_team_power`, `compute_final_stats`, or anything in `combat/`. No second write path to
+`lost_caches` or `hero.equipped` outside `kill_hero()` — one call site, per `ARCHITECTURE.md`
+r8.
+
+### Findings
+
+**A `.call()` caller does not fail at import, and grep for `kill_hero(` does not find it.**
+`tests/save_roundtrip_check.gd` reaches the autoload dynamically — `_game_session.call("kill_hero",
+doomed_hero)` — so a signature change on the sole permadeath seam left the import gate green while
+breaking the one script that proves permadeath survives a real disk cycle. The ticket as first
+written did not list that file as changeable. Before changing any autoload signature, grep for
+`.call(`, `callv(`, and `Callable(` on the method name, not just for the call syntax.
+
+**Criterion 7 shipped as in-memory evidence and had to be reopened.** The GUT test round-trips
+`GameSession.to_dict()/from_dict()` with no `SaveService`, no JSON, no disk — the exact pattern
+`P2-05a`'s findings warn about, where `slot` reaches actual disk as `8.0` and only the disk leg
+exercises the float branch. Worse, the one script that *does* drive a real disk cycle killed a
+hero with nothing equipped, so a `LostCache` carrying an `Item` had never crossed JSON at all. The
+implementation was in fact correct — raw disk JSON shows `"rank": 8`, and `Item.from_dict`'s
+`int()` cast absorbs either shape — but that was confirmed after the fact, not evidence the ticket
+had produced. Closed by equipping the doomed hero in `tests/save_roundtrip_check.gd` and asserting
+the reloaded cache's `hero_name`, `zone_id`, and item `def_id`/`rank`.
+
+**What makes that assertion disk-sourced rather than in-memory residue:** `from_dict()` clears
+`lost_caches` before repopulating it, so a passing assertion after `load_game()` cannot be
+satisfied by state left over from before the reload. A round-trip check against a field whose
+`from_dict` did *not* clear first would prove nothing.
+
+**A save written before this change has no `lost_caches` key**, and `_array_field` absorbs both a
+missing key and an explicit `"lost_caches": null`. Both were proven against a real
+`SaveService.load_game()`, not by inspection.
+
+**The GUT command in `CLAUDE.md` was run with `APPDATA` redirected to a scratch path**, not
+verbatim, for the reason `P2-05a` established — a plain run overwrites the real
+`user://save.json`. Same for the ad-hoc `-s` scripts written during verification.
+
+**Verified by re-run, not by relay.** Import gate exit 0 with zero `SCRIPT ERROR`/`ERROR:`/
+`WARNING` lines; GUT 42/42 tests, 9318 assertions, exit 0; `save_roundtrip_check.gd` exit 0 with
+its `PASS:` line. All three re-run by the director after the implementer and the verifier had each
+reported them, and again after the fix-up. `Get-Process Godot*` empty before and after.
+
+### Files changed
+`equipment/lost_cache.gd` (new), `systems/game_session.gd`, `hub/expedition/expedition.gd`,
+`tests/save_roundtrip_check.gd`, `tests/unit/test_equipment.gd`

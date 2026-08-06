@@ -181,6 +181,20 @@ leaves team power alone — deliberate, so whoever fixes it deletes an assertion
 of filing a bug. The whole `P2-05a`/`b`/`c` group is shipped; `P2-04e` (lost-gear cache) and
 `P2-05` (salvage) are what remain unblocked in the equipment line.
 
+`P2-04e` then landed in `3885a14`, so a dead hero's gear is now held in a `LostCache` instead of
+returning to inventory, and `P2-04f` has something to target. It shipped without `turn_lost`: the
+field `SYSTEMS.md` authors has no counter anywhere in the codebase to read, and stamping it with a
+fabricated value would have read as real data while measuring nothing — so `P2-04f` now owns both
+the counter and the field. Two findings generalize past this ticket. The permadeath seam's **second
+caller is dynamic** (`tests/save_roundtrip_check.gd` reaches it through `.call()`), so a signature
+change on an autoload can leave the import gate green and break the one script that proves
+permadeath survives a disk cycle — grep `.call(`/`callv(`/`Callable(`, not just the call syntax.
+And the save round-trip test shipped as an in-memory `to_dict`/`from_dict` pair, which is precisely
+what `P2-05a`'s row warns against; the implementation was correct, but nothing proved a `LostCache`
+carrying an `Item` had ever crossed real JSON until the disk leg was added. That leaves `P2-05`
+(salvage) and `P2-04f` — still blocked on `power_deficit_penalty` and the turn concept — as the
+equipment line's remaining work.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -199,8 +213,8 @@ of filing a bug. The whole `P2-05a`/`b`/`c` group is shipped; `P2-04e` (lost-gea
 | P2-05a | Equip UI for authored equipment | Body in `TASKS-DONE.md`. Not split — assignment, persistence and an ugly UI shipped; combat effect stayed an explicit non-goal, since no ticket has ever authored what a rank-`N` item contributes. That gap is now `P2-05b`'s. Unblocked `P2-04e`. Corrected a false `KNOWN_ISSUES.md` claim: a plain GUT run **does** overwrite the real `user://save.json`. Read its Findings before trusting another in-memory `to_dict`/`from_dict` test as save-boundary evidence — `slot` reaches disk as `8.0`, and only the disk leg proves the float branch. |
 | P2-05b | What a rank-`N` item contributes to a hero's stat | Body in `TASKS-DONE.md`; the ruling itself is `SYSTEMS.md` § Primary stat magnitude. Three new `BalanceTable` fields — `equip_pct_per_rank` (`0.04 × rank_mult`, eight non-crit slots, two per stat summing into one `equip_pct`), `equip_crit_pct_per_rank` (`0.015 × rank_mult`, necklace/ring, via `equip_flat`), `equip_crit_rate_cap = 0.75`. Not a reuse of `stat_multipliers`: same ratios, own scalar, so a hero-curve retune can't silently reprice every item. Unblocked `P2-05c`. |
 | P2-05c | Equipped gear changes combat power | Body in `TASKS-DONE.md`. **No signature change was needed** — this row predicted "the seam is an extra argument"; `compute_final_stats` already takes the `Hero`, and `equipped` has been on it since `P2-05a`, so gear applies in one function and `combat/` was never touched. `compute_team_power`'s crit-blindness is now pinned by an assertion (a ring moves `CRIT_DMG` and not team power), so the eventual fix has to delete it deliberately. Gear routing is indexed by `PrimaryStat` ordinal with `Hero.STAT_NAMES` mirroring it positionally — reordering either enum misroutes gear with a green gate, and only `tests/unit/test_equipment.gd` notices. |
-| P2-04e | Lost-gear cache created on hero permadeath | Needs `P2-05a` (equip) — only equipped gear can be lost. Hooks the sole permadeath call site, `GameSession.kill_hero()` (`ARCHITECTURE.md` r8) — do not add a second one. `P2-05a`'s interim behavior at that same call site (equipped items return to `GameSession.inventory` on death) is exactly what this ticket replaces with the cache; it is not a second removal path to reconcile. |
-| P2-04f | Recovery expedition — damage roll + cache decay | Needs `P2-04e` (a cache to target). Blocked on two more design gaps: `power_deficit_penalty` in the damage formula (already PROVISIONAL in `SYSTEMS.md`) and a "turn" concept, which doesn't exist anywhere in the codebase today despite the decay clock being turn-denominated. |
+| P2-04e | Lost-gear cache created on hero permadeath | Body in `TASKS-DONE.md`. `turn_lost` deliberately absent from `LostCache` — no turn counter exists to stamp it with, so `P2-04f` adds both. `kill_hero()` gained a `zone_id`; its **second caller is dynamic** (`tests/save_roundtrip_check.gd` via `.call()`), which grep for `kill_hero(` misses and the import gate cannot catch — read its Findings before changing any autoload signature. Also reopened once: the round-trip test shipped as in-memory `to_dict`/`from_dict`, the exact gap `P2-05a` warned about, and the disk leg had to be added to `save_roundtrip_check.gd`. Unblocks `P2-04f`. |
+| P2-04f | Recovery expedition — damage roll + cache decay | `P2-04e` shipped the cache to target, and left this ticket the `turn_lost` field as well as the counter behind it. Blocked on two more design gaps: `power_deficit_penalty` in the damage formula (already PROVISIONAL in `SYSTEMS.md`) and a "turn" concept, which doesn't exist anywhere in the codebase today despite the decay clock being turn-denominated. |
 | P2-06 | Sacrifice → essence → rank up, with dupe resonance | |
 | P2-07 | Five buildings as five integers | |
 | P2-08 | Full save/load round-trip through `SaveService` | |
@@ -249,6 +263,7 @@ needs to re-read.
 | `P2-05a` | Equip UI for authored equipment | `0760d83` |
 | `P2-05b` | Equipment magnitude ruling — what a rank-`N` item contributes | `c092fc3` |
 | `P2-05c` | Equipped gear changes a hero's stats and team power | `b5525e7` |
+| `P2-04e` | Lost-gear cache created on hero permadeath | `3885a14` |
 
 ---
 
