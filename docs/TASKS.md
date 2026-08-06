@@ -362,7 +362,7 @@ not evidence a rule should change. `P2-06a` therefore splits: orchestration on `
 | P2-05c | Equipped gear changes combat power | Body in `TASKS-DONE.md`. **No signature change was needed** — this row predicted "the seam is an extra argument"; `compute_final_stats` already takes the `Hero`, and `equipped` has been on it since `P2-05a`, so gear applies in one function and `combat/` was never touched. `compute_team_power`'s crit-blindness is now pinned by an assertion (a ring moves `CRIT_DMG` and not team power), so the eventual fix has to delete it deliberately. Gear routing is indexed by `PrimaryStat` ordinal with `Hero.STAT_NAMES` mirroring it positionally — reordering either enum misroutes gear with a green gate, and only `tests/unit/test_equipment.gd` notices. |
 | P2-04e | Lost-gear cache created on hero permadeath | Body in `TASKS-DONE.md`. `turn_lost` deliberately absent from `LostCache` — no turn counter exists to stamp it with, so `P2-04f` adds both. `kill_hero()` gained a `zone_id`; its **second caller is dynamic** (`tests/save_roundtrip_check.gd` via `.call()`), which grep for `kill_hero(` misses and the import gate cannot catch — read its Findings before changing any autoload signature. Also reopened once: the round-trip test shipped as in-memory `to_dict`/`from_dict`, the exact gap `P2-05a` warned about, and the disk leg had to be added to `save_roundtrip_check.gd`. Unblocks `P2-04f`. |
 | P2-04f | Recovery expedition — damage roll + cache decay | `P2-04e` shipped the cache to target, and left this ticket the `turn_lost` field as well as the counter behind it. Blocked on two more design gaps: `power_deficit_penalty` in the damage formula (already PROVISIONAL in `SYSTEMS.md`) and a "turn" concept, which doesn't exist anywhere in the codebase today despite the decay clock being turn-denominated. |
-| P2-06a | Sacrifice a hero for essence; spend essence to rank another up, dupe resonance counted | **Full body below.** Ships the flat `essence_base[fodder.rank]` yield with no level term — `Hero` has no `level` field yet (`P2-04a` is the nearest candidate to add one). Unblocked now; no ruling needed. |
+| P2-06a | Sacrifice a hero for essence; spend essence to rank another up, dupe resonance counted | Body in `TASKS-DONE.md`. Shipped the flat `essence_base[fodder.rank]` yield with no level term. First ticket to follow `DECISIONS.md` 2026-08-06 instead of the `P2-12` debt shape — the arithmetic is two pure `static func`s on `Hero` and `tests/unit/test_sacrifice.gd` reaches both without booting an autoload. **Read its Findings before wiring another `OptionButton` to a destructive action:** `add_item()` auto-selects index 0 on a cleared button, so the fodder slot silently retargeted the next hero after a sacrifice and a blind second press killed the wrong one — permanently. Both gates stayed green through it; only driving the real scene caught it. Sharpens `P2-05g`'s `selected`-is-never-`-1` note into a data-loss rule. |
 | P2-06b | Resonance trait payoff — unlock a trait at 1/3/6 dupes | Found by `tech-lead` splitting `P2-06`, deliberately not authored — `SYSTEMS.md:167-169` names traits unlocking "from that hero's definition trait pool," but no trait type or pool exists anywhere in the codebase (`HeroDefinition` is eight stat fields and two crit fields, nothing else). Same shape as `P2-04a`/`P2-09`/`P2-04b`: a design gap found while scoping, not a ruling a ticket body can specify around. |
 | P2-12 | Extract `salvage_item`/`enhance_item`/`convert_parts`'s arithmetic into pure functions | Debt named by `DECISIONS.md` 2026-08-06, which reaffirmed the 2026-08-01 rejection of balance logic on `GameSession` rather than reversing it: the rejection's predicted cost came true — no `GameSession.new()` exists anywhere, so every test of these formulas boots the engine. Each method keeps its signature and becomes validate → call a `static func` → mutate → emit. Not urgent (all three are shipped, tested and round-tripping); it exists so the next ticket reads them as debt rather than precedent. |
 | P2-07 | Five buildings as five integers | |
@@ -375,108 +375,6 @@ not evidence a rule should change. `P2-06a` therefore splits: orchestration on `
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3. (See
 P2-09 — that question can't be honestly answered until stone income rate is defined.)
-
----
-
-## P2-06a — Sacrifice a hero for essence; spend essence to rank another up      [TODO]
-
-### Objective
-From the hub, a player can sacrifice one hero into essence and spend accumulated essence to
-raise another hero's rank. Feeding a hero of the same `def_id` as the target yields triple
-essence and adds one resonance point to the target — resonance is only a counter here; what it
-unlocks is `P2-06b`.
-
-### Existing architecture
-- `essence_bases` (`balance_table.gd:8`, 8 entries F..SSS) and `rank_up_essence_costs`
-  (`balance_table.gd:9`, 7 entries F→D..SS→SSS) are already authored on `BalanceTable` — this
-  ticket reads them and changes nothing there.
-- `Hero` (`heroes/hero.gd:16-19`) carries `hero_name`, `rank`, `def_id`, `equipped` and nothing
-  else. It needs a new `resonance: int = 0` field, serialized through `to_dict`/`from_dict` the
-  same validated way `rank` already is (`Item.int_field`, per `heroes/hero.gd:133` and the
-  `P2-11` null-crash fix) — do not reintroduce an unguarded `int()` read.
-- `GameSession` (`systems/game_session.gd`) already holds currency-shaped state the same way
-  this needs it: `parts: Array[int]` (line 11) plus `salvage_item`/`enhance_item`/`convert_parts`
-  as its own instance methods (lines 66-97) that validate a precondition, mutate state, and
-  `roster_changed.emit()` — which `SaveService.save` is connected to (`_ready()`, line 18).
-  Mirror the *orchestration* half of that shape for the two new methods — but not the arithmetic.
-  `DECISIONS.md` 2026-08-06 ruled those three methods **debt, not precedent**: they inline
-  balance-driven cost formulas the 2026-08-01 rejection named, and `CODING_RULES.md:93-103` still
-  states the rule in the present tense with a worked example named
-  `compute_essence_yield(fodder, target, balance)`. Structural bookkeeping (erasing a roster
-  entry, moving an item between arrays, mutating `essence`) is a `GameSession` method; a cost or
-  yield formula is a pure `static func`. See criteria 2-3.
-- `kill_hero(hero, zone_id)` (`systems/game_session.gd:105`) is the sole call site
-  `ARCHITECTURE.md` r8 permits for removing a hero from `roster`. It only builds a `LostCache`
-  when `hero.equipped` is non-empty, and `LostCache.zone_id` already defaults to `&""`
-  (`equipment/lost_cache.gd:9`).
-- `hero.rank`, and any new int field on `Hero` or `GameSession`, can arrive out-of-range from a
-  hand-edited or corrupt save — `Item.int_field` validates type, not range. Clamp before indexing
-  `essence_bases`/`rank_up_essence_costs`, the same way `salvage_item` already clamps `item.rank`
-  (`systems/game_session.gd:72`). Do not `assert()` a save-sourced value — asserts are stripped
-  in release, which is exactly how `P2-05d` shipped a negative rank crediting SSS while
-  displaying F.
-
-### Acceptance criteria
-1. `GameSession` gains `essence: int = 0`.
-2. Two pure functions carry all the arithmetic, as `static func` on `heroes/hero.gd` beside
-   `compute_final_stats`/`compute_team_power` — the existing precedent for hero rules that take
-   `balance` and touch no global state. Both are directly testable without booting the engine,
-   which is the whole point of `DECISIONS.md` 2026-08-06:
-   - `Hero.compute_essence_yield(fodder: Hero, target: Hero, balance: BalanceTable) -> int` —
-     `essence_bases[clampi(fodder.rank, 0, essence_bases.size() - 1)]`, tripled when
-     `fodder.def_id == target.def_id` and that `def_id` is not `Hero.NO_ARCHETYPE_DEF_ID`. The
-     dupe condition lives here, not in the caller.
-   - `Hero.compute_rank_up_cost(hero: Hero, balance: BalanceTable) -> int` —
-     `rank_up_essence_costs[clampi(hero.rank, 0, rank_up_essence_costs.size() - 1)]`.
-3. `GameSession.sacrifice_hero(fodder: Hero, target: Hero, balance: BalanceTable) -> bool`:
-   refuses (returns `false`, no state change) when `fodder == target`, when `fodder` is not in
-   `roster`, or when `fodder.equipped` is non-empty. Otherwise adds
-   `Hero.compute_essence_yield(fodder, target, balance)` to `essence`, increments
-   `target.resonance` when that call tripled (test the same dupe condition — do not re-derive the
-   multiplier from the returned number), and removes `fodder` from the roster via
-   `kill_hero(fodder, &"")` — no other removal path. `kill_hero` already emits `roster_changed`,
-   so do not emit a second time; that is a redundant `SaveService.save()`.
-4. `GameSession.rank_up_hero(hero: Hero, balance: BalanceTable) -> bool`: refuses when
-   `hero.rank >= rank_up_essence_costs.size()` (already SSS) or when `essence` is below
-   `Hero.compute_rank_up_cost(hero, balance)`. Otherwise deducts that cost, increments
-   `hero.rank` by 1, leaves every other field on `hero` untouched (rank-up preserves level per
-   `DECISIONS.md` 2026-08-01 — currently vacuous since `Hero` has no level field, but the method
-   must not reset `equipped` or anything else that does exist), and `roster_changed.emit()` on
-   success only.
-5. No level term in the yield formula: `essence_bases[fodder.rank]` alone, never
-   `1.0 + fodder.level / level_cap[...]` — `Hero` has no `level` to read.
-6. `tests/unit/test_sacrifice.gd` covers both pure functions **directly**, without going through
-   `GameSession` — a fresh `Hero` and a `BalanceTable`, asserting the dupe triple and the
-   non-dupe base. That is the criterion that makes criterion 2's extraction worth anything; a
-   suite that only ever reaches the formulas through the autoload has reproduced the debt
-   `DECISIONS.md` 2026-08-06 names.
-7. A control on the existing hub screen (`hub/hub.tscn`/`hub/hub.gd`, the same "ugly but present"
-   bar as `P2-05a`/`P2-05d`/`P2-05g`) lets the player pick a fodder hero and a target hero from
-   the roster and trigger sacrifice, and a separate control triggers rank-up on a selected hero
-   when `essence` is sufficient. No dedicated scene required.
-8. Survives save and reload: `GameSession.essence` and `Hero.resonance` both round-trip through
-   `GameSession.to_dict`/`from_dict` and a real `SaveService.save()`/`load_game()` disk cycle —
-   extend `tests/save_roundtrip_check.gd`, not just an in-memory `to_dict`/`from_dict` pair
-   (`P2-04e`'s finding: the in-memory version proved nothing new).
-9. Existing tests still pass (GUT suite + import gate).
-
-### Files allowed to change
-- `heroes/hero.gd`
-- `systems/game_session.gd`
-- `hub/hub.gd`
-- `hub/hub.tscn`
-- `tests/unit/test_sacrifice.gd` (new)
-- `tests/save_roundtrip_check.gd`
-
-### Non-goals
-- Resonance trait unlocks at 1/3/6 — `P2-06b`, blocked on an authored trait pool.
-- The yield formula's level term — owned by whichever ticket adds `Hero.level` (`P2-04a` is the
-  nearest candidate). Do not add a placeholder level field here to make the term nonzero.
-- Any change to `kill_hero`'s signature or its `LostCache` branch.
-- A dedicated Sacrifice/Forge screen or panel — `P2-07` owns building panels.
-- `power_deficit_penalty` or any turn concept (`P2-04f`) — unrelated to this ticket.
-- Gold, buildings, or any other currency — `parts` and the new `essence` are separate pools; do
-  not merge them or let one pay the other's cost.
 
 ---
 
