@@ -242,6 +242,23 @@ button.** `tests/unit/test_expedition.gd` instantiates `hub.tscn` for unrelated 
 reddens the suite if a `%UniqueName` stops resolving — that accident is the only thing behind the
 scene↔script seam here, and it is not coverage of the handler.
 
+`P2-05e` then ruled all three open inputs, so `P2-05f` is unblocked and the `P2-05` group is one
+ticket from closed. The `+8%` is **additive** — `contribution * (1 + 0.08 * enhance_level)` — ruled
+on precedent, not on a cap: both readings clear the `75%` crit cap (`41.96%` additive against
+`53.87%` compounded), so the cap decided nothing here the way it decided the crit channel in
+`P2-05b`. What decided it is that nothing else in `Hero.compute_final_stats` compounds — level and
+rank are additive-then-one-multiply, `rank_mult` is an authored array and not a runtime `pow()` —
+and `1.08^15` would stack a second steep exponent on the already-rank-scaled equip curve, taking
+gear share of a maxed SSS stat to `67.46%` against additive's `58.98%`. **Gold is struck**, not
+valued: zero hits across `*.gd`/`*.tres`/`*.tscn` and no income source anywhere, so pricing it
+would ship a wall a player has no way to clear. It comes out of Enhancement's *and* Buildings'
+cost lines until a ticket gives it a rate — `P2-10` below, opened for exactly the reason `P2-09`
+and `P2-04a` were. The cap ships **flat at 15**: `forge_level` does not exist, so
+`min(15, forge_level * 3)` evaluates to `0` today and Enhancement could apply no level at all;
+`forge_enhance_cap_per_level` stays authored-but-unread until `P2-07`. That third question was
+outside the backlog row's two and folded in anyway, because nothing else owned it and `P2-05f`
+would still have been blocked without it.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -257,8 +274,8 @@ scene↔script seam here, and it is not coverage of the handler.
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-04d | Expedition clears can drop a real item into inventory | Body in `TASKS-DONE.md`. Unblocked `P2-05a`. Roll order is **slot then rank** — the ruling left it open, this pinned it. First disk-level proof that an `Item` survives JSON (`rank` decodes as `float` and `from_dict`'s `int()` absorbs it); read its Findings before writing another one-off `-s` check, which cannot statically name `Expedition`. |
 | P2-05d | Salvage an unwanted item into parts | Body in `TASKS-DONE.md`. `parts` is a fixed 8-element `Array[int]` indexed by rank, which sidesteps the JSON int-key trap rather than working around it. **Read its Findings before writing another `assert()` on a value that can come from a save file** — asserts are stripped in release, so the first pass was unguarded in the only build a player runs, and a negative rank did not even throw: it credited SSS while displaying F. |
-| P2-05e | Enhancement design ruling — the `+8%` reading, and what gold is | Design gap, `game-designer`. Two inputs `SYSTEMS.md` names but never values: which of the two `+8%` readings applies (its own headroom check computes both and defers), and gold — which appears in every zone's `loot_emphasis` prose and in Enhancement's cost line, and exists nowhere else. Blocks `P2-05f`. |
-| P2-05f | Enhancement — `Item.enhance_level`, `+8%`/level, parts+gold cost | Blocked on `P2-05e`. Also owns `Item.enhance_level` and salvage's `+ enhance_level` term, deliberately left out of `P2-05d` (see the split note — `P2-04e`/`turn_lost` precedent). Cap `min(15, forge_level * 3)` needs `P2-07` or a ruling that it is flat until buildings exist. |
+| P2-05e | Enhancement design ruling — the `+8%` reading, and what gold is | No body — this was a backlog row, and the ruling itself is `SYSTEMS.md` § Enhancement. Additive `+8%`, gold struck, cap flat at 15; took the cap question too, which the row had left to `P2-07`. Also corrected a stale `SYSTEMS.md` line claiming nothing clamps `CRIT_RATE` against `equip_crit_rate_cap` — `P2-05c` shipped that clamp (`heroes/hero.gd:92`). Unblocked `P2-05f`, opened `P2-10`. |
+| P2-05f | Enhancement — `Item.enhance_level`, `+8%`/level, parts-only cost | Unblocked. Terms are fixed by `P2-05e`: cost `2 + n` parts of matching rank and no gold, cap `balance.forge_enhance_cap_max` flat with **no** `forge_level` term, and per-item `contribution * (1 + enhance_pct_per_level * enhance_level)` scaling *before* `compute_final_stats`' existing per-stat summation — not a second multiply after it. Also owns `Item.enhance_level` and salvage's `+ enhance_level` term, deliberately left out of `P2-05d` (see the split note — `P2-04e`/`turn_lost` precedent). New `BalanceTable` field: `enhance_pct_per_level = 0.08`. |
 | P2-05g | 3:1 part conversion | Body in `TASKS-DONE.md`. Sited in the Inventory column, **not** the Forge — buildings have no panel until `P2-07`, so siting it there meant inventing one inside this ticket. Confirms `OptionButton.selected` is never `-1` while items exist, which `%ZoneOption` had been assuming unwritten. Read its Findings before adding another persisted mutation: the disk leg deliberately omits an explicit `save` so a missing `roster_changed.emit()` fails it. |
 | P2-05a | Equip UI for authored equipment | Body in `TASKS-DONE.md`. Not split — assignment, persistence and an ugly UI shipped; combat effect stayed an explicit non-goal, since no ticket has ever authored what a rank-`N` item contributes. That gap is now `P2-05b`'s. Unblocked `P2-04e`. Corrected a false `KNOWN_ISSUES.md` claim: a plain GUT run **does** overwrite the real `user://save.json`. Read its Findings before trusting another in-memory `to_dict`/`from_dict` test as save-boundary evidence — `slot` reaches disk as `8.0`, and only the disk leg proves the float branch. |
 | P2-05b | What a rank-`N` item contributes to a hero's stat | Body in `TASKS-DONE.md`; the ruling itself is `SYSTEMS.md` § Primary stat magnitude. Three new `BalanceTable` fields — `equip_pct_per_rank` (`0.04 × rank_mult`, eight non-crit slots, two per stat summing into one `equip_pct`), `equip_crit_pct_per_rank` (`0.015 × rank_mult`, necklace/ring, via `equip_flat`), `equip_crit_rate_cap = 0.75`. Not a reuse of `stat_multipliers`: same ratios, own scalar, so a hero-curve retune can't silently reprice every item. Unblocked `P2-05c`. |
@@ -268,6 +285,7 @@ scene↔script seam here, and it is not coverage of the handler.
 | P2-06 | Sacrifice → essence → rank up, with dupe resonance | |
 | P2-07 | Five buildings as five integers | |
 | P2-08 | Full save/load round-trip through `SaveService` | |
+| P2-10 | Gold — what it is and how a player gets it | Found by `game-designer` during `P2-05e`, deliberately not authored there — an income rate is a design input, not something a ruling can pick. Gold is named in three zones' loot-table Reward prose and was named in Enhancement's and Buildings' cost lines; it has no `BalanceTable` field, no `GameSession` currency, and zero hits in `*.gd`/`*.tres`/`*.tscn`. `P2-05e` struck it from both cost lines rather than price a currency with no source. Add it back there once this lands. Same shape as `P2-09`/`P2-04a`. |
 | P2-09 | Summon Stone income rate — how a player actually acquires stones | Found by `game-designer`, deliberately not authored by it — a design input, not a Resource-authoring task. Nothing defines acquisition rate today, which makes the verified ~327-pull spine number unvalidatable against real play time: the ratio is sound, the pacing is unknowable without this. Needed before the Phase 2 exit question below can be honestly answered. |
 | P2b-01 | Minimum playable arena: capsules, WASD + mouse, one attack, one dodge, one enemy | Same `CombatResult` |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
@@ -316,6 +334,7 @@ needs to re-read.
 | `P2-04e` | Lost-gear cache created on hero permadeath | `3885a14` |
 | `P2-05d` | Salvage an unwanted item into parts | `5deb84e` |
 | `P2-05g` | 3:1 part conversion | `4595b3f` |
+| `P2-05e` | Enhancement design ruling — the `+8%` reading, and what gold is | `7ac7459` |
 
 ---
 
