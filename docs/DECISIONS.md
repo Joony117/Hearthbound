@@ -7,6 +7,66 @@ Newest first.
 
 ---
 
+## 2026-08-06: The 2026-08-01 rejection of rank-up/salvage logic on `GameSession` is reaffirmed, not reversed — three shipped methods are debt
+
+`godot-architect` ruling on a conflict `tech-lead` flagged while scoping `P2-06a`: the 2026-08-01
+"Three autoloads, hard cap" entry rejects "putting rank-up and salvage logic as methods on
+`GameSession`, which would make them untestable without booting the engine." `salvage_item`
+(`P2-05d`), `enhance_item` (`P2-05f`), and `convert_parts` (`P2-05g`) shipped anyway, as instance
+methods on `GameSession` that inline their own validation and arithmetic
+(`systems/game_session.gd:57,70,86`).
+
+**Ruling: the code is wrong, not the ADR.** The rejection's predicted cost came true exactly as
+written — every GUT test that exercises these methods reaches them through the live `GameSession`
+autoload singleton (`GameSession.salvage_item(...)` etc. in `tests/unit/test_equipment.gd`), and
+there is no `GameSession.new()` anywhere in the codebase to test the logic in isolation. That is
+evidence the original warning was correct, not evidence the project outgrew it. `CODING_RULES.md`
+§ Autoloads still states the general principle in the present tense ("Game rules do **not** live
+on autoloads") and its own worked example is named `compute_essence_yield(fodder, target,
+balance) -> int` — the exact function `P2-06a` needs — so no reconciling document was ever
+updated to bless the pattern that shipped. This was drift, not a considered re-decision.
+
+The distinction the ADR draws is between **structural roster/inventory bookkeeping** (moving an
+item between arrays, erasing a roster entry, deduplicating a cleared-zone flag — `kill_hero`,
+`equip_item`, `unequip_item`, `mark_zone_cleared`, `add_hero`) and **balance-driven rule logic**
+(a cost formula, a threshold check against a `BalanceTable`-sourced number, a multiplier). The
+former is unavoidably a `GameSession` method because the state lives there and nothing else
+should reach in and mutate it directly (that would just be a second, worse violation). The latter
+is exactly what the rejection named, and `salvage_item`/`enhance_item`/`convert_parts` are the
+latter: they take `balance: BalanceTable` and compute a cost or a credited amount inline instead
+of calling a pure function that does.
+
+**Disposition of the three shipped methods:** debt. Not reverted here — a working, tested,
+save-round-tripped feature does not get unwound by a documentation ruling — but named so a future
+pass doesn't read them as precedent. A remediation ticket (extract each method's arithmetic into
+a `static func` taking the same arguments plus `balance`, leaving the `GameSession` method as a
+thin validate → call → mutate → emit wrapper) is `tech-lead`'s to open; this entry is the citation
+for why.
+
+**`P2-06a` may add `sacrifice_hero` and `rank_up_hero` to `GameSession`** — the orchestration
+(precondition checks against `roster`/`equipped`, calling `kill_hero()` for removal per
+`ARCHITECTURE.md` r8, mutating `essence`, incrementing `resonance`, one `roster_changed.emit()`)
+is structural bookkeeping of the kind `kill_hero` already does, and `sacrifice_hero` cannot be
+relocated off `GameSession` regardless, since r8 makes `kill_hero()` the sole roster-removal call
+site and only `GameSession` may call it as an internal step of one atomic operation. **But the
+yield/cost arithmetic may not be inlined into those methods.** `P2-06a`'s ticket body must extract
+two pure functions — `compute_essence_yield(fodder: Hero, target: Hero, balance: BalanceTable) ->
+int` (the resonance-tripling condition included) and `compute_rank_up_cost(hero: Hero, balance:
+BalanceTable) -> int` — that `sacrifice_hero`/`rank_up_hero` call before applying the result. This
+is a naming/placement correction to acceptance criteria 2–3 as currently written, not a redesign:
+the ticket body's own "Existing architecture" section already cites `CODING_RULES.md`'s
+`compute_essence_yield` shape without applying it. The ticket body's line "Follow the code;
+reconciling the ADR text is outside this ticket's remit" is struck by this ruling — the ADR text
+did not need reconciling, the ticket's method bodies do.
+
+**Rejected (this entry):** editing the 2026-08-01 sentence to say the opposite, on the theory that
+four tickets shipping the same pattern makes it retroactively correct. Frequency of violation is
+not evidence a rule should change; it is evidence nobody was checking. Also rejected: reverting or
+refactoring `salvage_item`/`enhance_item`/`convert_parts` as part of this entry — that is a code
+change belonging to an implementer ticket, not a documents-only ruling.
+
+---
+
 ## 2026-08-02: The combat seam's second argument is `Wave` (`zones/wave.gd`, `RefCounted`), not `WaveDefinition`
 
 `ARCHITECTURE.md:96` committed to `func resolve(team: Array[Hero], wave: WaveDefinition) ->
