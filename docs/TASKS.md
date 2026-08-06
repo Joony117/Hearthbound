@@ -364,7 +364,7 @@ needs to re-read.
 | `P2-05g` | 3:1 part conversion | `4595b3f` |
 | `P2-05e` | Enhancement design ruling — the `+8%` reading, and what gold is | `7ac7459` |
 | `P2-05f` | Enhancement — spend parts to make one item stronger | `b6b5c47` |
-| `P2-11` | An explicit JSON `null` no longer crashes the load path | `PENDING` |
+| `P2-11` | An explicit JSON `null` no longer crashes the load path | `e9f661a` |
 
 ---
 
