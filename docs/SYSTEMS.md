@@ -432,16 +432,14 @@ route crit stats around the channel that causes it.
 against the highest-base-`CRIT_RATE` archetype (Rogue, 15%) at every checkpoint, full same-rank
 gear (Codex thread above): `16.50%` (F) / `18.69%` (B) / `21.72%` (S) / `27.26%` (SSS, computed
 directly — `15% + 12.26pp`). Comfortably under 75% at every rank on the base ruled here.
-**Enhancement headroom check, since `+8%`/level will compound on this base and this ticket's own
-non-goals forbid ruling on Enhancement itself.** Enhancement's `+8%` per level has two possible
-readings and `Item` carries no enhance level today, so both are checked here rather than settled:
-compounded (`1.08^15 = ×3.172`) or additive (`1 + 0.08 * 15 = ×2.2`). Rogue's SSS necklace
-contribution grows from `12.26pp` to `38.88pp` compounded or `26.97pp` additive, landing
-full-Enhanced Rogue `CRIT_RATE` at `53.88%` or `41.97%` respectively. **Both clear `75%`**, so the
-cap holds under either reading and this ruling does not depend on which one `P2-05` picks — but
-the compounded reading spends 21 of the 60 available points, not 33, so the margin is real rather
-than generous. `P2-05`/Enhancement's own pass settles the reading and should re-verify against
-real authored numbers rather than trust this extrapolation.
+**Enhancement headroom check.** Enhancement's `+8%` per level is ruled additive in § Enhancement
+(`P2-05e`): `contribution *= 1 + enhance_pct_per_level * enhance_level`. At max enhance (`15`),
+Rogue's SSS necklace contribution grows from `12.26pp` unenhanced to `26.96pp`, landing
+full-Enhanced Rogue `CRIT_RATE` at `41.96%` — comfortably under the `75%` cap, with `33.04pp` of
+margin remaining. (The rejected compounded reading would have spent more of that margin: `53.87%`,
+leaving only `21.13pp`.) Both clear the cap, so the cap alone didn't force the choice — see
+§ Enhancement for the full ruling, the rejected compounded reading, and what maxed enhancement
+does to the non-crit-slot gear-share figure above.
 
 **Rejected: applying the general `equip_pct` rule uniformly to crit slots.** At the magnitude
 chosen for the other eight slots (`base_pct = 4%`), crit doesn't literally blow the cap the way
@@ -456,7 +454,7 @@ stat), which is a real cost even where it isn't a hard violation.
 |---|---|---|
 | `equip_pct_per_rank` (8 floats, HP/ATK/DEF/SPD slots) | `BalanceTable` (→ `balance.tres`) | New field. Same shape as `stat_multipliers`, independently scaled — not a reuse. |
 | `equip_crit_pct_per_rank` (8 floats, necklace/ring) | `BalanceTable` (→ `balance.tres`) | New field. Serves both crit stats — `CRIT_RATE` reads it as percentage points, `CRIT_DMG` reads it as a flat decimal; same underlying curve, two units at the point of use. |
-| `equip_crit_rate_cap = 0.75` | `BalanceTable` (→ `balance.tres`) | New scalar. Named because question 2 depends on it; not yet enforced by any clamp in code — `P2-05c` needs to clamp `final_crit_rate` against it, since headroom is real but not infinite once Enhancement stacks on top. |
+| `equip_crit_rate_cap = 0.75` | `BalanceTable` (→ `balance.tres`) | New scalar. Named because question 2 depends on it. `P2-05c` shipped the clamp — `minf` against it as the last line of `compute_final_stats` (`heroes/hero.gd:92`) — since headroom is real but not infinite once Enhancement stacks on top. |
 | Two-item-per-stat summation rule (HP/ATK/DEF/SPD) | Nowhere new — formula-shape, written into `compute_final_stats`'s equip_pct accumulation | Same footing as the loot table's slot-uniformity rule: `2` is fixed by Primary stat per slot's authored table, not a tunable. |
 | `equip_flat` channel for the eight non-crit slots | Nowhere — deliberately unused | Named in the hero formula, ruled against for these slots (see rejection above). Still used by the two crit slots. |
 
@@ -525,9 +523,124 @@ as a real problem once `P2-05c` ships it and jewelry gear is actually equippable
 
 ### Enhancement
 
-- `cost(n → n+1) = 2 + n` parts of matching rank, plus gold
-- `+8%` to the item's primary stat per level
-- Cap: `min(15, forge_level * 3)`
+`P2-05e`. Rules the two unvalued inputs Enhancement's lines named but never priced — which `+8%`
+reading applies, and what gold is — plus whether the level cap can ship without `forge_level`.
+
+**1. The `+8%` reading — additive, not compounded.**
+
+```
+enhanced_contribution = base_contribution * (1 + enhance_pct_per_level * enhance_level)
+```
+
+Applied per item, to that item's own `equip_pct_per_rank[item.rank]` (eight non-crit slots) or
+`equip_crit_pct_per_rank[item.rank]` (necklace/ring) — the same per-item value Primary stat
+magnitude already sums across a stat's two slots, just scaled up first. `enhance_pct_per_level =
+0.08`; `enhance_level` capped at 15 (question 3).
+
+Verified against the real authored tables, not an extrapolation (Codex thread
+`019fd4d6-b240-7262-8339-0cc8064519a3`), both readings at max enhance (15) on SSS-rank gear:
+
+| | Compounded (`1.08^15 = ×3.1722`) | Additive (`1 + 0.08*15 = ×2.2`) |
+|---|---:|---:|
+| Rogue full-Enhanced `CRIT_RATE` (base 15%, SSS necklace unenhanced `+12.255pp`) | `15% + 38.87pp = 53.87%` | `15% + 26.96pp = 41.96%` |
+| Margin under the `75%` cap | `21.13pp` | `33.04pp` |
+| Two-SSS-item stat, gear share of the final stat (= of team power, per the formula's uniform per-stat scaling) | `67.46%` | `58.98%` |
+
+Both clear the `75%` `CRIT_RATE` cap, so — unlike the non-crit-slot channel question in Primary
+stat magnitude, which the cap decided outright — the cap doesn't force this choice either way.
+Ruling additive on precedent, not on a cap violation:
+
+- Every other growth formula in `Hero.compute_final_stats` is additive-then-a-single-multiply,
+  never compounding: `(base + growth * level) * rank_mult[rank]` (`heroes/hero.gd:63-66`) for
+  level — `rank_mult` itself a fixed authored array, not a runtime `pow()` — and Primary stat
+  magnitude's own equip_pct is summed before one multiply. Nothing in the hero stat pipeline runs
+  an exponential; giving Enhancement alone a `pow()` introduces a second kind of math with no
+  other system in this doc behaving as precedent for it.
+- Compounded pushes gear share of a maxed-SSS-Enhanced stat to `67.46%` — well past even the
+  unenhanced-SSS `39.53%` Primary stat magnitude already flagged as needing a played build to
+  confirm isn't "gear dominates." Additive's `58.98%` is still a large jump over unenhanced (that's
+  the point of enhancing), but doesn't compound on top of Primary stat magnitude's own
+  already-rank-scaled curve the way `1.08^15` does — two independently-steep exponents stacking is
+  exactly the kind of one-field-reprices-another interaction this doc's essence/parts/enhancement
+  note warns about.
+- "+8% per level" reads as additive absent a stated "each level multiplies by 1.08" — the
+  compounded case is the one that needs the exponent spelled out to be understood at all, which
+  makes it the reading requiring justification, not the default one.
+
+**Rejected: compounded.** Not forced by any cap (both clear `75%`), and it would be the only
+exponential growth formula anywhere in `Hero.compute_final_stats` — a second, steeper kind of
+scaling with no other system in this doc sharing its shape, on the one input that has no hard
+ceiling in play to force a choice.
+
+**2. Gold does not exist — struck from the cost line, deferred.**
+
+```
+cost(n → n+1) = 2 + n parts of matching rank
+```
+
+No "plus gold." `grep -rn "gold" --include=*.gd --include=*.tres --include=*.tscn .` returns zero
+hits — no `BalanceTable` field, no `GameSession` currency, no drop source anywhere. Gold appears in
+exactly two other places in this document: the three zones' loot-table Reward columns (prose only
+— `P2-04b`'s authored loot table covers rank/slot for equipment drops and never touched gold) and
+Buildings' "Upgrade cost: gold + parts" line, which has the identical problem.
+
+This is the same shape as Summoning's Summon Stone income rate (`P2-09`) and Expeditions' XP curve
+(`P2-04a`): a value named in prose with no acquisition rate, no drop formula, and nothing in code
+— a genuine missing design input, not something this document can settle by picking a number.
+Authoring a gold cost with no income source would make the cost line unimplementable-honestly: a
+player could hit a wall with no way to know how to clear it, which is worse than a system that
+costs parts only until gold has a source.
+
+**Ruling: Enhancement costs parts only.** Gold is struck from this cost line and from Buildings'
+upgrade-cost line (below) until a ticket gives it an income rate — same shape as `P2-09`/`P2-04a`.
+That ticket is not this one; flagging it for `tech-lead` to open.
+
+**3. Cap: `forge_enhance_cap_max` (15), flat — no `forge_level` term until `P2-07`.**
+
+`forge_level` doesn't exist: no `Building` resource, no per-building level field anywhere
+(`P2-07` unstarted). `balance_table.gd` already authors both coefficients
+(`forge_enhance_cap_per_level = 3`, `forge_enhance_cap_max = 15`), which makes `min(15, forge_level
+* 3)` read settled the same way `reliquary_decay_turns_bonus` did before the `P2-04` split found
+the building behind it didn't exist yet.
+
+Unlike Buildings' other four bonuses (Training Hall XP, Sanctum essence, Reliquary decay/damage),
+which are additive *bonuses* that default sensibly to "no bonus" in the building's absence, the
+enhance cap is a hard *ceiling* Enhancement needs in order to function at all: gating it at
+`forge_level * 3` with no `forge_level` evaluates to `cap = 0`, and Enhancement could never apply
+a single level. That can't be what shipping `P2-05f` now is for.
+
+**Ruling: `P2-05f` reads the cap as `balance.forge_enhance_cap_max` (15) flat, with no
+`forge_level` term.** When `P2-07` gives the Forge a real level, the formula becomes
+`min(forge_enhance_cap_max, forge_level * forge_enhance_cap_per_level)` for real —
+`forge_enhance_cap_per_level` sits unused in `balance_table.gd` today for exactly that reason, not
+stranded, just not yet wired to a level that exists.
+
+**4. Where the numbers live.**
+
+| Number | File | Notes |
+|---|---|---|
+| `enhance_pct_per_level = 0.08` | `BalanceTable` (→ `balance.tres`) | New scalar. The tunable knob for question 1's ruling; applied per-item as `base_contribution * (1 + enhance_pct_per_level * enhance_level)`. |
+| `Item.enhance_level` (int, 0–15) | `equipment/item.gd` | New field — `P2-05f`'s, per `docs/TASKS.md`'s split note (`P2-04e`/`turn_lost` precedent: add the field when there's something to count). Not authored here; this ruling only fixes what multiplies against it. |
+| `cost(n → n+1) = 2 + n` parts of matching rank | Nowhere new — formula-shape, unchanged here except "plus gold" struck | Same footing as the loot table's slice-and-renormalize: a formula, not a table. |
+| `forge_enhance_cap_max = 15` | `BalanceTable` (already in `balance.tres`) | Existing field, now the sole cap value per question 3 — no new field needed. |
+| `forge_enhance_cap_per_level = 3` | `BalanceTable` (already in `balance.tres`) | Existing field, unused until `P2-07` gives the Forge a real level; not read by `P2-05f`. |
+| Gold (drop rate, cost values) | Not authored anywhere — deferred | Same shape as `P2-09`/`P2-04a`. A follow-up ticket gives it a `BalanceTable` field once it has a source; not this one. |
+
+`P2-05f`'s "files allowed to change" follows: `equipment/item.gd` (`enhance_level` field +
+`to_dict`/`from_dict`), `BalanceTable`/`balance_table.gd` (`enhance_pct_per_level`) + `balance.tres`,
+and `Hero.compute_final_stats` to scale each item's per-item contribution before the existing
+per-stat summation. No change to `EquipmentDefinition`.
+
+> ⚠️ **PROVISIONAL** — the `58.98%` maxed-enhancement gear share (question 1) is arithmetically
+> checked, not played — it's the same open question Primary stat magnitude's own gear-share marker
+> already named ("gear matters" vs "gear dominates"), now with a number attached for the ceiling
+> case rather than just the unenhanced one. · **Settled by:** the same played build that marker
+> calls for, at an additional checkpoint — maxed rank *and* maxed enhancement, not just maxed rank.
+
+> ⚠️ **PROVISIONAL** — gold is named in cost lines and loot-table prose but has no value, no
+> `BalanceTable` field, and no income source anywhere in code. · **Settled by:** a ticket giving
+> gold an income rate (same shape as `P2-09`), after which Enhancement's and Buildings' cost lines
+> can add a real gold term.
 
 ### Salvage
 
@@ -1237,7 +1350,8 @@ not the "one system" claim.
 > exist anywhere in this document (`P2-04a`). The percentage is meaningless until there's a curve
 > to apply it to. · **Settled by:** `P2-04a` defining the XP curve.
 
-Upgrade cost: gold + parts.
+Upgrade cost: parts — gold struck per Enhancement's ruling (`P2-05e`) that gold has no value and
+no income source anywhere in this game yet. Add back once a ticket gives gold a rate.
 
 No build queues, no adjacency bonuses, no timers, no construction animation. Add complexity
 only when a building needs to express something an integer can't.
