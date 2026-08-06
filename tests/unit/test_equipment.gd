@@ -56,6 +56,33 @@ func test_unequip_returns_item_to_inventory_and_clears_slot() -> void:
 	assert_eq(_count_item(hero, item), 1)
 
 
+func test_salvage_removes_inventory_item_and_credits_only_its_rank() -> void:
+	var item := Item.new(&"ring", 3)
+	GameSession.add_item(item)
+
+	GameSession.salvage_item(item)
+
+	assert_false(GameSession.inventory.has(item))
+	for rank_index: int in GameSession.parts.size():
+		assert_eq(GameSession.parts[rank_index], 3 if rank_index == item.rank else 0)
+
+
+## Item.from_dict never validates rank, and assert() is stripped in release - so a hand-edited
+## save must be absorbed by the clamp. Negative ranks are the sharp case: GDScript indexes arrays
+## from the end, so -1 credited SSS while the same item displayed as F.
+func test_salvage_clamps_a_corrupt_rank() -> void:
+	var above := Item.new(&"ring", 99)
+	var below := Item.new(&"ring", -1)
+	GameSession.add_item(above)
+	GameSession.add_item(below)
+
+	GameSession.salvage_item(above)
+	GameSession.salvage_item(below)
+
+	assert_eq(GameSession.parts[GameSession.parts.size() - 1], 3)
+	assert_eq(GameSession.parts[0], 3)
+
+
 func test_kill_hero_moves_all_equipped_items_to_lost_cache() -> void:
 	var hero := Hero.new("Doomed Hero", 2)
 	var ring := Item.new(&"ring", 1)

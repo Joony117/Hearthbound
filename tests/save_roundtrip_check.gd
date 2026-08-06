@@ -12,6 +12,7 @@ const MALFORMED_HERO_NAME := "Malformed Dain"
 const MALFORMED_HERO_RANK := 5
 const DOOMED_ITEM_DEF_ID := &"ring"
 const DOOMED_ITEM_RANK := 3
+const SALVAGED_ITEM_RANK := 5
 
 var _game_session: Node
 var _save_service: Node
@@ -54,7 +55,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, parts, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -68,6 +69,9 @@ func _run() -> int:
 	var round_trip_code: int = _check_new_format_round_trip()
 	if round_trip_code != 0:
 		return round_trip_code
+	var parts_code: int = _check_parts_round_trip()
+	if parts_code != 0:
+		return parts_code
 	return _check_permadeath_and_version()
 
 
@@ -134,6 +138,41 @@ func _check_new_format_round_trip() -> int:
 		return _fail("second hero selected for def_id check", "%s:%d" % [SECOND_HERO_NAME, SECOND_HERO_RANK], _roster_summary())
 	if loaded_second_hero.def_id != SECOND_HERO_DEF_ID:
 		return _fail("second new-format hero def_id after disk reload", str(SECOND_HERO_DEF_ID), str(loaded_second_hero.def_id))
+	return 0
+
+
+func _check_parts_round_trip() -> int:
+	var salvaged_item := Item.new(DOOMED_ITEM_DEF_ID, SALVAGED_ITEM_RANK)
+	_game_session.call("add_item", salvaged_item)
+	_game_session.call("salvage_item", salvaged_item)
+	_save_service.call("save")
+
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
+	if save_file == null:
+		return _fail("parts raw save file open", "readable", error_string(FileAccess.get_open_error()))
+	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
+	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	if parsed is not Dictionary:
+		return _fail("parts raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
+	# Save-file fields remain Variant until their types are validated.
+	var raw_parts: Variant = (parsed as Dictionary).get("parts")
+	if raw_parts is not Array:
+		return _fail("raw save JSON parts shape", "Array", type_string(typeof(raw_parts)))
+	var raw_parts_array: Array = raw_parts as Array
+	if raw_parts_array.size() != _parts().size():
+		return _fail("raw save JSON parts rank count", str(_parts().size()), str(raw_parts_array.size()))
+	for rank_index: int in _parts().size():
+		var raw_expected: int = 3 if rank_index == SALVAGED_ITEM_RANK else 0
+		if int(raw_parts_array[rank_index]) != raw_expected:
+			return _fail("raw save JSON parts at rank %d" % rank_index, str(raw_expected), str(raw_parts_array[rank_index]))
+
+	_parts().fill(0)
+	if not _save_service.call("load_game"):
+		return _fail("parts disk reload", "load_game() == true", "load_game() == false")
+	for rank_index: int in _parts().size():
+		var loaded_expected: int = 3 if rank_index == SALVAGED_ITEM_RANK else 0
+		if _parts()[rank_index] != loaded_expected:
+			return _fail("parts after disk reload at rank %d" % rank_index, str(loaded_expected), str(_parts()[rank_index]))
 	return 0
 
 
@@ -270,6 +309,10 @@ func _roster_summary() -> String:
 
 func _roster() -> Array[Hero]:
 	return _game_session.get("roster")
+
+
+func _parts() -> Array[int]:
+	return _game_session.get("parts")
 
 
 func _fail(check_name: String, expected: String, actual: String) -> int:

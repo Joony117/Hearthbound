@@ -10,6 +10,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 
 @onready var _roster_list: ItemList = %RosterList
 @onready var _inventory_list: ItemList = %InventoryList
+@onready var _parts: Label = %Parts
 @onready var _equipped_list: ItemList = %EquippedList
 @onready var _zone_option: OptionButton = %ZoneOption
 @onready var _status: Label = %Status
@@ -19,10 +20,12 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_roster)
 	GameSession.roster_changed.connect(_refresh_inventory)
+	GameSession.roster_changed.connect(_refresh_parts)
 	GameSession.roster_changed.connect(_refresh_equipped)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	_refresh_roster()
 	_refresh_inventory()
+	_refresh_parts()
 	_refresh_equipped()
 	_populate_zones()
 	_refresh_zone_unlocks()
@@ -61,6 +64,13 @@ func _refresh_inventory() -> void:
 		else:
 			_inventory_list.add_item("%s %s" % [item.rank_label(BALANCE), definition.display_name])
 		_inventory_list.set_item_metadata(_inventory_list.item_count - 1, item)
+
+
+func _refresh_parts() -> void:
+	var entries: PackedStringArray = []
+	for rank_index: int in GameSession.parts.size():
+		entries.append("%s: %d" % [BALANCE.rank_names[rank_index], GameSession.parts[rank_index]])
+	_parts.text = "Parts  " + " | ".join(entries)
 
 
 func _refresh_equipped() -> void:
@@ -149,6 +159,18 @@ func _on_equip_pressed() -> void:
 		return
 	GameSession.equip_item(hero, item)
 	_status.text = "Equipped %s %s on %s." % [item.rank_label(BALANCE), definition.display_name, hero.hero_name]
+
+
+func _on_salvage_pressed() -> void:
+	var selected: PackedInt32Array = _inventory_list.get_selected_items()
+	if selected.size() != 1:
+		_status.text = "Select exactly one inventory item."
+		return
+	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
+	assert(item != null)
+	var rank_label: String = item.rank_label(BALANCE)
+	GameSession.salvage_item(item)
+	_status.text = "Salvaged %s item into 3 %s parts." % [rank_label, rank_label]
 
 
 func _on_unequip_pressed() -> void:

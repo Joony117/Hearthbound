@@ -195,6 +195,43 @@ carrying an `Item` had ever crossed real JSON until the disk leg was added. That
 (salvage) and `P2-04f` — still blocked on `power_deficit_penalty` and the turn concept — as the
 equipment line's remaining work.
 
+**P2-05 split.** The line bundles four things: a parts currency that does not exist at all
+(`GameSession` holds `roster`, `inventory`, `lost_caches`, `cleared_zone_ids` and no material of
+any kind), salvage, enhancement, and 3:1 part conversion. Only one of the four is buildable today.
+
+Salvage is fully authored — `3 + enhance_level` parts of the item's rank (`SYSTEMS.md` § Salvage) —
+and `enhance_level` is *zero for every item that can exist* until enhancement ships, so the formula
+is checkable now with the field deliberately absent. That is `P2-04e`'s `turn_lost` precedent
+exactly: adding a field whose only possible value is a placeholder makes fabricated data read as
+real. `P2-05f` adds `Item.enhance_level` and the `+ enhance_level` term together, when there is
+something to count.
+
+Enhancement is blocked on three separate gaps, two of them design: (1) the `+8%`-per-level
+reading is explicitly deferred — `SYSTEMS.md`'s own headroom check computes *both* readings and
+says "`P2-05`/Enhancement's own pass settles the reading"; (2) **gold does not exist** — grep
+`*.gd` for it and the only hits are zone `loot_emphasis` prose strings, there is no currency, no
+income, and no cost number anywhere in `SYSTEMS.md` beyond the words "plus gold"; (3) the cap is
+`min(15, forge_level * 3)` and no building has a level — `balance_table.gd:20-21` authors both
+coefficients, so it reads settled, the same "the number is real and the thing it measures is not"
+trap the `P2-04` split found in `reliquary_decay_turns_bonus`. (1) and (2) are one ruling and
+become `P2-05e`; (3) needs `P2-07`, or a ruling that the cap is flat until buildings exist.
+
+Split into: `P2-05d` is salvage — parts currency, a salvage path, no enhance, no conversion; it
+depends on nothing outstanding and is the shippable one. `P2-05e` is the enhancement design
+ruling. `P2-05f` is enhancement itself. `P2-05g` is 3:1 conversion — the rule is one authored line
+and needs no ruling, but it needs `P2-05d`'s parts to convert and its "at the Forge" siting trails
+`P2-07`.
+
+`P2-05d` landed in the commit below, so parts exist and `P2-05g` has something to convert. It cost
+one review cycle: the first pass guarded the rank-indexed write with `assert()`, which Godot strips
+from release exports — the game's shipped form — so the guard was absent in the only build a player
+runs, and neither new test could reach it (both used in-range ranks, and asserts are *active* in an
+editor run, so a hand-check would have masked it). The generalizable rule is in its Findings:
+**an `assert()` is not a guard for anything that can arrive from a save file.** `Item.from_dict`
+still does not validate `rank`, so every future consumer of it inherits the same problem — the
+codebase's answer is `clampi` before indexing, which `Item.rank_label` and `Hero.compute_final_stats`
+already did and salvage now does too.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -209,7 +246,10 @@ equipment line's remaining work.
 | P2-04c | Runtime `Item` type + `GameSession.inventory` persistence | Body in `TASKS-DONE.md`. Not player-facing by itself, same shape as `P2-01a`/`P2-03a`. Unblocked `P2-04d` and `P2-05a`. Fixed a pre-existing `from_dict` crash on an explicit `null` field, inherited from `Hero`'s shape — see its Findings before copying that pattern again. |
 | P2-04a | XP-per-level curve for expedition rewards | Found by `game-designer`, deliberately not authored by it — a genuine missing `balance.tres` input with no ticket owning it yet. Crosses into expedition-reward territory, so it sequences here, not in the P2-01 group. |
 | P2-04d | Expedition clears can drop a real item into inventory | Body in `TASKS-DONE.md`. Unblocked `P2-05a`. Roll order is **slot then rank** — the ruling left it open, this pinned it. First disk-level proof that an `Item` survives JSON (`rank` decodes as `float` and `from_dict`'s `int()` absorbs it); read its Findings before writing another one-off `-s` check, which cannot statically name `Expedition`. |
-| P2-05 | Salvage → parts → enhance → part conversion | Cores deferred to Phase 4. Needs `P2-04c` (item type) and `P2-04d` (something to salvage) — presupposes items exist, same as equip does. |
+| P2-05d | Salvage an unwanted item into parts | Body in `TASKS-DONE.md`. `parts` is a fixed 8-element `Array[int]` indexed by rank, which sidesteps the JSON int-key trap rather than working around it. **Read its Findings before writing another `assert()` on a value that can come from a save file** — asserts are stripped in release, so the first pass was unguarded in the only build a player runs, and a negative rank did not even throw: it credited SSS while displaying F. |
+| P2-05e | Enhancement design ruling — the `+8%` reading, and what gold is | Design gap, `game-designer`. Two inputs `SYSTEMS.md` names but never values: which of the two `+8%` readings applies (its own headroom check computes both and defers), and gold — which appears in every zone's `loot_emphasis` prose and in Enhancement's cost line, and exists nowhere else. Blocks `P2-05f`. |
+| P2-05f | Enhancement — `Item.enhance_level`, `+8%`/level, parts+gold cost | Blocked on `P2-05e`. Also owns `Item.enhance_level` and salvage's `+ enhance_level` term, deliberately left out of `P2-05d` (see the split note — `P2-04e`/`turn_lost` precedent). Cap `min(15, forge_level * 3)` needs `P2-07` or a ruling that it is flat until buildings exist. |
+| P2-05g | 3:1 part conversion at the Forge | Needs `P2-05d`. Rule is fully authored and needs no ruling (`SYSTEMS.md` § Material economy); only its siting is open, since the Forge is `P2-07`. |
 | P2-05a | Equip UI for authored equipment | Body in `TASKS-DONE.md`. Not split — assignment, persistence and an ugly UI shipped; combat effect stayed an explicit non-goal, since no ticket has ever authored what a rank-`N` item contributes. That gap is now `P2-05b`'s. Unblocked `P2-04e`. Corrected a false `KNOWN_ISSUES.md` claim: a plain GUT run **does** overwrite the real `user://save.json`. Read its Findings before trusting another in-memory `to_dict`/`from_dict` test as save-boundary evidence — `slot` reaches disk as `8.0`, and only the disk leg proves the float branch. |
 | P2-05b | What a rank-`N` item contributes to a hero's stat | Body in `TASKS-DONE.md`; the ruling itself is `SYSTEMS.md` § Primary stat magnitude. Three new `BalanceTable` fields — `equip_pct_per_rank` (`0.04 × rank_mult`, eight non-crit slots, two per stat summing into one `equip_pct`), `equip_crit_pct_per_rank` (`0.015 × rank_mult`, necklace/ring, via `equip_flat`), `equip_crit_rate_cap = 0.75`. Not a reuse of `stat_multipliers`: same ratios, own scalar, so a hero-curve retune can't silently reprice every item. Unblocked `P2-05c`. |
 | P2-05c | Equipped gear changes combat power | Body in `TASKS-DONE.md`. **No signature change was needed** — this row predicted "the seam is an extra argument"; `compute_final_stats` already takes the `Hero`, and `equipped` has been on it since `P2-05a`, so gear applies in one function and `combat/` was never touched. `compute_team_power`'s crit-blindness is now pinned by an assertion (a ring moves `CRIT_DMG` and not team power), so the eventual fix has to delete it deliberately. Gear routing is indexed by `PrimaryStat` ordinal with `Hero.STAT_NAMES` mirroring it positionally — reordering either enum misroutes gear with a green gate, and only `tests/unit/test_equipment.gd` notices. |
@@ -264,6 +304,7 @@ needs to re-read.
 | `P2-05b` | Equipment magnitude ruling — what a rank-`N` item contributes | `c092fc3` |
 | `P2-05c` | Equipped gear changes a hero's stats and team power | `b5525e7` |
 | `P2-04e` | Lost-gear cache created on hero permadeath | `3885a14` |
+| `P2-05d` | Salvage an unwanted item into parts | _pending_ |
 
 ---
 

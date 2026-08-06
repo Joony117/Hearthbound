@@ -2011,3 +2011,86 @@ reported them, and again after the fix-up. `Get-Process Godot*` empty before and
 ### Files changed
 `equipment/lost_cache.gd` (new), `systems/game_session.gd`, `hub/expedition/expedition.gd`,
 `tests/save_roundtrip_check.gd`, `tests/unit/test_equipment.gd`
+
+---
+
+## P2-05d — Salvage an unwanted item into parts                        [DONE]
+
+### Objective
+Break an unwanted inventory item down into parts of its rank. The parts you own are visible in
+the hub and survive a quit and relaunch.
+
+### Existing architecture
+- `GameSession` (autoload) owns `inventory: Array[Item]` and emits `roster_changed`; `SaveService.save`
+  is connected to it, so every mutating method persists by emitting.
+- `Item` (`equipment/item.gd`) is `def_id` + `rank`, nothing else. **No `enhance_level`** — see the
+  `P2-05` split note in `TASKS.md`.
+- The hub already lists inventory into `%InventoryList` with the `Item` in each row's metadata, and
+  the equip path already reads `get_selected_items()`. Salvage is a second button against that same
+  selection, not a new screen.
+- `BALANCE.rank_names` is 8 entries F…SSS; a rank is an index 0–7.
+- `cleared_zone_ids` is the precedent for persisting a keyed collection: written out as a sorted
+  `Array[String]` rather than a dict, because JSON has no non-string keys.
+
+### Acceptance criteria
+- Salvaging an inventory item removes it from `inventory` and credits **3** parts of that item's rank.
+- The yield is literally `3` — `SYSTEMS.md`'s `3 + enhance_level` with `enhance_level == 0`, the only
+  value any item can have until `P2-05f`. Do not fabricate the field to make the formula look complete.
+- Only items in `inventory` are salvageable; equipped gear unreachable by construction.
+- The hub shows the per-rank parts count and updates on salvage with no scene reload.
+- **Survives save and reload across real disk JSON**, not a `to_dict`/`from_dict` pair in memory.
+- Import gate green with zero warnings; GUT green including a new salvage assertion.
+- Existing tests still pass.
+
+### Non-goals
+No `Item.enhance_level`, no enhancement (`P2-05f`). No 3:1 conversion (`P2-05g`). No Cores
+(Phase 4). No gold, no Forge building (`P2-07`). `forge_salvage_yield_bonus` deliberately unread —
+it is authored and has no building level to source from; reading it would invent a Forge. No fourth
+autoload, no bulk salvage, no confirmation dialog.
+
+### Findings
+
+**`assert()` is not a guard for anything that can arrive from a save file.** The implementer's
+first pass wrote `assert(item.rank >= 0 and item.rank < parts.size())` before `parts[item.rank] += 3`.
+Godot strips `assert()` from release exports — the game's shipped form — so in the only build a
+player runs, the indexed write was unguarded. `Item.from_dict` never validates `rank`, so a
+hand-edited or corrupt save reaches it directly, and the two failure modes differ:
+
+- **positive out-of-range** (`rank: 99`) throws `Out of bounds get index` *after* `inventory.erase(item)`
+  has already run — the item is silently destroyed, no parts credited, no `roster_changed.emit()`,
+  nothing surfaced to the player;
+- **negative** (`rank: -1`) does not throw at all. GDScript indexes arrays from the end, so it
+  credits rank 7 (SSS) while `rank_label` clamps the same item to F everywhere it is displayed.
+
+Fixed with `clampi(item.rank, 0, parts.size() - 1)`, which is the convention the codebase had
+already established twice — `Item.rank_label` and `Hero.compute_final_stats` both clamp before
+indexing a rank-sized array, for exactly this reason. The assert was the outlier, not the fix.
+
+**Neither shipped test could have caught it, and a hand-check in the editor would have masked it.**
+The GUT assertion used rank 3 and the round-trip check rank 5, both in range. Worse, asserts are
+*active* in a debug/editor run, so anyone verifying by hand would have seen a clean assertion
+failure where production silently corrupts. `test_salvage_clamps_a_corrupt_rank` now pins both
+directions.
+
+**A fixed `Array[int]` sidesteps the JSON key problem instead of working around it.** The ticket
+warned that an int-keyed dict cannot round-trip (keys return as `"3"`), citing `cleared_zone_ids`.
+The implementer chose an 8-element array indexed by rank, so there are no keys to lose. The float
+trap still applies — `JSON.parse_string` returns `TYPE_FLOAT` for JSON integers, confirmed
+empirically — and `from_dict` handles it with an explicit `is float` branch that rejects
+non-integral and negative values rather than truncating them.
+
+**A save written before this ticket has no `parts` key**; `_array_field` returns `[]`, the decode
+loop does not run, and the zeroed default stands. Covered by `_check_legacy_save`.
+
+**`Item.enhance_level` deliberately absent**, per the `P2-04e`/`turn_lost` precedent: the only
+value it could hold today is a placeholder, and a fabricated field reads as real data while
+measuring nothing. `P2-05f` adds the field and salvage's `+ enhance_level` term together.
+
+**Verified by re-run, not by relay.** Import gate exit 0 with zero `SCRIPT ERROR`/`ERROR:`/`WARNING`
+lines; GUT 44/44 exit 0; `save_roundtrip_check.gd` exit 0 with its `PASS:` line naming `parts`.
+All three re-run by the director after the implementer reported them, and again after the clamp
+fix-up. `Get-Process Godot*` empty after every run.
+
+### Files changed
+`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
+`tests/unit/test_equipment.gd`

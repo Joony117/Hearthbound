@@ -9,6 +9,7 @@ signal roster_changed
 
 var roster: Array[Hero] = []
 var inventory: Array[Item] = []
+var parts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0]
 var lost_caches: Array[LostCache] = []
 var cleared_zone_ids: Dictionary[StringName, bool] = {}
 
@@ -52,6 +53,19 @@ func unequip_item(hero: Hero, slot: int) -> void:
 	roster_changed.emit()
 
 
+## Only the inventory UI offers items to this path, so equipped gear is unreachable.
+func salvage_item(item: Item) -> void:
+	if not inventory.has(item):
+		return
+	inventory.erase(item)
+	# item.rank arrives from an untrusted save and is never validated by Item.from_dict, so clamp
+	# before indexing, same as Item.rank_label and Hero.compute_final_stats. assert() cannot guard
+	# this - it is stripped in release, where a corrupt rank would crash after the erase (positive)
+	# or credit the wrong rank (negative, since GDScript indexes arrays from the end).
+	parts[clampi(item.rank, 0, parts.size() - 1)] += 3
+	roster_changed.emit()
+
+
 func mark_zone_cleared(zone_id: StringName) -> void:
 	assert(zone_id != &"")
 	if cleared_zone_ids.has(zone_id):
@@ -90,6 +104,7 @@ func to_dict() -> Dictionary:
 	return {
 		"roster": entries,
 		"inventory": inventory_entries,
+		"parts": parts.duplicate(),
 		"lost_caches": lost_cache_entries,
 		"cleared_zone_ids": cleared_entries,
 	}
@@ -98,6 +113,7 @@ func to_dict() -> Dictionary:
 func from_dict(data: Dictionary) -> void:
 	roster.clear()
 	inventory.clear()
+	parts.fill(0)
 	lost_caches.clear()
 	cleared_zone_ids.clear()
 	for entry: Variant in _array_field(data, "roster"):
@@ -106,6 +122,21 @@ func from_dict(data: Dictionary) -> void:
 	for entry: Variant in _array_field(data, "inventory"):
 		if entry is Dictionary:
 			inventory.append(Item.from_dict(entry))
+	var saved_parts: Array = _array_field(data, "parts")
+	for rank_index: int in mini(saved_parts.size(), parts.size()):
+		# Variant is required while validating untrusted save entries.
+		var saved_count: Variant = saved_parts[rank_index]
+		var count: int = -1
+		if saved_count is int:
+			count = saved_count as int
+		elif saved_count is float:
+			var float_count: float = saved_count as float
+			if is_finite(float_count) and float_count == floorf(float_count):
+				count = int(float_count)
+		if count < 0:
+			push_error("Invalid parts count at rank %d: expected a non-negative integer, got '%s'." % [rank_index, saved_count])
+			continue
+		parts[rank_index] = count
 	for entry: Variant in _array_field(data, "lost_caches"):
 		if entry is Dictionary:
 			lost_caches.append(LostCache.from_dict(entry))
