@@ -192,10 +192,8 @@ contract, not a replacement for it.
 - **One Godot process against this project at a time.** See below — this one is not obvious and
   has already bitten twice.
 - **One ticket per session, then `/clear`.** `docs/TASKS.md` is written so a cold session
-  reloads a ticket in one Read. Carrying a finished ticket's context into the next one is pure
-  cost: it is re-read on every remaining turn and answers nothing. Measured here — average
-  context 221k per call, peak 566k, against 605k of tool output in the entire project history.
-  The spec set exists to make sessions disposable; use it that way.
+  reloads a ticket in one Read. The spec set exists to make sessions disposable; use it that
+  way. (Why this pays, with the measured numbers: `~/.claude/CLAUDE.md`, Session economics.)
 
 ## Serialize engine access
 
