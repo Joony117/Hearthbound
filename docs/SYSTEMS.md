@@ -983,6 +983,13 @@ B=40, A=50, S=60, SS=70, SSS=80), not level 0. This is exactly the level the che
 already assumes, so it costs no rebalance — it makes the implementation match what
 `recommended_power` was already calibrated against, rather than inventing new numbers.
 
+**Retired by `P2-04a` (below), not adjusted.** `BASELINE_LEVEL` and the "always compute at the
+rank's cap" rule stop applying the moment real leveling ships: `Hero.level_for()` becomes
+`clampi(hero.level, 0, balance.level_caps[hero.rank])`, reading the hero's actual, persisted
+level instead of deriving a constant from rank. A freshly-summoned hero starts at `level = 0`,
+below its rank's cap — see "Hero leveling — XP curve and income" for what that does to
+winnability and why it's an accepted, not overlooked, consequence.
+
 With both fixes applied (verified, same thread): solo and full-squad win probability become
 identical at every wave, and every trash wave becomes winnable at each zone's calibration rank
 for every archetype except Cleric on the Verdant boss (`198` enemy power vs `187` team power — one
@@ -1004,6 +1011,185 @@ broken relative to a full squad, but neither is winnable at level 0.
 > real leveling, not real leveling — nobody has played against it, and `P2-04a`'s actual XP curve
 > will replace it outright rather than tune it. · **Settled by:** `P2-04a` shipping the XP curve
 > (which retires this rule entirely, not just adjusts it), then a played build.
+
+> ⚠️ **RETIRED by `P2-04a`'s ruling below.** The rank-cap baseline is no longer the rule —
+> `Hero.level_for()` reads a real, persisted `hero.level` that starts at 0, not a derived
+> constant. This does not close the PROVISIONAL above; it replaces what it was provisional
+> *about*. The new open question, carried into the ruling below: a level-0 hero is
+> considerably less safe than the rank-cap placeholder ever let it be, and that's now measured
+> rather than assumed — see "Hero leveling," bootstrap paragraph.
+
+### Hero leveling — XP curve and income (`P2-04a`)
+
+**Heroes level for real.** Two new `Hero` fields — `level: int = 0` and `xp: int = 0` (progress
+toward `level + 1`) — replace the derivation `Hero.level_for()` used to do. **This is a
+save-boundary change** (`CLAUDE.md`'s risky-boundary rule 1): `Hero.to_dict`/`from_dict` need
+both fields added, and any implementer ticket against this inherits a mandatory `verifier` pass.
+`Hero.level_for(hero, balance)` becomes `clampi(hero.level, 0, balance.level_caps[hero.rank])` —
+a clamp, not a derivation; the clamp only matters as a corrupt-save guard, since normal play
+never lets `hero.level` exceed the current cap (see rank-up, below).
+
+**Rank-up: already settled, not reopened here.** `DECISIONS.md`, 2026-08-01, "Rank-up preserves
+hero level": *"Ranking a hero up raises its level cap and keeps its current level and XP... reason:
+resetting level on rank-up makes the reward feel like a punishment."* That ADR predates this
+ruling and this ruling doesn't touch it — it only had no `hero.level` to act on until now. Verified
+here as a cross-check, not a new decision (Codex thread `019fdda9-5327-7a22-823c-fb53c0399d0a`,
+question C): carrying `level` forward unchanged makes every one of the seven rank-up transitions a
+strict, immediate `hero_power` increase, no exceptions — e.g. an F-cap (level 10) Knight goes
+212.0 → 286.2 the instant it becomes D, an SS-cap (level 70) Knight goes 3,678.4 → 4,967.36 the
+instant it becomes SSS. Resetting level would have produced the opposite — a real, felt power dip
+right after spending the game's most expensive currency — confirming the ADR's own reasoning
+arithmetically rather than just by feel. `level_caps` steps by a flat `+10` every rank
+(`[10,20,30,40,50,60,70,80]`), so — also verified — every rank-up opens exactly 10 more levels of
+climbing room regardless of which rank it is; there's no reason to special-case any transition.
+
+**The XP curve — one global coefficient, not rank-indexed.**
+
+```
+xp_to_next_level(level) = xp_coefficient * (level + 1)
+```
+
+New `BalanceTable` field: `xp_coefficient: int = 10`. Deliberately **not** a per-rank array like
+`essence_bases`: unlike essence (which resets its accounting per sacrifice), `hero.level` is
+already a single monotonic number running 0→80 across a hero's whole life — rank-up only raises
+the reachable ceiling (above), it doesn't reset the number the cost formula reads. A second,
+rank-indexed base would be redundant complexity buying no behavioral difference, since `level`
+itself already encodes how far along a hero is. Total XP from level 0 to level `L` is the
+triangular number `xp_coefficient * L*(L+1)/2` — climbing all of F (0→10) costs `550` XP.
+
+**Income — per-wave on every outcome, plus a per-zone completion bonus. Deliberately not the same
+shape as Summon Stones.**
+
+- **`xp_per_wave: int = 4`** (new `BalanceTable` field) — paid `xp_per_wave * waves_resolved`
+  (`Expedition.waves_resolved`, already public, `hub/expedition/expedition.gd:13`) on **every**
+  outcome: `OUTCOME_COMPLETED`, `OUTCOME_RETREATED`, and `OUTCOME_DEFEATED` alike. This is
+  deliberately more generous than the Stones rule (`P2-09`, `COMPLETED`-only): a fresh, level-0
+  hero's completion probability in Verdant is measured at exactly `0%` (below), so a
+  `COMPLETED`-only rule would pay a climbing hero nothing for its first several dozen attempts,
+  defeating the entire point of a curve that's supposed to be climbed gradually.
+- **`xp_reward` per zone** (new `ZoneDefinition` field, same shape as `P2-09`'s `stone_reward`) —
+  `Verdant Outskirts: 24, Ashfall Reaches: 72, Sundered Vault: 192`, the same `1:3:8` ratio as
+  stones, paid only on `OUTCOME_COMPLETED` (same trigger as `stone_reward` and the loot table).
+
+Verified (Codex thread `019fdda9-5327-7a22-823c-fb53c0399d0a`, question B, exact state-recurrence,
+not the coarser per-level estimate): with these constants, a level-0 F-rank hero/team in Verdant
+earns `~12.3` expected XP per attempt, climbing to `~19.3` by level 9, and reaching level 10 (F's
+cap) takes **`~33.6` expected attempts**. That's the target order of magnitude asked for —
+"tens," matching this document's other spine numbers (`~327` pulls to manufacture an SSS, `~264`
+clears to max one building) rather than either "one attempt" (pointless curve) or "thousands" (out
+of step with everything else here).
+
+**Training Hall's `+15%/level` now has a real consumer**, closing the PROVISIONAL that sat on it
+since Base Buildings was written: `effective_xp = base_xp * (1.0 + training_hall_xp_bonus *
+building_levels[2])`, applied to both `xp_per_wave` and `xp_reward`, the same per-level-percentage
+shape every other building already uses. Verified at cap (level 5, `+75%`): `xp_per_wave` becomes
+exactly `7` and `xp_reward` becomes exactly `42/126/336` — no fractional XP at the cap level, and
+the climb to F's cap drops to **`~19.5` expected attempts**, a `41.85%` reduction. Meaningful, not
+decorative.
+
+**The bootstrap — measured, not assumed, and the honest answer is harsher than "a fresh hero can
+clear an easy wave."** Question A of the same Codex thread enumerated the *whole* Verdant run
+(not just per-wave win chance) for a same-rank, ungeared, 5-archetype reference team:
+
+| Level | Defeated (whole roster) | Retreated (safe) | Completed |
+|---:|---:|---:|---:|
+| 0 (fresh summon) | 69.8% | 30.2% | 0% |
+| 5 | 55.7% | 44.3% | 0% |
+| 10 (F's own cap) | 53.1% | 46.4% | 0.5% |
+
+Two things fall out of this table that the ruling has to say plainly rather than paper over:
+
+1. **A level-0 team's first attempt has no path to `COMPLETED` at all** — it always ends in either
+   a full-roster wipe or an automatic retreat, never a clear. Waves 1–2 are survived almost
+   always (this is where the per-wave XP income does its job — an early, likely-to-retreat
+   attempt still banks real XP); the team typically dies or retreats at trash wave 3.
+2. **This lethality is not new and is not this ticket's to fix.** Even at F's own calibration
+   level (10) — the level the rank-cap placeholder used for every single fight until this ruling
+   — a full run still wipes the roster `53.1%` of the time. That number was always true of
+   Verdant's wave-damage formula (`wave_damage_coefficient`/`wave_loss_damage_coefficient`,
+   `P2-03b`, already flagged provisional in "Wave damage" below); it was simply never visible
+   before, because nobody had enumerated a whole run rather than one wave in isolation. Retuning
+   those coefficients is out of scope here — flagging it is not.
+
+Given that, the honest bootstrap answer is: **there is no level at which a fresh F-rank hero is
+"safe" in Verdant — that's true today and stays true after this ruling.** What this ruling *does*
+guarantee, and what the rank-cap placeholder didn't need to: partial progress is never wasted (a
+retreating or even a losing attempt still pays `xp_per_wave` for whatever it survived), and the
+existing team-size incentive (`Team size scaling`, above — fielding fewer heroes per attempt
+limits how much of a roster is exposed to any one death roll) is the lever a player already has
+for managing that risk, not a new one this ruling needs to invent.
+
+**A genuinely new failure state this ruling makes reachable, flagged for `tech-lead`, not solved
+here.** `P2-09` sizes the starting balance (`300` stones) against the *pull* spine, on the
+assumption stones and hero survival are independent. They're less independent than that ruling
+assumed: a new save that spends all `300` stones on 3 pulls, then sends every pulled hero into one
+Verdant attempt that wipes the roster (measured above at up to `69.8%` per attempt for a level-0
+team), reaches `0` heroes and `<100` stones simultaneously — unable to pull (short of cost) and
+unable to expedition (no roster). This didn't exist as a reachable state under the placeholder
+(every hero fought at its rank's cap, where completion is still rare but the roster-wipe rate is
+lower); it becomes reachable the moment fresh heroes fight at level 0. Not this ruling's numbers to
+fix (it's an interaction between `P2-09`'s economy and this one, not a defect in either alone) —
+flagging for `tech-lead` to weigh a floor (a hero-count minimum, or refusing to let the literal
+last pull-worth of stones be spent) against just teaching "field one hero at a time early," which
+costs nothing to ship.
+
+**A pre-existing spec/code mismatch this ruling surfaces, not caused.** The Sacrifice formula box
+at the top of this document's "Sacrifice → rank up" section reads
+`yield = essence_base[fodder.rank] * (1.0 + fodder.level / level_cap[fodder.rank])` — a
+level-scaled essence bonus. `Hero.compute_essence_yield()` (`heroes/hero.gd:130-142`) has never
+implemented that term; it couldn't, since `fodder.level` had no backing field before this ruling.
+Now that `hero.level` is real, the mismatch is live rather than moot: either wire the bonus in (a
+code change) or strike the term from the formula box as never-shipped. Not this ruling's call —
+flagging for `tech-lead` to route as a small follow-up, since it's a Sacrifice-formula question,
+not an XP-curve one.
+
+**Where every number lives.**
+
+| Number | File | Notes |
+|---|---|---|
+| `level: int = 0`, `xp: int = 0` | `Hero` | New fields. Save-boundary change — `to_dict`/`from_dict` both need it, mandatory `verifier` pass. |
+| `xp_coefficient: int = 10` | `BalanceTable`/`balance.tres` | New field. Single global constant — not rank-indexed (see above). |
+| `xp_per_wave: int = 4` | `BalanceTable`/`balance.tres` | New field. Paid × `waves_resolved` on every outcome. |
+| `xp_reward` (`24`/`72`/`192`) | `ZoneDefinition` (→ `zones/defs/*.tres`) | New field, same shape as `P2-09`'s `stone_reward`. `COMPLETED`-only. |
+| `Hero.level_for()` | `heroes/hero.gd:33-34` | Changes from a derivation to a clamp: `clampi(hero.level, 0, balance.level_caps[hero.rank])`. |
+| `BASELINE_LEVEL` | `combat/quick_resolve.gd` | Retired outright — removed, not tuned (per "Combat's level baseline," above). |
+| XP overflow at cap | — | Discarded, not banked. Same simplicity precedent as "no pity system" — no ruling anywhere in this document banks overflow on any other currency either. |
+
+This is the shape a follow-up implementer ticket needs, same footing as `P2-09`'s own closing
+table; writing that ticket body is `tech-lead`'s call. Flagging for that ticket: `GameSession`
+needs an XP-grant path mirroring `credit_stones()`'s shape (apply the Training Hall multiplier,
+then loop level-ups while `xp >= xp_to_next_level(level)` and `level < balance.level_caps[rank]`,
+discarding overflow at cap) — called from wherever `Expedition.resolve()` returns, alongside the
+existing `credit_stones()` call.
+
+**Rejected: a rank-indexed `xp_base` array mirroring `essence_bases`.** Considered and dropped —
+see above, `level`'s own value already encodes rank progress since it never resets, so a second
+per-rank array would change no arithmetic, only add a table nobody reads differently.
+
+**Rejected: XP paid only on `OUTCOME_COMPLETED`, mirroring Stones exactly.** Rejected because
+completion probability at level 0 is measured at exactly `0%` (above) — a hero climbing from
+level 0 would earn nothing for its first several dozen attempts under that rule, which is the
+opposite of a gradual curve.
+
+**Rejected: a non-zero starting level (e.g. half of the rank's cap) to soften the bootstrap.**
+This was the first draft of this ruling, dropped once per-wave income was modeled: waves 1–2 are
+survived almost unconditionally even at level 0 (question A), so a level-0 start already earns
+real XP from its very first attempt without an invented starting number — adding one would solve
+a problem the per-wave rule already closes.
+
+**Rejected: retuning `wave_damage_coefficient`/`wave_loss_damage_coefficient` to soften the
+`53–70%` whole-run defeat rate found above.** Out of scope for an XP-curve ticket — those
+coefficients are `P2-03b`'s, already flagged provisional in "Wave damage" below, and changing them
+here would be re-litigating combat balance under cover of a leveling ticket.
+
+> ⚠️ **PROVISIONAL** — the curve, the income constants, and the `~33.6`/`~19.5`-attempt spine
+> numbers are arithmetically verified against every existing spine number in this document (Codex
+> thread `019fdda9-5327-7a22-823c-fb53c0399d0a`) but entirely unfelt: nobody has leveled a hero
+> against a built XP bar, and whether losing heroes mid-climb (measured as the dominant outcome,
+> not an edge case) reads as "the game's whole point" or "leveling is pointless, they die before
+> it matters" is a feel question this document cannot answer alone. · **Settled by:** a played
+> build with XP wired in, across enough attempts in Verdant to see whether a climbing hero
+> functionally ever reaches F's cap before dying, or whether in practice almost none do.
 
 ### Wave damage
 
@@ -1791,9 +1977,11 @@ cancellation above.
 > essence yield) have no played reference point the way Reliquary's does. · **Settled by:** a
 > played build with at least one of these three built past level 1.
 
-> ⚠️ **PROVISIONAL** — Training Hall's "+15%/level XP" reads against an XP-per-level curve that
-> doesn't exist anywhere in this document (`P2-04a`). The percentage is meaningless until there's
-> a curve to apply it to. · **Settled by:** `P2-04a` defining the XP curve.
+> ⚠️ **RESOLVED by `P2-04a`** (Expeditions § "Hero leveling — XP curve and income," above).
+> Training Hall's `+15%/level` now multiplies `xp_per_wave` and `xp_reward`; at cap (level 5,
+> `+75%`) it cuts the expected attempts to climb F's level cap from `~33.6` to `~19.5` — verified,
+> not decorative. The PROVISIONAL below (cap-5 choice, unplayed) still stands; only "the
+> percentage is meaningless" is retired, since there's now a curve for it to multiply.
 
 ### Which buildings ship in `P2-07`
 
@@ -1802,9 +1990,12 @@ wait for their consumers.** A player who spends parts on a building that provabl
 a worse outcome than the building not being offered yet, and two of the five have no consumer to
 read them at all:
 
-- **Training Hall** reads against `P2-04a`'s XP curve, which is unstarted — there is no
-  expedition-XP system anywhere in the codebase for `+15%` to modify. Spending parts here changes
-  no number, ever, until `P2-04a` ships.
+- **Training Hall** read against `P2-04a`'s XP curve, which was unstarted when `P2-07` shipped —
+  there was no expedition-XP system anywhere in the codebase for `+15%` to modify. `P2-04a`'s
+  ruling above (Expeditions § "Hero leveling") now defines that curve, but the curve is a
+  doc-only number until an implementer wires `Hero.level`/`xp` and the XP-grant path into code;
+  whether Training Hall ships alongside that work or waits for a further ticket is `tech-lead`'s
+  scheduling call, not this ruling's.
 - **Reliquary** reads against two things neither of which exists: the recovery-expedition damage
   roll (`P2-04f`, blocked on `power_deficit_penalty`) and a "turn" concept at all (also `P2-04f`,
   and the decay clock is turn-denominated). Same outcome — parts spent here are inert until
