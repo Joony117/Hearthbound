@@ -2312,6 +2312,42 @@ second caller is dynamic (`tests/save_roundtrip_check.gd` via
 `_game_session.call("salvage_item", …)`), invisible to a grep for `salvage_item(` and invisible
 to the import gate. The runtime script is the only thing that catches it, and it did.
 
+**`Dictionary.get(key, default)` does not defend against an explicit `null`** — only against a
+missing key. `int(data.get("rank", 0))` therefore throws `Invalid call. Nonexistent 'int'
+constructor.` on a save containing `"rank": null`, and `from_dict` returns `null` into
+`inventory`/`equipped`, where the next `.def_id` read throws again. This defect **predated the
+ticket** on `rank`; adding `enhance_level` in the same shape doubled it. Fixed for both fields
+with one `Item._int_field()` helper — the scalar analogue of `GameSession._array_field()`,
+which `P2-04c` added for exactly this on Array fields. `Hero.from_dict` and
+`LostCache.from_dict` still carry it on their own scalar fields; that is `P2-11`.
+
+**The status-string handler duplicates the rule.** `hub.gd`'s `_on_enhance_pressed` re-checks
+all three of `enhance_item`'s preconditions so it can name which one fired, then calls
+`enhance_item` and discards its `bool`. Judged a maintenance hazard rather than a live bug —
+same clamp bounds, same rank index, same cost formula, no intervening mutation — but it is two
+sources of truth for one rule, and the honest fix is a reason code on the return rather than a
+second copy of the checks. Left as-is deliberately; whoever adds a fourth precondition must
+remember to add it twice.
+
+**The `+N` suffix in both `ItemList`s reads `item.enhance_level` unclamped**, so a corrupt save
+displays an out-of-range level. Cosmetic by design — all three *gameplay* read sites clamp per
+criterion 6, and clamping the display too would hide the corruption from the only place a
+player could notice it.
+
+**Verified by re-run, not by relay.** Import gate exit 0 with zero
+`SCRIPT ERROR`/`ERROR:`/`WARNING` lines; GUT 54/54, 9360 asserts, exit 0 (was 47);
+`save_roundtrip_check.gd` exit 0 with `enhanced equipment` named in its `PASS:` line, run with
+`%APPDATA%` redirected so the real `user://save.json` was never touched. All three re-run by
+the director after the implementer and the verifier each reported them, and again after the
+fix-up. The arithmetic was checked independently against `SYSTEMS.md` § Enhancement's worked
+example — SSS necklace at `+15` yields `+26.96pp` additive, exact match. `Get-Process Godot*`
+empty after every run.
+
+### Files changed
+`balance_table.gd`, `balance.tres`, `equipment/item.gd`, `heroes/hero.gd`,
+`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
+`tests/unit/test_equipment.gd`
+
 ---
 
 ## P2-06a — Sacrifice a hero for essence; spend essence to rank another up      [DONE]
@@ -2464,41 +2500,9 @@ impact was found — recorded because it is a behavior change to shipped save de
 before either field existed. The second closes a genuine gap: forward-compatibility of old saves
 was safe by construction via `Item.int_field`'s fallback, but untested.
 
-**`Dictionary.get(key, default)` does not defend against an explicit `null`** — only against a
-missing key. `int(data.get("rank", 0))` therefore throws `Invalid call. Nonexistent 'int'
-constructor.` on a save containing `"rank": null`, and `from_dict` returns `null` into
-`inventory`/`equipped`, where the next `.def_id` read throws again. This defect **predated the
-ticket** on `rank`; adding `enhance_level` in the same shape doubled it. Fixed for both fields
-with one `Item._int_field()` helper — the scalar analogue of `GameSession._array_field()`,
-which `P2-04c` added for exactly this on Array fields. `Hero.from_dict` and
-`LostCache.from_dict` still carry it on their own scalar fields; that is `P2-11`.
-
-**The status-string handler duplicates the rule.** `hub.gd`'s `_on_enhance_pressed` re-checks
-all three of `enhance_item`'s preconditions so it can name which one fired, then calls
-`enhance_item` and discards its `bool`. Judged a maintenance hazard rather than a live bug —
-same clamp bounds, same rank index, same cost formula, no intervening mutation — but it is two
-sources of truth for one rule, and the honest fix is a reason code on the return rather than a
-second copy of the checks. Left as-is deliberately; whoever adds a fourth precondition must
-remember to add it twice.
-
-**The `+N` suffix in both `ItemList`s reads `item.enhance_level` unclamped**, so a corrupt save
-displays an out-of-range level. Cosmetic by design — all three *gameplay* read sites clamp per
-criterion 6, and clamping the display too would hide the corruption from the only place a
-player could notice it.
-
-**Verified by re-run, not by relay.** Import gate exit 0 with zero
-`SCRIPT ERROR`/`ERROR:`/`WARNING` lines; GUT 54/54, 9360 asserts, exit 0 (was 51);
-`save_roundtrip_check.gd` exit 0 with `enhanced equipment` named in its `PASS:` line, run with
-`%APPDATA%` redirected so the real `user://save.json` was never touched. All three re-run by
-the director after the implementer and the verifier each reported them, and again after the
-fix-up. The arithmetic was checked independently against `SYSTEMS.md` § Enhancement's worked
-example — SSS necklace at `+15` yields `+26.96pp` additive, exact match. `Get-Process Godot*`
-empty after every run.
-
 ### Files changed
-`balance_table.gd`, `balance.tres`, `equipment/item.gd`, `heroes/hero.gd`,
-`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
-`tests/unit/test_equipment.gd`
+`heroes/hero.gd`, `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`,
+`tests/save_roundtrip_check.gd`, `tests/unit/test_sacrifice.gd`
 
 ---
 
