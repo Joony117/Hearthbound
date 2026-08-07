@@ -93,6 +93,14 @@ static func compute_final_stats(
 				final_stats[STAT_CRIT_RATE] += crit_pct
 			else:
 				final_stats[STAT_CRIT_DMG] += crit_pct
+	# SYSTEMS.md § Traits: non-crit traits join gear's additive accumulator; crit traits add flat.
+	for trait_definition: TraitDefinition in active_resonance_traits(hero, definition, balance):
+		if trait_definition.stat < EquipmentDefinition.PrimaryStat.CRIT_RATE:
+			equip_pct[trait_definition.stat] += trait_definition.magnitude
+		elif trait_definition.stat == EquipmentDefinition.PrimaryStat.CRIT_RATE:
+			final_stats[STAT_CRIT_RATE] += trait_definition.magnitude
+		else:
+			final_stats[STAT_CRIT_DMG] += trait_definition.magnitude
 	for index: int in equip_pct.size():
 		final_stats[STAT_NAMES[index]] *= 1.0 + equip_pct[index]
 	final_stats[STAT_CRIT_RATE] = minf(final_stats[STAT_CRIT_RATE], balance.equip_crit_rate_cap)

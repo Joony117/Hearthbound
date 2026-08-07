@@ -36,6 +36,56 @@ func test_archetype_trait_pools_load_from_disk() -> void:
 	_assert_pool("res://heroes/defs/cleric.tres", [&"cleric_devotion", &"cleric_sanctuary", &"cleric_guardian_light"], [0, 2, 0], [0.05, 0.04, 0.06])
 
 
+func test_zero_resonance_matches_a_definition_without_traits() -> void:
+	var balance: BalanceTable = BalanceTable.new()
+	var hero: Hero = Hero.new("Knight", 0)
+	var definition: HeroDefinition = _definition("res://heroes/defs/knight.tres")
+	var no_path_definition: HeroDefinition = definition.duplicate() as HeroDefinition
+	no_path_definition.resonance_trait_pool = []
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 5)
+	var no_path_stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, no_path_definition, balance, 5)
+	for stat: StringName in Hero.STAT_NAMES:
+		assert_almost_eq(stats[stat], no_path_stats[stat], 0.0001)
+
+
+func test_non_crit_traits_sum_with_gear_before_multiplying() -> void:
+	var balance: BalanceTable = BalanceTable.new()
+	var hero: Hero = Hero.new("Knight", 0)
+	var definition: HeroDefinition = _definition("res://heroes/defs/knight.tres")
+	hero.resonance = 6
+	hero.equipped[EquipmentDefinition.Slot.CHEST] = Item.new(&"chest", 4)
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 0)
+	assert_almost_eq(stats[Hero.STAT_DEF], definition.base_def * (1.0 + 0.1328 + 0.04 + 0.08), 0.0001)
+	assert_almost_eq(stats[Hero.STAT_HP], definition.base_hp * 1.05, 0.0001)
+	assert_almost_eq(stats[Hero.STAT_ATK], definition.base_atk, 0.0001)
+	assert_almost_eq(stats[Hero.STAT_SPD], definition.base_spd, 0.0001)
+
+
+func test_crit_traits_add_flat_and_atk_trait_multiplies() -> void:
+	var balance: BalanceTable = BalanceTable.new()
+	var hero: Hero = Hero.new("Rogue", 0)
+	var definition: HeroDefinition = _definition("res://heroes/defs/rogue.tres")
+	hero.resonance = 6
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 0)
+	assert_almost_eq(stats[Hero.STAT_CRIT_RATE], definition.crit_rate + 0.015, 0.0001)
+	assert_almost_eq(stats[Hero.STAT_CRIT_DMG], definition.crit_dmg + 0.08, 0.0001)
+	assert_almost_eq(stats[Hero.STAT_ATK], definition.base_atk * 1.05, 0.0001)
+
+
+func test_crit_rate_trait_is_capped() -> void:
+	var balance: BalanceTable = BalanceTable.new()
+	var hero: Hero = Hero.new("Rogue", 0)
+	hero.resonance = 6
+	var definition: HeroDefinition = _definition("res://heroes/defs/rogue.tres").duplicate() as HeroDefinition
+	definition.crit_rate = 0.745
+
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, 0)
+	assert_almost_eq(stats[Hero.STAT_CRIT_RATE], balance.equip_crit_rate_cap, 0.0001)
+
+
 func _assert_pool(path: String, ids: Array[StringName], stats: Array[int], magnitudes: Array[float]) -> void:
 	var definition := _definition(path)
 	assert_eq(definition.resonance_trait_pool.size(), 3)
