@@ -4,6 +4,58 @@ const BALANCE: BalanceTable = preload("res://balance.tres")
 const AUTHORED_WEIGHTS: Array[int] = [4000, 2700, 1700, 1000, 450, 120, 28, 2]
 
 
+func before_each() -> void:
+	GameSession.from_dict({"roster": []})
+
+
+func test_summon_hero_spends_stones_adds_hero_and_emits_once() -> void:
+	var hero := Hero.new("Paid Hero", 0)
+	watch_signals(GameSession)
+
+	assert_true(GameSession.summon_hero(hero, BALANCE))
+	assert_eq(GameSession.stones, 200)
+	assert_eq(GameSession.roster.size(), 1)
+	assert_same(GameSession.roster[0], hero)
+	assert_signal_emit_count(GameSession, "roster_changed", 1)
+
+
+func test_summon_hero_is_atomic_when_stones_are_short() -> void:
+	GameSession.stones = 40
+	var hero := Hero.new("Unpaid Hero", 0)
+	watch_signals(GameSession)
+
+	assert_false(GameSession.summon_hero(hero, BALANCE))
+	assert_eq(GameSession.stones, 40)
+	assert_true(GameSession.roster.is_empty())
+	assert_signal_emit_count(GameSession, "roster_changed", 0)
+
+
+func test_hub_shows_stones_disables_summon_and_names_shortfall() -> void:
+	GameSession.stones = 40
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var summon_button: Button = hub.get_node("%Summon") as Button
+	var stones_label: Label = hub.get_node("%Stones") as Label
+	var status: Label = hub.get_node("%Status") as Label
+
+	assert_true(summon_button.disabled)
+	assert_eq(stones_label.text, "Summon Stones: 40")
+	summon_button.pressed.emit()
+	assert_eq(status.text, "Need 100 Summon Stones, have 40.")
+	assert_eq(GameSession.stones, 40)
+	assert_true(GameSession.roster.is_empty())
+
+	GameSession.credit_stones(BALANCE.summon_pull_cost - GameSession.stones)
+	assert_false(summon_button.disabled)
+	assert_eq(stones_label.text, "Summon Stones: 100")
+	summon_button.pressed.emit()
+	assert_eq(GameSession.stones, 0)
+	assert_eq(GameSession.roster.size(), 1)
+	assert_true(summon_button.disabled)
+
+
 func test_level_zero_preserves_authored_weights_and_ticket_results() -> void:
 	var weights: Array[int] = Summon.weights_for_circle_level(0, BALANCE.summon_weights)
 	assert_eq(weights, AUTHORED_WEIGHTS)

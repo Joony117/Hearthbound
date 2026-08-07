@@ -64,6 +64,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 	GameSession.mark_zone_cleared(zone.zone_id)
 	loot = roll_loot(zone, BALANCE, boss_loot_seed)
 	GameSession.add_item(loot)
+	GameSession.credit_stones(zone.stone_reward)
 	return OUTCOME_COMPLETED
 
 

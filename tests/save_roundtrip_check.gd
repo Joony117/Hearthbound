@@ -20,6 +20,8 @@ const SACRIFICE_FODDER_NAME := "Roundtrip Fodder"
 const SACRIFICE_FODDER_RANK := 1
 const SACRIFICE_ESSENCE := 75
 const SACRIFICE_RESONANCE := 1
+const STONE_HERO_NAME := "Roundtrip Stone Hero"
+const STONE_REWARD := 75
 
 var _game_session: Node
 var _save_service: Node
@@ -62,7 +64,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -73,6 +75,12 @@ func _run() -> int:
 	var malformed_code: int = _check_malformed_def_id()
 	if malformed_code != 0:
 		return malformed_code
+	var untrusted_stones_code: int = _check_untrusted_stones()
+	if untrusted_stones_code != 0:
+		return untrusted_stones_code
+	var stones_round_trip_code: int = _check_stones_round_trip()
+	if stones_round_trip_code != 0:
+		return stones_round_trip_code
 	var round_trip_code: int = _check_new_format_round_trip()
 	if round_trip_code != 0:
 		return round_trip_code
@@ -109,6 +117,58 @@ func _check_legacy_save() -> int:
 		return _fail("legacy hero default resonance", "0", str(legacy_hero.resonance))
 	if _essence() != 0:
 		return _fail("essence after pre-existing disk reload", "0", str(_essence()))
+	if _stones() != 300:
+		return _fail("stones after pre-existing disk reload", "300", str(_stones()))
+	return 0
+
+
+func _check_untrusted_stones() -> int:
+	var fixture_code: int = _write_stones_fixture(null)
+	if fixture_code != 0:
+		return fixture_code
+	_game_session.set("stones", 0)
+	if not _save_service.call("load_game"):
+		return _fail("null stones disk reload", "load_game() == true", "load_game() == false")
+	if _stones() != 300:
+		return _fail("null stones fallback", "300", str(_stones()))
+
+	fixture_code = _write_stones_fixture(300.0)
+	if fixture_code != 0:
+		return fixture_code
+	_game_session.set("stones", 0)
+	if not _save_service.call("load_game"):
+		return _fail("float stones disk reload", "load_game() == true", "load_game() == false")
+	if _stones() != 300:
+		return _fail("integral float stones decode", "300", str(_stones()))
+	return 0
+
+
+func _check_stones_round_trip() -> int:
+	_game_session.call("from_dict", {"roster": []})
+	var balance: BalanceTable = load("res://balance.tres") as BalanceTable
+	if balance == null:
+		return _fail("stone balance table load", "BalanceTable", "null")
+	var hero := Hero.new(STONE_HERO_NAME, 0)
+	if not _game_session.call("summon_hero", hero, balance):
+		return _fail("stone deduction before disk reload", "summon_hero() == true", "summon_hero() == false")
+	_save_service.call("save")
+
+	_game_session.set("stones", 0)
+	_roster().clear()
+	if not _save_service.call("load_game"):
+		return _fail("stone deduction disk reload", "load_game() == true", "load_game() == false")
+	if _stones() != 200:
+		return _fail("stones after paid summon disk reload", "200", str(_stones()))
+	if _find_hero(STONE_HERO_NAME, 0) == null:
+		return _fail("paid summon hero after disk reload", STONE_HERO_NAME, _roster_summary())
+
+	_game_session.call("credit_stones", STONE_REWARD)
+	_save_service.call("save")
+	_game_session.set("stones", 0)
+	if not _save_service.call("load_game"):
+		return _fail("stone reward disk reload", "load_game() == true", "load_game() == false")
+	if _stones() != 200 + STONE_REWARD:
+		return _fail("stones after reward disk reload", str(200 + STONE_REWARD), str(_stones()))
 	return 0
 
 
@@ -472,6 +532,21 @@ func _write_malformed_fixture() -> int:
 	return 0
 
 
+func _write_stones_fixture(raw_stones: Variant) -> int:
+	# Variant is required to author the explicit null and JSON-float trust-boundary fixtures.
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.WRITE)
+	if save_file == null:
+		return _fail("untrusted stones fixture write", "writable", error_string(FileAccess.get_open_error()))
+	var fixture: Dictionary = {
+		"roster": [],
+		"stones": raw_stones,
+		"version": _save_version,
+	}
+	save_file.store_string(JSON.stringify(fixture, "\t"))
+	save_file.close()
+	return 0
+
+
 func _find_hero(hero_name: String, rank: int) -> Hero:
 	for hero: Hero in _roster():
 		if hero.hero_name == hero_name and hero.rank == rank:
@@ -500,6 +575,10 @@ func _parts() -> Array[int]:
 
 func _essence() -> int:
 	return _game_session.get("essence")
+
+
+func _stones() -> int:
+	return _game_session.get("stones")
 
 
 func _fail(check_name: String, expected: String, actual: String) -> int:

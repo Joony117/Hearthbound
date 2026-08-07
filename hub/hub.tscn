@@ -127,6 +127,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Essence: 0"
 
+[node name="Stones" type="Label" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Summon Stones: 300"
+
 [node name="FodderOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -296,6 +301,7 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="Summon" type="Button" parent="UI/Root/Bottom/Buttons"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Summon"
 

@@ -12,6 +12,8 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _fodder_option: OptionButton = %FodderOption
 @onready var _target_option: OptionButton = %TargetOption
 @onready var _essence: Label = %Essence
+@onready var _stones: Label = %Stones
+@onready var _summon_button: Button = %Summon
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _parts: Label = %Parts
 @onready var _circle_level: Label = %CircleLevel
@@ -28,6 +30,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_roster)
 	GameSession.roster_changed.connect(_refresh_essence)
+	GameSession.roster_changed.connect(_refresh_stones)
 	GameSession.roster_changed.connect(_refresh_inventory)
 	GameSession.roster_changed.connect(_refresh_parts)
 	GameSession.roster_changed.connect(_refresh_buildings)
@@ -36,6 +39,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	_refresh_roster()
 	_refresh_essence()
+	_refresh_stones()
 	_refresh_inventory()
 	_refresh_parts()
 	_refresh_buildings()
@@ -86,6 +90,11 @@ func _refresh_hero_option(option: OptionButton) -> void:
 
 func _refresh_essence() -> void:
 	_essence.text = "Essence: %d" % GameSession.essence
+
+
+func _refresh_stones() -> void:
+	_stones.text = "Summon Stones: %d" % GameSession.stones
+	_summon_button.disabled = GameSession.stones < BALANCE.summon_pull_cost
 
 
 func _refresh_inventory() -> void:
@@ -218,9 +227,11 @@ static func is_zone_unlocked(
 
 
 func _on_summon_pressed() -> void:
-	var hero := Summon.roll(GameSession.building_levels[0])
-	GameSession.add_hero(hero)
-	_status.text = "Summoned %s, rank %s." % [hero.hero_name, hero.rank_label(BALANCE)]
+	var hero: Hero = Summon.roll(GameSession.building_levels[0])
+	if GameSession.summon_hero(hero, BALANCE):
+		_status.text = "Summoned %s, rank %s." % [hero.hero_name, hero.rank_label(BALANCE)]
+	else:
+		_status.text = "Need %d Summon Stones, have %d." % [BALANCE.summon_pull_cost, GameSession.stones]
 
 
 func _on_sacrifice_pressed() -> void:

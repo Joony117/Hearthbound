@@ -7,11 +7,16 @@ extends Node
 
 signal roster_changed
 
+## A fresh save must afford at least one pull or the game is unplayable from boot: the roster
+## starts empty and only a pull can fill it (docs/SYSTEMS.md, Summon Stones, 3).
+const STARTING_STONES: int = 300
+
 var roster: Array[Hero] = []
 var inventory: Array[Item] = []
 var parts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0]
 var building_levels: Array[int] = [0, 0, 0, 0, 0]
 var essence: int = 0
+var stones: int = STARTING_STONES
 var lost_caches: Array[LostCache] = []
 var cleared_zone_ids: Dictionary[StringName, bool] = {}
 
@@ -24,6 +29,20 @@ func _ready() -> void:
 
 func add_hero(hero: Hero) -> void:
 	roster.append(hero)
+	roster_changed.emit()
+
+
+func summon_hero(hero: Hero, balance: BalanceTable) -> bool:
+	if stones < balance.summon_pull_cost:
+		return false
+	stones -= balance.summon_pull_cost
+	roster.append(hero)
+	roster_changed.emit()
+	return true
+
+
+func credit_stones(amount: int) -> void:
+	stones += amount
 	roster_changed.emit()
 
 
@@ -177,6 +196,7 @@ func to_dict() -> Dictionary:
 		"parts": parts.duplicate(),
 		"building_levels": building_levels.duplicate(),
 		"essence": essence,
+		"stones": stones,
 		"lost_caches": lost_cache_entries,
 		"cleared_zone_ids": cleared_entries,
 	}
@@ -188,6 +208,7 @@ func from_dict(data: Dictionary) -> void:
 	parts.fill(0)
 	building_levels.fill(0)
 	essence = 0
+	stones = STARTING_STONES
 	lost_caches.clear()
 	cleared_zone_ids.clear()
 	for entry: Variant in _array_field(data, "roster"):
@@ -227,6 +248,7 @@ func from_dict(data: Dictionary) -> void:
 			continue
 		building_levels[building_index] = level
 	essence = maxi(Item.int_field(data, "essence", 0, "game session"), 0)
+	stones = maxi(Item.int_field(data, "stones", STARTING_STONES, "game session"), 0)
 	for entry: Variant in _array_field(data, "lost_caches"):
 		if entry is Dictionary:
 			lost_caches.append(LostCache.from_dict(entry))

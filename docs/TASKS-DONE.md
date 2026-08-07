@@ -2885,3 +2885,112 @@ parts per salvage is *felt* needs a played build, which is what its `Settled by`
 ### Files changed
 `systems/game_session.gd`, `hub/hub.gd`, `tests/unit/test_equipment.gd`,
 `tests/unit/test_buildings.gd`, `tests/save_roundtrip_check.gd`
+
+---
+
+## P2-16 — Pulls cost Summon Stones, and a clear pays them                   [DONE]
+
+### Objective
+
+Pressing **Summon** spends `100` Summon Stones. Below that the button is disabled and the pull
+refuses. Clearing a zone pays stones back — `25`/`75`/`200` for Verdant/Ashfall/Sundered — and the
+balance is visible in the hub and survives a quit and relaunch. A fresh save starts at `300`.
+
+The ruling is `SYSTEMS.md` § Summon Stones — cost and income; its §5 table says where each number
+lives. This ticket wired it and authored nothing new.
+
+### Existing architecture
+
+1. **`Summon.roll()` cannot do the deduction.** It is a `static func` on a plain `RefCounted`
+   (`hub/summon/summon.gd:13`) with no autoload access — the same constraint `P2-07c` hit, which is
+   why `hub.gd` reads the Circle level and passes it in. Its only production call site is
+   `hub/hub.gd:220-223`. Signature frozen; `tests/summon_def_id_roundtrip_check.gd` calls it out of
+   scope, and `P2-07c`'s defaulted argument is already on the record as a trap.
+2. **`enhance_item` (`systems/game_session.gd:73-88`) is the shape to mirror**: validate → `return
+   false` → deduct → `roster_changed.emit()`. Callers branch on the bool and write their own
+   message. `upgrade_building` and `rank_up_hero` are the same shape.
+3. **The clear branch already pays one reward.** `Expedition.resolve()` reaches
+   `hub/expedition/expedition.gd:64-67` only on `OUTCOME_COMPLETED`. Stones ride that same branch —
+   `RETREATED` and `DEFEATED` return earlier and pay nothing, no second condition needed.
+4. **The hub already has a currency readout pattern.** `%Essence` + `_refresh_essence()`
+   (`hub/hub.gd:14,87-88`), connected to `roster_changed` in `_ready`. Stones copy it.
+5. **`roster_changed.emit()` is what writes the save** (`systems/game_session.gd:22`). A mutation
+   without it round-trips green in memory and loses the value on disk — `P2-05g`'s finding.
+6. **`Item.int_field`** (used for `essence`) is the untrusted-int reader: it absorbs the JSON
+   `float` decode and an explicit `null`. Both defects are on the record (`P2-05f`, `P2-11`).
+
+### Acceptance criteria
+
+1. `BalanceTable.summon_pull_cost: int = 100` in `balance_table.gd` **and** authored in
+   `balance.tres`. `tests/balance_table_check.gd` still passes.
+2. `ZoneDefinition.stone_reward: int = 0`, and the three `zones/defs/*.tres` carry `25`/`75`/`200`.
+   `tests/zone_definition_check.gd` still passes — it asserts zone fields by **exact match**, which
+   is what reddened `P2-15`.
+3. `GameSession.stones: int = 300`, persisted through `to_dict`/`from_dict`.
+4. Summon with `stones >= 100` adds a hero and leaves the balance exactly `100` lower. With
+   `stones < 100` **no hero is added, nothing is deducted**, and `_status` names the shortfall.
+5. The Summon button is `disabled` while `stones < summon_pull_cost`, refreshed on
+   `roster_changed`, and a stone balance is visible in the hub alongside Essence.
+6. A `COMPLETED` expedition credits that zone's `stone_reward`; `RETREATED` and `DEFEATED` credit
+   zero. Tested at all three outcomes.
+7. **Real-disk round trip, not in-memory `to_dict`/`from_dict`**, plus the three untrusted shapes:
+   missing `stones` key → `300`, explicit `"stones": null` → no crash, `300.0` → `300`.
+8. Import gate green with zero warnings, GUT suite green.
+
+### Files allowed to change
+
+`balance_table.gd`, `balance.tres`, `zones/zone_definition.gd`, `zones/defs/*.tres`,
+`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `hub/expedition/expedition.gd`,
+`tests/save_roundtrip_check.gd`, `tests/zone_definition_check.gd`,
+`tests/unit/test_expedition.gd`, `tests/unit/test_summon.gd`.
+
+### Non-goals
+
+No second income source, no multi-pull/pity/rank-scaled price, no shop or currency conversion, no
+change to `Summon.roll()`'s signature, no starting-hero grant.
+
+### Findings
+
+**`add_hero` is now a test-only seam, and nothing enforces that.** The priced path is
+`GameSession.summon_hero(hero, balance)`; `add_hero` survives with **zero production call sites**
+and 17 test ones. It is a legitimate fixture — a test should not have to fund a roster — but it is
+also an unpriced door into `roster` that no gate guards. Any future production caller of `add_hero`
+summons for free and every gate stays green. This is the `P2-07c` `roll()`-default hazard in a new
+shape: grep call sites rather than trusting that the priced path is the only path.
+
+**The refill trap was real and the code clears it.** `from_dict` resets `stones = STARTING_STONES`
+before reading, which looks like it should refill a spent-out save to `300` on every load. It does
+not, because `Item.int_field` returns an explicit `0` correctly and falls back only on a
+missing/null/non-numeric field — so a player who spent everything reloads at `0`, not topped up.
+That distinction is the whole reason criterion 7 named all three untrusted shapes separately
+instead of asking for "a round trip": a default that is also a legitimate value cannot be checked
+by the presence of the value alone.
+
+**`300` shipped as three literals and was consolidated to one.** The field initializer, the
+`from_dict` reset, and `int_field`'s default each carried a bare `300` — three places that must
+agree, with nothing to notice if they drift. Now `GameSession.STARTING_STONES`. Director fix-up on
+an accepted diff, four lines. Worth flagging in the ticket template: a value that appears in both
+an initializer and a deserializer default is always at least two literals, and the reset path makes
+it three.
+
+**Verified by re-run, not by relay.** Import gate exit 0, zero `SCRIPT ERROR`/`ERROR:`/`WARNING` —
+run by the director after the `STARTING_STONES` edit, not before it. GUT 11 scripts, 87/87, 9583
+asserts, exit 0, same run. `tests/save_roundtrip_check.gd` exit 0 under a redirected `%APPDATA%`,
+driving a real paid-summon → save → reload → clear-credit → save → reload sequence landing at `200`
+then `275` on disk. The mandatory `verifier` pass returned **pass** on all 8 criteria and retracted
+one Codex-raised MEDIUM (the disk test's explicit `save()` calls) after establishing it is the
+file's convention for every other currency field and that the emit is independently pinned by
+`assert_signal_emit_count` in `tests/unit/test_summon.gd`. `Get-Process Godot*` empty after every
+run.
+
+**Not verified.** No windowed run — the disabled-button state and the shortfall message are proven
+by scene-instantiating GUT tests and by reading the handler, not by a human seeing them. And the
+thing this ticket most wants known is not checkable at a desk at all: whether `100` per pull
+against `25`/`75`/`200` per clear *feels* like an economy or like a toll booth. That is the Phase 2
+exit question, and it needs a played build.
+
+### Files changed
+`balance_table.gd`, `balance.tres`, `zones/zone_definition.gd`, `zones/defs/*.tres` (3),
+`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `hub/expedition/expedition.gd`,
+`tests/save_roundtrip_check.gd`, `tests/zone_definition_check.gd`,
+`tests/unit/test_expedition.gd`, `tests/unit/test_summon.gd`

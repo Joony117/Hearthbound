@@ -24,6 +24,50 @@ func test_zero_power_wave_sequence_completes_with_hero_alive() -> void:
 	assert_almost_eq(expedition.current_hp[hero], HERO_MAX_HP, ERROR_MARGIN)
 
 
+func test_completed_expedition_credits_zone_stone_reward() -> void:
+	var hero: Hero = _add_knight()
+	var team: Array[Hero] = [hero]
+	var zone: ZoneDefinition = _make_zone(0, 1.0, 1)
+	zone.stone_reward = 25
+	var stones_before: int = GameSession.stones
+	seed(1)
+
+	var outcome: StringName = Expedition.new().resolve(team, zone)
+
+	assert_eq(outcome, Expedition.OUTCOME_COMPLETED)
+	assert_eq(GameSession.stones, stones_before + zone.stone_reward)
+
+
+func test_retreated_expedition_credits_no_stones() -> void:
+	var hero: Hero = _add_knight()
+	var team: Array[Hero] = [hero]
+	var r: float = 0.9
+	var recommended_power: int = int(HERO_POWER * r / (float(team.size()) / 5.0 * 0.5))
+	var zone: ZoneDefinition = _make_zone(recommended_power, 0.5, 3)
+	zone.stone_reward = 75
+	var stones_before: int = GameSession.stones
+	_seed_for_rolls_above(r, 3)
+
+	var outcome: StringName = Expedition.new().resolve(team, zone)
+
+	assert_eq(outcome, Expedition.OUTCOME_RETREATED)
+	assert_eq(GameSession.stones, stones_before)
+
+
+func test_defeated_expedition_credits_no_stones() -> void:
+	var hero: Hero = _add_knight()
+	var team: Array[Hero] = [hero]
+	var zone: ZoneDefinition = _make_zone(1_000_000, 1.0, 1)
+	zone.stone_reward = 200
+	var stones_before: int = GameSession.stones
+	seed(1)
+
+	var outcome: StringName = Expedition.new().resolve(team, zone)
+
+	assert_eq(outcome, Expedition.OUTCOME_DEFEATED)
+	assert_eq(GameSession.stones, stones_before)
+
+
 func test_five_hero_expedition_completes_and_records_zone_clear() -> void:
 	var team: Array[Hero] = []
 	for hero_index: int in 5:
