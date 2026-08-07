@@ -238,7 +238,8 @@ func _on_sacrifice_pressed() -> void:
 	if not fodder.equipped.is_empty():
 		_status.text = "Unequip the fodder hero before sacrificing it."
 		return
-	var essence_yield: int = Hero.compute_essence_yield(fodder, target, BALANCE)
+	var sanctum_level: int = clampi(GameSession.building_levels[3], 0, BALANCE.summoning_circle_level_cap)
+	var essence_yield: int = Hero.compute_essence_yield(fodder, target, BALANCE, sanctum_level)
 	var fodder_name: String = fodder.hero_name
 	if GameSession.sacrifice_hero(fodder, target, BALANCE):
 		_status.text = "Sacrificed %s for %d essence." % [fodder_name, essence_yield]

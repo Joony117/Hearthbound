@@ -121,7 +121,8 @@ func mark_zone_cleared(zone_id: StringName) -> void:
 func sacrifice_hero(fodder: Hero, target: Hero, balance: BalanceTable) -> bool:
 	if fodder == target or not roster.has(fodder) or not fodder.equipped.is_empty():
 		return false
-	essence += Hero.compute_essence_yield(fodder, target, balance)
+	var sanctum_level: int = clampi(building_levels[3], 0, balance.summoning_circle_level_cap)
+	essence += Hero.compute_essence_yield(fodder, target, balance, sanctum_level)
 	if fodder.def_id == target.def_id and fodder.def_id != Hero.NO_ARCHETYPE_DEF_ID:
 		target.resonance += 1
 	kill_hero(fodder, &"")
