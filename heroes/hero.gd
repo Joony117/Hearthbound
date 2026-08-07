@@ -130,6 +130,19 @@ static func compute_rank_up_cost(hero: Hero, balance: BalanceTable) -> int:
 	]
 
 
+static func active_resonance_traits(hero: Hero, definition: HeroDefinition, balance: BalanceTable) -> Array[TraitDefinition]:
+	assert(hero != null)
+	assert(balance != null)
+	if definition == null:
+		push_error("Cannot get resonance traits for hero '%s' without a HeroDefinition." % hero.hero_name)
+		return []
+	var unlocked_count: int = 0
+	for threshold: int in balance.resonance_trait_thresholds:
+		if hero.resonance >= threshold:
+			unlocked_count += 1
+	return definition.resonance_trait_pool.slice(0, mini(unlocked_count, definition.resonance_trait_pool.size()))
+
+
 func to_dict() -> Dictionary:
 	var equipped_slots: Array[int] = []
 	for slot: int in equipped:

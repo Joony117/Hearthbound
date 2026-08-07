@@ -27,6 +27,8 @@ func _check_values(balance: BalanceTable) -> int:
 		return _fail("SSS essence base", "6500", str(balance.essence_bases[7]))
 	if balance.rank_up_essence_costs[6] != 16000:
 		return _fail("SS to SSS essence cost", "16000", str(balance.rank_up_essence_costs[6]))
+	if balance.resonance_trait_thresholds != [1, 3, 6]:
+		return _fail("resonance_trait_thresholds", "[1, 3, 6]", str(balance.resonance_trait_thresholds))
 	if balance.summon_weights[7] != 2:
 		return _fail("SSS summon weight", "2", str(balance.summon_weights[7]))
 	if balance.rank_names != EXPECTED_RANK_NAMES:

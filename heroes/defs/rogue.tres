@@ -1,6 +1,28 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
+[ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
+
+[sub_resource type="Resource" id="TraitDefinition_opening_strike"]
+script = ExtResource("2_trait")
+id = &"rogue_opening_strike"
+display_name = "Opening Strike"
+stat = 4
+magnitude = 0.015
+
+[sub_resource type="Resource" id="TraitDefinition_killer_instinct"]
+script = ExtResource("2_trait")
+id = &"rogue_killer_instinct"
+display_name = "Killer Instinct"
+stat = 1
+magnitude = 0.05
+
+[sub_resource type="Resource" id="TraitDefinition_executioner"]
+script = ExtResource("2_trait")
+id = &"rogue_executioner"
+display_name = "Executioner"
+stat = 5
+magnitude = 0.08
 
 [resource]
 script = ExtResource("1")
@@ -16,3 +38,4 @@ base_spd = 110.0
 spd_growth = 1.6
 crit_rate = 0.15
 crit_dmg = 1.8
+resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_opening_strike"), SubResource("TraitDefinition_killer_instinct"), SubResource("TraitDefinition_executioner")])

@@ -7,6 +7,7 @@ extends Resource
 @export var core_socket_counts: Array[int] = [0, 0, 0, 0, 1, 1, 2, 2]
 @export var essence_bases: Array[int] = [10, 25, 65, 165, 420, 1050, 2600, 6500]
 @export var rank_up_essence_costs: Array[int] = [40, 110, 300, 800, 2200, 6000, 16000]
+@export var resonance_trait_thresholds: Array[int] = [1, 3, 6]
 @export var summon_weights: Array[int] = [4000, 2700, 1700, 1000, 450, 120, 28, 2]
 @export var rank_names: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
 @export var equip_pct_per_rank: Array[float] = [0.04, 0.054, 0.0728, 0.0984, 0.1328, 0.1792, 0.242, 0.3268]

@@ -1,6 +1,26 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
+[ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
+
+[sub_resource type="Resource" id="TraitDefinition_devotion"]
+script = ExtResource("2_trait")
+id = &"cleric_devotion"
+display_name = "Devotion"
+magnitude = 0.05
+
+[sub_resource type="Resource" id="TraitDefinition_sanctuary"]
+script = ExtResource("2_trait")
+id = &"cleric_sanctuary"
+display_name = "Sanctuary"
+stat = 2
+magnitude = 0.04
+
+[sub_resource type="Resource" id="TraitDefinition_guardian_light"]
+script = ExtResource("2_trait")
+id = &"cleric_guardian_light"
+display_name = "Guardian Light"
+magnitude = 0.06
 
 [resource]
 script = ExtResource("1")
@@ -16,3 +36,4 @@ base_spd = 95.0
 spd_growth = 1.1
 crit_rate = 0.05
 crit_dmg = 1.5
+resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_devotion"), SubResource("TraitDefinition_sanctuary"), SubResource("TraitDefinition_guardian_light")])

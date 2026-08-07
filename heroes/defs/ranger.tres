@@ -1,6 +1,28 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
+[ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
+
+[sub_resource type="Resource" id="TraitDefinition_quickdraw"]
+script = ExtResource("2_trait")
+id = &"ranger_quickdraw"
+display_name = "Quickdraw"
+stat = 3
+magnitude = 0.04
+
+[sub_resource type="Resource" id="TraitDefinition_marksman"]
+script = ExtResource("2_trait")
+id = &"ranger_marksman"
+display_name = "Marksman"
+stat = 1
+magnitude = 0.05
+
+[sub_resource type="Resource" id="TraitDefinition_deadeye"]
+script = ExtResource("2_trait")
+id = &"ranger_deadeye"
+display_name = "Deadeye"
+stat = 4
+magnitude = 0.015
 
 [resource]
 script = ExtResource("1")
@@ -16,3 +38,4 @@ base_spd = 100.0
 spd_growth = 1.4
 crit_rate = 0.1
 crit_dmg = 1.6
+resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_quickdraw"), SubResource("TraitDefinition_marksman"), SubResource("TraitDefinition_deadeye")])
