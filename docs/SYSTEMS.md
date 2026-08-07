@@ -150,11 +150,19 @@ exactly the players following the naive strategy. An optimistic bound — Sanctu
 happens to be max-level — comes down to **~150 pulls**; that excludes the cost of leveling
 fodder before feeding it, so treat it as a ceiling, not a target.
 
-> ⚠️ **PROVISIONAL** — the `~327`-pull spine number is arithmetically solid (`78.38` essence/pull
-> checked directly against the weight and essence-base tables), but unvalidatable against actual
-> play time: there is no Summon Stone income rate yet, so "327 pulls" doesn't map to a session
-> count or an hour count. · **Settled by:** Summon Stone income being defined (`P2-09`), then a
-> played build to see how many pulls a session actually yields.
+> ⚠️ **RESOLVED, in part, by `P2-09`'s ruling (Summoning → Summon Stones — cost and income,
+> below).** The `~327`-pull spine number now maps to a real, countable unit: at `100` stones/pull
+> and the ruled per-zone income, it's `~1,308` clears farming Verdant alone, `~436` Ashfall alone,
+> or `~164` Sundered alone. That was the actual gap — "327 pulls" is no longer stranded with
+> nothing to divide it by.
+>
+> ⚠️ **PROVISIONAL, narrower than before** — the arithmetic above is checked against every
+> existing spine number in this document (Codex thread `019fdae0-d06f-7e82-b408-93d55716a5f1`),
+> but "clears" still isn't "sessions" or "hours": nothing in this codebase counts a play session,
+> so the clears-to-spine figures can't be honestly converted further without a fact this ruling
+> doesn't have — how many clears a player completes per sitting. · **Settled by:** a played build
+> with `P2-09`'s pricing wired in, to see how many clears (and therefore how many pulls) a real
+> session actually yields.
 
 A max-level sacrifice yields double, so levelling fodder before feeding it is a real (if
 slow) strategy.
@@ -1574,6 +1582,157 @@ already shipped. Nothing left to route to `tech-lead` on this point.
 
 **No pity system until Phase 4.** Pity is a player-frustration feature, not a correctness
 one, and adding it before the loop is proven would be tuning something that may not survive.
+
+### Summon Stones — cost and income (`P2-09`)
+
+`P2-09`. Summon Stones do not exist anywhere in code today (grepped `stone|Stone` case-insensitive
+across every `*.gd`; the only hits are three `loot_emphasis` display-string literals in
+`tests/zone_definition_check.gd`). A pull currently costs nothing — the hub's summon button is
+free and unlimited. This ruling gives the currency a price, an income rate, and a starting
+balance, the same "found, not authored" gap the loot table (`P2-04b`, above) and the resonance
+trait pool (`P2-06`) each closed.
+
+**1. Pulls cost stones — flat `100` per pull, regardless of rank rolled.** The gold-removal ruling
+(Enhancement, above) kept two earned-currency tracks deliberately: *"Summon Stones pull, and
+parts... upgrade, via Enhancement's cost line above and Buildings' upgrade cost below."* That
+sentence is only true once a pull actually spends a stone — until now it was aspirational, and an
+unpriced pull leaves Summon Stones in exactly the state gold was struck for: named, ledgered
+nowhere, and doing no work. Flat, not rank-scaled: a player doesn't choose what rank a pull
+returns (Summoning, above — you roll the rank, then the definition), so there is nothing for a
+variable price to attach to. Same reasoning the loot table used for guaranteed-one-item-per-clear
+being unscaled by zone on the "does it drop" question, only the "which" is randomized.
+
+**2. Income — guaranteed, flat per zone, `COMPLETED` clears only.**
+
+```
+stone_reward = { Verdant Outskirts: 25, Ashfall Reaches: 75, Sundered Vault: 200 }
+```
+
+Paid on the same trigger as the loot-table drop (`Expedition.resolve()` reaching
+`OUTCOME_COMPLETED`, `hub/expedition/expedition.gd:65-67`) — `RETREATED` and `DEFEATED` pay
+nothing, the identical rule `P2-04b` already ruled for the item drop, so the two rewards land on
+the same clear together rather than needing a second condition authored.
+
+| Zone | Stones/clear | Pulls this buys |
+|---|---:|---:|
+| Verdant Outskirts (light) | 25 | 1/4 pull |
+| Ashfall Reaches (moderate) | 75 | 3/4 pull |
+| Sundered Vault (heavy) | 200 | 2 pulls |
+
+`25 : 75 : 200` reduces to `1 : 3 : 8` — clean, and deliberately tamer than the zones'
+`recommended_power` ratio (`900 : 4,800 : 11,500`, roughly `1 : 5.3 : 12.8`). Pricing income
+directly off recommended power was considered and rejected (below); the ratio actually chosen
+still rewards pushing to a harder zone (a Sundered clear buys 8× a Verdant one) without making
+Verdant-only farming pay for less than a quarter-pull per clear, which would starve the sacrifice
+engine's own claim that it's fed by *the natural spread of pulled ranks* from the very first pull
+(Sacrifice, above) — that claim needs pulls to stay reachable at F-rank content, not just at
+Sundered.
+
+Verified (Codex thread `019fdae0-d06f-7e82-b408-93d55716a5f1`): the `25/75/200` banding reduces
+exactly to `1:3:8`, and a Sundered clear buys exactly 2 pulls, an Ashfall clear exactly 0.75 of
+one, a Verdant clear exactly 0.25 — no rounding anywhere in the banding itself.
+
+**3. Starting balance — `300` stones (3 pulls) on a fresh save.** This is not a feel choice, it is
+a correctness floor: `roster` starts empty on a fresh save (`systems/game_session.gd:10`, no
+starting-hero grant exists anywhere), and `Expedition` accepts a team as small as one hero
+(`hub/expedition/expedition.gd:20`, `assert(team.size() >= 1 ...)`) — so the *only* way a fresh
+save can field any expedition at all is to pull first. A starting balance below `100` (one pull's
+cost) makes the summon button, and therefore the entire game, unplayable from boot. `300` is
+three pulls, chosen against a number this document already verified rather than invented fresh:
+the spine's own "~2.5 expected pulls to land the F keeper" (Sacrifice, above — `1/0.4`, the F-rank
+weight). Three pulls clears that expectation with headroom — `78.4%` chance of landing at least
+one F-rank hero within exactly 3 pulls (`1 - 0.6^3`, Codex thread above) — and leaves a fresh
+roster with more than a single point of failure if the first pull rolls an archetype the player
+doesn't want to lead with.
+
+**4. The spine, re-derived into clears.** `327` manufactured pulls × `100` stones = `32,700`
+stones (minus the `300` starting balance, `32,400` net — a `<1.3%` difference at every zone's
+rounded clear count, negligible against a number that was already `~327`, not exact). Clears
+needed to earn that many stones, farming one zone exclusively:
+
+| Zone | Clears to fund 327 pulls |
+|---|---:|
+| Verdant Outskirts only | ~1,308 |
+| Ashfall Reaches only | ~436 |
+| Sundered Vault only | ~164 |
+
+This closes the PROVISIONAL at the top of Sacrifice → rank up (above): the `~327`-pull spine
+number now maps to a real, countable unit — clears — the same denominator Buildings' own upgrade
+cost already uses (`264` expected clears to max one building). Sundered-only farming lands at
+`~164` clears per manufactured SSS, `~0.62×` the building anchor — same order of magnitude,
+comfortably inside what this document already treats as a reasonable long-horizon grind. Nothing
+about this ruling touches the manufacture-vs-direct-pull ratio: stone pricing changes what a pull
+costs to reach, not how many pulls each route needs, so the existing `~15×` "manufacture, don't
+pray" advantage (Summoning, above) is unaffected — reconfirmed at `5,000/327 ≈ 15.3×`.
+
+**What this does *not* settle.** Clears are countable; sessions and hours are not. Nothing in this
+codebase counts a play session or a wall-clock minute (the same gap `P2-04f`/`P2-13` are blocked
+on), so "164 clears" cannot honestly become "N sessions" or "N hours" without a further, separate
+fact this ruling doesn't have: how many clears a player actually completes per sitting. That
+number can only come from a played build, not a desk.
+
+**5. Where the numbers live.**
+
+| Number | File | Notes |
+|---|---|---|
+| `summon_pull_cost = 100` | `BalanceTable`/`balance.tres` | New field. Single global constant — pulls don't vary by rank, so no per-zone or per-rank split. |
+| `stone_reward` per zone (`25`/`75`/`200`) | `ZoneDefinition` (→ `zones/defs/*.tres`) | New field, same shape as `P2-04b`'s `loot_rank_min`/`loot_rank_max` — genuinely per-zone. |
+| Starting balance (`300`) | `GameSession` | New field entirely — `GameSession` has no stone/currency field of any kind today (`systems/game_session.gd:10-16`); this is the "found, not authored" gap this whole ruling closes. Needs `to_dict`/`from_dict` persistence like every other `GameSession` field (`CLAUDE.md`'s save-round-trip boundary), and a default of `300` on a fresh save specifically, not merely "starts at 0." |
+| `COMPLETED`-only payout | Nowhere new — formula-shape, written into the reward rule itself, same footing as the loot table's own guaranteed-drop condition | No `BalanceTable` field. |
+
+This is the shape a follow-up implementer ticket needs; writing that ticket body is `tech-lead`'s
+call, not this ruling's. Flagging for that ticket: pricing a pull means `GameSession`'s summon-roll
+call site needs a stones-check-and-deduct guard mirroring `enhance_item`'s
+parts-check-and-deduct shape (`systems/game_session.gd:73-88`) — return `false`/no-op on
+insufficient balance rather than letting the roll happen for free. The `.tscn` summon button UI
+also needs to read and display the balance and disable itself below `summon_pull_cost`, the same
+class of scene-seam change `CLAUDE.md`'s risky-boundary section already flags for any state
+change.
+
+**Rejected: keep pulls free.** This was the status quo, considered as "do nothing." Rejected
+because it leaves the gold-removal ruling's own reasoning false — Summon Stones would join gold as
+a currency that is named, prosed about in three zone files, and does nothing, the exact "third
+currency filling a role... with zero implementation behind it" problem gold was struck for. The
+difference is Summon Stones already have a real consumer (the pull) the moment a price exists;
+striking them the way gold was struck would mean rewriting the zone prose and the gold-removal
+ruling's own two-track claim, a larger and unjustified change.
+
+**Rejected: price pulls by target rank** (e.g. cheaper for a guaranteed-low-rank pull, more
+expensive for a rank-weighted-up pull). Rejected because Summoning doesn't let a player choose a
+rank to pull — the rank is rolled, then the definition (Summoning, above) — so there is no "which
+rank did you buy" decision for a variable price to price. The Summoning Circle already spends its
+whole budget shifting the *odds*, not selling ranks directly; a second, pull-priced lever for the
+same knob would be redundant with a building that already exists.
+
+**Rejected: income proportional to `recommended_power`** (`900 : 4,800 : 11,500`, ≈`1 : 5.3 :
+12.8`). Computed and rejected: at that ratio a Verdant clear would fund under a fifth of a pull
+(`25 * (1/5.3) ≈ 4.7` at the same Sundered anchor), which risks the sacrifice engine's own
+"natural spread, not just F-fodder" design intent (Sacrifice, above) never being reachable from
+starter content — a new player would need to reach Ashfall or Sundered before pulling felt
+worthwhile at all, undermining the "manufacture, don't pray" loop the whole spine number exists to
+support.
+
+**Rejected: a turn/session/hour-denominated rate.** Named explicitly as the trap in this ticket's
+own framing, and it would be the fifth time this backlog authored a number against a clock that
+doesn't exist (`LostCache.turn_lost`, `Item.enhance_level`, `reliquary_decay_turns_bonus`, the flat
+Forge salvage bonus, all flagged earlier in this document). Clears are the only repeatable,
+already-countable player action in this codebase; denominating in anything else would read as real
+and measure nothing, same as every prior instance of this trap.
+
+**Rejected: starting balance of `100` (exactly one pull).** Every pull always returns *some*
+hero — the weight table sums to `10000` across F..SSS with no "miss" outcome — so one pull never
+literally strands a fresh save. Rejected anyway: it clears none of the spine's own `~2.5`-pull
+expectation to land an F-rank hero specifically, and leaves a brand-new roster at exactly one
+hero with no fallback if that pull's archetype doesn't suit the player's first fight. `300` is the
+smallest multiple of `100` that clears the `2.5`-pull expectation with a full pull of headroom.
+
+> ⚠️ **PROVISIONAL** — `100`/pull, the `25:75:200` zone banding, and the `300` starting balance
+> are arithmetically self-consistent (verified above, Codex thread `019fdae0-d06f-7e82-b408-93d55716a5f1`)
+> and checked against every existing spine number in this document, but nobody has spent a stone
+> against a built summon button. Whether `100` reads as a real cost or an invisible tax, and
+> whether the `1,308`/`436`/`164` clears-to-spine figures feel like "a long-term goal" or "a
+> chore" the way Buildings' own cost anchor asks the same question, is unfelt. · **Settled by:** a
+> played build with pricing wired in, across at least a few dozen real clears in each zone.
 
 ---
 

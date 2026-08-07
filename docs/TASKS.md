@@ -564,14 +564,20 @@ real. Recorded here so a cold session inherits the reasoning instead of rediscov
 | P2-08 | Full save/load round-trip through `SaveService` | |
 | P2-10 | ~~Gold — what it is and how a player gets it~~ **CLOSED — will not do** | Superseded by `SYSTEMS.md` § Enhancement's gold-removal ruling (2026-08-06), which struck gold from the document entirely rather than deferring it. This row asked for an income rate; the ruling's **Rejected: give gold an income rate and keep it as a third currency** answers it directly — Summon Stones (pulling) and parts (upgrading) already cover the two earned-currency tracks, and every cost line downstream of `P2-05e` settled on parts-only, so nothing was left to spend it on. Do not re-open without a system that needs a third currency. Left the residue as `P2-15`. |
 | P2-15 | Sync three zones' `loot_emphasis` strings to the gold-removal ruling | **Landed** in the commit below. Six literals, not the four the row predicted — three `.tres` `loot_emphasis` fields **and** three expected-string literals in `tests/zone_definition_check.gd`, which asserts them by exact match, so the `.tres` edits alone would have reddened the gate. Director-written per rung 1; no delegation, no design input, no boundary crossed. `SYSTEMS.md` § Enhancement's follow-up note is closed out to match. Gold now appears nowhere in `*.gd`/`*.tres`/`*.tscn`. |
-| P2-09 | Summon Stone income rate — how a player actually acquires stones | Found by `game-designer`, deliberately not authored by it — a design input, not a Resource-authoring task. Nothing defines acquisition rate today, which makes the verified ~327-pull spine number unvalidatable against real play time: the ratio is sound, the pacing is unknowable without this. Needed before the Phase 2 exit question below can be honestly answered. |
+| P2-09 | Summon Stone income rate — how a player actually acquires stones | **Landed** in the commit below. No body — this was a backlog row, and the ruling itself is `SYSTEMS.md` § Summon Stones — cost and income. `100` stones/pull flat, `25`/`75`/`200` per `COMPLETED` clear (Verdant/Ashfall/Sundered, reducing to `1:3:8`), `300` on a fresh save. Took the **pull cost** as well as the income rate, which the row's title did not name: an income rate with no price is not checkable, and the gold-removal ruling's surviving "two earned-currency tracks" claim is only true once a pull spends a stone. Opened `P2-16`. |
+| P2-16 | Pulls cost Summon Stones, and a clear pays them | The implementer half of `P2-09`. Needs a `tech-lead` pass, for the reason `P2-07` did: it is a **save-key change** (a new `GameSession` stone field, `CLAUDE.md` boundary 1, mandatory `verifier`) *plus* a new `BalanceTable` field, a new `ZoneDefinition` field across three `.tres`, a check-and-deduct guard on the summon path, and a hub scene-seam change (the button must read the balance and disable itself below cost). `SYSTEMS.md` § Summon Stones § 5 states where each number lives. Two traps already on the record apply: the fresh-save default is `300` and **not** "starts at 0" — an empty roster plus a priced pull means a zero balance is unplayable from boot, not merely slow — and `zones/defs/*.tres` edits redden `tests/zone_definition_check.gd`, which asserts zone fields by exact match (`P2-15`). |
 | P2-13 | **[BLOCKED]** Fodder training — an instructor hero trains F–C fodder; survivors of background "culling" expeditions gain XP and rank up naturally | Blocked on four things that do not exist: `P2-04a` (no `Hero.level` or XP field at all — `combat/quick_resolve.gd:21-23` derives level from rank and treats every hero as permanently max-level), `P2-06c` (**landed `f4eea87`** — `instructor_trait_pool` now exists on `HeroDefinition`, reserved and empty as intended, and this ticket also inherits `Hero.taught_traits`, which `P2-06c` deliberately deferred rather than shipping empty; `SYSTEMS.md` § Traits §4 still specifies it in full), `P2-07` (the Training Hall is a grey-box mesh in `hub.tscn:41-89` and `balance_table.gd:24`'s `training_hall_xp_bonus = 0.15` is authored-but-unread), and a **turn concept**, which exists nowhere — `Expedition.resolve()` is synchronous, and `P2-04f` is blocked on the same gap. Four missing systems in one ticket is the "add an inventory system" shape this file exists to prevent; do not start it because one dependency landed. Needs a `game-designer` ruling first, on the five questions below. |
 | P2b-01 | Minimum playable arena: capsules, WASD + mouse, one attack, one dodge, one enemy | Same `CombatResult` |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
-the fix is design, not code — and finding out here is much cheaper than after Phase 3. (See
-P2-09 — that question can't be honestly answered until stone income rate is defined.)
+the fix is design, not code — and finding out here is much cheaper than after Phase 3.
+
+`P2-09` moved that question as far as a desk can move it: the `~327`-pull spine now divides by a
+unit the game can count, landing at `~1,308`/`~436`/`~164` clears depending on which zone is farmed.
+What it cannot do is turn clears into sessions or hours — **nothing in this codebase counts a play
+session**, the same missing-clock gap `P2-04f` and `P2-13` are blocked on. So the honest remaining
+dependency is not another ruling, it is `P2-16` wiring the price in and someone playing it.
 
 ---
 
@@ -626,6 +632,7 @@ needs to re-read.
 | `P2-07e` | Sanctum level raises sacrifice essence yield | `f93f547` |
 | `P2-07d` | Forge level raises the enhance cap and the salvage yield | *(this commit)* |
 | `P2-15` | Drop the struck gold currency from three zones' reward prose | *(with the merges)* |
+| `P2-09` | Summon Stone ruling — what a pull costs, and what a clear pays | *(this commit)* |
 
 ---
 
