@@ -16,6 +16,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _parts: Label = %Parts
 @onready var _convert_rank_option: OptionButton = %ConvertRankOption
 @onready var _equipped_list: ItemList = %EquippedList
+@onready var _hero_detail: Label = %HeroDetail
 @onready var _zone_option: OptionButton = %ZoneOption
 @onready var _status: Label = %Status
 @onready var _pause_menu: CanvasLayer = %PauseMenu
@@ -27,12 +28,14 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_inventory)
 	GameSession.roster_changed.connect(_refresh_parts)
 	GameSession.roster_changed.connect(_refresh_equipped)
+	GameSession.roster_changed.connect(_refresh_hero_detail)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	_refresh_roster()
 	_refresh_essence()
 	_refresh_inventory()
 	_refresh_parts()
 	_refresh_equipped()
+	_refresh_hero_detail()
 	_populate_convert_ranks()
 	_populate_zones()
 	_refresh_zone_unlocks()
@@ -116,6 +119,43 @@ func _refresh_equipped() -> void:
 		else:
 			_equipped_list.add_item("%s %s %s%s" % [slot_name, item.rank_label(BALANCE), definition.display_name, enhance_suffix])
 		_equipped_list.set_item_metadata(_equipped_list.item_count - 1, slot)
+
+
+func _refresh_hero_detail() -> void:
+	_hero_detail.text = ""
+	var hero: Hero = _selected_hero()
+	if hero == null:
+		return
+	if hero.def_id == Hero.NO_ARCHETYPE_DEF_ID:
+		_hero_detail.text = "Rank: %s\nArchetype: No archetype" % hero.rank_label(BALANCE)
+		return
+	var definition: HeroDefinition = Hero.definition_for(hero.def_id)
+	if definition == null:
+		_hero_detail.text = "Rank: %s\nArchetype: Missing archetype (%s)" % [hero.rank_label(BALANCE), hero.def_id]
+		return
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(
+		hero,
+		definition,
+		BALANCE,
+		Hero.level_for(hero, BALANCE),
+	)
+	var traits: PackedStringArray = []
+	for trait_definition: TraitDefinition in Hero.active_resonance_traits(hero, definition, BALANCE):
+		traits.append(trait_definition.display_name)
+	# Keyed off the pool being empty, not off resonance: a definition with no authored pool would
+	# otherwise print "Traits: " with nothing after it.
+	var trait_text: String = "none" if traits.is_empty() else ", ".join(traits)
+	_hero_detail.text = "Rank: %s\nHP: %d\nATK: %d\nDEF: %d\nSPD: %d\nCRIT_RATE: %.1f%%\nCRIT_DMG: %.1f%%\nResonance: %d\nTraits: %s" % [
+		hero.rank_label(BALANCE),
+		roundi(stats[Hero.STAT_HP]),
+		roundi(stats[Hero.STAT_ATK]),
+		roundi(stats[Hero.STAT_DEF]),
+		roundi(stats[Hero.STAT_SPD]),
+		stats[Hero.STAT_CRIT_RATE] * 100.0,
+		stats[Hero.STAT_CRIT_DMG] * 100.0,
+		hero.resonance,
+		trait_text,
+	]
 
 
 func _selected_hero() -> Hero:
@@ -216,6 +256,7 @@ func _on_rank_up_pressed() -> void:
 
 func _on_roster_list_multi_selected(_index: int, _selected: bool) -> void:
 	_refresh_equipped()
+	_refresh_hero_detail()
 
 
 func _on_equip_pressed() -> void:

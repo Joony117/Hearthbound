@@ -30,6 +30,10 @@ func rank_label(balance: BalanceTable) -> String:
 	return balance.rank_names[clampi(rank, 0, balance.rank_names.size() - 1)]
 
 
+static func level_for(hero: Hero, balance: BalanceTable) -> int:
+	return balance.level_caps[clampi(hero.rank, 0, balance.level_caps.size() - 1)]
+
+
 static func definition_for(p_def_id: StringName) -> HeroDefinition:
 	var path: String = DEF_PATH_TEMPLATE % str(p_def_id)
 	if not ResourceLoader.exists(path):

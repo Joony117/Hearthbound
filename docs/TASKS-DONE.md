@@ -2499,3 +2499,103 @@ empty after every run.
 `balance_table.gd`, `balance.tres`, `equipment/item.gd`, `heroes/hero.gd`,
 `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`,
 `tests/unit/test_equipment.gd`
+
+---
+
+## P2-14 — The hub shows what a hero's stats actually are                 [DONE]
+
+### Objective
+Selecting one hero in the roster shows its six computed final stats, its resonance count, and its
+active resonance traits. Equipping gear, ranking up, or feeding it a dupe visibly moves those
+numbers.
+
+### Existing architecture
+- `Hero.compute_final_stats(hero, definition, balance, level)` (`heroes/hero.gd:44`) already returned
+  the six stats with gear and traits folded in, and `Hero.active_resonance_traits()` returned the
+  unlocked `TraitDefinition`s. Nothing outside `combat/` and `tests/unit/` called either — that was
+  the whole gap.
+- Combat derives the level it passes: `BALANCE.level_caps[clampi(hero.rank, …)]`
+  (`combat/quick_resolve.gd:21-23`). There is no `Hero.level` field (`P2-04a`). A display that
+  re-derives this can silently disagree with combat — the same failure the combat seam's one-place
+  ramp rule exists to prevent — so the derivation moved into one `static func`.
+- `hub/hub.gd:_refresh_equipped()` already ran on single-hero selection through `_selected_hero()`
+  and the `multi_selected` connection; `_ready()` already fanned `roster_changed` out to six
+  refreshes.
+- `Summon.archetype_label_for()` was the precedent for `NO_ARCHETYPE_DEF_ID`: label it rather than
+  call `definition_for("")` on every selection and spray `push_error`.
+
+### Acceptance criteria
+1. `Hero.level_for(hero, balance) -> int` is the single home of the rank→level derivation, and
+   `combat/quick_resolve.gd` calls it instead of indexing `level_caps` inline. The level handed to
+   `compute_final_stats` is unchanged.
+2. With exactly one roster hero selected, the hub shows its six stats — HP/ATK/DEF/SPD as integers,
+   `CRIT_RATE`/`CRIT_DMG` as percentages — plus `Resonance: N` and each active trait's
+   `display_name`, or an explicit "none" when the pool yields nothing.
+3. Selecting zero or several heroes clears the readout instead of leaving stale numbers on screen.
+4. A hero with `NO_ARCHETYPE_DEF_ID` (Phase 1 saves) shows a label, not blank stats, and emits no
+   `push_error`.
+5. Equipping an item, ranking a hero up, and sacrificing a dupe into it each visibly change the
+   readout without leaving the hub.
+6. `tests/unit/test_hero_stats.gd` asserts `Hero.level_for` returns `balance.level_caps[rank]` for
+   every rank and clamps an out-of-range rank.
+7. Both gates green: import gate with zero errors *and* zero warnings, full GUT suite passing.
+8. No save key changes — display only, nothing here is persisted.
+
+### Files allowed to change
+`hub/hub.gd`, `hub/hub.tscn`, `heroes/hero.gd`, `combat/quick_resolve.gd`,
+`tests/unit/test_hero_stats.gd`, `docs/TASKS.md`. **Widened during the ticket** to
+`tests/unit/test_expedition.gd` — criteria 2/3/5 are scene behavior, and that file already owns
+every hub-scene drive in the suite (its `hub.tscn` instantiation helper and `%UniqueName` lookups).
+A second hub-driving test file would have duplicated the setup to satisfy a file list.
+
+### Non-goals
+- No `Hero.level` field and no XP — that is `P2-04a`.
+- No stat-source breakdown (base vs gear vs trait), no before/after preview, no tooltips.
+- No team-power readout: `compute_team_power` is deliberately crit-blind and pinned by an assertion
+  (`P2-05c`).
+- No hub restyle or new panel layout beyond the one `Label` this needs.
+
+### Findings
+
+**`ItemList.select()` does not emit `multi_selected`.** A scene-driving test has to emit the signal
+itself (`roster_list.multi_selected.emit(0, true)`), and doing that is strictly better than calling
+the handler directly: it exercises the `[connection]` block inside `hub.tscn`, which is the half of
+the scene↔script seam the import gate cannot see. The existing hub tests drive buttons the same way
+via `pressed.emit()`.
+
+**Crit renders with one decimal, deliberately.** Jewelry and 3 of the 15 authored traits move only
+the crit channel, at `+1.5pp` per rank — a rounded integer can absorb an entire item, which would
+make the readout look inert exactly where traits and rings live. The scene test asserts a resonance
+trait moves the *displayed* DEF integer, so a magnitude too small to show up fails a test instead of
+shipping a readout that never changes.
+
+**"none" is keyed off the trait array being empty, not off `resonance > 0`.** The first pass used
+resonance, which is correct only while `resonance_trait_thresholds[0] == 1` *and* every archetype has
+a non-empty pool — a definition with an unauthored pool would have printed `Traits: ` with nothing
+after it. Two conditions the display has no reason to depend on.
+
+**The worker's `partial` was its own sandbox, not the suite.** The documented GUT command dies inside
+a Codex `workspace-write` sandbox because `user://logs/` resolves into the real `%APPDATA%`; it exits
+`-1073741819` before the first test. Recorded in `KNOWN_ISSUES.md` § Environment. The director's own
+unsandboxed run of the identical command passed. Read the exit code before believing a red gate from
+a worker.
+
+**Verified by re-run, not by relay.** Import gate exit 0, zero `SCRIPT ERROR`/`ERROR:`/`WARNING` in
+the checked pass. GUT 67/67, 9495 asserts, exit 0 (was 66/9485 — the two new tests). The suite's
+three `ERROR:` lines are pre-existing: `git stash` and re-run gave the identical count of 3, all from
+deliberate missing-definition and invalid-save tests, none from the display path — which is how
+criterion 4 was checked rather than assumed. `Get-Process Godot*` empty before and after.
+
+**Not verified: a windowed run.** No screenshot was taken, so the readout's *appearance* is
+unproven — the 9-line `Label` is a non-expanding child of a `VBoxContainer` whose `ItemList` above it
+has `size_flags_vertical = 3`, so it takes its full minimum height and the list yields, which is
+reasoning rather than evidence.
+
+**Archive integrity, unrelated to this ticket:** `P2-06a`'s body was appended into the *middle* of
+`P2-05f`'s Findings section, splitting it — so the block immediately above this one reads as
+`P2-06a`'s verification and file list when it is `P2-05f`'s. `P2-06a` has no `### Files changed`
+block of its own. Found while appending here; not repaired inside a ticket that does not own it.
+
+### Files changed
+`heroes/hero.gd`, `combat/quick_resolve.gd`, `hub/hub.gd`, `hub/hub.tscn`,
+`tests/unit/test_hero_stats.gd`, `tests/unit/test_expedition.gd`

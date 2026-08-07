@@ -3,6 +3,16 @@ extends GutTest
 const ERROR_MARGIN: float = 0.0001
 
 
+func test_level_for_uses_rank_caps_and_clamps() -> void:
+	var balance := BalanceTable.new()
+	var hero := Hero.new("Test Hero")
+	for rank: int in balance.level_caps.size():
+		hero.rank = rank
+		assert_eq(Hero.level_for(hero, balance), balance.level_caps[rank])
+	hero.rank = balance.level_caps.size()
+	assert_eq(Hero.level_for(hero, balance), balance.level_caps.back())
+
+
 func test_rank_and_level_scale_combat_stats_but_not_crit() -> void:
 	var definition := _make_definition()
 	var balance := BalanceTable.new()

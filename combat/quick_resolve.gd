@@ -18,9 +18,7 @@ static func resolve(team: Array[Hero], wave: Wave) -> CombatResult:
 		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
 		if definition == null:
 			return result
-		var level: int = BALANCE.level_caps[
-			clampi(hero.rank, 0, BALANCE.level_caps.size() - 1)
-		]
+		var level: int = Hero.level_for(hero, BALANCE)
 		definitions.append(definition)
 		levels.append(level)
 		var stats := Hero.compute_final_stats(hero, definition, BALANCE, level)

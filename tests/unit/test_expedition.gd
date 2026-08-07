@@ -414,6 +414,47 @@ func test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity() -> void:
 	assert_true(saw_loss)
 
 
+func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var hero := _add_knight()
+	var definition: HeroDefinition = Hero.definition_for(hero.def_id)
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var hero_detail: Label = hub.get_node("%HeroDetail") as Label
+
+	assert_eq(hero_detail.text, "", "Nothing selected shows nothing.")
+
+	roster_list.select(0)
+	# select() does not emit; the [connection] block in hub.tscn is what drives the refresh.
+	roster_list.multi_selected.emit(0, true)
+	var before_stats := Hero.compute_final_stats(hero, definition, balance, Hero.level_for(hero, balance))
+	var before_def: String = "DEF: %d" % roundi(before_stats[Hero.STAT_DEF])
+	assert_string_contains(hero_detail.text, before_def)
+	assert_string_contains(hero_detail.text, "Resonance: 0")
+	assert_string_contains(hero_detail.text, "Traits: none")
+
+	# roster_changed is the only refresh path equip, rank-up and sacrifice all go through.
+	hero.resonance = 1
+	GameSession.roster_changed.emit()
+	var after_stats := Hero.compute_final_stats(hero, definition, balance, Hero.level_for(hero, balance))
+	assert_string_contains(hero_detail.text, "DEF: %d" % roundi(after_stats[Hero.STAT_DEF]))
+	assert_string_contains(hero_detail.text, "Resonance: 1")
+	assert_string_contains(hero_detail.text, "Bulwark")
+	assert_false(
+		hero_detail.text.contains(before_def),
+		"A resonance trait must move the displayed stat, not just the trait line.",
+	)
+
+	_add_knight("Knight 2")
+	roster_list.select(0)
+	roster_list.select(1, false)
+	roster_list.multi_selected.emit(1, true)
+	assert_eq(hero_detail.text, "", "Two heroes selected leaves no stale numbers.")
+
+
 func _add_knight(hero_name: String = "Knight") -> Hero:
 	var hero := Hero.new(hero_name, 0)
 	hero.def_id = &"knight"

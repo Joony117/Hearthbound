@@ -206,3 +206,15 @@ regardless, but only because that daemon happens to serve a port — the same si
 failure mode with a non-LSP headless process is the case above. Anyone dispatching a
 Godot-touching subagent should verify port 6005 and process list directly rather than trusting a
 "daemon is down" assumption carried over from an earlier turn.
+
+### The documented GUT command crashes inside a Codex worker's sandbox
+`--headless -s addons/gut/gut_cmdln.gd` writes Godot's own log under `user://logs/`, which resolves
+into the real `%APPDATA%`. A Codex worker sandboxed to `workspace-write` cannot write there, so the
+documented command dies before the first test with `ERROR: Failed to open 'user://logs/...'` and
+exit `-1073741819` (an access violation, not a test failure). Observed during `P2-14`.
+
+Outside the sandbox the same command runs normally — the director's own run of it passed 67 tests.
+So a worker reporting this is reporting its own confinement, not a broken suite. The workaround it
+found is the one `import_gate.ps1` already uses for itself: point `APPDATA` at a scratch directory
+for the duration. That also stops the run from overwriting the real `user://save.json`, which a
+plain GUT run does (see above), so it is worth doing in a director-run gate too.
