@@ -65,7 +65,8 @@ func salvage_item(item: Item, balance: BalanceTable) -> void:
 	# this - it is stripped in release, where a corrupt rank would crash after the erase (positive)
 	# or credit the wrong rank (negative, since GDScript indexes arrays from the end).
 	var enhance_level: int = clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
-	parts[clampi(item.rank, 0, parts.size() - 1)] += 3 + enhance_level
+	var forge_level: int = clampi(building_levels[1], 0, balance.summoning_circle_level_cap)
+	parts[clampi(item.rank, 0, parts.size() - 1)] += roundi((3 + enhance_level) * (1.0 + balance.forge_salvage_yield_bonus * forge_level))
 	roster_changed.emit()
 
 
@@ -73,7 +74,9 @@ func enhance_item(item: Item, balance: BalanceTable) -> bool:
 	if not inventory.has(item):
 		return false
 	var enhance_level: int = clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
-	if enhance_level >= balance.forge_enhance_cap_max:
+	var forge_level: int = clampi(building_levels[1], 0, balance.summoning_circle_level_cap)
+	var enhance_cap: int = mini(balance.forge_enhance_cap_max, forge_level * balance.forge_enhance_cap_per_level)
+	if enhance_level >= enhance_cap:
 		return false
 	var rank_index: int = clampi(item.rank, 0, parts.size() - 1)
 	var cost: int = 2 + enhance_level

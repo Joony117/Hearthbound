@@ -298,8 +298,10 @@ func _on_salvage_pressed() -> void:
 	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
 	assert(item != null)
 	var rank_label: String = item.rank_label(BALANCE)
+	var forge_level: int = clampi(GameSession.building_levels[1], 0, BALANCE.summoning_circle_level_cap)
+	var salvage_yield: int = roundi((3 + clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max)) * (1.0 + BALANCE.forge_salvage_yield_bonus * forge_level))
 	GameSession.salvage_item(item, BALANCE)
-	_status.text = "Salvaged %s item into %d %s parts." % [rank_label, 3 + clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max), rank_label]
+	_status.text = "Salvaged %s item into %d %s parts." % [rank_label, salvage_yield, rank_label]
 
 
 func _on_enhance_pressed() -> void:
@@ -313,8 +315,13 @@ func _on_enhance_pressed() -> void:
 		_status.text = "Cannot enhance: item is no longer in inventory."
 		return
 	var enhance_level: int = clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max)
-	if enhance_level >= BALANCE.forge_enhance_cap_max:
-		_status.text = "Cannot enhance: item is already at the +%d cap." % BALANCE.forge_enhance_cap_max
+	var forge_level: int = clampi(GameSession.building_levels[1], 0, BALANCE.summoning_circle_level_cap)
+	var enhance_cap: int = mini(BALANCE.forge_enhance_cap_max, forge_level * BALANCE.forge_enhance_cap_per_level)
+	if enhance_cap <= 0:
+		_status.text = "Cannot enhance: build the Forge first."
+		return
+	if enhance_level >= enhance_cap:
+		_status.text = "Cannot enhance: item is already at the +%d cap." % enhance_cap
 		return
 	var rank_index: int = clampi(item.rank, 0, GameSession.parts.size() - 1)
 	var cost: int = 2 + enhance_level

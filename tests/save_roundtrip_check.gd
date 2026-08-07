@@ -62,7 +62,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, parts, part conversion, buildings, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -257,8 +257,12 @@ func _check_buildings_round_trip() -> int:
 	building_levels.fill(0)
 	_parts().fill(0)
 	_parts()[0] = 20
-	if not _game_session.call("upgrade_building", 0, BalanceTable.new()):
-		return _fail("building upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
+	_parts()[1] = 30
+	var balance := BalanceTable.new()
+	if not _game_session.call("upgrade_building", 1, balance):
+		return _fail("first Forge upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
+	if not _game_session.call("upgrade_building", 1, balance):
+		return _fail("second Forge upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
 	_save_service.call("save")
 
 	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
@@ -276,17 +280,23 @@ func _check_buildings_round_trip() -> int:
 	if raw_building_levels_array.size() != building_levels.size():
 		return _fail("raw save JSON building level count", str(building_levels.size()), str(raw_building_levels_array.size()))
 	for building_index: int in building_levels.size():
-		var expected_level: int = 1 if building_index == 0 else 0
+		var expected_level: int = 2 if building_index == 1 else 0
 		if int(raw_building_levels_array[building_index]) != expected_level:
 			return _fail("raw save JSON building level at index %d" % building_index, str(expected_level), str(raw_building_levels_array[building_index]))
 
 	building_levels.fill(0)
+	_parts().fill(0)
 	if not _save_service.call("load_game"):
 		return _fail("building levels disk reload", "load_game() == true", "load_game() == false")
 	for building_index: int in building_levels.size():
-		var expected_level: int = 1 if building_index == 0 else 0
+		var expected_level: int = 2 if building_index == 1 else 0
 		if building_levels[building_index] != expected_level:
 			return _fail("building level after disk reload at index %d" % building_index, str(expected_level), str(building_levels[building_index]))
+	var salvaged_item := Item.new(DOOMED_ITEM_DEF_ID, SALVAGED_ITEM_RANK)
+	_game_session.call("add_item", salvaged_item)
+	_game_session.call("salvage_item", salvaged_item, balance)
+	if _parts()[SALVAGED_ITEM_RANK] != 4:
+		return _fail("Forge-bonused salvage after disk reload", "4", str(_parts()[SALVAGED_ITEM_RANK]))
 	return 0
 
 

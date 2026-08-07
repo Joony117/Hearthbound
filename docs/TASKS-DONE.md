@@ -2737,3 +2737,151 @@ panel's appearance is unproven.
 ### Files changed
 `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_buildings.gd` (new),
 `tests/save_roundtrip_check.gd`
+
+---
+
+## P2-07d — Forge level raises the enhance cap and the salvage yield      [DONE]
+
+Director-written per the backlog row (rung 1: prose is not delegated). Closes the `P2-07` group.
+
+### Objective
+
+A player who upgrades the Forge can enhance items further and gets more parts back when
+salvaging. Both of the Forge's authored-but-unread magnitudes become live.
+
+### Existing architecture
+
+1. `GameSession.building_levels` is `Array[int]` of 5, persisted, **Forge is index 1**
+   (`hub/hub.gd:112` is the only place the mapping is written down; Circle 0, Forge 1, Sanctum 3).
+   `P2-07b` shipped it, `P2-07c`/`e` already read indices 0 and 3.
+2. `salvage_item(item, balance)` and `enhance_item(item, balance)` are methods on the
+   `GameSession` autoload (`systems/game_session.gd:59,72`). They already take `balance`
+   explicitly (`P2-05f`'s correction) and `building_levels` is the autoload's own state, so
+   **neither needs a signature change** — this is the distinction `P2-05f`'s Findings drew.
+3. The cap is currently read as flat `balance.forge_enhance_cap_max` (15) in **four** places:
+   `enhance_item` (lines 75-76), `salvage_item`'s `enhance_level` clamp (line 67), and twice in
+   `hub/hub.gd:315-317`. The flat reading was `P2-05e`'s deliberate interim
+   (`SYSTEMS.md` § Enhancement question 3) because no building had a level. One now does.
+4. **`hub/hub.gd` re-derives both formulas for its own status text** — `_on_salvage_pressed`
+   recomputes the yield at line 302, `_on_enhance_pressed` recomputes the cap check at 315-317
+   before calling through. This is `P2-07e`'s preview-equals-payout trap, twice: a wrong value
+   here is invisible to the import gate.
+5. `BalanceTable` already authors everything needed: `forge_enhance_cap_per_level = 3`,
+   `forge_enhance_cap_max = 15`, `forge_salvage_yield_bonus = 0.10`. **No new field, no
+   `balance.tres` change.** The level cap for all five buildings is `summoning_circle_level_cap`
+   (5) — the existing shared name, however odd it reads for the Forge.
+
+### The two formulas — ruled, not open
+
+`SYSTEMS.md` § Enhancement q3 and § "Forge salvage-yield bonus":
+
+```
+cap(forge_level)   = mini(forge_enhance_cap_max, forge_level * forge_enhance_cap_per_level)
+yield(forge_level) = roundi((3 + enhance_level) * (1.0 + forge_salvage_yield_bonus * forge_level))
+```
+
+Two things are **part of the ruling, not implementation detail**:
+
+- **`roundi()`, never `int()`.** Truncation yields zero extra parts on an unenhanced item for
+  Forge levels 1-3 — the commonest salvage case there is. The dead-bonus trap this repo has now
+  hit four times.
+- **An unbuilt Forge caps enhancement at 0, so enhancement is unavailable until Forge level 1.**
+  That is the intended gate, not a bug to route around. `SYSTEMS.md:807-811` names this exact
+  consequence and shipped flat-15 only because no Forge level existed to build. Do **not**
+  preserve flat 15 as a floor.
+
+`forge_level` is read as `clampi(GameSession.building_levels[1], 0, balance.summoning_circle_level_cap)`
+everywhere, matching `sacrifice_hero:124` — a corrupt saved level must clamp, not index off the
+authored ladder.
+
+### Acceptance criteria
+
+1. `salvage_item` credits `roundi((3 + enhance_level) * (1.0 + 0.10 * forge_level))` parts of the
+   item's rank. Checked at Forge 0 (unenhanced item → 3, unchanged from today), Forge 2
+   (unenhanced → 4, the level `roundi()` exists to rescue), and Forge 5 with `enhance_level = 4`
+   (`7 * 1.5 = 10.5 → 11`).
+2. `enhance_item` refuses at `mini(15, forge_level * 3)` and writes nothing when it refuses —
+   parts unchanged, `enhance_level` unchanged. Checked at Forge 0 (refuses a fresh item outright),
+   Forge 1 (succeeds three times, refuses the fourth), and Forge 5 (cap 15, today's behavior).
+3. `salvage_item`'s own `enhance_level` clamp still uses `forge_enhance_cap_max` (15), **not** the
+   forge-scaled cap: an item enhanced at Forge 5 and salvaged after the Forge is somehow lower must
+   still credit the levels it actually has. Only `enhance_item`'s gate scales.
+4. A corrupt `building_levels[1]` (e.g. `999`) clamps to 5 in both paths — no crash, no
+   out-of-ladder yield.
+5. `hub/hub.gd`'s salvage status text reports the same number `salvage_item` credited, and its
+   enhance precondition uses the same cap `enhance_item` enforces, at a nonzero Forge level.
+   Drive the real scene; a unit call on `GameSession` alone does not prove this.
+6. Survives save and reload: upgrade the Forge, quit, reload, salvage — the bonus still applies.
+   **Real disk round-trip via `SaveService`, not an in-memory `to_dict`/`from_dict` pair**
+   (`P2-05a` and `P2-04e` were both reopened for exactly that shortcut).
+7. Existing tests still pass. **Expect this to require edits, not to pass untouched:**
+   `tests/unit/test_equipment.gd`'s `before_each` resets `building_levels` to all-zero, so
+   `test_enhance_uses_the_cost_ladder` and `test_enhance_refuses_at_cap_without_writing` currently
+   enhance against an unbuilt Forge and **will fail** under criterion 2. Set the Forge level in
+   those tests rather than weakening the gate. `tests/save_roundtrip_check.gd:191`'s salvage runs
+   at Forge 0 and is unaffected.
+8. BUILT green — import gate **and** the GUT suite.
+
+### Non-goals
+
+- No new `BalanceTable` field and no `balance.tres` edit — all three numbers are authored.
+- No signature change on `salvage_item`/`enhance_item`. The level is the autoload's own state.
+- Not `P2-12`: leave the arithmetic on `GameSession` where it already lives.
+- No Training Hall or Reliquary wiring — `P2-07a` scoped buildings to three.
+- No tooltip or UI surfacing the bonus.
+
+### Findings
+
+**Two caps live in one file and that is correct, not a bug.** `salvage_item` clamps
+`enhance_level` against the flat `forge_enhance_cap_max` (15) while `enhance_item` gates against
+the forge-scaled `mini(15, forge_level * 3)`. They read like a missed edit sitting eight lines
+apart. Criterion 3 pinned the distinction deliberately: the scaled value is a *gate on gaining a
+level*, the flat one is a *ceiling on trusting a level an item already has*. Scaling the salvage
+clamp too would silently confiscate enhancement a player paid for whenever the two disagree —
+which a corrupt saved level is enough to cause. Anyone tidying these into one constant should
+expect criterion 3's test to catch them.
+
+**The unbuilt-Forge gate needed one line of prose the ticket did not ask for.** With the cap wired,
+a fresh save cannot enhance at all until the Forge reaches level 1 — that is the ruling working as
+designed (`SYSTEMS.md:807-811`), but the existing refusal message rendered it as *"Cannot enhance:
+item is already at the +0 cap."*, which describes the item rather than the missing building and is
+the very first thing a new player hits. Fixed inline as an `enhance_cap <= 0` branch reading "build
+the Forge first" (director, rung 1, 3 lines). It is not the tooltip the non-goals excluded — the
+refusal path already existed and was simply saying something untrue about why it fired.
+
+**A ruled rounding function is worth more in the ticket than in the ruling.** `roundi()` versus
+`int()` is invisible at review: both compile, both look right, and the difference only shows up as
+three of five building levels quietly doing nothing. `SYSTEMS.md` had already ruled it, but
+restating it inside the acceptance criteria as "part of the ruling, not implementation detail" is
+what made it unskippable — the same technique `P2-07b` used when it wrote its own failure history
+into criterion 8.
+
+**Test-breakage was predicted in the ticket and that changed how it was received.** Criterion 7
+named the two tests that would fail and why (`before_each` zeroes `building_levels`), so the
+implementer treated a red suite as expected work rather than as evidence the change was wrong. A
+ticket that knows which of its own tests it breaks costs one paragraph to write and saves a
+diagnostic round-trip.
+
+**The new hub-scene test reaches its buttons by absolute node path**
+(`UI/Root/EquipmentPanel/Columns/Inventory/Salvage`), not by `%UniqueName`, because those two
+buttons have no unique name in `hub.tscn`. That is a scene↔script seam with no compile-time
+protection: re-parenting the Inventory column reddens `test_buildings.gd` with a null node rather
+than a useful message. Giving them unique names is a one-line `.tscn` change nobody has needed yet.
+
+**Verified by re-run, not by relay.** Import gate exit 0, zero `SCRIPT ERROR`/`ERROR:`/`WARNING`.
+GUT 11 scripts, 81/81, 9557 asserts, exit 0 — run by the implementer and again by the director
+after the refusal-message fix, matching counts both times. `tests/save_roundtrip_check.gd` exit 0
+under a redirected `%APPDATA%`, reporting `buildings, Forge salvage yield, ...` — the Forge is
+upgraded to level 2 through the real `upgrade_building`, saved, reloaded from disk, and salvaged
+after the reload, so criterion 6 rests on an executed disk cycle rather than a `to_dict`/`from_dict`
+pair. `Get-Process Godot*` empty after every run. The suite's `ERROR:` lines are pre-existing
+deliberate `push_error` fixtures.
+
+**Not verified.** No windowed run — the refusal message's new branch is proven by reading the
+handler and by the cap arithmetic under test, not by a human seeing it on screen. The
+`PROVISIONAL` marker on the salvage bonus is untouched and still open: whether `+0` to `+2` extra
+parts per salvage is *felt* needs a played build, which is what its `Settled by` asks for.
+
+### Files changed
+`systems/game_session.gd`, `hub/hub.gd`, `tests/unit/test_equipment.gd`,
+`tests/unit/test_buildings.gd`, `tests/save_roundtrip_check.gd`

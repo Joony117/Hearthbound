@@ -71,6 +71,7 @@ func test_salvage_removes_inventory_item_and_credits_only_its_rank() -> void:
 func test_enhance_uses_the_cost_ladder() -> void:
 	var item := Item.new(&"ring", 3)
 	var balance := BalanceTable.new()
+	GameSession.building_levels[1] = 5
 	GameSession.add_item(item)
 	GameSession.parts[item.rank] = 5
 
@@ -85,6 +86,7 @@ func test_enhance_uses_the_cost_ladder() -> void:
 func test_enhance_refuses_at_cap_without_writing() -> void:
 	var item := Item.new(&"ring", 3)
 	var balance := BalanceTable.new()
+	GameSession.building_levels[1] = 5
 	item.enhance_level = balance.forge_enhance_cap_max
 	GameSession.add_item(item)
 	GameSession.parts[item.rank] = 99
@@ -95,9 +97,38 @@ func test_enhance_refuses_at_cap_without_writing() -> void:
 	assert_eq(GameSession.parts, parts_before)
 
 
+func test_enhance_refuses_fresh_item_with_unbuilt_forge_without_writing() -> void:
+	var item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
+	GameSession.add_item(item)
+	GameSession.parts[item.rank] = 99
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+
+	assert_false(GameSession.enhance_item(item, balance))
+	assert_eq(item.enhance_level, 0)
+	assert_eq(GameSession.parts, parts_before)
+
+
+func test_forge_level_one_allows_three_enhancements_then_refuses() -> void:
+	var item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
+	GameSession.building_levels[1] = 1
+	GameSession.add_item(item)
+	GameSession.parts[item.rank] = 99
+
+	assert_true(GameSession.enhance_item(item, balance))
+	assert_true(GameSession.enhance_item(item, balance))
+	assert_true(GameSession.enhance_item(item, balance))
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+	assert_false(GameSession.enhance_item(item, balance))
+	assert_eq(item.enhance_level, 3)
+	assert_eq(GameSession.parts, parts_before)
+
+
 func test_enhance_refuses_insufficient_parts_without_writing() -> void:
 	var item := Item.new(&"ring", 3)
 	var balance := BalanceTable.new()
+	GameSession.building_levels[1] = 5
 	GameSession.add_item(item)
 	GameSession.parts[item.rank] = 1
 	var parts_before: Array[int] = GameSession.parts.duplicate()
@@ -107,7 +138,24 @@ func test_enhance_refuses_insufficient_parts_without_writing() -> void:
 	assert_eq(GameSession.parts, parts_before)
 
 
-func test_salvage_credits_enhance_level() -> void:
+func test_salvage_scales_with_forge_level_and_rounds() -> void:
+	var level_two_item := Item.new(&"ring", 2)
+	var level_five_item := Item.new(&"ring", 3)
+	var balance := BalanceTable.new()
+	level_five_item.enhance_level = 4
+	GameSession.add_item(level_two_item)
+	GameSession.add_item(level_five_item)
+
+	GameSession.building_levels[1] = 2
+	GameSession.salvage_item(level_two_item, balance)
+	GameSession.building_levels[1] = 5
+	GameSession.salvage_item(level_five_item, balance)
+
+	assert_eq(GameSession.parts[level_two_item.rank], 4)
+	assert_eq(GameSession.parts[level_five_item.rank], 11)
+
+
+func test_salvage_credits_enhance_level_at_unbuilt_forge() -> void:
 	var item := Item.new(&"ring", 3)
 	var balance := BalanceTable.new()
 	item.enhance_level = 4
@@ -116,6 +164,25 @@ func test_salvage_credits_enhance_level() -> void:
 	GameSession.salvage_item(item, balance)
 
 	assert_eq(GameSession.parts[item.rank], 7)
+
+
+func test_corrupt_forge_level_clamps_to_level_five_in_both_paths() -> void:
+	var enhanced_item := Item.new(&"ring", 3)
+	var salvaged_item := Item.new(&"ring", 4)
+	var balance := BalanceTable.new()
+	GameSession.building_levels[1] = 999
+	GameSession.add_item(enhanced_item)
+	GameSession.add_item(salvaged_item)
+	GameSession.parts[enhanced_item.rank] = 99
+	enhanced_item.enhance_level = 14
+
+	assert_true(GameSession.enhance_item(enhanced_item, balance))
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+	assert_false(GameSession.enhance_item(enhanced_item, balance))
+	assert_eq(enhanced_item.enhance_level, 15)
+	assert_eq(GameSession.parts, parts_before)
+	GameSession.salvage_item(salvaged_item, balance)
+	assert_eq(GameSession.parts[salvaged_item.rank], 5)
 
 
 ## Item.from_dict never validates rank, and assert() is stripped in release - so a hand-edited
