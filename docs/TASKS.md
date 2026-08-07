@@ -552,6 +552,7 @@ needs to re-read.
 | `P2-06c` | Trait data — `TraitDefinition`, two pools, 15 authored traits | `f4eea87` |
 | `P2-06b` | Resonance traits change a hero's stats | `26103f7` |
 | `P2-14` | The hub shows what a hero's stats actually are | `a47fb87` |
+| `P2-07a` | Building ruling — upgrade cost in parts, and the level caps | `d0b04d7` |
 
 ---
 
