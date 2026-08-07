@@ -46,6 +46,12 @@ func credit_stones(amount: int) -> void:
 	roster_changed.emit()
 
 
+func credit_team_xp(team: Array[Hero], amount: int, balance: BalanceTable) -> void:
+	for hero: Hero in team:
+		Hero.grant_xp(hero, amount, balance)
+	roster_changed.emit()
+
+
 func add_item(item: Item) -> void:
 	inventory.append(item)
 	roster_changed.emit()

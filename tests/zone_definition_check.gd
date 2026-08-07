@@ -6,21 +6,21 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var exit_code: int = _check_zone("Verdant Outskirts", "res://zones/defs/verdant_outskirts.tres", 900, 5, 0.5, 0.9, 1.1, "F–C parts, light Summon Stones", 25, "Available from start")
+	var exit_code: int = _check_zone("Verdant Outskirts", "res://zones/defs/verdant_outskirts.tres", 900, 5, 0.5, 0.9, 1.1, "F–C parts, light Summon Stones", 25, 24, "Available from start")
 	if exit_code != 0:
 		quit(exit_code)
 		return
-	exit_code = _check_zone("Ashfall Reaches", "res://zones/defs/ashfall_reaches.tres", 4800, 6, 0.5, 1.0, 1.2, "C–A parts, moderate Summon Stones, first A+ drops", 75, "Clear Verdant Outskirts")
+	exit_code = _check_zone("Ashfall Reaches", "res://zones/defs/ashfall_reaches.tres", 4800, 6, 0.5, 1.0, 1.2, "C–A parts, moderate Summon Stones, first A+ drops", 75, 72, "Clear Verdant Outskirts")
 	if exit_code != 0:
 		quit(exit_code)
 		return
-	exit_code = _check_zone("Sundered Vault", "res://zones/defs/sundered_vault.tres", 11500, 7, 0.6, 1.1, 1.3, "S–SSS parts, heavy Summon Stones, best A+ drop rate", 200, "Clear Ashfall Reaches")
+	exit_code = _check_zone("Sundered Vault", "res://zones/defs/sundered_vault.tres", 11500, 7, 0.6, 1.1, 1.3, "S–SSS parts, heavy Summon Stones, best A+ drop rate", 200, 192, "Clear Ashfall Reaches")
 	if exit_code == 0:
 		print("PASS: all fields of all three zones match SYSTEMS.md.")
 	quit(exit_code)
 
 
-func _check_zone(zone_name: String, resource_path: String, expected_recommended_power: int, expected_trash_wave_count: int, expected_start_fraction: float, expected_end_fraction: float, expected_boss_fraction: float, expected_loot_emphasis: String, expected_stone_reward: int, expected_unlock_condition: String) -> int:
+func _check_zone(zone_name: String, resource_path: String, expected_recommended_power: int, expected_trash_wave_count: int, expected_start_fraction: float, expected_end_fraction: float, expected_boss_fraction: float, expected_loot_emphasis: String, expected_stone_reward: int, expected_xp_reward: int, expected_unlock_condition: String) -> int:
 	var zone: ZoneDefinition = load(resource_path) as ZoneDefinition
 	if zone == null:
 		return _fail("%s resource load" % zone_name, "ZoneDefinition", "null")
@@ -40,6 +40,8 @@ func _check_zone(zone_name: String, resource_path: String, expected_recommended_
 		return _fail("%s loot_emphasis" % zone_name, expected_loot_emphasis, zone.loot_emphasis)
 	if zone.stone_reward != expected_stone_reward:
 		return _fail("%s stone_reward" % zone_name, str(expected_stone_reward), str(zone.stone_reward))
+	if zone.xp_reward != expected_xp_reward:
+		return _fail("%s xp_reward" % zone_name, str(expected_xp_reward), str(zone.xp_reward))
 	if zone.unlock_condition != expected_unlock_condition:
 		return _fail("%s unlock_condition" % zone_name, expected_unlock_condition, zone.unlock_condition)
 	return 0

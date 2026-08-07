@@ -13,6 +13,7 @@ trash_wave_end_fraction = 0.9
 boss_fraction = 1.1
 loot_emphasis = "F–C parts, light Summon Stones"
 stone_reward = 25
+xp_reward = 24
 loot_rank_min = 0
 loot_rank_max = 2
 unlock_condition = "Available from start"

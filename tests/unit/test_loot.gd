@@ -81,6 +81,7 @@ func test_only_completed_expeditions_add_one_item_and_round_trip_it() -> void:
 func _add_knight() -> Hero:
 	var hero := Hero.new("Knight", 0)
 	hero.def_id = &"knight"
+	hero.level = 10
 	GameSession.add_hero(hero)
 	return hero
 

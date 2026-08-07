@@ -3,14 +3,43 @@ extends GutTest
 const ERROR_MARGIN: float = 0.0001
 
 
-func test_level_for_uses_rank_caps_and_clamps() -> void:
+func test_level_for_clamps_level_and_corrupt_rank() -> void:
 	var balance := BalanceTable.new()
 	var hero := Hero.new("Test Hero")
+	hero.level = 5
 	for rank: int in balance.level_caps.size():
 		hero.rank = rank
-		assert_eq(Hero.level_for(hero, balance), balance.level_caps[rank])
+		assert_eq(Hero.level_for(hero, balance), 5)
+	hero.level = 999
 	hero.rank = balance.level_caps.size()
 	assert_eq(Hero.level_for(hero, balance), balance.level_caps.back())
+	hero.level = -1
+	hero.rank = -1
+	assert_eq(Hero.level_for(hero, balance), 0)
+
+
+func test_grant_xp_levels_repeatedly_and_discards_cap_overflow() -> void:
+	var balance := BalanceTable.new()
+	var hero := Hero.new("Test Hero")
+
+	assert_eq(Hero.xp_to_next_level(0, balance), 10)
+	assert_eq(Hero.xp_to_next_level(3, balance), 40)
+	Hero.grant_xp(hero, 65, balance)
+	assert_eq(hero.level, 3)
+	assert_eq(hero.xp, 5)
+
+	hero.level = 9
+	hero.xp = 0
+	Hero.grant_xp(hero, 200, balance)
+	assert_eq(hero.level, 10)
+	assert_eq(hero.xp, 0)
+	Hero.grant_xp(hero, 50, balance)
+	assert_eq(hero.xp, 0)
+
+	hero.rank = 1
+	Hero.grant_xp(hero, 50, balance)
+	assert_eq(hero.level, 10)
+	assert_eq(hero.xp, 50)
 
 
 func test_rank_and_level_scale_combat_stats_but_not_crit() -> void:

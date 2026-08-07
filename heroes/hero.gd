@@ -16,6 +16,8 @@ const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 
 var hero_name: String
 var rank: int
+var level: int = 0
+var xp: int = 0
 var def_id: StringName
 var resonance: int = 0
 var equipped: Dictionary[int, Item] = {}
@@ -31,7 +33,25 @@ func rank_label(balance: BalanceTable) -> String:
 
 
 static func level_for(hero: Hero, balance: BalanceTable) -> int:
-	return balance.level_caps[clampi(hero.rank, 0, balance.level_caps.size() - 1)]
+	return clampi(
+		hero.level,
+		0,
+		balance.level_caps[clampi(hero.rank, 0, balance.level_caps.size() - 1)],
+	)
+
+
+static func xp_to_next_level(level: int, balance: BalanceTable) -> int:
+	return balance.xp_coefficient * (level + 1)
+
+
+static func grant_xp(hero: Hero, amount: int, balance: BalanceTable) -> void:
+	var level_cap: int = balance.level_caps[clampi(hero.rank, 0, balance.level_caps.size() - 1)]
+	hero.xp += amount
+	while hero.level < level_cap and hero.xp >= xp_to_next_level(hero.level, balance):
+		hero.xp -= xp_to_next_level(hero.level, balance)
+		hero.level += 1
+	if hero.level >= level_cap:
+		hero.xp = 0
 
 
 static func definition_for(p_def_id: StringName) -> HeroDefinition:
@@ -171,6 +191,8 @@ func to_dict() -> Dictionary:
 	return {
 		"name": hero_name,
 		"rank": rank,
+		"level": level,
+		"xp": xp,
 		"def_id": str(def_id),
 		"resonance": resonance,
 		"equipped": equipped_entries,
@@ -179,6 +201,8 @@ func to_dict() -> Dictionary:
 
 static func from_dict(data: Dictionary) -> Hero:
 	var hero := Hero.new(str(data.get("name", "?")), maxi(Item.int_field(data, "rank", 0, "hero"), 0))
+	hero.level = maxi(Item.int_field(data, "level", 0, "hero"), 0)
+	hero.xp = maxi(Item.int_field(data, "xp", 0, "hero"), 0)
 	hero.resonance = maxi(Item.int_field(data, "resonance", 0, "hero"), 0)
 	if not data.has("def_id"):
 		# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.

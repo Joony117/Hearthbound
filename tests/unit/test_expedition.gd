@@ -40,9 +40,14 @@ func test_completed_expedition_credits_zone_stone_reward() -> void:
 
 func test_retreated_expedition_credits_no_stones() -> void:
 	var hero: Hero = _add_knight()
+	hero.level = 9
 	var team: Array[Hero] = [hero]
 	var r: float = 0.9
-	var recommended_power: int = int(HERO_POWER * r / (float(team.size()) / 5.0 * 0.5))
+	var definition: HeroDefinition = Hero.definition_for(hero.def_id)
+	var definitions: Array[HeroDefinition] = [definition]
+	var levels: Array[int] = [hero.level]
+	var hero_power: float = Hero.compute_team_power(team, definitions, levels, preload("res://balance.tres"))
+	var recommended_power: int = int(hero_power * r / (float(team.size()) / 5.0 * 0.5))
 	var zone: ZoneDefinition = _make_zone(recommended_power, 0.5, 3)
 	zone.stone_reward = 75
 	var stones_before: int = GameSession.stones
@@ -52,6 +57,7 @@ func test_retreated_expedition_credits_no_stones() -> void:
 
 	assert_eq(outcome, Expedition.OUTCOME_RETREATED)
 	assert_eq(GameSession.stones, stones_before)
+	assert_eq(hero.xp, 12)
 
 
 func test_defeated_expedition_credits_no_stones() -> void:
@@ -66,6 +72,41 @@ func test_defeated_expedition_credits_no_stones() -> void:
 
 	assert_eq(outcome, Expedition.OUTCOME_DEFEATED)
 	assert_eq(GameSession.stones, stones_before)
+
+
+func test_training_hall_level_five_rounds_exact_xp_rewards() -> void:
+	GameSession.building_levels[2] = 5
+	var defeated_hero := Hero.new("Defeated Knight", 7)
+	defeated_hero.def_id = &"knight"
+	GameSession.add_hero(defeated_hero)
+	seed(1)
+
+	var outcome: StringName = Expedition.new().resolve(
+		[defeated_hero],
+		_make_zone(1_000_000, 1.0, 1),
+	)
+
+	assert_eq(outcome, Expedition.OUTCOME_DEFEATED)
+	assert_eq(_earned_xp(defeated_hero), 7)
+	var completion_waves_xp: int = _completed_xp_with_reward(0)
+	assert_eq(completion_waves_xp, 14)
+	assert_eq(_completed_xp_with_reward(24) - completion_waves_xp, 42)
+	assert_eq(_completed_xp_with_reward(72) - completion_waves_xp, 126)
+	assert_eq(_completed_xp_with_reward(192) - completion_waves_xp, 336)
+	GameSession.from_dict({"roster": []})
+
+
+func test_credit_team_xp_grants_every_hero_and_emits_once() -> void:
+	var first := Hero.new("First", 7)
+	var second := Hero.new("Second", 7)
+	var team: Array[Hero] = [first, second]
+	watch_signals(GameSession)
+
+	GameSession.credit_team_xp(team, 7, preload("res://balance.tres"))
+
+	assert_eq(first.xp, 7)
+	assert_eq(second.xp, 7)
+	assert_signal_emit_count(GameSession, "roster_changed", 1)
 
 
 func test_five_hero_expedition_completes_and_records_zone_clear() -> void:
@@ -329,6 +370,7 @@ func test_authored_damage_coefficient_and_verdant_full_clear_hp() -> void:
 func test_won_wave_uses_cubic_damage_fraction() -> void:
 	var hero := Hero.new("Knight", 0)
 	hero.def_id = &"knight"
+	hero.level = 10
 	var team: Array[Hero] = [hero]
 	var enemy_power := 100.0
 	var team_size_factor := float(team.size()) / 5.0
@@ -347,6 +389,7 @@ func test_won_wave_uses_cubic_damage_fraction() -> void:
 func test_lost_wave_at_or_above_team_power_kills_from_full_hp() -> void:
 	var hero := Hero.new("Cleric", 0)
 	hero.def_id = &"cleric"
+	hero.level = 10
 	var team: Array[Hero] = [hero]
 	var definition: HeroDefinition = preload("res://heroes/defs/cleric.tres")
 	var balance: BalanceTable = preload("res://balance.tres")
@@ -391,11 +434,13 @@ func test_graduated_loss_sequence_can_reach_retreat() -> void:
 func test_team_size_scaling_keeps_loss_damage_in_parity() -> void:
 	var solo_hero := Hero.new("Solo Knight", 0)
 	solo_hero.def_id = &"knight"
+	solo_hero.level = 10
 	var solo_team: Array[Hero] = [solo_hero]
 	var full_team: Array[Hero] = []
 	for index: int in 5:
 		var hero := Hero.new("Knight %d" % index, 0)
 		hero.def_id = &"knight"
+		hero.level = 10
 		full_team.append(hero)
 	var enemy_power := 990.0
 	var r := 198.0 / HERO_POWER
@@ -420,11 +465,13 @@ func test_team_size_scaling_keeps_loss_damage_in_parity() -> void:
 func test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity() -> void:
 	var solo_hero := Hero.new("Solo Knight", 0)
 	solo_hero.def_id = &"knight"
+	solo_hero.level = 10
 	var solo_team: Array[Hero] = [solo_hero]
 	var full_team: Array[Hero] = []
 	for index: int in 5:
 		var hero := Hero.new("Knight %d" % index, 0)
 		hero.def_id = &"knight"
+		hero.level = 10
 		full_team.append(hero)
 	var enemy_power := HERO_POWER * 2.5
 	var balance: BalanceTable = preload("res://balance.tres")
@@ -461,6 +508,8 @@ func test_team_size_scaling_keeps_solo_and_full_team_rolls_in_parity() -> void:
 func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
 	var balance: BalanceTable = preload("res://balance.tres")
 	var hero := _add_knight()
+	hero.level = 3
+	hero.xp = 12
 	var definition: HeroDefinition = Hero.definition_for(hero.def_id)
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
 	assert_not_null(hub_scene)
@@ -477,16 +526,20 @@ func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
 	var before_stats := Hero.compute_final_stats(hero, definition, balance, Hero.level_for(hero, balance))
 	var before_def: String = "DEF: %d" % roundi(before_stats[Hero.STAT_DEF])
 	assert_string_contains(hero_detail.text, before_def)
+	assert_string_contains(hero_detail.text, "Level: 3 (12/40 XP)")
 	assert_string_contains(hero_detail.text, "Resonance: 0")
 	assert_string_contains(hero_detail.text, "Traits: none")
 
 	# roster_changed is the only refresh path equip, rank-up and sacrifice all go through.
 	hero.resonance = 1
+	hero.level = 10
+	hero.xp = 0
 	GameSession.roster_changed.emit()
 	var after_stats := Hero.compute_final_stats(hero, definition, balance, Hero.level_for(hero, balance))
 	assert_string_contains(hero_detail.text, "DEF: %d" % roundi(after_stats[Hero.STAT_DEF]))
 	assert_string_contains(hero_detail.text, "Resonance: 1")
 	assert_string_contains(hero_detail.text, "Bulwark")
+	assert_string_contains(hero_detail.text, "Lv 10 (max)")
 	assert_false(
 		hero_detail.text.contains(before_def),
 		"A resonance trait must move the displayed stat, not just the trait line.",
@@ -502,8 +555,29 @@ func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
 func _add_knight(hero_name: String = "Knight") -> Hero:
 	var hero := Hero.new(hero_name, 0)
 	hero.def_id = &"knight"
+	hero.level = 10
 	GameSession.add_hero(hero)
 	return hero
+
+
+func _completed_xp_with_reward(xp_reward: int) -> int:
+	GameSession.from_dict({"roster": []})
+	GameSession.building_levels[2] = 5
+	var hero := Hero.new("Reward Knight", 7)
+	hero.def_id = &"knight"
+	GameSession.add_hero(hero)
+	var zone: ZoneDefinition = _make_zone(0, 1.0, 1)
+	zone.xp_reward = xp_reward
+	seed(1)
+	assert_eq(Expedition.new().resolve([hero], zone), Expedition.OUTCOME_COMPLETED)
+	return _earned_xp(hero)
+
+
+func _earned_xp(hero: Hero) -> int:
+	var total: int = hero.xp
+	for level: int in hero.level:
+		total += Hero.xp_to_next_level(level, preload("res://balance.tres"))
+	return total
 
 
 func _make_zone(recommended_power: int, fraction: float, trash_wave_count: int) -> ZoneDefinition:

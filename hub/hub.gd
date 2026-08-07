@@ -153,20 +153,24 @@ func _refresh_hero_detail() -> void:
 	if definition == null:
 		_hero_detail.text = "Rank: %s\nArchetype: Missing archetype (%s)" % [hero.rank_label(BALANCE), hero.def_id]
 		return
+	var level: int = Hero.level_for(hero, BALANCE)
 	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(
 		hero,
 		definition,
 		BALANCE,
-		Hero.level_for(hero, BALANCE),
+		level,
 	)
+	var level_cap: int = BALANCE.level_caps[clampi(hero.rank, 0, BALANCE.level_caps.size() - 1)]
+	var level_text: String = "Lv %d (max)" % level if level >= level_cap else "Level: %d (%d/%d XP)" % [level, hero.xp, Hero.xp_to_next_level(level, BALANCE)]
 	var traits: PackedStringArray = []
 	for trait_definition: TraitDefinition in Hero.active_resonance_traits(hero, definition, BALANCE):
 		traits.append(trait_definition.display_name)
 	# Keyed off the pool being empty, not off resonance: a definition with no authored pool would
 	# otherwise print "Traits: " with nothing after it.
 	var trait_text: String = "none" if traits.is_empty() else ", ".join(traits)
-	_hero_detail.text = "Rank: %s\nHP: %d\nATK: %d\nDEF: %d\nSPD: %d\nCRIT_RATE: %.1f%%\nCRIT_DMG: %.1f%%\nResonance: %d\nTraits: %s" % [
+	_hero_detail.text = "Rank: %s\n%s\nHP: %d\nATK: %d\nDEF: %d\nSPD: %d\nCRIT_RATE: %.1f%%\nCRIT_DMG: %.1f%%\nResonance: %d\nTraits: %s" % [
 		hero.rank_label(BALANCE),
+		level_text,
 		roundi(stats[Hero.STAT_HP]),
 		roundi(stats[Hero.STAT_ATK]),
 		roundi(stats[Hero.STAT_DEF]),

@@ -3100,3 +3100,147 @@ Phase 1 exit-gate shape and not a headless run.
 
 ### Files changed
 `tests/save_roundtrip_check.gd`, `tests/unit/test_save_service.gd` (new)
+
+---
+
+## P2-04g — A hero levels up from expeditions                                  [DONE]
+
+### Objective
+Sending a hero on an expedition raises its level, and the hub shows the level and the XP toward
+the next one. Written by the director per rung 1 — `SYSTEMS.md` § Hero leveling names every
+field, every file, every constant and the grant-path shape, so no scoping judgment was left to
+route (the `P2-16` precedent).
+
+### Existing architecture
+- `Hero` has no `level` and no `xp`. `Hero.level_for(hero, balance)` (`heroes/hero.gd:33-34`)
+  returns `balance.level_caps[clampi(hero.rank, 0, 7)]` — a derivation, so every hero is
+  permanently at its rank's cap. Two call sites: `combat/quick_resolve.gd:21`, `hub/hub.gd:160`.
+- `Expedition.resolve()` (`hub/expedition/expedition.gd:19-67`) already counts `waves_resolved`
+  (public, incremented per wave) and already credits the `COMPLETED` rewards *inside* itself —
+  `mark_zone_cleared`, `add_item`, `credit_stones(zone.stone_reward)`. The XP grant belongs in
+  the same place, not in `hub.gd`.
+- `resolve()` has four returns: `OUTCOME_INVALID_TEAM` (before any wave, `waves_resolved == 0`),
+  `OUTCOME_DEFEATED`, `OUTCOME_RETREATED`, `OUTCOME_COMPLETED`.
+- `GameSession.credit_stones()` (`systems/game_session.gd:44-46`) is the shape to mirror: mutate,
+  then `roster_changed.emit()`. That emit is what triggers the save (`_ready()` connects it).
+- `building_levels` (`systems/game_session.gd:17`) is a 5-element array; **Training Hall is index
+  2** (`0` Circle, `1` Forge, `3` Sanctum). It is not buildable — `P2-07a` scoped the panel to
+  three — so the multiplier is `1.0` in normal play and only a test that writes
+  `building_levels[2]` directly exercises it. That is the `P2-07c`/`d`/`e` shape, not the
+  fabricated-field shape `turn_lost` and `enhance_level` were rejected for: it reads a real
+  persisted field that a later ticket makes spendable.
+- `%HeroDetail` (`hub/hub.gd:145-177`) is `P2-14`'s readout and already prints rank, seven stats,
+  resonance and traits. This is where level becomes observable.
+
+### Acceptance criteria
+1. `Hero.level: int = 0` and `Hero.xp: int = 0` exist, and `Hero.level_for()` becomes
+   `clampi(hero.level, 0, balance.level_caps[hero.rank])`.
+2. **Save-boundary change** (`CLAUDE.md` boundary 1) — a **mandatory `verifier` pass**, and the
+   round-trip must be a **real disk write and reload through `SaveService`**, not an in-memory
+   `to_dict`/`from_dict` pair. That shortcut shipped and was reopened in `P2-05a` and `P2-04e`
+   and passed first time in `P2-07b` only because the criterion said so; it says so here.
+   Both fields must survive, and both must survive an explicit JSON `null` and a wrong-typed
+   value without crashing the load path (`P2-11`, `_int_field()`).
+3. `xp_coefficient: int = 10` and `xp_per_wave: int = 4` on `BalanceTable`/`balance.tres`;
+   `xp_reward` on `ZoneDefinition` at `24`/`72`/`192` for Verdant/Ashfall/Sundered. Editing
+   `zones/defs/*.tres` reddens `tests/zone_definition_check.gd`, which asserts zone fields by
+   exact match — update it in the same commit (`P2-15`).
+4. XP is granted inside `Expedition.resolve()`: `xp_per_wave * waves_resolved` on every outcome,
+   plus `zone.xp_reward` on `COMPLETED` only. `INVALID_TEAM` needs no special case — it returns at
+   `waves_resolved == 0`, so the arithmetic is already zero. Grant to every hero in `team`; heroes
+   killed this run are already off the roster, so no filtering is needed.
+5. Both amounts are multiplied by `1.0 + balance.training_hall_xp_bonus * clampi(building_levels[2],
+   0, balance.summoning_circle_level_cap)` before being applied — the same clamp every other
+   building consumer uses. A test that sets `building_levels[2] = 5` sees `xp_per_wave` land as
+   exactly `7` and `xp_reward` as exactly `42`/`126`/`336`.
+6. Applying XP loops level-ups while `xp >= xp_coefficient * (level + 1)` **and**
+   `level < balance.level_caps[hero.rank]`, subtracting the cost each time. **Overflow at the cap
+   is discarded, not banked** (ruled). Pure `static func`s on `Hero`, testable without booting
+   `GameSession` — the `P2-06a` shape, not the `P2-12` debt shape.
+7. `combat/quick_resolve.gd`'s `BASELINE_LEVEL` is **removed**, not tuned.
+8. `%HeroDetail` gains a level line showing the level and progress toward the next
+   (e.g. `Level: 3 (12/40 XP)`), and reads `Lv 10 (max)` or equivalent at the rank's cap.
+9. A hero sent on one expedition has more XP afterwards than before, and this survives a real
+   save and reload. Existing tests still pass; import gate and GUT suite both green.
+
+### Files allowed to change
+`heroes/hero.gd`, `hub/expedition/expedition.gd`, `hub/hub.gd`, `combat/quick_resolve.gd`,
+`balance_table.gd`, `balance.tres`, `zones/zone_definition.gd`, `zones/defs/*.tres`,
+`tests/zone_definition_check.gd`, `tests/save_roundtrip_check.gd`, `tests/unit/*.gd`.
+
+### Non-goals
+- **Do not retune `wave_damage_coefficient`/`wave_loss_damage_coefficient`.** The ruling measured a
+  `53–70%` whole-run roster-wipe rate in Verdant and explicitly refused to fix it here; it is
+  `P2-03b`'s and predates this ticket.
+- **Do not add a stones or hero-count floor** — that is `P2-18`.
+- **Do not wire the Sacrifice formula's `fodder.level` term** — that is `P2-19`.
+- Do not make the Training Hall buildable, and do not add it to the `P2-07b` upgrade panel.
+- No XP bar, no level-up animation, no notification. A line of text in `%HeroDetail` is the whole
+
+### Findings
+
+**Criterion 7 was already satisfied before the ticket was written.** `BASELINE_LEVEL` no longer
+existed in `combat/quick_resolve.gd` — an earlier team-size dispatch had already removed it, and
+line 21 already read `Hero.level_for(hero, BALANCE)`. `quick_resolve.gd` is the one file in the
+allowed list that ended up with a zero-line diff. `SYSTEMS.md`'s closing table still listed the
+constant as live, which is how the ticket inherited it. **Check the code, not the ruling's table,
+before writing a "remove X" criterion** — a criterion that is already met costs an implementer a
+detour to prove a negative.
+
+**Criterion 1 as written would have crashed on a corrupt save.** It specified
+`clampi(hero.level, 0, balance.level_caps[hero.rank])`, which indexes `level_caps` with an
+unclamped `rank` — the exact out-of-range access the old derivation had guarded against, and which
+`tests/unit/test_hero_stats.gd:12-13` deliberately exercises. Shipped as
+`clampi(hero.level, 0, balance.level_caps[clampi(hero.rank, 0, balance.level_caps.size() - 1)])`.
+The inner clamp was not a nicety in the old code and dropping it was a transcription loss, not a
+decision. This is the second ticket in a row (`P2-05f` was the first) whose criterion specified a
+*signature* that could not be satisfied as written; no gate can catch that class of defect.
+
+**`systems/game_session.gd` was missing from the allowed-files list, and that omission was
+load-bearing.** `OUTCOME_RETREATED` returns from `Expedition.resolve()` without any
+`roster_changed.emit()` — the signal that triggers the save. Granting XP inside `resolve()` with no
+emit on that path would have mutated the roster and never reached disk, and **retreat is the common
+outcome for a climbing hero** (the ruling's own table: `30.2%` at level 0, `46.4%` at F's cap,
+against `0–0.5%` completed). The whole point of the curve is that a retreat still banks progress.
+Fixed by adding `GameSession.credit_team_xp(team, amount, balance)` mirroring `credit_stones()`
+— which is what `SYSTEMS.md` § Hero leveling had specified in its closing paragraph all along, and
+which the ticket's file list silently contradicted. `balance` is an explicit parameter, not a
+`preload` — an autoload must not reach a balance Resource directly (`ARCHITECTURE.md` § "Reaching
+shared Resources", the `P2-05f` defect).
+
+**The GUT suite went red for a reason that was not a regression, and the fix belongs in the
+fixture.** `tests/unit/test_expedition.gd` hardcodes `HERO_POWER = 212.0` and
+`HERO_MAX_HP = 280.0` — F-cap (level 10) Knight figures, true only while `level_for()` derived
+level from rank. Its `_add_knight()` builds a rank-0 hero, which now computes at level 0. Setting
+`hero.level = 10` in the factory keeps every arithmetic assertion in the file exact; retuning the
+constants would have silently re-baselined the whole file against whatever the new numbers happened
+to be. Same one-line fix in `tests/unit/test_loot.gd`. **When a semantic change reddens a test,
+first ask whether the fixture stopped representing what it used to** — the alternative is a suite
+that always passes and proves nothing.
+
+**Verifier findings, both recorded rather than fixed** (thread `019fdddb-0e64-7ea2-8fad-09b8c389ec2b`):
+
+1. *Training Hall rounding order at intermediate levels.* The multiplier is applied with one
+   `roundi()` over the combined `(xp_per_wave * waves_resolved [+ xp_reward]) * multiplier` rather
+   than per term. At the cap (`building_levels[2] = 5`, `×1.75`) this lands exactly on the ruled
+   `7`/`42`/`126`/`336`, because every term scales to an integer there. At intermediate levels it
+   diverges from a per-term reading by up to 1 XP — e.g. level 1 (`×1.15`) pays `37` combined
+   versus `38` per-term. `SYSTEMS.md` says the multiplier applies to both amounts but never settles
+   the rounding order, and the Training Hall is not buildable (`P2-07a` scoped the panel to three),
+   so the multiplier is `1.0` in all real play. Whoever makes it buildable settles this; it is one
+   line either way and there is nothing to fix until then.
+2. *Rank-up XP banking is tested by hand-setting `hero.rank`, not through
+   `GameSession.rank_up_hero()`.* The ADR (`DECISIONS.md` 2026-08-01) is honored today —
+   `rank_up_hero()` touches only `rank` and `essence`, never `level`/`xp`, confirmed by reading it —
+   but no test drives `grant_xp` through the real rank-up path, so a future edit that started
+   touching level or XP would not be caught by this ticket's coverage.
+
+Also noted, unreachable from production: a negative `amount` passed to `Hero.grant_xp()` leaves
+`hero.xp` negative without crashing. Both `xp_per_wave` and `zone.xp_reward` are non-negative
+authored constants and no caller can produce one, so no guard was added.
+
+### Files changed
+`heroes/hero.gd`, `systems/game_session.gd`, `hub/expedition/expedition.gd`, `hub/hub.gd`,
+`balance_table.gd`, `balance.tres`, `zones/zone_definition.gd`, `zones/defs/*.tres` (all three),
+`tests/zone_definition_check.gd`, `tests/save_roundtrip_check.gd`, `tests/unit/test_hero_stats.gd`,
+`tests/unit/test_expedition.gd`, `tests/unit/test_loot.gd`. `combat/quick_resolve.gd` unchanged.

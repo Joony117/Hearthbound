@@ -30,6 +30,12 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 	for hero: Hero in team:
 		if Hero.definition_for(hero.def_id) == null:
 			return OUTCOME_INVALID_TEAM
+	var training_hall_level: int = clampi(
+		GameSession.building_levels[2],
+		0,
+		BALANCE.summoning_circle_level_cap,
+	)
+	var xp_multiplier: float = 1.0 + BALANCE.training_hall_xp_bonus * training_hall_level
 
 	# The boss index is trash_wave_count, so this bound remains safe in release builds.
 	var boss_loot_seed: int = 0
@@ -56,15 +62,30 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 			for hero: Hero in dead_heroes:
 				# The expedition resolver is the sole permadeath writer (architecture rule 8).
 				GameSession.kill_hero(hero, zone.zone_id)
+			GameSession.credit_team_xp(
+				team,
+				roundi(float(BALANCE.xp_per_wave * waves_resolved) * xp_multiplier),
+				BALANCE,
+			)
 			return OUTCOME_DEFEATED
 
 		if next_wave_index < zone.trash_wave_count and _party_hp_fraction(team) <= RETREAT_THRESHOLD:
+			GameSession.credit_team_xp(
+				team,
+				roundi(float(BALANCE.xp_per_wave * waves_resolved) * xp_multiplier),
+				BALANCE,
+			)
 			return OUTCOME_RETREATED
 
 	GameSession.mark_zone_cleared(zone.zone_id)
 	loot = roll_loot(zone, BALANCE, boss_loot_seed)
 	GameSession.add_item(loot)
 	GameSession.credit_stones(zone.stone_reward)
+	GameSession.credit_team_xp(
+		team,
+		roundi(float(BALANCE.xp_per_wave * waves_resolved + zone.xp_reward) * xp_multiplier),
+		BALANCE,
+	)
 	return OUTCOME_COMPLETED
 
 

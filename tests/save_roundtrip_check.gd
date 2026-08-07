@@ -3,6 +3,8 @@ extends SceneTree
 const FIRST_HERO_NAME := "Roundtrip Aster"
 const FIRST_HERO_RANK := 2
 const FIRST_HERO_DEF_ID := &"rogue"
+const FIRST_HERO_LEVEL := 4
+const FIRST_HERO_XP := 17
 const SECOND_HERO_NAME := "Roundtrip Brann"
 const SECOND_HERO_RANK := 6
 const SECOND_HERO_DEF_ID := &"cleric"
@@ -27,6 +29,7 @@ const SACRIFICE_ESSENCE := 75
 const SACRIFICE_RESONANCE := 1
 const STONE_HERO_NAME := "Roundtrip Stone Hero"
 const STONE_REWARD := 75
+const PROGRESS_HERO_NAME := "Untrusted Progress Hero"
 
 var _game_session: Node
 var _save_service: Node
@@ -69,7 +72,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -83,6 +86,9 @@ func _run() -> int:
 	var untrusted_stones_code: int = _check_untrusted_stones()
 	if untrusted_stones_code != 0:
 		return untrusted_stones_code
+	var untrusted_progress_code: int = _check_untrusted_hero_progress()
+	if untrusted_progress_code != 0:
+		return untrusted_progress_code
 	var stones_round_trip_code: int = _check_stones_round_trip()
 	if stones_round_trip_code != 0:
 		return stones_round_trip_code
@@ -126,6 +132,8 @@ func _check_legacy_save() -> int:
 		return _fail("legacy hero default def_id", "empty", str(legacy_hero.def_id))
 	if legacy_hero.resonance != 0:
 		return _fail("legacy hero default resonance", "0", str(legacy_hero.resonance))
+	if legacy_hero.level != 0 or legacy_hero.xp != 0:
+		return _fail("legacy hero default level/XP", "0/0", "%d/%d" % [legacy_hero.level, legacy_hero.xp])
 	if _essence() != 0:
 		return _fail("essence after pre-existing disk reload", "0", str(_essence()))
 	if _stones() != 300:
@@ -151,6 +159,35 @@ func _check_untrusted_stones() -> int:
 		return _fail("float stones disk reload", "load_game() == true", "load_game() == false")
 	if _stones() != 300:
 		return _fail("integral float stones decode", "300", str(_stones()))
+	return 0
+
+
+func _check_untrusted_hero_progress() -> int:
+	var check_code: int = _check_hero_progress_fixture(null, 7, 0, 7, "null level")
+	if check_code != 0:
+		return check_code
+	check_code = _check_hero_progress_fixture("bad", 7, 0, 7, "wrong-typed level")
+	if check_code != 0:
+		return check_code
+	check_code = _check_hero_progress_fixture(3, null, 3, 0, "null XP")
+	if check_code != 0:
+		return check_code
+	return _check_hero_progress_fixture(3, "bad", 3, 0, "wrong-typed XP")
+
+
+# Variant parameters are required to author explicit JSON null and wrong-typed trust-boundary values.
+func _check_hero_progress_fixture(raw_level: Variant, raw_xp: Variant, expected_level: int, expected_xp: int, label: String) -> int:
+	var fixture_code: int = _write_hero_progress_fixture(raw_level, raw_xp)
+	if fixture_code != 0:
+		return fixture_code
+	_roster().clear()
+	if not _save_service.call("load_game"):
+		return _fail("%s disk reload" % label, "load_game() == true", "load_game() == false")
+	var hero: Hero = _find_hero(PROGRESS_HERO_NAME, 0)
+	if hero == null:
+		return _fail("%s hero" % label, PROGRESS_HERO_NAME, _roster_summary())
+	if hero.level != expected_level or hero.xp != expected_xp:
+		return _fail("%s fallback" % label, "%d/%d" % [expected_level, expected_xp], "%d/%d" % [hero.level, hero.xp])
 	return 0
 
 
@@ -231,6 +268,8 @@ func _check_new_format_round_trip() -> int:
 	_roster().clear()
 	var first_hero := Hero.new(FIRST_HERO_NAME, FIRST_HERO_RANK)
 	first_hero.def_id = FIRST_HERO_DEF_ID
+	first_hero.level = FIRST_HERO_LEVEL
+	first_hero.xp = FIRST_HERO_XP
 	var second_hero := Hero.new(SECOND_HERO_NAME, SECOND_HERO_RANK)
 	second_hero.def_id = SECOND_HERO_DEF_ID
 	_game_session.call("add_hero", first_hero)
@@ -251,6 +290,8 @@ func _check_new_format_round_trip() -> int:
 		return _fail("first hero selected for def_id check", "%s:%d" % [FIRST_HERO_NAME, FIRST_HERO_RANK], _roster_summary())
 	if loaded_first_hero.def_id != FIRST_HERO_DEF_ID:
 		return _fail("new-format hero def_id after disk reload", str(FIRST_HERO_DEF_ID), str(loaded_first_hero.def_id))
+	if loaded_first_hero.level != FIRST_HERO_LEVEL or loaded_first_hero.xp != FIRST_HERO_XP:
+		return _fail("new-format hero level/XP after disk reload", "%d/%d" % [FIRST_HERO_LEVEL, FIRST_HERO_XP], "%d/%d" % [loaded_first_hero.level, loaded_first_hero.xp])
 	var loaded_second_hero: Hero = _find_hero(SECOND_HERO_NAME, SECOND_HERO_RANK)
 	if loaded_second_hero == null:
 		return _fail("second hero selected for def_id check", "%s:%d" % [SECOND_HERO_NAME, SECOND_HERO_RANK], _roster_summary())
@@ -638,6 +679,20 @@ func _write_stones_fixture(raw_stones: Variant) -> int:
 	var fixture: Dictionary = {
 		"roster": [],
 		"stones": raw_stones,
+		"version": _save_version,
+	}
+	save_file.store_string(JSON.stringify(fixture, "\t"))
+	save_file.close()
+	return 0
+
+
+# Variant parameters are required to author explicit JSON null and wrong-typed trust-boundary values.
+func _write_hero_progress_fixture(raw_level: Variant, raw_xp: Variant) -> int:
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.WRITE)
+	if save_file == null:
+		return _fail("untrusted hero progress fixture write", "writable", error_string(FileAccess.get_open_error()))
+	var fixture: Dictionary = {
+		"roster": [{"name": PROGRESS_HERO_NAME, "rank": 0, "level": raw_level, "xp": raw_xp}],
 		"version": _save_version,
 	}
 	save_file.store_string(JSON.stringify(fixture, "\t"))
