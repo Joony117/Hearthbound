@@ -331,6 +331,15 @@ this field's presence in `Hero.to_dict/from_dict` right now is inert, not specul
 cycle — a hero with `resonance >= 1` (trait present via derivation) and, separately, a hand-seeded
 `taught_traits` entry, both surviving a round trip — not just a green import gate.
 
+**`P2-06c` shipped without `taught_traits`, deliberately — `P2-13` owns the field.** The "so
+`P2-13` doesn't need a second save-format bump" argument above does not hold: `Hero.from_dict`
+already defaults every missing key, so adding the field in `P2-13` costs exactly what adding it
+in `P2-06c` would have cost. What it *would* have cost then is real — a save-boundary change and
+a mandatory `verifier` pass for a field nothing writes and whose only possible value is `[]`.
+That is `LostCache.turn_lost` (`P2-04e`) and `Item.enhance_level` (`P2-05d`) a third time, and it
+went the same way. Everything specified above still stands for whoever adds it; only the timing
+moved, and with it cut, `P2-06c` touched no save key at all.
+
 **5. Where the numbers live.**
 
 | Number | File | Notes |
