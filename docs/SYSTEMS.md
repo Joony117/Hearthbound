@@ -1514,11 +1514,13 @@ SSS still near-mythical (~4,060 pulls at cap) but the effect is small enough (~1
 lift in top-rank odds at max level) that the building risks feeling like it does nothing, which
 fails "does this need to exist" for the one building whose whole job is to be felt.
 
-**Implementation note, not a doc change:** this needs two `BalanceTable` fields (a per-level
-rate and a level cap), not the single placeholder currently authored
-(`summoning_circle_weight_shift = 0.0`, `balance.tres`) — a schema change, not a value fill-in.
-Route through `tech-lead` as a ticket; this document does not edit `balance.tres` or
-`balance_table.gd`.
+**Implementation note, stale as of `P2-07a` — corrected here.** This paragraph used to say the
+schema needed two new `BalanceTable` fields in place of a single placeholder
+(`summoning_circle_weight_shift`). Checked against `balance_table.gd:18,21` directly: both fields
+already exist and are already authored — `summoning_circle_multiplier_per_level = 0.15` and
+`summoning_circle_level_cap = 5` — and `summoning_circle_weight_shift` does not appear in
+`balance_table.gd` at all (grepped; zero hits). The schema change this paragraph asked for has
+already shipped. Nothing left to route to `tech-lead` on this point.
 
 **No pity system until Phase 4.** Pity is a player-frustration feature, not a correctness
 one, and adding it before the loop is proven would be tuning something that may not survive.
@@ -1526,6 +1528,10 @@ one, and adding it before the loop is proven would be tuning something that may 
 ---
 
 ## Base buildings — *Phase 2*
+
+`P2-07a`. Rules the two gaps `P2-07` cannot be written against: an upgrade-cost formula in
+`parts` (rank-indexed, so a flat "N parts" is not implementable — the same gap `P2-01d` found in
+the Summoning Circle line), and the level caps for the three buildings that had none.
 
 Five buildings. **Not five integers** — corrected here after P2-01d's transcription into
 `balance.tres` found the original "five integers" line false: it's eight magnitudes across the
@@ -1541,17 +1547,141 @@ not the "one system" claim.
 | Sanctum | Sacrifice essence yield +10% | 1 | sacrifice |
 | Reliquary | Cache decay +5 turns; recovery damage chance −3% | 2 | recovery |
 
-> ⚠️ **PROVISIONAL** — Training Hall, Sanctum, and Reliquary carry no level cap at all; only Forge
-> has one (`level * 3 ≤ 15`, implied by Enhancement). Nothing stops the other three scaling into
-> a magnitude nobody has checked. · **Settled by:** a design pass giving each an explicit cap, and
-> a played build to find where the effect stops being fun to keep pushing.
+### Level caps — all five cap at level 5
 
-> ⚠️ **PROVISIONAL** — Training Hall's "+15% XP" reads against an XP-per-level curve that doesn't
-> exist anywhere in this document (`P2-04a`). The percentage is meaningless until there's a curve
-> to apply it to. · **Settled by:** `P2-04a` defining the XP curve.
+**Ruling: Training Hall, Sanctum, and Reliquary cap at level 5, the same cap Forge
+(`forge_enhance_cap_per_level * level ≤ forge_enhance_cap_max`, i.e. `3*5=15`) and the Summoning
+Circle (`summoning_circle_level_cap = 5`) already carry.** Closes the PROVISIONAL that used to
+sit here.
 
-Upgrade cost: parts — gold struck per Enhancement's ruling (`P2-05e`) that gold has no value and
-no income source anywhere in this game yet. Add back once a ticket gives gold a rate.
+Two reasons, one per building family:
+
+- **No basis exists to make the other three a different cadence than Forge/Circle.** All five
+  buildings read exactly one system each and none of their bonuses is tied to another leveled
+  resource the way Enhancement's cap is tied to `Item.enhance_level` (0-15) — there is nothing in
+  this document that would justify Training Hall progressing on a faster or slower clock than the
+  Circle. Absent a reason to diverge, the smallest surprising choice is the cap already used
+  twice.
+- **Reliquary's own numbers corroborate 5 specifically, not just "pick something."** `recovery
+  damage chance −3%` per level against `damage_chance`'s base `0.15` (Death and gear recovery,
+  above): `0.03 * 5 = 0.15` exactly cancels the base term at `turns_elapsed = 0` (Codex thread
+  `019fd9c2-ea81-7780-8275-cb11eb903de3`, question 5). A cap of 4 leaves `0.03pp` of the base
+  permanently un-cancellable for no reason; a cap of 6 makes a maxed Reliquary net *negative*
+  before `power_deficit_penalty` is even added, which would need a `clampf(..., 0.0, 1.0)` this
+  document hasn't asked for. 5 is the only cap where the base term cancels clean.
+
+At cap, the other two bonuses read: Training Hall `+75%` XP (meaningless number until `P2-04a`
+exists — see below), Sanctum `+50%` essence yield, Reliquary `+25` decay turns (cache lifetime
+15 → 40) stacked with the `−15%` damage-chance cancellation above.
+
+> ⚠️ **PROVISIONAL** — the cap-5 choice for Training Hall/Sanctum/Reliquary is justified by
+> consistency with Forge/Circle and by Reliquary's clean cancellation at 5; it has not been
+> played at any level, and Training Hall's and Sanctum's magnitudes at cap (`+75%` XP, `+50%`
+> essence yield) have no played reference point the way Reliquary's does. · **Settled by:** a
+> played build with at least one of these three built past level 1.
+
+> ⚠️ **PROVISIONAL** — Training Hall's "+15%/level XP" reads against an XP-per-level curve that
+> doesn't exist anywhere in this document (`P2-04a`). The percentage is meaningless until there's
+> a curve to apply it to. · **Settled by:** `P2-04a` defining the XP curve.
+
+### Which buildings ship in `P2-07`
+
+**Ruling: three buildings now — Summoning Circle, Forge, Sanctum. Training Hall and Reliquary
+wait for their consumers.** A player who spends parts on a building that provably does nothing is
+a worse outcome than the building not being offered yet, and two of the five have no consumer to
+read them at all:
+
+- **Training Hall** reads against `P2-04a`'s XP curve, which is unstarted — there is no
+  expedition-XP system anywhere in the codebase for `+15%` to modify. Spending parts here changes
+  no number, ever, until `P2-04a` ships.
+- **Reliquary** reads against two things neither of which exists: the recovery-expedition damage
+  roll (`P2-04f`, blocked on `power_deficit_penalty`) and a "turn" concept at all (also `P2-04f`,
+  and the decay clock is turn-denominated). Same outcome — parts spent here are inert until
+  `P2-04f` unblocks and ships.
+- **Circle, Forge, and Sanctum** each read a system that already exists in code today: `summon`
+  (roll-a-rank-then-a-definition, live), `forge` (`enhance_item`/`salvage_item`,
+  `systems/game_session.gd:58-84`, live), and `sacrifice` (`sacrifice_hero`,
+  `systems/game_session.gd:104-111`, live). Their bonuses aren't wired to a building level yet —
+  that's `P2-07`'s own job — but the thing being boosted is real, so a level spent on any of the
+  three does something the moment `P2-07` wires it in.
+
+`P2-07`'s ticket should therefore scope to three buildings, not five. Training Hall and Reliquary
+are not cancelled — they're the same shape as `Item.enhance_level` was before `P2-05f`: a real,
+ruled design (this section) waiting on a field nobody needs yet. Re-open them as a follow-up once
+`P2-04a` (Training Hall) or `P2-04f` (Reliquary) lands; no further design pass should be needed
+at that point since the cost formula and cap below already cover all five uniformly.
+
+### Upgrade cost — parts, rank keyed to level
+
+**Ruling:**
+
+```
+cost(level n -> n+1) = 10 * (n + 2) parts of rank index n      (n = 0..4)
+```
+
+`n` is the building's *current* level before the upgrade (0 = unbuilt, same convention the
+Summoning Circle table already uses), and it doubles as the parts *rank index* the upgrade
+consumes: level 0→1 costs F-rank parts, 1→2 costs D-rank, 2→3 costs C-rank, 3→4 costs B-rank,
+4→5 (the cap) costs A-rank. Same shape as Enhancement's `2 + n` — a building's cost climbing in
+*rank* as it levels is the direct analogue of Enhancement's cost climbing in *quantity* as an
+item levels, since a building has no fixed rank of its own the way an item does. Applies
+uniformly to all five buildings, including the two deferred above, so no separate cost pass is
+needed when they ship.
+
+| Level | 0→1 | 1→2 | 2→3 | 3→4 | 4→5 |
+|---|---|---|---|---|---|
+| Rank | F | D | C | B | A |
+| Cost | 20 | 30 | 40 | 50 | 60 |
+
+Checked against real parts income — one guaranteed drop per clear, salvage `3 + enhance_level`
+parts of the drop's own rank (worst case 3, unenhanced), banded per zone, no downward conversion
+(Codex thread `019fd9c2-ea81-7780-8275-cb11eb903de3`, direct-farming-only, no credit taken for
+converting spare lower-rank parts up):
+
+| Level | Rank | Best zone | Band weight | Parts/clear | Clears needed |
+|---|---|---|---:|---:|---:|
+| 0→1 | F | Verdant | 47.62% | 1.429 | 14 |
+| 1→2 | D | Verdant | 32.14% | 0.964 | 32 |
+| 2→3 | C | Ashfall | 53.97% | 1.619 | 25 |
+| 3→4 | B | Ashfall | 31.75% | 0.952 | 53 |
+| 4→5 | A | Ashfall | 14.29% | 0.429 | 140 |
+
+**264 expected clears to max one building** (14+32+25+53+140, Codex thread
+`019fd9c2-ea81-7780-8275-cb11eb903de3`) — **792 to max all three shipped in `P2-07`**
+(`264*3`), **1,320 if Training Hall and Reliquary are counted too** (`264*5`, the eventual
+all-five total once they unblock). 264 is the same order of magnitude as the ~327-pull
+manufactured-SSS spine number (Summoning, above), which is the anchor this was chosen against: a
+building's payoff is permanent and account-wide (every future pull, every future enhance, every
+future sacrifice), so a single building maxed should cost roughly as much patience as
+manufacturing one SSS, not less. The undercount direction only: this assumes every clear's drop
+is dedicated to the plan and ignores the time a clear itself takes.
+
+**Rejected: multiplier 5** (`5*(n+2)`, half the coefficient) — 133 clears to max one building,
+under half the SSS spine number for a bonus that, unlike an SSS hero, applies to *every* future
+pull/enhance/sacrifice forever. Undersells what a permanent, account-wide multiplier should cost
+relative to a one-time hero.
+
+**Rejected: multiplier 20** (`20*(n+2)`, double) — 526 clears to max one building, 1,578 for the
+three shipped buildings alone — ~1.6× the spine number per building, which risks buildings
+becoming the dominant parts sink in the game rather than a complement to summon/sacrifice/enhance,
+the systems this doc treats as the actual core loop.
+
+**Rejected: fixed rank per building, quantity-only scaling** (e.g. every level of a building
+costs C-rank parts, with quantity climbing per level) — considered because it avoids the
+mid-progression gate where level 4→5 needs Ashfall access. Rejected because it breaks the
+Enhancement-formula parallel (rank fixed, quantity climbing) for no gain: a building's cost
+climbing in rank models "this building is now asking for a deeper commitment" the same way a
+hero's own rank-up costs climb in essence: rank F→D costs 40, SS→SSS costs 16,000 (Sacrifice →
+rank up, above) — an established pattern in this doc, not a new one being invented here.
+
+> ⚠️ **PROVISIONAL** — the cost formula is arithmetically checked against real drop/salvage rates
+> (table above) and picked to land in the same order of magnitude as the already-verified SSS
+> spine number, but nobody has spent parts against a built UI to feel whether 14-to-140 clears per
+> level reads as "a long-term goal" or "a chore." · **Settled by:** a played build with `P2-07`'s
+> UI, spending real parts income against these costs across at least one full building.
+
+Gold remains struck from this line per Enhancement's ruling (`P2-05e`) — no income source exists
+anywhere in this game yet. Add back once a ticket gives gold a rate.
 
 No build queues, no adjacency bonuses, no timers, no construction animation. Add complexity
 only when a building needs to express something an integer can't.
