@@ -1211,15 +1211,15 @@ recovery after. Costing nothing to ship is not the same as costing nothing to hi
 > question only a played wipe can answer. · **Settled by:** a played build reaching this state at
 > least once — does the top-up read as "the game caught me" or as "that wasn't really permadeath"?
 
-**A pre-existing spec/code mismatch this ruling surfaces, not caused.** The Sacrifice formula box
-at the top of this document's "Sacrifice → rank up" section reads
+**A pre-existing spec/code mismatch this ruling surfaced, not caused — now closed by `P2-19`.** The
+Sacrifice formula box at the top of this document's "Sacrifice → rank up" section reads
 `yield = essence_base[fodder.rank] * (1.0 + fodder.level / level_cap[fodder.rank])` — a
-level-scaled essence bonus. `Hero.compute_essence_yield()` (`heroes/hero.gd:130-142`) has never
-implemented that term; it couldn't, since `fodder.level` had no backing field before this ruling.
-Now that `hero.level` is real, the mismatch is live rather than moot: either wire the bonus in (a
-code change) or strike the term from the formula box as never-shipped. Not this ruling's call —
-flagging for `tech-lead` to route as a small follow-up, since it's a Sacrifice-formula question,
-not an XP-curve one.
+level-scaled essence bonus. `Hero.compute_essence_yield()` had never implemented that term; it
+couldn't, since `fodder.level` had no backing field before this ruling. `P2-19` **wired it rather
+than striking it**, on the evidence that this document already spends the term: the `~150`-pull
+optimistic bound in § Sacrifice → rank up is derived assuming all fodder is max-level, which is
+arithmetic that only exists if a max-level fodder yields double. Striking would have invalidated
+that bound and needed a fresh ruling; wiring needed no new number.
 
 **Where every number lives.**
 

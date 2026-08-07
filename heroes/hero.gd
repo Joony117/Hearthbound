@@ -153,12 +153,16 @@ static func compute_essence_yield(
 	balance: BalanceTable,
 	sanctum_level: int,
 ) -> int:
-	var essence_yield: int = balance.essence_bases[
+	var essence_yield: float = balance.essence_bases[
 		clampi(fodder.rank, 0, balance.essence_bases.size() - 1)
 	]
+	# SYSTEMS.md "Sacrifice -> rank up": a fodder at its rank's cap yields double. Float division on
+	# purpose - int division floors to 0 below the cap and 1 at it, which kills the whole bonus.
+	var level_cap: int = maxi(balance.level_caps[clampi(fodder.rank, 0, balance.level_caps.size() - 1)], 1)
+	essence_yield *= 1.0 + float(level_for(fodder, balance)) / float(level_cap)
 	if fodder.def_id == target.def_id and fodder.def_id != NO_ARCHETYPE_DEF_ID:
-		essence_yield *= 3
-	return roundi(float(essence_yield) * (1.0 + balance.sanctum_essence_yield_bonus * sanctum_level))
+		essence_yield *= 3.0
+	return roundi(essence_yield * (1.0 + balance.sanctum_essence_yield_bonus * sanctum_level))
 
 
 static func compute_rank_up_cost(hero: Hero, balance: BalanceTable) -> int:
