@@ -14,6 +14,9 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _essence: Label = %Essence
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _parts: Label = %Parts
+@onready var _circle_level: Label = %CircleLevel
+@onready var _forge_level: Label = %ForgeLevel
+@onready var _sanctum_level: Label = %SanctumLevel
 @onready var _convert_rank_option: OptionButton = %ConvertRankOption
 @onready var _equipped_list: ItemList = %EquippedList
 @onready var _hero_detail: Label = %HeroDetail
@@ -27,6 +30,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_essence)
 	GameSession.roster_changed.connect(_refresh_inventory)
 	GameSession.roster_changed.connect(_refresh_parts)
+	GameSession.roster_changed.connect(_refresh_buildings)
 	GameSession.roster_changed.connect(_refresh_equipped)
 	GameSession.roster_changed.connect(_refresh_hero_detail)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
@@ -34,6 +38,7 @@ func _ready() -> void:
 	_refresh_essence()
 	_refresh_inventory()
 	_refresh_parts()
+	_refresh_buildings()
 	_refresh_equipped()
 	_refresh_hero_detail()
 	_populate_convert_ranks()
@@ -100,6 +105,12 @@ func _refresh_parts() -> void:
 	for rank_index: int in GameSession.parts.size():
 		entries.append("%s: %d" % [BALANCE.rank_names[rank_index], GameSession.parts[rank_index]])
 	_parts.text = "Parts  " + " | ".join(entries)
+
+
+func _refresh_buildings() -> void:
+	_circle_level.text = "Summoning Circle — Lv %d" % GameSession.building_levels[0]
+	_forge_level.text = "Forge — Lv %d" % GameSession.building_levels[1]
+	_sanctum_level.text = "Sanctum — Lv %d" % GameSession.building_levels[3]
 
 
 func _refresh_equipped() -> void:
@@ -323,6 +334,31 @@ func _on_convert_pressed() -> void:
 		_status.text = "Converted 3 %s parts into 1 %s part." % [rank_label, BALANCE.rank_names[selected_rank + 1]]
 	else:
 		_status.text = "Need 3 %s parts to convert." % rank_label
+
+
+func _on_upgrade_circle_pressed() -> void:
+	_upgrade_building(0, "Summoning Circle", GameSession.upgrade_building(0, BALANCE))
+
+
+func _on_upgrade_forge_pressed() -> void:
+	_upgrade_building(1, "Forge", GameSession.upgrade_building(1, BALANCE))
+
+
+func _on_upgrade_sanctum_pressed() -> void:
+	_upgrade_building(3, "Sanctum", GameSession.upgrade_building(3, BALANCE))
+
+
+func _upgrade_building(index: int, building_name: String, upgraded: bool) -> void:
+	var level: int = clampi(GameSession.building_levels[index], 0, BALANCE.summoning_circle_level_cap)
+	if upgraded:
+		_status.text = "Upgraded %s to Lv %d for %d %s parts." % [building_name, level, 10 * (level + 1), BALANCE.rank_names[clampi(level - 1, 0, GameSession.parts.size() - 1)]]
+		return
+	if level >= BALANCE.summoning_circle_level_cap:
+		_status.text = "%s is already at the Lv %d cap." % [building_name, BALANCE.summoning_circle_level_cap]
+		return
+	var rank_index: int = clampi(level, 0, GameSession.parts.size() - 1)
+	var cost: int = 10 * (level + 2)
+	_status.text = "Cannot upgrade %s: need %d %s parts." % [building_name, cost, BALANCE.rank_names[rank_index]]
 
 
 func _on_unequip_pressed() -> void:

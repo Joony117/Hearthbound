@@ -10,6 +10,7 @@ signal roster_changed
 var roster: Array[Hero] = []
 var inventory: Array[Item] = []
 var parts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0]
+var building_levels: Array[int] = [0, 0, 0, 0, 0]
 var essence: int = 0
 var lost_caches: Array[LostCache] = []
 var cleared_zone_ids: Dictionary[StringName, bool] = {}
@@ -84,6 +85,22 @@ func enhance_item(item: Item, balance: BalanceTable) -> bool:
 	return true
 
 
+func upgrade_building(index: int, balance: BalanceTable) -> bool:
+	if index < 0 or index >= building_levels.size():
+		return false
+	var level: int = clampi(building_levels[index], 0, balance.summoning_circle_level_cap)
+	if level >= balance.summoning_circle_level_cap:
+		return false
+	var rank_index: int = clampi(level, 0, parts.size() - 1)
+	var cost: int = 10 * (level + 2)
+	if parts[rank_index] < cost:
+		return false
+	parts[rank_index] -= cost
+	building_levels[index] = level + 1
+	roster_changed.emit()
+	return true
+
+
 func convert_parts(rank: int) -> bool:
 	if rank < 0 or rank >= parts.size() - 1 or parts[rank] < 3:
 		return false
@@ -154,6 +171,7 @@ func to_dict() -> Dictionary:
 		"roster": entries,
 		"inventory": inventory_entries,
 		"parts": parts.duplicate(),
+		"building_levels": building_levels.duplicate(),
 		"essence": essence,
 		"lost_caches": lost_cache_entries,
 		"cleared_zone_ids": cleared_entries,
@@ -164,6 +182,7 @@ func from_dict(data: Dictionary) -> void:
 	roster.clear()
 	inventory.clear()
 	parts.fill(0)
+	building_levels.fill(0)
 	essence = 0
 	lost_caches.clear()
 	cleared_zone_ids.clear()
@@ -188,6 +207,21 @@ func from_dict(data: Dictionary) -> void:
 			push_error("Invalid parts count at rank %d: expected a non-negative integer, got '%s'." % [rank_index, saved_count])
 			continue
 		parts[rank_index] = count
+	var saved_building_levels: Array = _array_field(data, "building_levels")
+	for building_index: int in mini(saved_building_levels.size(), building_levels.size()):
+		# Variant is required while validating untrusted save entries.
+		var saved_level: Variant = saved_building_levels[building_index]
+		var level: int = -1
+		if saved_level is int:
+			level = saved_level as int
+		elif saved_level is float:
+			var float_level: float = saved_level as float
+			if is_finite(float_level) and float_level == floorf(float_level):
+				level = int(float_level)
+		if level < 0:
+			push_error("Invalid building level at index %d: expected a non-negative integer, got '%s'." % [building_index, saved_level])
+			continue
+		building_levels[building_index] = level
 	essence = maxi(Item.int_field(data, "essence", 0, "game session"), 0)
 	for entry: Variant in _array_field(data, "lost_caches"):
 		if entry is Dictionary:

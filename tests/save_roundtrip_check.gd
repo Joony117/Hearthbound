@@ -62,7 +62,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, parts, part conversion, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, parts, part conversion, buildings, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -85,6 +85,9 @@ func _run() -> int:
 	var enhanced_equipment_code: int = _check_enhanced_equipment_round_trip()
 	if enhanced_equipment_code != 0:
 		return enhanced_equipment_code
+	var buildings_code: int = _check_buildings_round_trip()
+	if buildings_code != 0:
+		return buildings_code
 	return _check_permadeath_and_version()
 
 
@@ -246,6 +249,44 @@ func _check_parts_round_trip() -> int:
 		var converted_loaded_expected: int = 1 if rank_index == SALVAGED_ITEM_RANK + 1 else 0
 		if _parts()[rank_index] != converted_loaded_expected:
 			return _fail("converted parts after disk reload at rank %d" % rank_index, str(converted_loaded_expected), str(_parts()[rank_index]))
+	return 0
+
+
+func _check_buildings_round_trip() -> int:
+	var building_levels: Array[int] = _game_session.get("building_levels")
+	building_levels.fill(0)
+	_parts().fill(0)
+	_parts()[0] = 20
+	if not _game_session.call("upgrade_building", 0, BalanceTable.new()):
+		return _fail("building upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
+	_save_service.call("save")
+
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
+	if save_file == null:
+		return _fail("building levels raw save file open", "readable", error_string(FileAccess.get_open_error()))
+	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
+	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	if parsed is not Dictionary:
+		return _fail("building levels raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
+	# Save-file fields remain Variant until their types are validated.
+	var raw_building_levels: Variant = (parsed as Dictionary).get("building_levels")
+	if raw_building_levels is not Array:
+		return _fail("raw save JSON building levels shape", "Array", type_string(typeof(raw_building_levels)))
+	var raw_building_levels_array: Array = raw_building_levels as Array
+	if raw_building_levels_array.size() != building_levels.size():
+		return _fail("raw save JSON building level count", str(building_levels.size()), str(raw_building_levels_array.size()))
+	for building_index: int in building_levels.size():
+		var expected_level: int = 1 if building_index == 0 else 0
+		if int(raw_building_levels_array[building_index]) != expected_level:
+			return _fail("raw save JSON building level at index %d" % building_index, str(expected_level), str(raw_building_levels_array[building_index]))
+
+	building_levels.fill(0)
+	if not _save_service.call("load_game"):
+		return _fail("building levels disk reload", "load_game() == true", "load_game() == false")
+	for building_index: int in building_levels.size():
+		var expected_level: int = 1 if building_index == 0 else 0
+		if building_levels[building_index] != expected_level:
+			return _fail("building level after disk reload at index %d" % building_index, str(expected_level), str(building_levels[building_index]))
 	return 0
 
 

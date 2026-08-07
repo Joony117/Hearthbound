@@ -150,12 +150,56 @@ text = "Rank Up Selected"
 layout_mode = 1
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 312.0
+offset_left = 528.0
 offset_top = 16.0
 offset_right = -16.0
 offset_bottom = -112.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="BuildingsPanel" type="PanelContainer" parent="UI/Root"]
+layout_mode = 1
+anchor_bottom = 1.0
+offset_left = 312.0
+offset_top = 16.0
+offset_right = 512.0
+offset_bottom = -112.0
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/Root/BuildingsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
+layout_mode = 2
+text = "BUILDINGS"
+
+[node name="CircleLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Summoning Circle — Lv 0"
+
+[node name="UpgradeCircle" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
+layout_mode = 2
+text = "Upgrade"
+
+[node name="ForgeLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Forge — Lv 0"
+
+[node name="UpgradeForge" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
+layout_mode = 2
+text = "Upgrade"
+
+[node name="SanctumLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Sanctum — Lv 0"
+
+[node name="UpgradeSanctum" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
+layout_mode = 2
+text = "Upgrade"
 
 [node name="Columns" type="HBoxContainer" parent="UI/Root/EquipmentPanel"]
 layout_mode = 2
@@ -275,5 +319,8 @@ unique_name_in_owner = true
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Enhance" to="." method="_on_enhance_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Convert" to="." method="_on_convert_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
+[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeCircle" to="." method="_on_upgrade_circle_pressed"]
+[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeForge" to="." method="_on_upgrade_forge_pressed"]
+[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeSanctum" to="." method="_on_upgrade_sanctum_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]
