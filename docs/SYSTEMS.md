@@ -1622,9 +1622,11 @@ Two reasons, one per building family:
   before `power_deficit_penalty` is even added, which would need a `clampf(..., 0.0, 1.0)` this
   document hasn't asked for. 5 is the only cap where the base term cancels clean.
 
-At cap, the other two bonuses read: Training Hall `+75%` XP (meaningless number until `P2-04a`
-exists — see below), Sanctum `+50%` essence yield, Reliquary `+25` decay turns (cache lifetime
-15 → 40) stacked with the `−15%` damage-chance cancellation above.
+At cap, the remaining per-level bonuses read: Forge `+50%` salvage yield (ruled at the end of this
+section — this paragraph's prior silence on Forge is the gap `P2-07d` flagged), Training Hall
+`+75%` XP (meaningless number until `P2-04a` exists — see below), Sanctum `+50%` essence yield,
+Reliquary `+25` decay turns (cache lifetime 15 → 40) stacked with the `−15%` damage-chance
+cancellation above.
 
 > ⚠️ **PROVISIONAL** — the cap-5 choice for Training Hall/Sanctum/Reliquary is justified by
 > consistency with Forge/Circle and by Reliquary's clean cancellation at 5; it has not been
@@ -1737,6 +1739,71 @@ a "waiting on an income source" deferral: gold is removed from the document, not
 
 No build queues, no adjacency bonuses, no timers, no construction animation. Add complexity
 only when a building needs to express something an integer can't.
+
+### Forge salvage-yield bonus — scaling law
+
+**Ruling: per-level, `10% * forge_level`, same cadence as every sibling field of this exact
+shape — not flat-on-build.**
+
+```
+salvage_bonus(forge_level) = 0.10 * forge_level      (forge_level = 0..5)
+yield = roundi((3 + enhance_level) * (1.0 + salvage_bonus))
+```
+
+`forge_level = 0` (unbuilt) gives `+0%` — Forge contributes nothing until level 1, the same gate
+every building's level-0→1 cost pays for. At the cap (level 5) it reaches `+50%`, the magnitude
+now folded into the "at cap" recap above and identical to Sanctum's essence-yield bonus at cap.
+
+The field name settles nothing on its own (`P2-07d`'s table row already says so), but the pattern
+across its siblings does: `training_hall_xp_bonus`, `sanctum_essence_yield_bonus`,
+`reliquary_decay_turns_bonus`, and `reliquary_damage_chance_reduction` (`balance_table.gd:24-28`)
+share the identical no-`_per_level`-suffix shape as `forge_salvage_yield_bonus`, and every one of
+them is already ruled per-level elsewhere in this section. Forge's salvage-yield row also sits
+under the Base-buildings table's own "Effect per level" column header alongside all four —
+nothing in the table distinguishes it. The ambiguity `P2-07a` left open was created entirely by
+the "at cap" recap paragraph omitting Forge, not by anything in the field itself or its neighbors.
+
+**Rejected: flat `+10%` once built, regardless of level.** Two reasons:
+
+1. **No internal consistency.** Forge's *other* effect (`forge_enhance_cap_per_level`) is
+   explicitly per-level; nothing in this document gives one Forge effect a different progression
+   shape than the other, and every sibling field above is per-level too.
+2. **The rounding trap, measured.** Salvage yield is `3 + enhance_level`, an integer with no
+   fractional part today. Introducing a float bonus on top of it forces a rounding choice, and
+   under truncation (`int()`) a flat `+10%` produces **zero extra parts for `enhance_level` 0
+   through 6** — `3*1.10 = 3.3 -> 3`, `4*1.10 = 4.4 -> 4`, … `9*1.10 = 9.9 -> 9`; the first
+   nonzero result needs `enhance_level >= 7` (`base >= 10`) (Codex thread
+   `019fda99-8a2b-7c40-a78f-c54406c640bc`). `enhance_level = 0` — a freshly-dropped, unenhanced
+   item — is the single most common salvage case; nobody spends Forge parts enhancing gear they
+   intend to break. A flat reading under truncation reads real in the buildings table and
+   measures nothing on the majority of actual salvage actions — the same trap `LostCache.turn_lost`,
+   `Item.enhance_level`, and `reliquary_decay_turns_bonus` each hit before this was caught.
+
+**Rounding: `roundi()` (round-half-away-from-zero), not `int()`/floor truncation — this call
+holds regardless of which reading had won.** Truncation reproduces the same trap one level down
+even under the ruled per-level reading: `floor((3+enhance_level)*(1+0.10*level))` still yields
+zero extra parts for `enhance_level = 0` at Forge levels 1 through 3 — `3*1.10=3.3->3`,
+`3*1.20=3.6->3`, `3*1.30=3.9->3` — three of the building's five levels would read as doing
+nothing on the most common salvage case. `roundi()` fixes this from level 2 onward
+(`3*1.20=3.6->4`), leaving only level 1 (`3*1.10=3.3->3`) as zero-effect on unenhanced junk, which
+is acceptable: level 1 is the building's cheapest rung, and every other per-level bonus in this
+document is also smallest at level 1. (Same Codex thread, confirmed by hand-checked subtraction
+after an initial summary error was caught and corrected on the thread.)
+
+**Self-financing check — not degenerate.** A live per-level bonus feeds the same parts currency
+that funds the next building level. Applying each level's live bonus to the "parts/clear" figure
+while grinding toward the *next* level (e.g. level 1's `+10%` applies while grinding 1→2, level
+4's `+40%` while grinding 4→5) reduces the 264-expected-clears anchor above to **~204.7 clears
+(-22.5%)** (same Codex thread). Real and felt, not nothing — but not an order-of-magnitude
+collapse of the cost anchor, and the final level's own `+50%` never gets to fund itself since
+there is no level 5→6 to grind toward.
+
+> ⚠️ **PROVISIONAL** — the per-level reading and `roundi()` rounding are arithmetically settled
+> (the only combination of the two choices in front of this ruling that avoids a zero-effect level
+> past the first), but nobody has salvaged gear against a built Forge to feel whether a bonus this
+> small (0-2 extra parts per salvage at the ranks players actually farm) registers at all versus
+> needing to be read off a tooltip. · **Settled by:** a played build with `P2-07d` wired, salvaging
+> real drops against a Forge leveled past 1.
 
 ---
 
