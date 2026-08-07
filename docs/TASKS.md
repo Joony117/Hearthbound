@@ -517,7 +517,7 @@ needs to re-read.
 | `P2-06a` | Sacrifice a hero for essence; spend essence to rank another up | `fc20c1e` |
 | `P2-06c` | Trait data — `TraitDefinition`, two pools, 15 authored traits | `f4eea87` |
 | `P2-06b` | Resonance traits change a hero's stats | `26103f7` |
-| `P2-14` | The hub shows what a hero's stats actually are | this commit |
+| `P2-14` | The hub shows what a hero's stats actually are | `a47fb87` |
 
 ---
 
