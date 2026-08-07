@@ -16,6 +16,11 @@ const SALVAGED_ITEM_RANK := 5
 const ENHANCED_ITEM_DEF_ID := &"head"
 const ENHANCED_ITEM_RANK := 4
 const ENHANCED_ITEM_LEVEL := 3
+const INVENTORY_ITEM_DEF_ID := &"necklace"
+const INVENTORY_ITEM_RANK := 5
+const INVENTORY_ITEM_LEVEL := 7
+const FIRST_CLEARED_ZONE_ID := &"verdant_outskirts"
+const SECOND_CLEARED_ZONE_ID := &"ashfall_reaches"
 const SACRIFICE_FODDER_NAME := "Roundtrip Fodder"
 const SACRIFICE_FODDER_RANK := 1
 const SACRIFICE_ESSENCE := 75
@@ -64,7 +69,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -93,6 +98,12 @@ func _run() -> int:
 	var enhanced_equipment_code: int = _check_enhanced_equipment_round_trip()
 	if enhanced_equipment_code != 0:
 		return enhanced_equipment_code
+	var inventory_code: int = _check_inventory_round_trip()
+	if inventory_code != 0:
+		return inventory_code
+	var cleared_zones_code: int = _check_cleared_zones_round_trip()
+	if cleared_zones_code != 0:
+		return cleared_zones_code
 	var buildings_code: int = _check_buildings_round_trip()
 	if buildings_code != 0:
 		return buildings_code
@@ -416,6 +427,93 @@ func _check_enhanced_equipment_round_trip() -> int:
 	var reloaded_item: Item = reloaded_hero.equipped[definition.slot]
 	if reloaded_item.enhance_level != ENHANCED_ITEM_LEVEL:
 		return _fail("enhanced equipment level after disk reload", str(ENHANCED_ITEM_LEVEL), str(reloaded_item.enhance_level))
+	return 0
+
+
+func _check_inventory_round_trip() -> int:
+	var item := Item.new(INVENTORY_ITEM_DEF_ID, INVENTORY_ITEM_RANK)
+	item.enhance_level = INVENTORY_ITEM_LEVEL
+	_game_session.call("add_item", item)
+	_save_service.call("save")
+
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
+	if save_file == null:
+		return _fail("inventory raw save file open", "readable", error_string(FileAccess.get_open_error()))
+	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
+	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	if parsed is not Dictionary:
+		return _fail("inventory raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
+	# Save-file fields remain Variant until their types are validated.
+	var raw_inventory: Variant = (parsed as Dictionary).get("inventory")
+	if raw_inventory is not Array:
+		return _fail("inventory raw save JSON shape", "Array", type_string(typeof(raw_inventory)))
+	var raw_inventory_array: Array = raw_inventory as Array
+	if raw_inventory_array.size() != 1:
+		return _fail("inventory raw save item count", "1", str(raw_inventory_array.size()))
+	if raw_inventory_array[0] is not Dictionary:
+		return _fail("inventory raw save item shape", "Dictionary", type_string(typeof(raw_inventory_array[0])))
+	var raw_item: Dictionary = raw_inventory_array[0] as Dictionary
+	if str(raw_item.get("def_id")) != str(INVENTORY_ITEM_DEF_ID):
+		return _fail("inventory def_id in raw save JSON", str(INVENTORY_ITEM_DEF_ID), str(raw_item.get("def_id")))
+	if int(raw_item.get("rank", -1)) != INVENTORY_ITEM_RANK:
+		return _fail("inventory rank in raw save JSON", str(INVENTORY_ITEM_RANK), str(raw_item.get("rank")))
+	if int(raw_item.get("enhance_level", -1)) != INVENTORY_ITEM_LEVEL:
+		return _fail("inventory enhance level in raw save JSON", str(INVENTORY_ITEM_LEVEL), str(raw_item.get("enhance_level")))
+
+	var inventory: Array[Item] = _game_session.get("inventory")
+	inventory.clear()
+	if not _save_service.call("load_game"):
+		return _fail("inventory disk reload", "load_game() == true", "load_game() == false")
+	if inventory.size() != 1:
+		return _fail("inventory item count after disk reload", "1", str(inventory.size()))
+	var reloaded_item: Item = inventory[0]
+	if reloaded_item.def_id != INVENTORY_ITEM_DEF_ID:
+		return _fail("inventory def_id after disk reload", str(INVENTORY_ITEM_DEF_ID), str(reloaded_item.def_id))
+	if reloaded_item.rank != INVENTORY_ITEM_RANK:
+		return _fail("inventory rank after disk reload", str(INVENTORY_ITEM_RANK), str(reloaded_item.rank))
+	if reloaded_item.enhance_level != INVENTORY_ITEM_LEVEL:
+		return _fail("inventory enhance level after disk reload", str(INVENTORY_ITEM_LEVEL), str(reloaded_item.enhance_level))
+	return 0
+
+
+func _check_cleared_zones_round_trip() -> int:
+	_game_session.call("mark_zone_cleared", FIRST_CLEARED_ZONE_ID)
+	_game_session.call("mark_zone_cleared", SECOND_CLEARED_ZONE_ID)
+	_save_service.call("save")
+
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
+	if save_file == null:
+		return _fail("cleared zones raw save file open", "readable", error_string(FileAccess.get_open_error()))
+	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
+	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	if parsed is not Dictionary:
+		return _fail("cleared zones raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
+	# Save-file fields remain Variant until their types are validated.
+	var raw_cleared_zone_ids: Variant = (parsed as Dictionary).get("cleared_zone_ids")
+	if raw_cleared_zone_ids is not Array:
+		return _fail("cleared zones raw save JSON shape", "Array", type_string(typeof(raw_cleared_zone_ids)))
+	var has_first_zone: bool = false
+	var has_second_zone: bool = false
+	for raw_zone_id: Variant in raw_cleared_zone_ids as Array:
+		if raw_zone_id is not String:
+			return _fail("cleared zone ID in raw save JSON type", "String", type_string(typeof(raw_zone_id)))
+		if raw_zone_id == str(FIRST_CLEARED_ZONE_ID):
+			has_first_zone = true
+		if raw_zone_id == str(SECOND_CLEARED_ZONE_ID):
+			has_second_zone = true
+	if not has_first_zone:
+		return _fail("first cleared zone in raw save JSON", str(FIRST_CLEARED_ZONE_ID), "missing")
+	if not has_second_zone:
+		return _fail("second cleared zone in raw save JSON", str(SECOND_CLEARED_ZONE_ID), "missing")
+
+	var cleared_zone_ids: Dictionary[StringName, bool] = _game_session.get("cleared_zone_ids")
+	cleared_zone_ids.clear()
+	if not _save_service.call("load_game"):
+		return _fail("cleared zones disk reload", "load_game() == true", "load_game() == false")
+	if not cleared_zone_ids.has(FIRST_CLEARED_ZONE_ID):
+		return _fail("first cleared zone after disk reload", str(FIRST_CLEARED_ZONE_ID), "missing")
+	if not cleared_zone_ids.has(SECOND_CLEARED_ZONE_ID):
+		return _fail("second cleared zone after disk reload", str(SECOND_CLEARED_ZONE_ID), "missing")
 	return 0
 
 

@@ -2994,3 +2994,109 @@ exit question, and it needs a played build.
 `systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `hub/expedition/expedition.gd`,
 `tests/save_roundtrip_check.gd`, `tests/zone_definition_check.gd`,
 `tests/unit/test_expedition.gd`, `tests/unit/test_summon.gd`
+
+## P2-08 — A save survives a reload with items still in the bag and zones still cleared  [DONE]
+
+### Objective
+The two persisted `GameSession` fields that have never been proven to survive a real disk cycle —
+`inventory` and `cleared_zone_ids` — do survive one, and `SaveService.load_game()`'s three refusal
+branches are pinned, so a corrupt or newer-version save is refused *without* silently resetting
+the profile it refused to read.
+
+### Existing architecture
+- `GameSession.to_dict/from_dict` (`systems/game_session.gd:179-258`) persists eight keys. Six
+  already have a disk-level check in `tests/save_roundtrip_check.gd`: `roster`, `parts`,
+  `building_levels`, `essence`, `stones`, `lost_caches`.
+- `inventory` and `cleared_zone_ids` are covered **only in memory** (`tests/unit/test_item.gd:24`,
+  `tests/unit/test_expedition.gd:87-118`) — the exact shortcut `P2-05a` and `P2-04e` were both
+  reopened for. Every existing disk check that touches an `Item` either salvages it or equips it,
+  so no item has ever been observed sitting in `inventory` across a reload.
+- `cleared_zone_ids` gates zone unlocks (`hub.gd.is_zone_unlocked`) and the Summon Stone clear
+  payout (`P2-16`). Losing it relocks zones a player already beat.
+- `SaveService.load_game()` (`systems/save_service.gd:21-45`) has three `return false` branches —
+  no file, non-`Dictionary` top level, `version > SAVE_VERSION` — and none is exercised anywhere.
+  A refusal leaves `GameSession` at its constructor defaults, and `_ready()` then connects
+  `roster_changed` to `save`, so **the next mutation overwrites the file that was refused.**
+- `tests/save_roundtrip_check.gd` is a `SceneTree` `-s` harness that backs the real
+  `user://save.json` up and restores it byte-identically. It already has fixture writers and a
+  `_fail(name, expected, actual)` reporter; follow that shape rather than inventing one.
+- GUT files under `tests/unit/` write to the **real** `user://save.json` (`test_item.gd:71`) and
+  none of them restores it. The new file must not inherit that.
+
+### Acceptance criteria
+1. An `Item` added to `inventory` and **left there** survives `save()` → clear → `load_game()`
+   with `def_id`, `rank` and `enhance_level` intact, and the raw JSON's `inventory` array is
+   asserted directly — decoding the object back is not sufficient evidence (`P2-05a`: `slot`
+   reaches disk as `8.0`, and only the raw leg sees the float branch).
+2. Two zones marked cleared survive the same cycle: the raw JSON `cleared_zone_ids` carries both
+   ids as `String`, and `GameSession.cleared_zone_ids` has both as `StringName` after reload.
+3. A save whose top level is not a Dictionary is refused — `load_game() == false` — and `roster`,
+   `inventory`, `parts`, `stones` and `cleared_zone_ids` are left **exactly** as they were before
+   the call, not reset to defaults.
+4. A save carrying `"version": SAVE_VERSION + 1` is refused the same way, state untouched.
+5. With no save file present, `load_game()` returns `false` and pushes no error.
+6. The new GUT file backs up `user://save.json` in `before_all` and restores it byte-identically
+   in `after_all`, including the case where no save existed to begin with.
+7. `tests/save_roundtrip_check.gd` still restores the original `user://save.json` byte-identically.
+8. Existing tests still pass: import gate clean, full GUT suite green.
+
+### Files allowed to change
+- `tests/save_roundtrip_check.gd`
+- `tests/unit/test_save_service.gd` (new)
+
+### Non-goals
+- **No production code changes.** If a criterion fails, report it — do not repair
+  `game_session.gd` or `save_service.gd` under this ticket. A failing criterion here is the
+  finding, and it is worth more than a green run.
+- No save migration, no `SAVE_VERSION` bump — `save_service.gd:35-37` reserves that for Phase 5.
+- No new `-s` harness. Criteria 3–5 go in GUT, which has `assert_push_error`; the `-s` harness
+  has no way to expect an error line and a stray one there reads as a failure.
+
+### Findings
+
+**All eight criteria passed and no production code changed.** That is the honest headline: the two
+untested keys were untested, not broken. `inventory` and `cleared_zone_ids` both round-trip
+correctly through JSON, raw and decoded, and all three refusal branches behave as written. The
+ticket's value is that this is now checked rather than assumed — six of eight persisted keys had
+disk coverage and two did not, and nothing in the gate could tell the difference.
+
+**A refused save gets overwritten by the first thing the player does.** The tests pin that a
+refusal leaves `GameSession` *untouched*; they do not, and cannot, stop what happens next. At boot
+`_ready()` calls `load_game()`, and on refusal the session sits at constructor defaults — empty
+roster, `STARTING_STONES` — and then `roster_changed` is connected to `SaveService.save`. The first
+summon, expedition or upgrade writes a fresh profile over the file that was refused. A player who
+runs a downgraded build once loses the save the version check existed to protect. Filed as
+`P2-17`; deliberately not fixed here, because the fix is a design call (refuse to boot? rename the
+file aside? read-only session?) and not an implementer's to invent.
+
+**`test_save_service.gd` is the first GUT file that does not eat the real save.** Every other file
+under `tests/unit/` calls `GameSession.from_dict(...)` in `before_each`, whose emission reaches
+`SaveService.save`, and none restores anything (`KNOWN_ISSUES.md` § Environment). This one ports
+`save_roundtrip_check.gd`'s `_backup_save`/`_restore_save` into `before_all`/`after_all`, including
+the no-save-existed case. Verified by measurement, not by reading: a sentinel `save.json` written
+under a scratch `%APPDATA%` came back **SHA-256 identical** after a `-gtest=` run of this file
+alone. The suite-wide problem is untouched — the other eleven files still stomp it, which is why
+the redirected-`%APPDATA%` invocation stays mandatory.
+
+**Ordering inside the `-s` harness is load-bearing and undeclared.** `_check_inventory_round_trip`
+asserts the raw `inventory` array has exactly one entry, which only holds because every earlier
+check that touches an `Item` either salvages it or equips it back out. The checks run in a fixed
+sequence from `_run()` and share one `GameSession`; inserting a new check that leaves an item
+behind reddens a later one for reasons its own name does not explain. Read the whole `_run()`
+sequence before adding to that file, not just the neighbouring function.
+
+**Verified by re-run, not by relay.** Import gate exit 0, zero `SCRIPT ERROR`/`ERROR:`/`WARNING`.
+GUT 12 scripts, 90/90, 9618 asserts, exit 0 under redirected `%APPDATA%` — 87 before this ticket,
+plus the three new refusal tests. `tests/save_roundtrip_check.gd` exit 0, PASS line naming
+inventory and cleared zones. The single `ERROR:` line in that run is the deliberate
+`def_id: null` fixture in `_check_malformed_def_id`, pre-existing and unrelated. No `verifier` pass
+was dispatched: the diff is tests-only and crosses no boundary, and the director re-ran every
+acceptance-critical command directly. `Get-Process Godot*` empty after every run.
+
+**Not verified.** Nothing here was seen by a human in a window, and nothing needed to be — every
+criterion is a disk or return-value assertion. The `P2-17` overwrite path is described from
+reading `_ready()`, not reproduced; reproducing it needs a real quit-and-relaunch, which is the
+Phase 1 exit-gate shape and not a headless run.
+
+### Files changed
+`tests/save_roundtrip_check.gd`, `tests/unit/test_save_service.gd` (new)

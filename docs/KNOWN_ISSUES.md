@@ -172,6 +172,11 @@ The earlier claim here that the run was read-only was reasoning about startup on
 survive measurement. Redirect `%APPDATA%` to a temp dir when running GUT manually, the same way
 `import_gate.ps1` does — this is a real-save-destroying command otherwise, not merely untidy.
 
+One exception, added by `P2-08`: `tests/unit/test_save_service.gd` backs the file up in
+`before_all` and restores it byte-identically in `after_all` (measured — a sentinel save came back
+SHA-256 identical after a `-gtest=` run of that file alone). It is the only file that does. The
+redirect stays mandatory for a suite run, because the other eleven files still overwrite.
+
 ### A Godot editor serves LSP on 6005 and is a second engine consumer
 `--headless --editor --path E:/Game` serves the LSP port. The `_console` wrapper is not what holds
 it — it spawns a child `Godot_v4.7.1-stable_win64.exe`, and that child is bound to 6005.
