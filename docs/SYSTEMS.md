@@ -1119,19 +1119,97 @@ existing team-size incentive (`Team size scaling`, above — fielding fewer hero
 limits how much of a roster is exposed to any one death roll) is the lever a player already has
 for managing that risk, not a new one this ruling needs to invent.
 
-**A genuinely new failure state this ruling makes reachable, flagged for `tech-lead`, not solved
-here.** `P2-09` sizes the starting balance (`300` stones) against the *pull* spine, on the
-assumption stones and hero survival are independent. They're less independent than that ruling
-assumed: a new save that spends all `300` stones on 3 pulls, then sends every pulled hero into one
-Verdant attempt that wipes the roster (measured above at up to `69.8%` per attempt for a level-0
-team), reaches `0` heroes and `<100` stones simultaneously — unable to pull (short of cost) and
-unable to expedition (no roster). This didn't exist as a reachable state under the placeholder
-(every hero fought at its rank's cap, where completion is still rare but the roster-wipe rate is
-lower); it becomes reachable the moment fresh heroes fight at level 0. Not this ruling's numbers to
-fix (it's an interaction between `P2-09`'s economy and this one, not a defect in either alone) —
-flagging for `tech-lead` to weigh a floor (a hero-count minimum, or refusing to let the literal
-last pull-worth of stones be spent) against just teaching "field one hero at a time early," which
-costs nothing to ship.
+**A genuinely new failure state this ruling makes reachable — ruled below, not solved here.**
+`P2-09` sizes the starting balance (`300` stones) against the *pull* spine, on the assumption
+stones and hero survival are independent. They're less independent than that ruling assumed: a new
+save that spends all `300` stones on 3 pulls, then sends every pulled hero into one Verdant
+attempt that wipes the roster (measured above at up to `69.8%` per attempt for a level-0 team),
+reaches `0` heroes and `<100` stones simultaneously — unable to pull (short of cost) and unable to
+expedition (no roster). This didn't exist as a reachable state under the placeholder (every hero
+fought at its rank's cap, where completion is still rare but the roster-wipe rate is lower); it
+becomes reachable the moment fresh heroes fight at level 0. Not this ruling's numbers to fix (it's
+an interaction between `P2-09`'s economy and this one, not a defect in either alone) — filed as
+`P2-18` and ruled immediately below.
+
+### Roster-wipe recovery floor (`P2-18`)
+
+**Ruling: when `kill_hero()` leaves `roster` empty and `stones < balance.summon_pull_cost`, top
+`stones` up to exactly `balance.summon_pull_cost` — one guaranteed pull, nothing more.** This is
+`P2-09`'s own boot-time correctness floor restated for the identical state reached mid-game
+instead of at boot: "a starting balance below `100` (one pull's cost) makes the summon button, and
+therefore the entire game, unplayable from boot" (Summon Stones § Starting balance, above).
+`roster.is_empty()` with fewer than `summon_pull_cost` stones is exactly as unplayable on attempt
+40 as on attempt 0 — a fresh save and a wiped save are the same dead state, and this closes it with
+the same fix: guarantee one pull is affordable, nothing more. It refunds no essence, no items
+(`lost_caches` already exists for the equipped-gear case and is untouched by this), and grants no
+extra hero — only the stone balance needed to attempt the single pull a brand-new save already
+gets for free.
+
+**Exact inputs for an implementer ticket:**
+
+- **Trigger:** inside `GameSession.kill_hero()` (`systems/game_session.gd:174`), immediately after
+  `roster.erase(hero)` — check `roster.is_empty() and stones < balance.summon_pull_cost`.
+  `kill_hero()` doesn't take a `balance: BalanceTable` parameter today; both its existing call
+  sites (`expedition.gd:64`, and `sacrifice_hero()` internally) already hold one in scope, so this
+  is a signature change threading an existing value through, not a new dependency.
+- **Effect:** `stones = balance.summon_pull_cost` — an assignment, not `+=`. There is nothing to
+  add to: the guard only fires when `stones` is already below `summon_pull_cost`. Read
+  `balance.summon_pull_cost` live rather than inlining `100`, so a future balance change can't
+  strand this check silently out of sync.
+- **Also apply on load**, in `GameSession.from_dict()` after `roster`/`stones` are populated: same
+  condition, same effect. This rescues a save file that already reached the terminal state (one
+  saved before this ships, for instance) rather than only guarding it going forward. This second
+  site is not roster mutation, so `ARCHITECTURE.md` r8 — `kill_hero()` as the sole roster-*removal*
+  call site — doesn't apply to it; nothing here adds or removes a hero.
+- **Scope, precisely:** a wipe that leaves `stones >= summon_pull_cost` (the player kept a reserve)
+  is untouched — they were never stuck. A non-empty roster sitting on few stones is untouched —
+  they can still expedition for more. Only the exact conjunction `P2-18` names is touched, so no
+  live save with a legal move available is ever altered.
+- **What the player sees: nothing new.** The stones display already reacts to any `stones` change
+  through `roster_changed` — the same signal `credit_stones()` emits today with no dedicated
+  message — so this top-up surfaces the same way a zone-clear stone reward already does. No
+  toast/notification system exists anywhere in this codebase (checked); building one for an edge
+  case a player hits at most once is a disproportionate addition, not a requirement of this ruling.
+  If a played build shows the balance jump reads as a bug rather than a recovery, that's a
+  UI-feedback ticket to open then, not a reason to withhold the floor now.
+- **Never reachable from `sacrifice_hero()`.** It requires `fodder != target` and both already
+  roster members, so `roster` always still holds `target` after its `kill_hero()` call — sacrifice
+  can never itself empty the roster. This guard can only ever fire from the combat-wipe path
+  (`expedition.gd:64`, the `dead_heroes` loop).
+
+**Rejected: a hero-count floor (`roster` cannot drop below `N`).** Not a currency patch — a
+redefinition of what permadeath means, for every roster at size `N`, not only the one save that's
+actually stuck. It requires `kill_hero()` (or the resolver feeding it) to sometimes not apply a
+death combat already decided, which makes the last hero's death cheaper than every other hero's —
+backwards for a game whose spine is "deciding whose life to spend is uncomfortable"
+(`GAME_SPEC.md`). It also doesn't fit `kill_hero()`'s contract cleanly: a `defeated` `CombatResult`
+whose `dead_heroes` includes the last hero would need that hero spared at 0 HP with no heal, a
+second mechanic this ticket doesn't otherwise need.
+
+**Rejected: refusing to let the last pull-worth of stones be spent.** Read as an unconditional
+floor (`summon_hero()` refuses whenever `stones - cost < summon_pull_cost`), the reserved `100`
+becomes permanently unspendable the moment the player has no surviving hero left to earn more —
+the identical dead end `P2-18` names, only relabeled from "stones `<100`, can't pull" to "stones
+`=100`, the rule won't let it be spent." It doesn't terminate the failure state, it renames it.
+Read instead as a conditional exception — block spending below `100` *except* when it's the
+player's only path back to a hero — it collapses into the recovery floor above, just implemented
+as *never let stones drop* (a guard on every `summon_hero()` call, forever) rather than *top back
+up only in the dead state* (a guard on the one path that can empty the roster). Same outcome, more
+standing code. Rejected for that reason, not a different verdict on the state itself.
+
+**Rejected: ship nothing; teach "field one hero at a time early."** Teaches nothing the game
+currently shows — no tutorial, no tooltip, no in-fiction signal that fielding fewer heroes
+protects the *stone balance* specifically, as opposed to the roster (which is the lesson the
+retreat threshold and team-size scaling already teach, for a different reason). Spending all `300`
+on 3 pulls before a first expedition is a legible reading of "gacha game, empty roster, currency
+exists to fill it," not a misplay — and it hits a true dead end with no signal beforehand and no
+recovery after. Costing nothing to ship is not the same as costing nothing to hit.
+
+> ⚠️ **PROVISIONAL** — the trigger condition and the top-up amount are arithmetically exact (they
+> reuse `P2-09`'s own boot-floor number rather than inventing one), but whether a silent stones
+> top-up reads as a fair recovery or as the game quietly undoing a death's consequence is a feel
+> question only a played wipe can answer. · **Settled by:** a played build reaching this state at
+> least once — does the top-up read as "the game caught me" or as "that wasn't really permadeath"?
 
 **A pre-existing spec/code mismatch this ruling surfaces, not caused.** The Sacrifice formula box
 at the top of this document's "Sacrifice → rank up" section reads

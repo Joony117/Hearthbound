@@ -113,7 +113,10 @@ func _run() -> int:
 	var buildings_code: int = _check_buildings_round_trip()
 	if buildings_code != 0:
 		return buildings_code
-	return _check_permadeath_and_version()
+	var permadeath_code: int = _check_permadeath_and_version()
+	if permadeath_code != 0:
+		return permadeath_code
+	return _check_roster_wipe_floor_round_trip()
 
 
 func _check_legacy_save() -> int:
@@ -565,7 +568,7 @@ func _check_permadeath_and_version() -> int:
 	var doomed_item := Item.new(DOOMED_ITEM_DEF_ID, DOOMED_ITEM_RANK)
 	_game_session.call("add_item", doomed_item)
 	_game_session.call("equip_item", doomed_hero, doomed_item)
-	_game_session.call("kill_hero", doomed_hero, &"save_roundtrip")
+	_game_session.call("kill_hero", doomed_hero, &"save_roundtrip", preload("res://balance.tres"))
 	_save_service.call("save")
 
 	_roster().clear()
@@ -606,6 +609,26 @@ func _check_permadeath_and_version() -> int:
 	if payload.get("version") != _save_version:
 		return _fail("raw save JSON version value", str(_save_version), str(payload.get("version")))
 
+	return 0
+
+
+func _check_roster_wipe_floor_round_trip() -> int:
+	var balance: BalanceTable = load("res://balance.tres") as BalanceTable
+	if balance == null:
+		return _fail("roster-wipe balance table load", "BalanceTable", "null")
+	_game_session.call("from_dict", {"roster": [], "stones": balance.summon_pull_cost - 1})
+	var doomed_hero := Hero.new("Roster Wipe Hero", 0)
+	_game_session.call("add_hero", doomed_hero)
+	_game_session.call("kill_hero", doomed_hero, &"roster_wipe", balance)
+
+	_game_session.set("stones", 0)
+	_roster().clear()
+	if not _save_service.call("load_game"):
+		return _fail("roster-wipe floor disk reload", "load_game() == true", "load_game() == false")
+	if _stones() != balance.summon_pull_cost:
+		return _fail("roster-wipe floor after disk reload", str(balance.summon_pull_cost), str(_stones()))
+	if not _roster().is_empty():
+		return _fail("roster-wipe floor roster after disk reload", "empty", _roster_summary())
 	return 0
 
 

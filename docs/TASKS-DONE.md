@@ -2808,6 +2808,113 @@ authored ladder.
    still credit the levels it actually has. Only `enhance_item`'s gate scales.
 4. A corrupt `building_levels[1]` (e.g. `999`) clamps to 5 in both paths — no crash, no
    out-of-ladder yield.
+
+---
+
+## P2-18 — A wiped roster always affords one more pull                        [DONE]
+
+### Objective
+A player whose last hero dies with fewer than one pull's worth of stones can still summon.
+Before this, that save was unplayable forever: no hero means no expedition, no expedition means
+no stones, and no stones means no hero.
+
+### Existing architecture
+- `GameSession.summon_hero()` (`systems/game_session.gd:35`) refuses below
+  `balance.summon_pull_cost` and is the only priced path into `roster`.
+- `GameSession.credit_stones()` has exactly **one** production caller,
+  `hub/expedition/expedition.gd:83`, reached only on `OUTCOME_COMPLETED` — which needs a hero.
+  So `roster.is_empty() and stones < summon_pull_cost` is terminal.
+- `GameSession.kill_hero()` (`systems/game_session.gd:174`) is permadeath's sole call site
+  (`ARCHITECTURE.md` r8). Its two production callers — `expedition.gd:64` and `sacrifice_hero()`
+  at `game_session.gd:156` — **both already hold a `balance` in scope**, so threading it in is a
+  signature change over an existing value, not a new dependency. `sacrifice_hero()` can never
+  reach the guard anyway: it requires `fodder != target` with both in the roster, so it cannot
+  empty it.
+- Autoloads may not hold a shared Resource (`ARCHITECTURE.md` § "Reaching shared Resources",
+  and `P2-05f`'s Findings), so `GameSession` cannot `preload("res://balance.tres")` to get the
+  cost. It arrives as an argument or not at all.
+- The ruling is `SYSTEMS.md` § Roster-wipe recovery floor (`P2-18`).
+
+### Acceptance criteria
+1. `kill_hero(hero: Hero, zone_id: StringName, balance: BalanceTable)` — `balance` required, not
+   defaulted. `P2-07e` versus `P2-07c`: a required parameter makes a forgotten argument a compile
+   error, a defaulted one makes it a silently-wrong result with a green gate.
+2. Immediately after `roster.erase(hero)`: if `roster.is_empty() and stones < balance.summon_pull_cost`
+   then `stones = balance.summon_pull_cost`. An **assignment**, not `+=` — the guard only fires when
+   `stones` is already below the cost. Read `summon_pull_cost` live; no `100` literal.
+3. Nothing else is granted — no hero, no essence, no item, no parts. The dead hero's gear still
+   goes to a `LostCache` exactly as today.
+4. A wipe that leaves `stones >= summon_pull_cost` changes `stones` by nothing.
+5. A death leaving a non-empty roster changes `stones` by nothing, however low the balance.
+6. `tests/save_roundtrip_check.gd` reaches `kill_hero` through `.call()`, so **the import gate
+   cannot catch the arity break** — this is `P2-04e`'s trap verbatim. Grep `kill_hero` across
+   `*.gd` for `.call(`/`callv(`/`Callable(` forms as well as direct calls before declaring done.
+7. New GUT coverage in `tests/unit/test_expedition.gd`: last hero dies below cost → `stones ==
+   BALANCE.summon_pull_cost`; last hero dies at or above cost → unchanged; a hero dies leaving one
+   alive with `stones == 0` → still `0`.
+8. The top-up survives save and reload. `kill_hero()` already ends in `roster_changed.emit()`,
+   which is the only thing that writes the save — so do **not** add an explicit `SaveService.save()`
+   to the test, or a dropped emit passes anyway (`P2-05g`'s Findings).
+9. BUILT green — import gate with zero errors *and* zero warnings, plus the full GUT suite.
+
+### Files allowed to change
+`systems/game_session.gd` · `hub/expedition/expedition.gd` · `tests/save_roundtrip_check.gd` ·
+`tests/unit/test_expedition.gd` · `tests/unit/test_equipment.gd`
+
+`tests/unit/test_equipment.gd` was **missing from this list on the first dispatch** and the worker
+blocked on it — it holds three direct `kill_hero` calls (`:248`, `:272`, `:288`) covering the
+`LostCache` branch. That is `P2-04g`'s omitted-file defect a second time, and the lesson repeats:
+grep the symbol before writing the list, do not reason about which files "should" call it. These
+three are static calls, so unlike criterion 6's dynamic one the import gate *would* have caught
+them — as a red gate on a ticket that was otherwise finished.
+
+### Non-goals
+- **The ruling's `from_dict()` leg is deliberately cut.** It exists to rescue a save that reached
+  the dead state before this ships, and no such save exists — nobody is playing this build. Adding
+  it would put a new write into the save-decode path (`CLAUDE.md` boundary 1) and make a `verifier`
+  pass mandatory, to fix a hypothetical file. With it cut this ticket crosses no risky boundary.
+  If a real stuck save ever turns up, delete it; that is cheaper than the branch.
+- No toast, banner, or notification. None exists in this codebase, and the stones readout already
+  refreshes on `roster_changed`. If a played build shows the jump reads as a bug, that is its own
+  ticket.
+- No change to `STARTING_STONES`, `summon_pull_cost`, or any zone's `stone_reward`.
+- Do not generalize this into a "recover from any dead state" system. One conjunction, one guard.
+- Do not touch `P2-19`'s `fodder.level` term while you are in `game_session.gd`.
+
+### Findings
+
+**The design ruling asked for more than the problem needed, and the extra half was the risky
+half.** `SYSTEMS.md` § Roster-wipe recovery floor specifies the same guard twice — in `kill_hero()`
+and again in `from_dict()` — the second to rescue a save that reached the dead state before this
+shipped. No such save exists; this game has no players. Cutting that leg removed a new write from
+the save-decode path, which is `CLAUDE.md` boundary 1, and with it the mandatory `verifier` pass.
+The shipped ticket touches **no risky boundary at all**, and the whole production diff is six lines.
+A ruling is an answer to a design question, not an implementation plan — the parts of it that are
+speculative are still speculative, and a ticket is allowed to say so in its non-goals.
+
+**The `kill_hero` dynamic-caller trap did not bite, and that is the reusable part.** `P2-04e`
+recorded that `tests/save_roundtrip_check.gd` reaches permadeath through `.call()`, where an arity
+break survives a green import gate. This ticket wrote that trap into criterion 6 *by name and file*
+rather than leaving it in the archive, and it became a non-event. Same mechanism as `P2-07b`'s
+disk-round-trip criterion: **a failure history written into the criterion is in front of the
+implementer at the point of decision; the same history in `TASKS-DONE.md` is not.**
+
+**Grep the symbol before writing the allowed-file list.** Three of six `kill_hero` call sites live
+in `tests/unit/test_equipment.gd`, which the first dispatch's list omitted — `P2-04g`'s defect
+repeated one ticket later. The worker blocked instead of working around it, which was correct. Note
+the asymmetry the incident exposes: those three are *static* calls the import gate would have
+caught, so the omission cost a round trip. The genuinely dangerous site was the single dynamic one,
+which no gate catches — and the two failure modes want the same countermeasure, one grep across all
+call forms.
+
+**`sacrifice_hero()` can never reach the guard**, and that was worth proving before writing it:
+it requires `fodder != target` with both already in the roster, so it cannot empty one. The floor
+therefore has exactly one live trigger — the expedition wipe — despite sitting at the shared seam.
+Placing it at `kill_hero()` anyway is what makes that a fact about the callers rather than a
+discipline future callers must remember.
+
+Gates, director-run: import gate exit `0` clean · GUT `96/96`, 9,647 asserts · standalone
+`save_roundtrip_check.gd` PASS.
 5. `hub/hub.gd`'s salvage status text reports the same number `salvage_item` credited, and its
    enhance precondition uses the same cap `enhance_item` enforces, at a nonzero Forge level.
    Drive the real scene; a unit call on `GameSession` alone does not prove this.

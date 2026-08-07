@@ -1,5 +1,6 @@
 extends GutTest
 
+const BALANCE: BalanceTable = preload("res://balance.tres")
 
 func before_each() -> void:
 	GameSession.from_dict({"roster": []})
@@ -245,7 +246,7 @@ func test_kill_hero_moves_all_equipped_items_to_lost_cache() -> void:
 	GameSession.add_item(necklace)
 	GameSession.equip_item(hero, ring)
 	GameSession.equip_item(hero, necklace)
-	GameSession.kill_hero(hero, &"doomed_zone")
+	GameSession.kill_hero(hero, &"doomed_zone", BALANCE)
 
 	assert_false(GameSession.roster.has(hero))
 	assert_true(hero.equipped.is_empty())
@@ -269,7 +270,7 @@ func test_lost_cache_survives_game_session_round_trip() -> void:
 	GameSession.add_item(necklace)
 	GameSession.equip_item(hero, ring)
 	GameSession.equip_item(hero, necklace)
-	GameSession.kill_hero(hero, &"cache_zone")
+	GameSession.kill_hero(hero, &"cache_zone", BALANCE)
 	GameSession.from_dict(GameSession.to_dict())
 
 	assert_eq(GameSession.lost_caches.size(), 1)
@@ -285,7 +286,7 @@ func test_kill_hero_without_equipped_items_creates_no_lost_cache() -> void:
 	var hero := Hero.new("Ungeared Hero", 2)
 
 	GameSession.add_hero(hero)
-	GameSession.kill_hero(hero, &"empty_zone")
+	GameSession.kill_hero(hero, &"empty_zone", BALANCE)
 
 	assert_true(GameSession.lost_caches.is_empty())
 

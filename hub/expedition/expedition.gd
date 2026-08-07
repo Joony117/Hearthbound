@@ -61,7 +61,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 		if not dead_heroes.is_empty():
 			for hero: Hero in dead_heroes:
 				# The expedition resolver is the sole permadeath writer (architecture rule 8).
-				GameSession.kill_hero(hero, zone.zone_id)
+				GameSession.kill_hero(hero, zone.zone_id, BALANCE)
 			GameSession.credit_team_xp(
 				team,
 				roundi(float(BALANCE.xp_per_wave * waves_resolved) * xp_multiplier),

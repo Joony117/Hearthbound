@@ -153,7 +153,7 @@ func sacrifice_hero(fodder: Hero, target: Hero, balance: BalanceTable) -> bool:
 	essence += Hero.compute_essence_yield(fodder, target, balance, sanctum_level)
 	if fodder.def_id == target.def_id and fodder.def_id != Hero.NO_ARCHETYPE_DEF_ID:
 		target.resonance += 1
-	kill_hero(fodder, &"")
+	kill_hero(fodder, &"", balance)
 	return true
 
 
@@ -171,7 +171,7 @@ func rank_up_hero(hero: Hero, balance: BalanceTable) -> bool:
 
 ## The single place a hero leaves the roster. See docs/ARCHITECTURE.md rule 8 - permadeath
 ## reachable from more than one call site is how this game rots.
-func kill_hero(hero: Hero, zone_id: StringName) -> void:
+func kill_hero(hero: Hero, zone_id: StringName, balance: BalanceTable) -> void:
 	if not hero.equipped.is_empty():
 		var cache := LostCache.new(hero.hero_name, zone_id)
 		for item: Item in hero.equipped.values():
@@ -179,6 +179,8 @@ func kill_hero(hero: Hero, zone_id: StringName) -> void:
 		lost_caches.append(cache)
 	hero.equipped.clear()
 	roster.erase(hero)
+	if roster.is_empty() and stones < balance.summon_pull_cost:
+		stones = balance.summon_pull_cost
 	roster_changed.emit()
 
 

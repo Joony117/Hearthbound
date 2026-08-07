@@ -4,6 +4,7 @@ const ERROR_MARGIN: float = 0.0001
 const HERO_POWER: float = 212.0
 const HERO_MAX_HP: float = 280.0
 const HUB_SCRIPT: GDScript = preload("res://hub/hub.gd")
+const BALANCE: BalanceTable = preload("res://balance.tres")
 
 
 func before_each() -> void:
@@ -72,6 +73,34 @@ func test_defeated_expedition_credits_no_stones() -> void:
 
 	assert_eq(outcome, Expedition.OUTCOME_DEFEATED)
 	assert_eq(GameSession.stones, stones_before)
+
+
+func test_last_hero_death_below_pull_cost_restores_one_pull() -> void:
+	var hero: Hero = _add_knight()
+	GameSession.stones = BALANCE.summon_pull_cost - 1
+
+	GameSession.kill_hero(hero, &"test_zone", BALANCE)
+
+	assert_eq(GameSession.stones, BALANCE.summon_pull_cost)
+
+
+func test_last_hero_death_at_pull_cost_preserves_stones() -> void:
+	var hero: Hero = _add_knight()
+	GameSession.stones = BALANCE.summon_pull_cost
+
+	GameSession.kill_hero(hero, &"test_zone", BALANCE)
+
+	assert_eq(GameSession.stones, BALANCE.summon_pull_cost)
+
+
+func test_hero_death_with_survivor_does_not_restore_stones() -> void:
+	var hero: Hero = _add_knight()
+	_add_knight("Survivor")
+	GameSession.stones = 0
+
+	GameSession.kill_hero(hero, &"test_zone", BALANCE)
+
+	assert_eq(GameSession.stones, 0)
 
 
 func test_training_hall_level_five_rounds_exact_xp_rewards() -> void:
