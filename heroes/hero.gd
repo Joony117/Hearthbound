@@ -127,13 +127,18 @@ static func compute_team_power(
 	return total
 
 
-static func compute_essence_yield(fodder: Hero, target: Hero, balance: BalanceTable) -> int:
+static func compute_essence_yield(
+	fodder: Hero,
+	target: Hero,
+	balance: BalanceTable,
+	sanctum_level: int,
+) -> int:
 	var essence_yield: int = balance.essence_bases[
 		clampi(fodder.rank, 0, balance.essence_bases.size() - 1)
 	]
 	if fodder.def_id == target.def_id and fodder.def_id != NO_ARCHETYPE_DEF_ID:
 		essence_yield *= 3
-	return essence_yield
+	return roundi(float(essence_yield) * (1.0 + balance.sanctum_essence_yield_bonus * sanctum_level))
 
 
 static func compute_rank_up_cost(hero: Hero, balance: BalanceTable) -> int:
