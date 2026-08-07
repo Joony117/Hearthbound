@@ -692,7 +692,7 @@ needs to re-read.
 | `P2-08` | Full save/load round-trip through `SaveService` | `e4e08c2` |
 | `P2-04a` | XP-per-level curve ruling — heroes level for real | `6e00e6f` |
 | `P2-04g` | A hero levels up from expeditions | `dc6e090` |
-| `P2-18` | A wiped roster always affords one more pull | |
+| `P2-18` | A wiped roster always affords one more pull | `afa4cb7` |
 
 ---
 
