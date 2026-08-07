@@ -861,12 +861,10 @@ no other cost line in this document has ever named gold. Keeping a currency "def
 system left that would spend it is worse than removing it: it invites a future ticket to invent a
 sink for a currency that exists only because the doc never finished striking it.
 
-**Code follow-up, not this pass:** `zones/defs/verdant_outskirts.tres`,
-`ashfall_reaches.tres`, `sundered_vault.tres` (the `loot_emphasis` field) and
-`tests/zone_definition_check.gd` (the matching expected strings) still say "Gold, ..." — those are
-implemented values, out of a docs-only pass's bounds. Flagging for `tech-lead`/an `implementer` to
-sync the three `loot_emphasis` strings and the test's expected-string literals to match the Reward
-column below once this ships.
+**Code follow-up: done (`P2-15`).** `zones/defs/verdant_outskirts.tres`, `ashfall_reaches.tres`,
+`sundered_vault.tres` (the `loot_emphasis` field) and `tests/zone_definition_check.gd` (the matching
+expected strings) no longer say "Gold, …" — all six literals were synced to the Reward column below.
+Nothing in the codebase names gold in any form now.
 
 ### Salvage
 

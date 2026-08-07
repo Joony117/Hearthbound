@@ -2603,3 +2603,137 @@ block of its own. Found while appending here; not repaired inside a ticket that 
 ### Files changed
 `heroes/hero.gd`, `combat/quick_resolve.gd`, `hub/hub.gd`, `hub/hub.tscn`,
 `tests/unit/test_hero_stats.gd`, `tests/unit/test_expedition.gd`
+
+---
+
+## P2-07b — Circle, Forge, and Sanctum are levelable                        [DONE]
+
+### Objective
+From the hub, spend parts to raise a building's level (Summoning Circle, Forge, or Sanctum), see
+the new level and remaining parts update immediately, and have the level survive a real quit and
+relaunch. No bonus is wired to gameplay yet — matches `P2-05a`'s own precedent ("Equipping
+changes nothing about combat — no formula exists yet"); `P2-07c`/`P2-07d`/`P2-07e` each wire one
+building's bonus into its live consumer once this lands.
+
+### Existing architecture
+- `GameSession` (autoload, `systems/game_session.gd`) owns all persisted player state as plain
+  fields plus `to_dict`/`from_dict`, wired to `SaveService.save` via `roster_changed`.
+  `parts: Array[int] = [0,0,0,0,0,0,0,0]` (`game_session.gd:12`) is the direct precedent for a
+  fixed-length, index-keyed `Array[int]` — chosen specifically because JSON has no non-string
+  keys (`P2-05d`'s Findings). Building levels follow the same shape.
+- `hub.tscn`'s `Buildings` node lists all five buildings in a fixed child order —
+  `SummoningCircle`, `Forge`, `TrainingHall`, `Sanctum`, `Reliquary` — as `MeshInstance3D`
+  decoration with a `Label3D` each, no script, no interaction. This is the only place all five
+  buildings are already named in the project, and this ticket's array indices follow that same
+  order so a later ticket adding Training Hall/Reliquary is an append, not a renumber.
+- `BalanceTable.summoning_circle_level_cap = 5` is the only authored per-building cap field.
+  `SYSTEMS.md` § Base buildings' "Level caps" ruling states all five buildings share cap 5
+  "absent a reason to diverge" — this ticket reuses that one field as the shared cap rather than
+  adding four more identically-valued fields.
+- Upgrade cost is `10 * (n + 2)` parts of rank index `n` (`SYSTEMS.md` § Base buildings, `n` =
+  the building's level before the upgrade, 0 = unbuilt).
+- `hub.tscn`'s `UI/Root` had `RosterPanel` and `EquipmentPanel` as its only two panels; the
+  `EquipmentPanel/Columns/Inventory` button block is the pattern copied here. No building panel
+  existed anywhere; `P2-05g`'s Findings note the 3:1 conversion control had to be sited in the
+  Inventory column for exactly this reason.
+- `enhance_item`/`salvage_item`/`sacrifice_hero` already take `balance: BalanceTable` as an
+  explicit argument rather than reading a preloaded const off the autoload (`ARCHITECTURE.md`
+  § "Reaching shared Resources"; `P2-05f`'s Findings). `building_levels` is different: it is
+  `GameSession`'s own persisted *state*, not a shared Resource, so `GameSession`'s own methods may
+  read it directly with no signature change.
+
+### Acceptance criteria
+1. `GameSession.building_levels: Array[int] = [0, 0, 0, 0, 0]`, indexed to match `hub.tscn`'s
+   `Buildings` child order (0 = Summoning Circle, 1 = Forge, 2 = Training Hall, 3 = Sanctum,
+   4 = Reliquary). Persists through `to_dict`/`from_dict` using the exact guard `parts` already
+   uses (`_array_field` + explicit int-or-integral-float decode, `push_error` and skip anything
+   else, `mini(saved.size(), building_levels.size())` so a save from before this ticket defaults
+   every entry to 0).
+2. `GameSession.upgrade_building(index: int, balance: BalanceTable) -> bool` — returns `false`
+   without writing anything when `index` is outside `[0, building_levels.size())`. Otherwise reads
+   `building_levels[index]` clamped to `[0, balance.summoning_circle_level_cap]` as `level`;
+   returns `false` if `level >= balance.summoning_circle_level_cap`, or if
+   `parts[clampi(level, 0, parts.size() - 1)] < 10 * (level + 2)`. On success it spends that many
+   parts of rank `level`, sets `building_levels[index] = level + 1`, and emits `roster_changed`.
+3. Only indices 0 (Circle), 1 (Forge), 3 (Sanctum) are reachable through the UI this ticket ships.
+   Indices 2 and 4 stay `0` forever until a future ticket adds their buttons.
+4. No building's bonus changes any gameplay number yet.
+   `summoning_circle_multiplier_per_level`, `forge_enhance_cap_per_level`,
+   `forge_salvage_yield_bonus`, `sanctum_essence_yield_bonus` stay authored-and-unread.
+5. A new `BuildingsPanel` under `hub.tscn`'s `UI/Root`, sibling to `RosterPanel`/`EquipmentPanel`,
+   same register style: one row per shipped building (Circle, Forge, Sanctum) — a `Label` showing
+   name and current level and an "Upgrade" `Button`. Three separate handlers, matching the
+   existing one-handler-per-button convention, each calling
+   `GameSession.upgrade_building(<index>, BALANCE)`. Labels refresh on `roster_changed`.
+6. On success the `%Status` line names the building, its new level, and the cost paid; on refusal
+   (cap or insufficient parts) it says which reason applied.
+7. GUT coverage in a new `tests/unit/test_buildings.gd`: the cost ladder for at least two steps
+   (0→1 costs 20 F-rank parts, 1→2 costs 30 D-rank parts), refusal at cap 5 without writing,
+   refusal on insufficient parts without writing, refusal on an out-of-range index without
+   writing.
+8. `tests/save_roundtrip_check.gd`: upgrade a building through a **real disk** save/reload cycle
+   and assert the reloaded `building_levels` entry against the raw JSON.
+9. Existing GUT suite passes unmodified.
+10. BUILT green and the full GUT suite green.
+11. `verifier` re-runs both commands independently and confirms the save-key change round-trips
+    on real disk — mandatory, not optional.
+
+### Files allowed to change
+`systems/game_session.gd` · `hub/hub.gd` · `hub/hub.tscn` · `tests/unit/test_buildings.gd` (new) ·
+`tests/save_roundtrip_check.gd`
+
+### Non-goals
+- Any building's bonus actually applying to gameplay — `P2-07c`/`P2-07d`/`P2-07e`.
+- Training Hall and Reliquary buttons — indices reserved, unreachable through this UI.
+- Gold, in any form — struck from `SYSTEMS.md` entirely.
+- A generic `Building` Resource/definition type, a build queue, timers, or construction animation.
+- Renaming `summoning_circle_level_cap` to a more general name.
+
+### Findings
+
+**The ticket's hardest criterion passed first time, and the reason is worth keeping.** Criterion 8
+(real-disk round-trip, not an in-memory `to_dict`/`from_dict` pair) had been shipped wrong twice
+before — `P2-05a` and `P2-04e` both took the shortcut and both were reopened. Writing the failure
+history *into the criterion itself* rather than leaving it in the two archived Findings is what
+changed: the implementer had the trap in front of it at the point of decision instead of two
+tickets back in an archive nobody re-reads. Cheap to do, and it is the only criterion here with a
+100% prior failure rate.
+
+**A `%APPDATA%` collision blocks running gates in parallel, and it is not obvious from the script.**
+`tests/import_gate.ps1:29` sets `$env:APPDATA = [System.IO.Path]::GetTempPath()` — the *shared*
+system temp path. Two engine runs against two different checkouts therefore land on the **same**
+`user://save.json`, so parallel gate runs corrupt each other's save state while both report
+plausibly. The gate's own stray-process guard does not catch it: that guard matches on
+`ExecutablePath` under *this checkout's* `tools/godot`, so a second worktree reaching the engine
+through a junction resolves to a different path string and the two runs never see each other. The
+fix at the call site is one line — set `$env:TMP`/`$env:TEMP` (which `GetTempPath()` reads) to a
+per-checkout directory before invoking the gate. **This belongs in `KNOWN_ISSUES.md` § Environment,
+which `godot-tester` owns**; recorded here because it was found by the director during a parallel
+wave and a finding stranded in a return block is ephemeral.
+
+**Layout latitude, exercised and worth naming.** `BuildingsPanel` stacks three `Label`s then three
+`Button`s as separate `VBoxContainer` children rather than pairing each into an `HBoxContainer`
+row, so criterion 5's "one row per building" renders as six stacked items. The `verifier` raised it
+and then downgraded it to cosmetic after cross-checking: this matches `EquipmentPanel`'s own
+existing convention (stacked list, then stacked buttons, no per-action pairing container). Recorded
+because the *next* panel ticket will face the same choice, and the codebase now has a precedent
+rather than an accident.
+
+**Verified.** BUILT exit 0, zero `SCRIPT ERROR`/`ERROR:`/`WARNING`. GUT 9 scripts, 71/71, 9511
+asserts, exit 0 (was 8 scripts / 67 tests — `test_buildings.gd` is the new one).
+`tests/save_roundtrip_check.gd` exit 0 with `building_levels` asserted against raw JSON off disk.
+Run independently three times — implementer, `verifier`, and the director — with matching counts.
+The suite's `ERROR:` lines are pre-existing deliberate `push_error` fixtures (missing `def_id`,
+invalid save), confirmed against the pre-change commit via `git stash`. `Get-Process Godot*` empty
+after every run.
+
+**Not verified.** No pre-`P2-07b` save JSON fixture (one genuinely lacking a `building_levels` key)
+was constructed and loaded — the "legacy save defaults to all-zero" claim rests on tracing
+`_array_field` and `mini`, not on an executed legacy round-trip. The new decode branch was not
+fuzzed beyond the shape the ticket specifies (no NaN/Infinity/string entries), on the grounds that
+it is byte-structurally identical to the already-shipped `parts` guard. No windowed run, so the
+panel's appearance is unproven.
+
+### Files changed
+`systems/game_session.gd`, `hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_buildings.gd` (new),
+`tests/save_roundtrip_check.gd`

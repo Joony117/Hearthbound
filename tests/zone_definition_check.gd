@@ -6,15 +6,15 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var exit_code: int = _check_zone("Verdant Outskirts", "res://zones/defs/verdant_outskirts.tres", 900, 5, 0.5, 0.9, 1.1, "Gold, F–C parts, light Summon Stones", "Available from start")
+	var exit_code: int = _check_zone("Verdant Outskirts", "res://zones/defs/verdant_outskirts.tres", 900, 5, 0.5, 0.9, 1.1, "F–C parts, light Summon Stones", "Available from start")
 	if exit_code != 0:
 		quit(exit_code)
 		return
-	exit_code = _check_zone("Ashfall Reaches", "res://zones/defs/ashfall_reaches.tres", 4800, 6, 0.5, 1.0, 1.2, "Gold, C–A parts, moderate Summon Stones, first A+ drops", "Clear Verdant Outskirts")
+	exit_code = _check_zone("Ashfall Reaches", "res://zones/defs/ashfall_reaches.tres", 4800, 6, 0.5, 1.0, 1.2, "C–A parts, moderate Summon Stones, first A+ drops", "Clear Verdant Outskirts")
 	if exit_code != 0:
 		quit(exit_code)
 		return
-	exit_code = _check_zone("Sundered Vault", "res://zones/defs/sundered_vault.tres", 11500, 7, 0.6, 1.1, 1.3, "Gold, S–SSS parts, heavy Summon Stones, best A+ drop rate", "Clear Ashfall Reaches")
+	exit_code = _check_zone("Sundered Vault", "res://zones/defs/sundered_vault.tres", 11500, 7, 0.6, 1.1, 1.3, "S–SSS parts, heavy Summon Stones, best A+ drop rate", "Clear Ashfall Reaches")
 	if exit_code == 0:
 		print("PASS: all fields of all three zones match SYSTEMS.md.")
 	quit(exit_code)
