@@ -37,6 +37,30 @@ plus a clean headless import.
 The Phase 2 exit question, and the only one that matters. If the answer is no, the fix is
 design, not code. Findings go in `DECISIONS.md`.
 
+### Permadeath severity at the top of the curve has no documented stance
+A manufactured SSS hero costs `~327` summon pulls fed as sacrifice fodder — verified arithmetic,
+`docs/SYSTEMS.md:140-141`. A full 5-hero manufactured-SSS team is therefore `5 * 327 = 1,635`
+pulls' worth of fodder lost to one wipe, with no partial-credit or inheritance mechanic on death
+(`GameSession.kill_hero()`, `systems/game_session.gd:26`, is an unconditional roster removal). How
+that maps to play *time* isn't settled either — Summon Stone income has no defined rate yet
+(`docs/SYSTEMS.md:153-157`, `P2-09` unstarted), so an hour estimate against the 1,635-pull figure
+is a rough external guess, not a verified number.
+
+Undiscussed, not contradicted: nothing in `SYSTEMS.md`, `GAME_SPEC.md`, or `DECISIONS.md` states
+whether losing a fully-built SSS team is the *intended* weight of permadeath at the top of the
+curve, or whether it needs softening (partial essence refund, rank inheritance on death, insurance
+via a building, etc.). `GAME_SPEC.md`'s attachment-vs-expendability goal argues the decision to
+risk a hero should be uncomfortable — it does not say how uncomfortable the worst case should be
+once "the hero" represents 1,635 pulls of sunk cost rather than one lucky pull.
+
+Deliberately not inventing a softening mechanic here — that's a design decision, not a doc-cleanup
+default, and a wrong default (e.g. quietly adding rank inheritance) would understate permadeath's
+weight without anyone deciding that was the goal. **Revisit in:** the same played build the retreat
+and gear-recovery `PROVISIONAL` markers are waiting on — this question can't be settled at a desk,
+since "uncomfortable" vs. "not worth playing around" is exactly the thing that needs to be felt,
+not calculated. If a played build says the 1,635-pull wipe reads as "not worth playing around,"
+the fix is a `DECISIONS.md` ADR for a softening mechanic, not a quiet SYSTEMS.md edit.
+
 ### Quick resolve and the arena will disagree
 A statistical resolver and a real-time arena will not produce the same outcomes for the same
 team and wave. Some divergence is acceptable — the quick path is a convenience. How much is

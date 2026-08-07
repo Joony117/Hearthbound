@@ -439,6 +439,154 @@ and should rule on it rather than discover it.
 and no building panel exists in `hub.tscn` at all — `P2-05g` sited part conversion in the Inventory
 column precisely because there was none to put it in.
 
+**P2-07 split.** The backlog line bundles four things behind one row: new `GameSession` save
+state (a level per building), a UI panel that doesn't exist anywhere in `hub.tscn` today, and
+three independent consumer wirings — Circle into `summon` (a shared-Resource-array
+renormalization, the exact hazard `ARCHITECTURE.md` § "Reaching shared Resources" names by
+example), Forge into `enhance_item`'s cap and `salvage_item`'s yield, and Sanctum into
+`sacrifice_hero`'s essence formula. `P2-05f` (Enhancement) — a single consumer wiring of
+comparable size to any one of these three — was already a full ticket on its own; three of those
+plus the state-and-UI foundation is a subsystem, not one behavior. Split into: `P2-07b` is the
+foundation — `building_levels` exists, persists, and has a real (ugly) upgrade panel for
+Circle/Forge/Sanctum, spending real parts against the ruled cost ladder, with every bonus still
+inert. This mirrors `P2-05a` (equip UI shipped before any stat formula existed to move) rather
+than `P2-04c`'s stricter "no UI at all" shape, because a level with no way to raise it isn't
+observable at all. `P2-07c` wires the Summoning Circle's multiplier into `Summon.roll()` — the
+trickiest of the three, since `Summon.roll()` is a static function on a plain `RefCounted` with
+no autoload access, so the circle level has to be read out of `GameSession.building_levels` by
+the caller (`hub.gd`) and passed in as an argument, and the renormalized weight table must be a
+local copy — writing the scaled block back into `BALANCE.summon_weights` in place is exactly the
+"mutating a shared Resource's exported array persists to the `.tres` on disk for every consumer"
+hazard `ARCHITECTURE.md` names by example. `P2-07d` wires Forge's enhance cap
+(`forge_enhance_cap_per_level * level`, capped at `forge_enhance_cap_max`) and salvage yield
+bonus into `enhance_item`/`salvage_item`. `P2-07e` wires Sanctum's essence-yield bonus into
+`sacrifice_hero`/`compute_essence_yield`. All three read `building_levels` directly off
+`GameSession` — no signature change needed on any consumer method, since the level is the
+autoload's own persisted state, not a shared Resource being smuggled through it (the distinction
+`P2-05f`'s Findings drew). Sequence: `P2-07b` first — nothing in `c`/`d`/`e` has a level to read
+without it. `c`/`d`/`e` are independent of each other and can land in any order.
+
+**A gap `P2-07a` did not close: `forge_salvage_yield_bonus`'s scaling law is unruled.**
+`SYSTEMS.md` § Base buildings states Training Hall's `+15%`/level and Sanctum's `+10%`/level both
+scale to their cap-5 values (`+75%`, `+50%`) in the "at cap" recap paragraph, but that paragraph
+never mentions Forge's salvage-yield bonus at all, and the field name (`forge_salvage_yield_bonus`
+— no `_per_level` suffix, the same shape as `sanctum_essence_yield_bonus`, which *is* ruled to
+scale) gives no answer either way: flat `+10%` once Forge is built at all, or `10% * level` up to
+`+50%` at cap? `P2-07d` cannot be written against this until it's ruled — flagged here rather
+than invented inside `P2-07d`'s own body. Route to `game-designer` before expanding `P2-07d`.
+
+## P2-07b — Circle, Forge, and Sanctum are levelable                        [TODO]
+
+### Objective
+From the hub, spend parts to raise a building's level (Summoning Circle, Forge, or Sanctum), see
+the new level and remaining parts update immediately, and have the level survive a real quit and
+relaunch. No bonus is wired to gameplay yet — matches `P2-05a`'s own precedent ("Equipping
+changes nothing about combat — no formula exists yet"); `P2-07c`/`P2-07d`/`P2-07e` each wire one
+building's bonus into its live consumer once this lands.
+
+### Existing architecture
+- `GameSession` (autoload, `systems/game_session.gd`) owns all persisted player state as plain
+  fields plus `to_dict`/`from_dict`, wired to `SaveService.save` via `roster_changed`.
+  `parts: Array[int] = [0,0,0,0,0,0,0,0]` (`game_session.gd:12`) is the direct precedent for a
+  fixed-length, index-keyed `Array[int]` — chosen specifically because JSON has no non-string
+  keys (`P2-05d`'s Findings, `TASKS-DONE.md`). Building levels follow the same shape.
+- `hub.tscn`'s `Buildings` node (`hub/hub.tscn:39-86`) lists all five buildings in a fixed child
+  order — `SummoningCircle`, `Forge`, `TrainingHall`, `Sanctum`, `Reliquary` — as `MeshInstance3D`
+  decoration with a `Label3D` each, no script, no interaction; `hub.gd` never references any of
+  them. This is the only place all five buildings are already named in the project, and this
+  ticket's array indices follow that same order so a later ticket adding Training Hall/Reliquary
+  is an append, not a renumber.
+- `BalanceTable.summoning_circle_level_cap = 5` (`balance_table.gd:21`) is the only authored
+  per-building cap field. `SYSTEMS.md` § Base buildings' "Level caps" ruling states all five
+  buildings share cap 5 "absent a reason to diverge" — this ticket reuses that one field as the
+  shared cap for every building rather than adding four more identically-valued fields. (Forge's
+  own enhance-level cap, `forge_enhance_cap_max`, is a different number for a different thing —
+  untouched by this ticket.)
+- Upgrade cost is `10 * (n + 2)` parts of rank index `n` (`SYSTEMS.md` § Base buildings, `n` =
+  the building's level before the upgrade, 0 = unbuilt) — the same "rank climbs with level,
+  quantity fixed" shape `enhance_item`'s `2 + enhance_level` already established sideways.
+- `hub.tscn`'s `UI/Root` has `RosterPanel` and `EquipmentPanel` as its only two panels today, each
+  a `VBoxContainer` of `ItemList`s/`Button`s wired through `[connection]` blocks to `_on_*_pressed`
+  handlers in `hub.gd` — `Equip`/`Salvage`/`Enhance`/`Convert` under
+  `EquipmentPanel/Columns/Inventory` (`hub/hub.tscn:178-200`) is the pattern to copy. No building
+  panel exists anywhere; `P2-05g`'s Findings note the 3:1 conversion control had to be sited in
+  the Inventory column for exactly this reason.
+- `enhance_item`/`salvage_item`/`sacrifice_hero` (`systems/game_session.gd:58-111`) already take
+  `balance: BalanceTable` as an explicit argument rather than reading a preloaded const off the
+  autoload (`ARCHITECTURE.md` § "Reaching shared Resources"; `P2-05f`'s Findings — the ticket that
+  got this wrong the first time and was corrected in review). `building_levels` is different: it
+  is `GameSession`'s own persisted *state*, not a shared Resource, so `GameSession`'s own methods
+  may read it directly with no signature change — the rule this ticket must respect is about
+  `balance.tres`, not about a method reading its own autoload's fields.
+
+### Acceptance criteria
+1. `GameSession.building_levels: Array[int] = [0, 0, 0, 0, 0]`, indexed to match `hub.tscn`'s
+   `Buildings` child order (0 = Summoning Circle, 1 = Forge, 2 = Training Hall, 3 = Sanctum,
+   4 = Reliquary). Persists through `to_dict`/`from_dict` using the exact guard `parts` already
+   uses (`_array_field` + explicit int-or-integral-float decode, `push_error` and skip anything
+   else, `mini(saved.size(), building_levels.size())` so a save from before this ticket defaults
+   every entry to 0).
+2. `GameSession.upgrade_building(index: int, balance: BalanceTable) -> bool` — returns `false`
+   without writing anything when `index` is outside `[0, building_levels.size())`. Otherwise reads
+   `building_levels[index]` clamped to `[0, balance.summoning_circle_level_cap]` (defensive
+   against a hand-edited save — same clamp-before-index convention `item.rank`/`enhance_level`
+   already use, `P2-05d`/`P2-05f`'s Findings) as `level`; returns `false` if
+   `level >= balance.summoning_circle_level_cap`, or if
+   `parts[clampi(level, 0, parts.size() - 1)] < 10 * (level + 2)`. On success it spends that many
+   parts of rank `level`, sets `building_levels[index] = level + 1`, and emits `roster_changed`.
+3. Only indices 0 (Circle), 1 (Forge), 3 (Sanctum) are reachable through the UI this ticket ships
+   (criterion 5). Indices 2 and 4 stay `0` forever until a future ticket adds their buttons — the
+   same "authored but unread" status `training_hall_xp_bonus`/`reliquary_*` already carry,
+   extended to a save-state slot.
+4. No building's bonus changes any gameplay number yet.
+   `summoning_circle_multiplier_per_level`, `forge_enhance_cap_per_level`,
+   `forge_salvage_yield_bonus`, `sanctum_essence_yield_bonus` stay authored-and-unread — wiring
+   them is `P2-07c`/`P2-07d`/`P2-07e`.
+5. A new `BuildingsPanel` under `hub.tscn`'s `UI/Root`, sibling to `RosterPanel`/`EquipmentPanel`,
+   same register style: one row per shipped building (Circle, Forge, Sanctum) — a `Label` showing
+   name and current level (e.g. "Summoning Circle — Lv 2") and an "Upgrade" `Button`. Three
+   separate handlers (`_on_upgrade_circle_pressed`/`_on_upgrade_forge_pressed`/
+   `_on_upgrade_sanctum_pressed`), matching the existing one-handler-per-button convention, each
+   calling `GameSession.upgrade_building(<index>, BALANCE)`. Labels refresh on `roster_changed`,
+   matching `_refresh_parts`/`_refresh_essence`.
+6. On success the `%Status` line names the building, its new level, and the cost paid; on refusal
+   (cap or insufficient parts) it says which reason applied, matching `_on_enhance_pressed`'s
+   existing style.
+7. GUT coverage in a new `tests/unit/test_buildings.gd`: the cost ladder for at least two steps
+   (0→1 costs 20 F-rank parts, 1→2 costs 30 D-rank parts), refusal at cap 5 without writing,
+   refusal on insufficient parts without writing, refusal on an out-of-range index without
+   writing.
+8. `tests/save_roundtrip_check.gd`: upgrade a building through a **real disk** save/reload cycle
+   and assert the reloaded `building_levels` entry against the raw JSON — not an in-memory
+   `to_dict`/`from_dict` pair. `P2-05a` and `P2-04e` both shipped that shortcut and both had to be
+   reopened; do not repeat it.
+9. Existing GUT suite passes unmodified.
+10. BUILT green (`tests/import_gate.ps1`, zero `SCRIPT ERROR`/`ERROR:`/`WARNING`) and the full GUT
+    suite green
+    (`--headless -s addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit`). Per
+    `KNOWN_ISSUES.md` § Environment (`P2-14`'s finding), this command cannot run inside a Codex
+    `workspace-write` sandbox — a red result relayed from a worker without checking `APPDATA`
+    redirection is not evidence of a broken suite.
+11. `verifier` re-runs both commands independently and confirms the save-key change round-trips
+    on real disk — mandatory, not optional (`CLAUDE.md` risky boundary 1; global routing rule 4).
+
+### Files allowed to change
+`systems/game_session.gd` · `hub/hub.gd` · `hub/hub.tscn` · `tests/unit/test_buildings.gd` (new) ·
+`tests/save_roundtrip_check.gd`
+
+### Non-goals
+- Any building's bonus actually applying to gameplay — `P2-07c` (Circle → summon), `P2-07d`
+  (Forge → enhance cap + salvage yield), `P2-07e` (Sanctum → sacrifice essence). This ticket only
+  makes levels exist and be spendable.
+- Training Hall and Reliquary buttons — indices reserved, unreachable through this UI
+  (`P2-04a`/`P2-04f` unblock them later).
+- Gold, in any form — struck from `SYSTEMS.md` entirely.
+- A generic `Building` Resource/definition type, a build queue, timers, or construction
+  animation — `SYSTEMS.md` § Base buildings explicitly rules these out.
+- Renaming `summoning_circle_level_cap` to a more general name. Reused as-is; a rename is a
+  docs+code polish pass, not a blocker, and can happen whenever a later ticket next touches this
+  field.
+
 **P2-13 — the five questions a `game-designer` ruling must answer before it can be written.**
 Filed blocked rather than dropped, because the idea is worth keeping and the dependencies are
 real. Recorded here so a cold session inherits the reasoning instead of rediscovering it:
@@ -493,9 +641,14 @@ real. Recorded here so a cold session inherits the reasoning instead of rediscov
 | P2-12 | Extract `salvage_item`/`enhance_item`/`convert_parts`'s arithmetic into pure functions | Debt named by `DECISIONS.md` 2026-08-06, which reaffirmed the 2026-08-01 rejection of balance logic on `GameSession` rather than reversing it: the rejection's predicted cost came true — no `GameSession.new()` exists anywhere, so every test of these formulas boots the engine. Each method keeps its signature and becomes validate → call a `static func` → mutate → emit. Not urgent (all three are shipped, tested and round-tripping); it exists so the next ticket reads them as debt rather than precedent. |
 | P2-14 | Hero detail readout — final stats, resonance, active traits | Body in `TASKS-DONE.md`. Closes the gap `P2-06b` flagged and nothing owned: gear, resonance and traits were observable only through test output. `Hero.level_for()` now single-sources the rank→level derivation `combat/quick_resolve.gd` owned inline. Widened its own file list to `tests/unit/test_expedition.gd` — criteria 2/3/5 are scene behavior and that file already owns every hub-scene drive. **Read its Findings before writing another scene test:** `ItemList.select()` does not emit `multi_selected`, so emitting the signal is what exercises the `.tscn` `[connection]` block. Also read them before believing a red gate relayed from a Codex worker — the documented GUT command cannot run inside a `workspace-write` sandbox at all (`KNOWN_ISSUES.md` § Environment). |
 | P2-07a | Building ruling — upgrade cost in parts, and the level caps | No body — this was a design gap inside `P2-07`, and the ruling itself is `SYSTEMS.md` § Base buildings. `10*(n+2)` parts of rank index `n`, cap 5 for all five, and **three buildings ship, not five**. Also corrected a stale § Summoning Circle note claiming the Circle still needs a `BalanceTable` schema change — both fields already exist (`balance_table.gd:18,21`) and `summoning_circle_weight_shift` appears nowhere. Unblocked `P2-07`. |
-| P2-07 | Circle, Forge and Sanctum are levelable, and their bonuses apply | Scoped to **three** buildings by `P2-07a`; Training Hall and Reliquary trail `P2-04a`/`P2-04f`. Route through `tech-lead` first — building levels are new `GameSession` state, so a save-key change and a mandatory `verifier` pass, and `hub.tscn`'s five buildings are decoration with no panel. Wires four authored-but-unread magnitudes (`balance_table.gd:18,21-24,26`) into consumers that are already live. |
+| P2-07 | ~~Circle, Forge and Sanctum are levelable, and their bonuses apply~~ **SPLIT** | `tech-lead` pass done — split into `P2-07b`/`c`/`d`/`e`, rationale above. Scoped to **three** buildings by `P2-07a`; Training Hall and Reliquary trail `P2-04a`/`P2-04f`. The four authored-but-unread magnitudes (`balance_table.gd:18,21-24,26`) are wired by `c`/`d`/`e`, not `b`. |
+| P2-07b | Building levels exist, persist, and are spendable — Circle/Forge/Sanctum upgrade panel | **Body above.** The foundation; nothing in `c`/`d`/`e` has a level to read without it. New `GameSession.building_levels` = a save-key change, so `CLAUDE.md` boundary 1 and a **mandatory `verifier` pass with a real disk save/reload** — not an in-memory `to_dict`/`from_dict` (`P2-05a`, `P2-04e` both shipped that shortcut and were reopened). Ships the first `BuildingsPanel` in `hub.tscn`; every bonus stays inert, same precedent as `P2-05a` shipping equip UI before any stat formula existed. |
+| P2-07c | Wire the Summoning Circle's multiplier into `Summon.roll()` | Trickiest of the three wirings. `Summon.roll()` is a `static func` on a plain `RefCounted` with no autoload access, so `hub.gd` reads the level off `GameSession.building_levels` and passes it in. **The renormalized weight table must be a local copy** — scaling `BALANCE.summon_weights` in place persists to the `.tres` on disk for every consumer, the hazard `ARCHITECTURE.md` § "Reaching shared Resources" names by example. Blocked on `P2-07b`. |
+| P2-07d | Wire Forge's enhance cap + salvage yield into `enhance_item`/`salvage_item` | Blocked on `P2-07b` **and on a design gap `P2-07a` did not close** — `forge_salvage_yield_bonus`'s scaling law is unruled: flat `+10%` once built, or `10% * level` to `+50%` at cap? `SYSTEMS.md`'s "at cap" recap covers Training Hall and Sanctum and never mentions Forge, and the field name settles nothing. Route to `game-designer` before expanding this into a body. |
+| P2-07e | Wire Sanctum's essence-yield bonus into `sacrifice_hero`/`compute_essence_yield` | Simplest of the three. Blocked on `P2-07b`. Reads `building_levels` directly off `GameSession` — no signature change, since the level is the autoload's own persisted state, not a shared Resource smuggled through it (the distinction `P2-05f`'s Findings drew). |
 | P2-08 | Full save/load round-trip through `SaveService` | |
-| P2-10 | Gold — what it is and how a player gets it | Found by `game-designer` during `P2-05e`, deliberately not authored there — an income rate is a design input, not something a ruling can pick. Gold is named in three zones' loot-table Reward prose and was named in Enhancement's and Buildings' cost lines; it has no `BalanceTable` field, no `GameSession` currency, and zero hits in `*.gd`/`*.tres`/`*.tscn`. `P2-05e` struck it from both cost lines rather than price a currency with no source. Add it back there once this lands. Same shape as `P2-09`/`P2-04a`. |
+| P2-10 | ~~Gold — what it is and how a player gets it~~ **CLOSED — will not do** | Superseded by `SYSTEMS.md` § Enhancement's gold-removal ruling (2026-08-06), which struck gold from the document entirely rather than deferring it. This row asked for an income rate; the ruling's **Rejected: give gold an income rate and keep it as a third currency** answers it directly — Summon Stones (pulling) and parts (upgrading) already cover the two earned-currency tracks, and every cost line downstream of `P2-05e` settled on parts-only, so nothing was left to spend it on. Do not re-open without a system that needs a third currency. Left the residue as `P2-15`. |
+| P2-15 | Sync three zones' `loot_emphasis` strings to the gold-removal ruling | Code follow-up flagged inside `SYSTEMS.md` § Enhancement's gold-removal ruling, out of a docs-only pass's bounds. Drop the `"Gold, "` prefix from `zones/defs/verdant_outskirts.tres`, `ashfall_reaches.tres`, `sundered_vault.tres` and the matching expected literals in `tests/zone_definition_check.gd`. Free-text display strings only — no `BalanceTable` field, no save key, not a boundary change. Rung 1/2: four string edits, not a subsystem. |
 | P2-09 | Summon Stone income rate — how a player actually acquires stones | Found by `game-designer`, deliberately not authored by it — a design input, not a Resource-authoring task. Nothing defines acquisition rate today, which makes the verified ~327-pull spine number unvalidatable against real play time: the ratio is sound, the pacing is unknowable without this. Needed before the Phase 2 exit question below can be honestly answered. |
 | P2-13 | **[BLOCKED]** Fodder training — an instructor hero trains F–C fodder; survivors of background "culling" expeditions gain XP and rank up naturally | Blocked on four things that do not exist: `P2-04a` (no `Hero.level` or XP field at all — `combat/quick_resolve.gd:21-23` derives level from rank and treats every hero as permanently max-level), `P2-06c` (**landed `f4eea87`** — `instructor_trait_pool` now exists on `HeroDefinition`, reserved and empty as intended, and this ticket also inherits `Hero.taught_traits`, which `P2-06c` deliberately deferred rather than shipping empty; `SYSTEMS.md` § Traits §4 still specifies it in full), `P2-07` (the Training Hall is a grey-box mesh in `hub.tscn:41-89` and `balance_table.gd:24`'s `training_hall_xp_bonus = 0.15` is authored-but-unread), and a **turn concept**, which exists nowhere — `Expedition.resolve()` is synchronous, and `P2-04f` is blocked on the same gap. Four missing systems in one ticket is the "add an inventory system" shape this file exists to prevent; do not start it because one dependency landed. Needs a `game-designer` ruling first, on the five questions below. |
 | P2b-01 | Minimum playable arena: capsules, WASD + mouse, one attack, one dodge, one enemy | Same `CombatResult` |

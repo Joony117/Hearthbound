@@ -792,8 +792,9 @@ player could hit a wall with no way to know how to clear it, which is worse than
 costs parts only until gold has a source.
 
 **Ruling: Enhancement costs parts only.** Gold is struck from this cost line and from Buildings'
-upgrade-cost line (below) until a ticket gives it an income rate — same shape as `P2-09`/`P2-04a`.
-That ticket is not this one; flagging it for `tech-lead` to open.
+upgrade-cost line (below). At the time of this ruling that was provisional — deferred pending a
+ticket to give gold an income rate. It has since been settled further: see the gold-removal
+ruling below, which strikes gold from the document entirely rather than merely deferring it.
 
 **3. Cap: `forge_enhance_cap_max` (15), flat — no `forge_level` term until `P2-07`.**
 
@@ -824,7 +825,7 @@ stranded, just not yet wired to a level that exists.
 | `cost(n → n+1) = 2 + n` parts of matching rank | Nowhere new — formula-shape, unchanged here except "plus gold" struck | Same footing as the loot table's slice-and-renormalize: a formula, not a table. |
 | `forge_enhance_cap_max = 15` | `BalanceTable` (already in `balance.tres`) | Existing field, now the sole cap value per question 3 — no new field needed. |
 | `forge_enhance_cap_per_level = 3` | `BalanceTable` (already in `balance.tres`) | Existing field, unused until `P2-07` gives the Forge a real level; not read by `P2-05f`. |
-| Gold (drop rate, cost values) | Not authored anywhere — deferred | Same shape as `P2-09`/`P2-04a`. A follow-up ticket gives it a `BalanceTable` field once it has a source; not this one. |
+| Gold | Removed — see the gold-removal ruling below | Not deferred pending a future ticket; struck from this document entirely. Parts (this cost line, Buildings' upgrade cost) and Summon Stones (Summoning) already cover the two earned-currency tracks a non-monetized gacha economy needs — a third, unimplemented currency added nothing. |
 
 `P2-05f`'s "files allowed to change" follows: `equipment/item.gd` (`enhance_level` field +
 `to_dict`/`from_dict`), `BalanceTable`/`balance_table.gd` (`enhance_pct_per_level`) + `balance.tres`,
@@ -837,10 +838,35 @@ per-stat summation. No change to `EquipmentDefinition`.
 > case rather than just the unenhanced one. · **Settled by:** the same played build that marker
 > calls for, at an additional checkpoint — maxed rank *and* maxed enhancement, not just maxed rank.
 
-> ⚠️ **PROVISIONAL** — gold is named in cost lines and loot-table prose but has no value, no
-> `BalanceTable` field, and no income source anywhere in code. · **Settled by:** a ticket giving
-> gold an income rate (same shape as `P2-09`), after which Enhancement's and Buildings' cost lines
-> can add a real gold term.
+**Gold removal — settled, not provisional.** An external design review (2026-08-06) argued a
+non-monetized gacha economy needs two separate earned-currency tracks — one for pulling, one for
+upgrading — to avoid gridlock where a player must constantly choose between roster expansion and
+vertical power. This game already has exactly that: Summon Stones pull, and parts (rank-tiered,
+salvage- and drop-sourced) upgrade, via Enhancement's cost line above and Buildings' upgrade cost
+below. Gold would be a third currency filling a role the other two already cover, with zero
+implementation behind it (`grep -rn "gold" --include=*.gd --include=*.tres --include=*.tscn .`
+returns hits only in three `ZoneDefinition` resources' and one test's `loot_emphasis` *display
+string* — decorative prose, not a `BalanceTable` field, `GameSession` currency, or drop source).
+
+**Ruling: gold is struck from this document, not deferred.** The three zones' Reward columns
+(Expeditions → The three zones, below) drop the "Gold, " prefix. This is a scope/clarity call, not
+an arithmetic one — reviving gold as a real third currency would be a scope change (a new income
+source, a new `BalanceTable`/`GameSession` field, new drop tables) that nothing in the current
+design needs, since the two-track requirement the research raises is already met.
+
+**Rejected: give gold an income rate and keep it as a third currency**, per the original `P2-05e`
+deferral above. Rejected because nothing downstream of `P2-05e` ever found a use for it — Buildings
+(`P2-04`/`P2-07`) settled on parts-only, Enhancement (`P2-05e`/`P2-05f`) settled on parts-only, and
+no other cost line in this document has ever named gold. Keeping a currency "deferred" with no
+system left that would spend it is worse than removing it: it invites a future ticket to invent a
+sink for a currency that exists only because the doc never finished striking it.
+
+**Code follow-up, not this pass:** `zones/defs/verdant_outskirts.tres`,
+`ashfall_reaches.tres`, `sundered_vault.tres` (the `loot_emphasis` field) and
+`tests/zone_definition_check.gd` (the matching expected strings) still say "Gold, ..." — those are
+implemented values, out of a docs-only pass's bounds. Flagging for `tech-lead`/an `implementer` to
+sync the three `loot_emphasis` strings and the test's expected-string literals to match the Reward
+column below once this ships.
 
 ### Salvage
 
@@ -1302,9 +1328,9 @@ same-rank team already has in base kit alone):
 
 | Zone | Unlock | Recommended power | Waves | Loot emphasis |
 |---|---|---|---|---|
-| Verdant Outskirts | Available from start | 900 | 5 trash (50%→90% of RP) + 1 boss (110% RP) | Gold, F–C parts, light Summon Stones |
-| Ashfall Reaches | Clear Verdant Outskirts | 4,800 | 6 trash (50%→100% RP) + 1 boss (120% RP) | Gold, C–A parts, moderate Summon Stones, first A+ drops |
-| Sundered Vault | Clear Ashfall Reaches | 11,500 | 7 trash (60%→110% RP) + 1 boss (130% RP) | Gold, S–SSS parts, heavy Summon Stones, best A+ drop rate |
+| Verdant Outskirts | Available from start | 900 | 5 trash (50%→90% of RP) + 1 boss (110% RP) | F–C parts, light Summon Stones |
+| Ashfall Reaches | Clear Verdant Outskirts | 4,800 | 6 trash (50%→100% RP) + 1 boss (120% RP) | C–A parts, moderate Summon Stones, first A+ drops |
+| Sundered Vault | Clear Ashfall Reaches | 11,500 | 7 trash (60%→110% RP) + 1 boss (130% RP) | S–SSS parts, heavy Summon Stones, best A+ drop rate |
 
 A wave's "contents" here is a single `enemy_power` scalar (a fraction of the zone's recommended
 power, from the ramp above) that quick_resolve compares statistically against the team's
@@ -1430,17 +1456,43 @@ LostCache { hero_name, zone_id, items[], turn_lost }
 Retrieved items may come back **Damaged**:
 
 ```
-damage_chance = 0.15 + 0.03 * turns_elapsed + power_deficit_penalty
+r = zone.power / team_power                              # same r convention as Wave damage, above
+power_deficit_penalty = clamp(0.2 * (r - 1), 0.0, 0.2)
+damage_chance = clamp(0.15 + 0.03 * turns_elapsed + power_deficit_penalty, 0.0, 1.0)
 ```
 
 Damaged means enhancement halved (rounded down), or if already at `+0`, one affix rolled
 down. **Any socketed Cores are lost.**
 
-> ⚠️ **PROVISIONAL** — `power_deficit_penalty` is named in the formula above with no value or
-> formula defined anywhere; the two terms that do carry numbers (`0.15` base, `0.03 *
-> turns_elapsed`) haven't been played either. · **Settled by:** defining `power_deficit_penalty`'s
-> formula, then a played build to feel whether `damage_chance` lands where "damaged gear is a
-> real cost" needs it to.
+`power_deficit_penalty` scales continuously with how underpowered the retrieval team is relative
+to the zone, rather than the pass/fail shape a flat bonus would give it — the required-power gate
+already reads `team_power >= zone.power * 0.5`, i.e. `r <= 2.0` for any legal team, so `r`'s range
+is `(0, 2]` for every team allowed to attempt the mission at all. The weakest legal team (exactly
+at the gate) reads `r = 2.0`, so `power_deficit_penalty` hits its `0.2` cap exactly there — the cap
+isn't dead headroom, it's reached at the floor of what the mission permits. A team at or above the
+zone's own power (`r <= 1.0`) pays no penalty at all: `power_deficit_penalty` is purely a tax on
+sending a team the recovery gate let in under-strength, not a bonus for overkill.
+
+Verified (Codex thread `019fd9c8-efdf-7473-8101-5a57b92756d8`): weakest legal team, fresh cache —
+`0.15 + 0 + 0.20 = 0.35`. Weakest legal team, cache about to expire at the un-upgraded 15-turn mark
+— `0.15 + 0.45 + 0.20 = 0.80`. Fully-geared team (`r -> 0`) — floors at the `0.15` base regardless
+of `turns_elapsed`. The outer `clamp` on `damage_chance` is not decorative: a maxed Reliquary
+(below) stretches cache life to 40 turns, and the un-clamped formula reaches `0.15 + 1.2 + 0.2 =
+1.55` at `turns_elapsed = 40, r = 2.0` — the `0.03`-per-turn base term alone crosses `1.0` around
+`turns_elapsed ~= 28`, before `power_deficit_penalty` is even added. Reliquary's own `-3%`/level
+reduction (capped at `-15%`, Buildings below) softens this but doesn't prevent it — the clamp is
+load-bearing at the top end of cache life, not a formality.
+
+> ⚠️ **PROVISIONAL** — `power_deficit_penalty`'s shape and coefficient (`0.2 * (r-1)`, capped at
+> `0.2`) are picked and arithmetically checked at a desk (bounds verified above, Codex thread
+> `019fd9c8-efdf-7473-8101-5a57b92756d8`) to keep the penalty continuous rather than binary and to
+> stay a minority contributor next to the time-based base term, not from a played build. The two
+> terms that already carried numbers (`0.15` base, `0.03 * turns_elapsed`) remain unplayed too.
+> **Settled by:** a played build across at least one weak-team and one strong-team recovery run to
+> feel whether `damage_chance` lands where "damaged gear is a real cost, but the system is still
+> usable by a weak B-team" needs it to — the design intent stated two lines above (`zone.power *
+> 0.5`) is specifically that a weak team *can* attempt this, so a played `0.80`-chance outcome that
+> reads as "don't bother" would contradict the system's own stated point.
 
 Caches **expire after 15 turns** (+5 per Reliquary level). The clock is what makes a death
 hurt: you choose between pushing progression and mounting a salvage run.
@@ -1680,8 +1732,8 @@ rank up, above) — an established pattern in this doc, not a new one being inve
 > level reads as "a long-term goal" or "a chore." · **Settled by:** a played build with `P2-07`'s
 > UI, spending real parts income against these costs across at least one full building.
 
-Gold remains struck from this line per Enhancement's ruling (`P2-05e`) — no income source exists
-anywhere in this game yet. Add back once a ticket gives gold a rate.
+Gold stays struck from this line — see Enhancement's gold-removal ruling above. This is no longer
+a "waiting on an income source" deferral: gold is removed from the document, not paused.
 
 No build queues, no adjacency bonuses, no timers, no construction animation. Add complexity
 only when a building needs to express something an integer can't.
