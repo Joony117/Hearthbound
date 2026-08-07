@@ -684,7 +684,7 @@ needs to re-read.
 | `P2-16` | Pulls cost Summon Stones, and a clear pays them | `4937ded` |
 | `P2-08` | Full save/load round-trip through `SaveService` | `e4e08c2` |
 | `P2-04a` | XP-per-level curve ruling — heroes level for real | `6e00e6f` |
-| `P2-04g` | A hero levels up from expeditions | *(this commit)* |
+| `P2-04g` | A hero levels up from expeditions | `dc6e090` |
 
 ---
 
