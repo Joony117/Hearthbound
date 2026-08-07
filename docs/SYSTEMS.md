@@ -165,8 +165,8 @@ ranking up feel like a punishment. See `DECISIONS.md`.
 ### Dupes and resonance
 
 Feeding a hero into another instance of the *same* `def_id` grants ×3 essence **and** a
-resonance point. Resonance unlocks traits from that hero's definition trait pool at
-**1, 3, and 6**.
+resonance point. Resonance unlocks traits from that hero's definition's **resonance trait
+pool** at **1, 3, and 6** — see § Traits, below, for the pool, the numbers, and the type.
 
 This is why a duplicate is never dead weight, and it gives chasing a specific unit a payoff
 ladder beyond raw stats.
@@ -176,6 +176,197 @@ ladder beyond raw stats.
 > weights in Summoning, so "6 dupes" could be a routine milestone or a near-unreachable one
 > depending on rank. · **Settled by:** a played build, or a dupe-rate calculation cross-referenced
 > against the Summoning weight table (not yet done).
+
+### Traits
+
+`P2-06b` was blocked on this: the paragraph above named a "definition trait pool" that did not
+exist anywhere in the codebase. This section is the ruling that unblocks it — the type, the
+per-archetype pools, the resonance/instructor partition, and the `Hero` storage.
+
+**1. Trait type — a `Resource`, not a `BalanceTable` effect table.**
+
+```
+class_name TraitDefinition extends Resource
+
+@export var id: StringName = &""
+@export var display_name: String = ""
+@export var stat: EquipmentDefinition.PrimaryStat = EquipmentDefinition.PrimaryStat.HP
+@export var magnitude: float = 0.0
+```
+
+`stat` reuses `EquipmentDefinition.PrimaryStat` rather than inventing a second enum —
+`Hero.compute_final_stats` already treats that enum's ordinal as positionally mirroring
+`Hero.STAT_NAMES` (`heroes/hero.gd:73`), so a trait and an equipped item route to a stat through
+the exact same index, no new mapping to keep in sync.
+
+**Reason: per-archetype content belongs on the per-archetype Resource, not on the shared curve
+table.** `HeroDefinition` already carries per-archetype tunables directly as exported fields
+(`base_hp`, `hp_growth`, `crit_rate`, `crit_dmg` — none of them live on `BalanceTable`) — a trait
+pool is the same kind of content, authored per archetype, so it belongs beside them. A `StringName`
+id plus an effect table on `BalanceTable` would need `BalanceTable` to start carrying per-archetype
+content, which breaks its established shape (shared, rank-indexed curves only —
+`equip_pct_per_rank`, `stat_multipliers`, and the like) and still needs something to say which
+archetype each id belongs to, which is exactly what `HeroDefinition` already is for. This also
+costs no fourth autoload: a trait pool is reached exactly the way `HeroDefinition` itself already
+is — `Hero.definition_for()` (`heroes/hero.gd:33-41`) — and the compute function that reads it can
+stay a pure `static func` taking `definition: HeroDefinition` as an argument, the same shape
+`compute_final_stats` already has and `DECISIONS.md`'s 2026-08-06 entry requires for balance-driven
+rule logic.
+
+**2. The pools — two, on `HeroDefinition`, not one tagged pool.**
+
+```
+@export var resonance_trait_pool: Array[TraitDefinition] = []   # exactly 3, ordered
+@export var instructor_trait_pool: Array[TraitDefinition] = []  # empty until P2-13
+```
+
+**Ruling: two separate arrays, not a `source` tag on a single pool.** Three reasons:
+
+- Resonance's own unlock rule is "1st/3rd/6th dupe → 1st/2nd/3rd trait" — an ordered array of
+  exactly 3 entries makes that a type-level fact (unlock index *is* array index) instead of
+  something every reader has to filter for by tag.
+- The two pools are read completely differently. Resonance traits are **derived**, every time,
+  from `hero.resonance` (already a saved `int`, `heroes/hero.gd:20`) plus this pool — nothing new
+  needs to be written to a save. Instructor-taught traits are **granted directly** with no counter
+  behind them, so they must be stored per-hero as an explicit list (§4, below). Two pools mirror
+  "one is computed, one is stored" directly; a single tagged pool would blur that distinction at
+  every call site that has to remember to filter.
+- `P2-13`'s stated requirement is that instructor-taught traits are **obtainable no other way**.
+  An empty `instructor_trait_pool` today, read by no resonance code path, is a stronger guarantee
+  of that than a shared pool where every future reader has to correctly exclude the tagged-instructor
+  entries to preserve exclusivity. This ticket reserves the field; it does not populate it — `P2-13`
+  is what authors instructor trait content later, unchanged in shape.
+
+**3. Per-archetype resonance pools — 3 traits each, one per threshold, in unlock order.**
+
+Each trait moves exactly one stat, through the same two channels Primary stat magnitude already
+established for equipment: HP/ATK/DEF/SPD traits are a **percentage** bonus, summed into that
+stat's existing `equip_pct` accumulator before `compute_final_stats`'s one `final *= 1.0 +
+equip_pct[index]` multiply (`heroes/hero.gd:96-97`) — trait and gear contributions to the same stat
+add together, then multiply once, same "additive-then-single-multiply" shape Enhancement's own
+ruling names as the pipeline's only precedent. CRIT_RATE/CRIT_DMG traits are a **flat**
+percentage-point/decimal bonus added the same way `equip_crit_pct_per_rank` already is
+(`heroes/hero.gd:90-95`), ahead of the existing `equip_crit_rate_cap` clamp — so the clamp still
+catches CRIT_RATE overflow even though the arithmetic below shows no archetype comes close.
+
+| Archetype | T1 (resonance 1) | T2 (resonance 3) | T3 (resonance 6) |
+|---|---|---|---|
+| Knight | Bulwark — DEF +4% | Stalwart — HP +5% | Iron Wall — DEF +8% |
+| Rogue | Opening Strike — CRIT_RATE +1.5pp | Killer Instinct — ATK +5% | Executioner — CRIT_DMG +0.08 |
+| Ranger | Quickdraw — SPD +4% | Marksman — ATK +5% | Deadeye — CRIT_RATE +1.5pp |
+| Mage | Arcane Focus — ATK +5% | Overload — CRIT_DMG +0.06 | Archmage — ATK +6% |
+| Cleric | Devotion — HP +5% | Sanctuary — DEF +4% | Guardian Light — HP +6% |
+
+Traits accumulate: at resonance 6 all three of an archetype's traits are simultaneously active
+(T1+T2+T3), not the most-recent one alone — the reward for the 6th dupe is the full stack, not a
+replacement of what the 1st and 3rd already gave.
+
+Magnitudes are chosen to read as a meaningful passive, not a stealth equipment slot. Every
+archetype's picked so its identity role gets the trait weight (Knight/Cleric lean DEF/HP, Rogue
+leans ATK/CRIT, Mage leans ATK/CRIT_DMG, Ranger splits SPD/ATK/CRIT_RATE) — matching the Base
+stats section's own archetype framing rather than inventing a new axis per hero.
+
+**Verified (Codex thread `019fd972-7c95-7330-8ad1-658bfede671d`), against the real per-slot and
+per-rank tables (§ Primary stat magnitude, § Enhancement):**
+
+- Cumulative full-resonance totals per stat: Knight DEF +12% / HP +5%; Rogue CRIT_RATE +1.5pp /
+  ATK +5% / CRIT_DMG +0.08; Ranger SPD +4% / ATK +5% / CRIT_RATE +1.5pp; Mage ATK +11% / CRIT_DMG
+  +0.06; Cleric HP +11% / DEF +4%.
+- Every non-crit cumulative total is below what **one single A-rank slot** already contributes
+  alone (`13.28%`, § Primary stat magnitude) — let alone one SSS slot (`32.68%`) or the two-slot
+  summed total a stat actually receives from full same-rank gear. A full-resonance trait stack
+  never outweighs a single piece of equipment, at any rank at or above A.
+- Worst-case crit-cap stack, Rogue (highest base `CRIT_RATE`, 15%, plus a `CRIT_RATE` trait): base
+  15% + max-enhanced SSS necklace (26.96pp, § Enhancement's own verified figure) + trait
+  (+1.5pp) = **43.46%**, `31.54pp` of margin remaining under the `75%` cap.
+- Same check, Ranger (also carries a `CRIT_RATE` trait, base 10%): 10% + max-enhanced SSS necklace
+  (26.972pp) + trait (+1.5pp) = **38.472%**, `36.528pp` of margin remaining.
+
+Neither the "outscales a slot" nor the "blows the crit cap" risk the task brief flagged materializes
+at the chosen magnitudes.
+
+**4. `Hero` storage — one new field, save-boundary change.**
+
+Resonance traits need **no new `Hero` field**: they are derived at read time from the existing
+`resonance: int` (`heroes/hero.gd:20`, already round-tripped through `to_dict`/`from_dict`) plus
+the definition's `resonance_trait_pool`. A pure `static func`, following the `compute_essence_yield`
+/`compute_rank_up_cost` shape already on `Hero`:
+
+```
+static func active_resonance_traits(hero: Hero, definition: HeroDefinition, balance: BalanceTable) -> Array[TraitDefinition]:
+    var unlocked_count := 0
+    for threshold: int in balance.resonance_trait_thresholds:
+        if hero.resonance >= threshold:
+            unlocked_count += 1
+    return definition.resonance_trait_pool.slice(0, mini(unlocked_count, definition.resonance_trait_pool.size()))
+```
+
+`resonance_trait_thresholds: Array[int] = [1, 3, 6]` is a **new `BalanceTable` field** — the
+thresholds are a shared, systemic tunable (identical for every archetype), which is why they live
+on `BalanceTable` rather than per-archetype, the same split `equip_pct_per_rank` (shared curve, on
+`BalanceTable`) already draws against `EquipmentDefinition.primary_stat` (per-item identity, on the
+definition).
+
+Instructor-taught traits **are** a new `Hero` field, because they are granted directly with no
+counter to derive them from:
+
+```
+var taught_traits: Array[StringName] = []
+```
+
+`to_dict`: `"taught_traits": [str(id) for id in taught_traits]`, sorted for diff-stability — same
+reasoning `to_dict`'s existing `equipped_slots.sort()` already uses (`heroes/hero.gd:136-137`).
+`from_dict`: default to `[]` when the key is missing (pre-trait saves, backward compatible, same
+as `resonance` defaulting via `Item.int_field`) **and** when it is explicitly `null` — mirroring
+the explicit-null defensive shape `e9f661a` already added for `equipped`, not `Dictionary.get()`'s
+default alone. Each entry validated as `String` before converting to `StringName`, `push_error` and
+skip otherwise — the same per-entry validation shape `GameSession.from_dict`'s
+`cleared_zone_ids` loop already uses (`systems/game_session.gd:195-197`). `taught_traits` stays
+empty in every save until `P2-13` ships a write path for it — nothing today ever appends to it, so
+this field's presence in `Hero.to_dict/from_dict` right now is inert, not speculative: it exists so
+`P2-13` doesn't need a second save-format bump later, at zero behavioral cost until then.
+
+**This is a save-boundary change** (`CLAUDE.md` risky boundary 1, `Hero.to_dict`/`from_dict`,
+`heroes/hero.gd:133-201`). The implementing ticket needs a `verifier` pass and a real save/reload
+cycle — a hero with `resonance >= 1` (trait present via derivation) and, separately, a hand-seeded
+`taught_traits` entry, both surviving a round trip — not just a green import gate.
+
+**5. Where the numbers live.**
+
+| Number | File | Notes |
+|---|---|---|
+| `TraitDefinition` (new Resource type) | `heroes/trait_definition.gd` | `id`, `display_name`, `stat` (`EquipmentDefinition.PrimaryStat`), `magnitude`. |
+| `resonance_trait_pool` (3 `TraitDefinition`s per archetype) | `HeroDefinition` (→ `heroes/defs/*.tres`) | New field. Per-archetype content, same footing as `base_hp`/`crit_rate`. |
+| `instructor_trait_pool` (empty) | `HeroDefinition` (→ `heroes/defs/*.tres`) | New field, reserved. Not populated by this ruling — `P2-13`'s. |
+| `resonance_trait_thresholds = [1, 3, 6]` | `BalanceTable` (→ `balance.tres`) | New field. Shared tunable, same footing as `equip_pct_per_rank`. |
+| `Hero.taught_traits: Array[StringName]` | `heroes/hero.gd` | New field + `to_dict`/`from_dict` keys. Save-boundary change (§4). |
+| Trait application in `compute_final_stats` | `heroes/hero.gd:44-99` | Same accumulate-then-multiply (non-crit) / add-then-clamp (crit) channels equipment already uses — extend the existing loop, no new formula shape. |
+
+**Rejected: a `StringName` id plus a `BalanceTable` effect table.** Would force `BalanceTable` to
+carry per-archetype content for the first time, breaking its established "shared curve only" shape,
+and still needs an archetype-to-id mapping somewhere — which `HeroDefinition` already is. See §1.
+
+**Rejected: a single tagged pool (`source: RESONANCE|INSTRUCTOR` on `TraitDefinition`) instead of
+two arrays.** Works, but every future reader must filter by tag to preserve `P2-13`'s "obtainable
+no other way" requirement; two pools make that a structural guarantee instead of a discipline
+requirement. See §2.
+
+**Rejected: authoring "abilities" (on-kill effects, lifesteal, guaranteed openers) instead of stat
+modifiers.** Out of scope per the task brief — `combat/quick_resolve.gd` is statistical
+(`team_power` vs `wave.enemy_power` plus a damage fraction), not a simulated per-action combat
+system; an active-skill trait has nothing to hook into today. That is exactly the job Cores already
+have (§ Cores, above — "lifesteal, on-kill party heal, guaranteed opening crit" as *rolled unique
+effects*, Phase 4, a different system with its own unique-effect precedent) — traits stay
+stat-only so the two systems don't duplicate each other's job.
+
+> ⚠️ **PROVISIONAL** — the fifteen trait magnitudes above are arithmetically checked against the
+> real equipment and enhancement tables (Codex thread `019fd972-7c95-7330-8ad1-658bfede671d`:
+> nothing outscales a single A-rank-or-higher slot, nothing threatens the `75%` CRIT_RATE cap even
+> stacked with maxed gear) but never played — whether a resonance payoff this size reads as
+> "worth chasing the dupe" or "didn't notice" once `P2-06c` ships it is a feel question the
+> arithmetic can't answer, same shape as every other PROVISIONAL marker in this document.
+> **Settled by:** `P2-06c` shipping resonance traits end to end, then a played build with a hero
+> actually pushed to 6 dupes.
 
 ---
 

@@ -339,6 +339,49 @@ not evidence a rule should change. `P2-06a` therefore splits: orchestration on `
 (which r8 pins there anyway, since only it may call `kill_hero()`), arithmetic in two pure
 `static func`s on `Hero`.
 
+**`P2-06b` unblocked; `P2-06c` opened.** `game-designer` authored `SYSTEMS.md` § Traits, which
+closes the gap the split flagged — there is now a `TraitDefinition` type, a per-archetype pool
+shape, and fifteen authored traits with magnitudes checked against the real equipment tables (no
+archetype's full-resonance stack outweighs a single A-rank slot; the worst crit stack lands at
+`43.46%`, well under the `75%` cap). It split one further time on its own terms: the *data* is
+`P2-06c` and the *payoff* stays `P2-06b`, because the two have different risk profiles. Resonance
+traits derive from the already-saved `resonance` int and touch no save key, while the reserved
+`Hero.taught_traits` field does — so one half is a plain feature and the other is a boundary
+change, and bundling them would hide that.
+
+The ruling deliberately made one call it did not have to: **two pools rather than one tagged
+pool.** `resonance_trait_pool` is read by resonance code, `instructor_trait_pool` is empty and
+read by nothing until `P2-13`. That makes "instructor-taught traits are obtainable no other way"
+a structural fact instead of a filtering discipline every future reader has to remember. Deciding
+it now cost nothing; retrofitting it after `Hero.taught_traits` reaches a save file would cost a
+migration, and `SaveService` has none (`systems/save_service.gd:35-38`, the `ponytail:` debt
+comment — Phase 5 owns migration).
+
+**P2-13 — the five questions a `game-designer` ruling must answer before it can be written.**
+Filed blocked rather than dropped, because the idea is worth keeping and the dependencies are
+real. Recorded here so a cold session inherits the reasoning instead of rediscovering it:
+
+1. **The spine conflict — the load-bearing one.** § Sacrifice → rank up states the economy
+   *inverts* on hoarding: feeding the natural spread of pulls costs **~327 pulls** to build an
+   SSS, while a player who only scraps F-junk needs **~6,363** — worse than gambling for SSS
+   directly. Training is scoped as a *parallel progression track*, which hands players a concrete
+   reason to hoard exactly the F–C ranks the spine needs fed. Either the ~327 number gets
+   re-derived against a two-sink economy, or training's throughput is capped so it cannot
+   displace sacrifice. It cannot simply be assumed to still hold.
+2. **The lethality paradox.** "Only the strong survive" needs a zone lethal enough to kill F–C
+   heroes, but F–C heroes only survive low-power zones — an F-rank in an F-tuned zone is a coin
+   flip, not a meat grinder. Likely resolution: the **instructor's rank gates the survivable zone
+   tier**, so the instructor sets the tier and the trainees carry the risk. Unruled.
+3. **Rank ceiling on natural growth** — a flat constant (B? A?), or the instructor's rank minus an
+   offset. The choice interacts with (1): a higher ceiling makes training more competitive with
+   the spine.
+4. **The trainee survivability bonus is probably not a trait.** A temporary, rank-limited
+   expedition modifier is a different mechanic from a permanent stat modifier, and `SYSTEMS.md`
+   § Traits deliberately scoped traits to the latter. Conflating them would push scope back into
+   `P2-06c`. This ticket owns it.
+5. **Fodder opportunity cost.** A hero in training is unavailable to sacrifice. The two paths have
+   to trade against each other rather than stack, or (1) resolves itself the wrong way.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -363,12 +406,14 @@ not evidence a rule should change. `P2-06a` therefore splits: orchestration on `
 | P2-04e | Lost-gear cache created on hero permadeath | Body in `TASKS-DONE.md`. `turn_lost` deliberately absent from `LostCache` — no turn counter exists to stamp it with, so `P2-04f` adds both. `kill_hero()` gained a `zone_id`; its **second caller is dynamic** (`tests/save_roundtrip_check.gd` via `.call()`), which grep for `kill_hero(` misses and the import gate cannot catch — read its Findings before changing any autoload signature. Also reopened once: the round-trip test shipped as in-memory `to_dict`/`from_dict`, the exact gap `P2-05a` warned about, and the disk leg had to be added to `save_roundtrip_check.gd`. Unblocks `P2-04f`. |
 | P2-04f | Recovery expedition — damage roll + cache decay | `P2-04e` shipped the cache to target, and left this ticket the `turn_lost` field as well as the counter behind it. Blocked on two more design gaps: `power_deficit_penalty` in the damage formula (already PROVISIONAL in `SYSTEMS.md`) and a "turn" concept, which doesn't exist anywhere in the codebase today despite the decay clock being turn-denominated. |
 | P2-06a | Sacrifice a hero for essence; spend essence to rank another up, dupe resonance counted | Body in `TASKS-DONE.md`. Shipped the flat `essence_base[fodder.rank]` yield with no level term. First ticket to follow `DECISIONS.md` 2026-08-06 instead of the `P2-12` debt shape — the arithmetic is two pure `static func`s on `Hero` and `tests/unit/test_sacrifice.gd` reaches both without booting an autoload. **Read its Findings before wiring another `OptionButton` to a destructive action:** `add_item()` auto-selects index 0 on a cleared button, so the fodder slot silently retargeted the next hero after a sacrifice and a blind second press killed the wrong one — permanently. Both gates stayed green through it; only driving the real scene caught it. Sharpens `P2-05g`'s `selected`-is-never-`-1` note into a data-loss rule. |
-| P2-06b | Resonance trait payoff — unlock a trait at 1/3/6 dupes | Found by `tech-lead` splitting `P2-06`, deliberately not authored — `SYSTEMS.md:167-169` names traits unlocking "from that hero's definition trait pool," but no trait type or pool exists anywhere in the codebase (`HeroDefinition` is eight stat fields and two crit fields, nothing else). Same shape as `P2-04a`/`P2-09`/`P2-04b`: a design gap found while scoping, not a ruling a ticket body can specify around. |
+| P2-06b | Resonance trait payoff — unlock a trait at 1/3/6 dupes | **Unblocked.** Was a design gap — `SYSTEMS.md` named a "definition trait pool" that existed nowhere in the codebase. `SYSTEMS.md` § Traits is now the ruling: `TraitDefinition` Resource, two pools on `HeroDefinition`, 15 authored traits, and the `resonance_trait_thresholds` shape. Depends on `P2-06c` shipping the data first — this ticket is the *payoff* (traits applying in `compute_final_stats`), not the type. Resonance traits need **no new `Hero` field**: they derive from the already-saved `resonance` int, so this half is not a save-boundary change. |
+| P2-06c | Trait data exists — `TraitDefinition`, the two pools, the 15 authored traits | Authored by `game-designer` in `SYSTEMS.md` § Traits, which settles every open input: the Resource type and why it isn't a `BalanceTable` effect table, `resonance_trait_pool` (exactly 3, ordered, unlock index = array index) and `instructor_trait_pool` (empty, reserved for `P2-13`), `resonance_trait_thresholds` on `BalanceTable`, and the two effect channels (percentage into `equip_pct` for HP/ATK/DEF/SPD, flat into `equip_flat` for the crit stats, ahead of the existing `equip_crit_rate_cap` clamp). `stat` reuses `EquipmentDefinition.PrimaryStat` rather than a second enum — **`P2-05c`'s warning applies: that ordinal positionally mirrors `Hero.STAT_NAMES`, so reordering either enum misroutes traits with a green gate.** Ships the data and the pure `static func`; `P2-06b` is what makes it visible. `godot-architect` should rule first on whether a new Resource class plus exported fields on two existing definition Resources needs an ADR. Adding `Hero.taught_traits` is a **save-boundary change** (`CLAUDE.md` risky boundary 1) and requires a `verifier` pass with a real save/reload cycle — a green import gate is not evidence. If it ships without `taught_traits` (reserved, unpopulated until `P2-13`), say so explicitly rather than leaving the field half-wired. |
 | P2-12 | Extract `salvage_item`/`enhance_item`/`convert_parts`'s arithmetic into pure functions | Debt named by `DECISIONS.md` 2026-08-06, which reaffirmed the 2026-08-01 rejection of balance logic on `GameSession` rather than reversing it: the rejection's predicted cost came true — no `GameSession.new()` exists anywhere, so every test of these formulas boots the engine. Each method keeps its signature and becomes validate → call a `static func` → mutate → emit. Not urgent (all three are shipped, tested and round-tripping); it exists so the next ticket reads them as debt rather than precedent. |
 | P2-07 | Five buildings as five integers | |
 | P2-08 | Full save/load round-trip through `SaveService` | |
 | P2-10 | Gold — what it is and how a player gets it | Found by `game-designer` during `P2-05e`, deliberately not authored there — an income rate is a design input, not something a ruling can pick. Gold is named in three zones' loot-table Reward prose and was named in Enhancement's and Buildings' cost lines; it has no `BalanceTable` field, no `GameSession` currency, and zero hits in `*.gd`/`*.tres`/`*.tscn`. `P2-05e` struck it from both cost lines rather than price a currency with no source. Add it back there once this lands. Same shape as `P2-09`/`P2-04a`. |
 | P2-09 | Summon Stone income rate — how a player actually acquires stones | Found by `game-designer`, deliberately not authored by it — a design input, not a Resource-authoring task. Nothing defines acquisition rate today, which makes the verified ~327-pull spine number unvalidatable against real play time: the ratio is sound, the pacing is unknowable without this. Needed before the Phase 2 exit question below can be honestly answered. |
+| P2-13 | **[BLOCKED]** Fodder training — an instructor hero trains F–C fodder; survivors of background "culling" expeditions gain XP and rank up naturally | Blocked on four things that do not exist: `P2-04a` (no `Hero.level` or XP field at all — `combat/quick_resolve.gd:21-23` derives level from rank and treats every hero as permanently max-level), `P2-06c` (traits; the `instructor_trait_pool` this ticket populates is reserved and empty), `P2-07` (the Training Hall is a grey-box mesh in `hub.tscn:41-89` and `balance_table.gd:24`'s `training_hall_xp_bonus = 0.15` is authored-but-unread), and a **turn concept**, which exists nowhere — `Expedition.resolve()` is synchronous, and `P2-04f` is blocked on the same gap. Four missing systems in one ticket is the "add an inventory system" shape this file exists to prevent; do not start it because one dependency landed. Needs a `game-designer` ruling first, on the five questions below. |
 | P2b-01 | Minimum playable arena: capsules, WASD + mouse, one attack, one dodge, one enemy | Same `CombatResult` |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
