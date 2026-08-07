@@ -218,7 +218,7 @@ static func is_zone_unlocked(
 
 
 func _on_summon_pressed() -> void:
-	var hero := Summon.roll()
+	var hero := Summon.roll(GameSession.building_levels[0])
 	GameSession.add_hero(hero)
 	_status.text = "Summoned %s, rank %s." % [hero.hero_name, hero.rank_label(BALANCE)]
 

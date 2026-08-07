@@ -10,11 +10,12 @@ const NAMES: PackedStringArray = [
 ]
 
 
-static func roll() -> Hero:
-	var total_weight: int = _total_weight(BALANCE.summon_weights)
+static func roll(circle_level: int = 0) -> Hero:
+	var weights: Array[int] = weights_for_circle_level(circle_level, BALANCE.summon_weights)
+	var total_weight: int = _total_weight(weights)
 	assert(total_weight > 0, "Summon weights must have a positive total.")
-	assert(BALANCE.summon_weights.size() == BALANCE.rank_names.size(), "Summon weights and rank names must align.")
-	var rank: int = rank_for_ticket(randi() % total_weight, BALANCE.summon_weights, total_weight)
+	assert(weights.size() == BALANCE.rank_names.size(), "Summon weights and rank names must align.")
+	var rank: int = rank_for_ticket(randi() % total_weight, weights, total_weight)
 	assert(rank >= 0, "A ticket inside the summon weight range must resolve to a rank.")
 	var def_id: StringName = StringName(ARCHETYPE_DEF_IDS[randi() % ARCHETYPE_DEF_IDS.size()])
 	var definition: HeroDefinition = definition_for(def_id)
@@ -22,6 +23,28 @@ static func roll() -> Hero:
 	var hero := Hero.new(NAMES[randi() % NAMES.size()], rank)
 	hero.def_id = def_id
 	return hero
+
+
+static func weights_for_circle_level(circle_level: int, base_weights: Array[int]) -> Array[int]:
+	var copied_base_weights: Array[int] = base_weights.duplicate()
+	var level: int = clampi(circle_level, 0, BALANCE.summoning_circle_level_cap)
+	var circle_multiplier: float = 1.0 + BALANCE.summoning_circle_multiplier_per_level * float(level)
+	var unscaled_weight_total: int = 0
+	var scaled_weight_total: int = 0
+	for rank: int in copied_base_weights.size():
+		if rank < 4:
+			unscaled_weight_total += copied_base_weights[rank]
+		else:
+			scaled_weight_total += copied_base_weights[rank]
+	var denominator: float = float(unscaled_weight_total) + circle_multiplier * float(scaled_weight_total)
+	var renormalization_scale: float = float(_total_weight(copied_base_weights)) / denominator
+	var renormalized_weights: Array[int] = []
+	for rank: int in copied_base_weights.size():
+		var weight: float = float(copied_base_weights[rank])
+		if rank >= 4:
+			weight *= circle_multiplier
+		renormalized_weights.append(roundi(weight * renormalization_scale))
+	return renormalized_weights
 
 
 static func rank_for_ticket(ticket: int, weights: Array[int], expected_total: int) -> int:
