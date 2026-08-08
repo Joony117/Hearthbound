@@ -704,7 +704,7 @@ needs to re-read.
 | `P2-04g` | A hero levels up from expeditions | `dc6e090` |
 | `P2-18` | A wiped roster always affords one more pull | `afa4cb7` |
 | `P2-19` | Sacrifice's `fodder.level` term — wired, not struck | `4922d2e` |
-| `P2-17` | A refused save is moved aside, not overwritten | `PENDING` |
+| `P2-17` | A refused save is moved aside, not overwritten | `786acf5` |
 
 ---
 
