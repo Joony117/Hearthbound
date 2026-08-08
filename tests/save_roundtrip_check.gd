@@ -315,6 +315,10 @@ func _check_parts_round_trip() -> int:
 		return _fail("parts raw save file open", "readable", error_string(FileAccess.get_open_error()))
 	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
 	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	# Every read of the save file closes immediately, here and in the six checks below. Since P2-20
+	# save() stages to a temp file and renames it over this path, and Windows will not replace a
+	# file that still has an open handle - a reader held open across any later autosave fails it.
+	save_file.close()
 	if parsed is not Dictionary:
 		return _fail("parts raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
 	# Save-file fields remain Variant until their types are validated.
@@ -344,6 +348,7 @@ func _check_parts_round_trip() -> int:
 	if save_file == null:
 		return _fail("converted parts raw save file open", "readable", error_string(FileAccess.get_open_error()))
 	parsed = JSON.parse_string(save_file.get_as_text())
+	save_file.close()
 	if parsed is not Dictionary:
 		return _fail("converted parts raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
 	raw_parts = (parsed as Dictionary).get("parts")
@@ -385,6 +390,7 @@ func _check_buildings_round_trip() -> int:
 		return _fail("building levels raw save file open", "readable", error_string(FileAccess.get_open_error()))
 	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
 	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	save_file.close()
 	if parsed is not Dictionary:
 		return _fail("building levels raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
 	# Save-file fields remain Variant until their types are validated.
@@ -433,6 +439,7 @@ func _check_enhanced_equipment_round_trip() -> int:
 		return _fail("enhanced equipment raw save file open", "readable", error_string(FileAccess.get_open_error()))
 	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
 	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	save_file.close()
 	if parsed is not Dictionary:
 		return _fail("enhanced equipment raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
 	# Save-file fields remain Variant until their types are validated.
@@ -485,6 +492,7 @@ func _check_inventory_round_trip() -> int:
 		return _fail("inventory raw save file open", "readable", error_string(FileAccess.get_open_error()))
 	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
 	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	save_file.close()
 	if parsed is not Dictionary:
 		return _fail("inventory raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
 	# Save-file fields remain Variant until their types are validated.
@@ -530,6 +538,7 @@ func _check_cleared_zones_round_trip() -> int:
 		return _fail("cleared zones raw save file open", "readable", error_string(FileAccess.get_open_error()))
 	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
 	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	save_file.close()
 	if parsed is not Dictionary:
 		return _fail("cleared zones raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
 	# Save-file fields remain Variant until their types are validated.
@@ -601,6 +610,7 @@ func _check_permadeath_and_version() -> int:
 		return _fail("raw save file open", "readable", error_string(FileAccess.get_open_error()))
 	# JSON parsing returns Variant because malformed or unexpected disk data has no static type.
 	var parsed: Variant = JSON.parse_string(save_file.get_as_text())
+	save_file.close()
 	if parsed is not Dictionary:
 		return _fail("raw save JSON top level", "Dictionary", type_string(typeof(parsed)))
 	var payload: Dictionary = parsed as Dictionary

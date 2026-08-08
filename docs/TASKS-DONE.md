@@ -3475,3 +3475,143 @@ the `verifier` pass mandatory. Worth remembering when estimating a "three-line" 
 `systems/save_service.gd`, `ui/main_menu.gd`, `ui/main_menu.tscn`,
 `tests/unit/test_save_service.gd`. Docs: `docs/SYSTEMS.md` (the ruling), `docs/KNOWN_ISSUES.md`
 (cross-reference), `docs/TASKS.md`.
+
+---
+
+## P2-20 — A crashed save leaves the previous save intact                    [DONE]
+
+### Objective
+
+Killing the game mid-save leaves the last good `user://save.json` on disk, instead of the
+zero-byte file that `P2-17`'s corrupt branch then has to move aside.
+
+### Existing architecture
+
+- `SaveService.save()` (`systems/save_service.gd:12-20`) opens `user://save.json` with
+  `FileAccess.WRITE`, **which truncates on open**, and only then `store_string`s the payload.
+  Between those two calls the only save on disk is empty. That window is why `P2-17`'s corrupt
+  branch is reachable in a shipped build at all.
+- `SaveService` is an autoload and the only thing that touches save files (`ARCHITECTURE.md` r4).
+  `save()` returns nothing and no caller checks it.
+- `load_game()` already handles the aftermath and is **not** in scope: `P2-17` ruled its three
+  refusal branches. This ticket reduces how often the corrupt one fires; it does not change it.
+- `DirAccess.rename_absolute()` accepts `user://` paths directly — `load_game()`'s corrupt branch
+  already uses it that way (`save_service.gd:37`), and its target may already exist.
+- `FileAccess` is `RefCounted` and closes on scope exit, which is **too late here**. The handle
+  must be explicitly `close()`d before the rename, the same way the corrupt branch does at
+  `save_service.gd:36`.
+- `tests/unit/test_save_service.gd` owns this file's coverage and already snapshots and restores
+  the real `user://save.json` around the suite in `before_all`/`after_all`.
+
+### Acceptance criteria
+
+1. `save()` writes the payload to a temp path (`user://save.tmp.json`, a new `const` beside
+   `SAVE_PATH`), closes it, then renames it over `SAVE_PATH`. `SAVE_PATH` is never opened with
+   `FileAccess.WRITE` anywhere in `save()`.
+2. A failed temp write leaves the existing `user://save.json` **byte-for-byte unchanged** and
+   pushes an error. Pinned by a test that forces the failure: pre-create a *directory* at the temp
+   path, which makes `FileAccess.open(..., WRITE)` return null. (Confirmed on Windows — it does.)
+2b. **A failed `store_string()` also leaves the previous save unchanged.** `store_string()` returns
+   `bool`, and a write that fails on a full disk, a quota or a lock leaves the handle **non-null** —
+   so the open check in criterion 2 does not cover it. Unchecked, the truncated temp gets renamed
+   over the good save, which is criterion 2's data loss relocated from open-time to write-time.
+   No test: nothing here can force an OS-level write failure, same as criterion 3.
+2c. **`load_game()` closes its read handle before `from_dict()`.** It does not today: the handle
+   opened at `save_service.gd:28` stays live through `GameSession.from_dict()`, which emits
+   `roster_changed`. Windows will not replace a file that has an open handle, so any `save()`
+   re-entered from inside that emit fails its rename. The close moves ahead of the branch rather
+   than being added per-branch, so the corrupt path keeps exactly one. Pinned by criterion 4's test.
+   **Scoped honestly:** this is *not* reachable on a real boot. `GameSession._ready()`
+   (`game_session.gd:24-27`) connects `roster_changed` to `SaveService.save` only **after**
+   `load_game()` returns, deliberately and with a comment saying so, and that is `load_game()`'s
+   only production call site. The failure is reachable from GUT, where the connection is already
+   live when a test calls `load_game()` directly — and from any second call site a later ticket
+   adds, such as a reload-from-menu. Defensive, not a shipped-build bug.
+3. A failed rename pushes an error naming the failure. No test — nothing available here can force
+   a rename to fail on Windows, and inventing a way to would cost more than the branch is worth.
+4. A stale `user://save.tmp.json` left by a crashed write is harmless: `load_game()` ignores it and
+   the next `save()` overwrites it. Pinned by a test.
+5. After a normal `save()` no temp file remains, and `user://save.json` parses as a Dictionary
+   carrying the session's state. Pinned by a test.
+6. Existing tests still pass — the five already in `tests/unit/test_save_service.gd` (eight after
+   this ticket), and `tests/save_roundtrip_check.gd`.
+7. BUILT green: zero script errors, **zero warnings**, GUT suite green.
+
+### Files allowed to change
+
+- `systems/save_service.gd`
+- `tests/unit/test_save_service.gd`
+- `tests/save_roundtrip_check.gd` — **widened during the ticket, not planned.** Staging the write
+  makes an open read handle on `save.json` fatal, and this file leaked one at all seven of its raw
+  JSON reads. Same class of defect as the `load_game()` fix below, in the file whose whole job is
+  to prove the save boundary.
+
+### Non-goals
+
+- Migration, bumping `SAVE_VERSION`, or rotating/backing up old saves.
+- **Loading from a stale temp file.** A temp file is by definition an unfinished write; preferring
+  it over a good `save.json` is how you lose a good save. Delete-or-overwrite only.
+- Touching `load_game()`'s three **refusal branches** — `P2-17` ruled them and they stay as they
+  are. This does **not** extend to `load_game()`'s file handle: staging the write turns its leaked
+  READ handle into a hard failure of the first save after every boot, so closing it is inside this
+  ticket. See criterion 2b.
+- A `save()` return value or caller-side error handling. Every caller ignores it today and
+  rewiring them is a separate ticket.
+- Proving that Godot's `rename` is a single atomic syscall on Windows. It is **not**: on a
+  destination that already exists it removes then moves, leaving a window where `save.json` is
+  absent while `save.tmp.json` still holds the complete new state. That residue is two filesystem
+  calls wide rather than a multi-kilobyte write, and recovering from it would mean loading a temp
+  file — the non-goal above. What this ticket buys is that `store_string` no longer runs against
+  the live file, which is the window a player actually loses a save in.
+  *(Source: Godot `master` via a second-model read, not the 4.7.1 tag — the engine here is
+  binary-only. Directionally confirmed, not pinned to this build.)*
+
+### Findings
+
+**The verifier's HIGH is the one to carry forward: `store_string()` returns `bool`, and the first
+implementation threw it away.** Staging protects against a crash *between* truncate and write — it
+does nothing about a write that *fails*, because the handle stays non-null through it. A full disk,
+a quota or an AV lock returns `false`, and the code then closed the truncated temp and renamed it
+over the good save: criterion 2's data loss, relocated from open-time to write-time and untested
+because criterion 2's test only forces the open-failure path. **Any staged write added anywhere
+after this checks all three of open, write and rename, not just open and rename.**
+
+**Staging a write makes an open read handle on the target fatal, and this repo held eight of them.**
+Windows will not replace a file with a live handle, so the moment `save()` stopped writing in place,
+every unclosed reader of `save.json` became a failed save. `load_game()` held one across
+`from_dict()`; `tests/save_roundtrip_check.gd` held one at each of its **seven** raw-JSON reads. All
+eight were invisible before this ticket and all eight are one line each. The check file was **not**
+in the allowed-file list — the third consecutive ticket whose list omitted a real call site
+(`P2-04g`, `P2-18`, this one). The list is now the least reliable field in the template; widen it
+out loud rather than working around it.
+
+**A stack trace tells you a defect exists, not how far it reaches.** This ticket's criterion 2c
+originally read "the first save after every single boot is lost", inferred from a GUT backtrace
+showing `load_game() -> from_dict() -> save() -> rename failed`. It is false on a real boot:
+`GameSession._ready()` (`game_session.gd:24-27`) connects `roster_changed` to `SaveService.save`
+**after** `load_game()` returns, deliberately and with a comment saying so, and that is
+`load_game()`'s only production call site. GUT reaches the failure because the connection is
+already live when a test calls `load_game()` directly. The fix stays — it guards the tests and any
+reload-from-menu a later ticket adds — but it is defensive code, not a shipped-build bug, and the
+ticket says so now. **Check a defect's call graph before writing its blast radius into a ticket**;
+the correction came from the `verifier` reproducing a real boot both ways, not from the gates.
+
+**Godot's `rename` is not atomic on Windows.** On an existing destination it removes, then moves,
+so there is a two-syscall window where `save.json` is absent while `save.tmp.json` holds the
+complete new state. Recovering from that window would mean loading a temp file, which is this
+ticket's explicit non-goal — an unfinished write must never outrank a good save. Recorded as a
+known residue, not a defect: the window shrank from a multi-kilobyte `store_string` to two
+filesystem calls, which was the whole point. *(Read from Godot `master`, not the 4.7.1 tag — the
+engine here is binary-only.)*
+
+**A directory at the temp path is a working fault injector.** `FileAccess.open(dir_path, WRITE)`
+returns null on Windows, which is what makes criterion 2's test discriminate rather than pass
+vacuously. Confirmed by standalone probe. There is no equivalently cheap injector for a failed
+*write* or a failed *rename*, which is why 2b and 3 ship guarded but untested and say so.
+
+**An autosave will eat your fixture.** `test_stale_temp_file_is_ignored_then_replaced` first
+failed for a reason unrelated to the change: `GameSession.from_dict({"roster": []})`, used to clear
+memory before reloading, emits `roster_changed` and autosaves the *empty* roster over the file the
+test had just written. Any test in this suite that writes a save, clears the session, then reloads
+must re-write the bytes after clearing. `before_each` has the same shape and gets away with it only
+because every existing test writes `SAVE_PATH` explicitly afterwards.

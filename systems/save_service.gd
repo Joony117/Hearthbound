@@ -3,6 +3,7 @@ extends Node
 ## See docs/ARCHITECTURE.md rule 4.
 
 const SAVE_PATH := "user://save.json"
+const TMP_PATH := "user://save.tmp.json"
 const CORRUPT_PATH := "user://save.corrupt.json"
 const SAVE_VERSION := 1
 
@@ -13,11 +14,23 @@ func save() -> void:
 	var payload := GameSession.to_dict()
 	payload["version"] = SAVE_VERSION
 
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var file := FileAccess.open(TMP_PATH, FileAccess.WRITE)
 	if file == null:
 		push_error("Save failed: %s" % error_string(FileAccess.get_open_error()))
 		return
-	file.store_string(JSON.stringify(payload, "\t"))
+	# store_string() returns false when the write itself fails - a full disk, a quota, a lock - and
+	# the handle stays non-null through it, so the open check above does not cover this. Renaming a
+	# truncated temp over a good save is the exact loss staging exists to prevent, so a failed write
+	# leaves both files alone and the previous save stands.
+	var wrote: bool = file.store_string(JSON.stringify(payload, "\t"))
+	file.close()
+	if not wrote:
+		push_error("Save failed: the staged save could not be written. The previous save is unchanged.")
+		return
+
+	var rename_error: Error = DirAccess.rename_absolute(TMP_PATH, SAVE_PATH)
+	if rename_error != OK:
+		push_error("Could not replace save with temporary save: %s" % error_string(rename_error))
 
 
 ## Returns true when a save was found and applied.
@@ -31,9 +44,15 @@ func load_game() -> bool:
 		return false
 
 	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	# Close before branching, not per-branch. Windows refuses to replace a file that still has an
+	# open handle, and from_dict() below emits roster_changed, which save() is connected to - a
+	# handle held this far fails that save()'s rename. GameSession._ready() connects only after
+	# load_game() returns, so the shipped boot path is safe today and this guards every other
+	# caller: the tests, and any reload-from-menu a later ticket adds.
+	file.close()
+
 	if parsed is not Dictionary:
 		push_error("Save file is corrupt: expected a Dictionary at the top level.")
-		file.close()
 		var rename_error: Error = DirAccess.rename_absolute(SAVE_PATH, CORRUPT_PATH)
 		if rename_error != OK:
 			push_error("Could not move corrupt save aside: %s" % error_string(rename_error))

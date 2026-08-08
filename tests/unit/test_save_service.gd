@@ -27,6 +27,7 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_remove_file_if_exists(SaveService.CORRUPT_PATH)
+	_remove_temp_path()
 	if not _original_save_existed:
 		_remove_file_if_exists(SaveService.SAVE_PATH)
 		return
@@ -49,6 +50,53 @@ func after_all() -> void:
 func before_each() -> void:
 	GameSession.from_dict({"roster": []})
 	_remove_file_if_exists(SaveService.CORRUPT_PATH)
+	_remove_temp_path()
+
+
+func test_failed_temp_write_preserves_existing_save() -> void:
+	var original_bytes := "previous save".to_utf8_buffer()
+	_write_save(SaveService.SAVE_PATH, original_bytes)
+	var make_directory_error: Error = DirAccess.make_dir_absolute(SaveService.TMP_PATH)
+	assert_eq(make_directory_error, OK)
+
+	SaveService.save()
+
+	assert_push_error("Save failed")
+	assert_eq(_read_file_bytes(SaveService.SAVE_PATH), original_bytes)
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+
+
+## Clearing the session in-memory autosaves over the file we are about to load, so the good bytes
+## are captured first and restored after. This also pins the interlock the staged write introduced:
+## load_game() -> from_dict() -> roster_changed -> save() renames over the path load_game() is
+## reading, which fails outright if that read handle is still open.
+func test_stale_temp_file_is_ignored_then_replaced() -> void:
+	_set_distinctive_state()
+	SaveService.save()
+	var good_save_bytes := _read_file_bytes(SaveService.SAVE_PATH)
+	GameSession.from_dict({"roster": []})
+	_write_save(SaveService.SAVE_PATH, good_save_bytes)
+	_write_save(SaveService.TMP_PATH, "stale".to_utf8_buffer())
+
+	assert_true(SaveService.load_game())
+	_assert_distinctive_state()
+	SaveService.save()
+	assert_false(FileAccess.file_exists(SaveService.TMP_PATH))
+	assert_eq(_read_file_bytes(SaveService.SAVE_PATH), good_save_bytes)
+
+
+func test_save_replaces_temp_file_with_session_state() -> void:
+	_set_distinctive_state()
+	SaveService.save()
+
+	assert_false(FileAccess.file_exists(SaveService.TMP_PATH))
+	# Save files are untrusted JSON, so their parser result remains Variant until shape-checked.
+	var parsed: Variant = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8())
+	assert_true(parsed is Dictionary)
+	var saved_state: Dictionary = parsed as Dictionary
+	# JSON decodes every number as a float, the shape Item.int_field() absorbs on the way back in.
+	assert_eq(int(saved_state.get("stones")), STONES)
+	assert_eq(saved_state.get("cleared_zone_ids"), [str(CLEARED_ZONE_ID)])
 
 
 func test_non_dictionary_save_is_refused_without_resetting_game_session() -> void:
@@ -139,6 +187,15 @@ func _remove_file_if_exists(path: String) -> void:
 		return
 	var remove_error: Error = DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	assert_eq(remove_error, OK)
+
+
+func _remove_temp_path() -> void:
+	if FileAccess.file_exists(SaveService.TMP_PATH):
+		_remove_file_if_exists(SaveService.TMP_PATH)
+		return
+	if DirAccess.dir_exists_absolute(SaveService.TMP_PATH):
+		var remove_error: Error = DirAccess.remove_absolute(SaveService.TMP_PATH)
+		assert_eq(remove_error, OK)
 
 
 func _write_save(path: String, bytes: PackedByteArray) -> void:
