@@ -570,6 +570,13 @@ longer truncate the only save. **Read its Findings before adding another staged 
 implementation discarded `store_string()`'s `bool` return and relocated the data loss from open-time
 to write-time, and staging turned eight pre-existing unclosed read handles into failed saves.
 
+## ~~P2-21 — The Training Hall is buildable, so its XP bonus can actually fire~~  [DONE]
+
+**Landed in the commit below.** Body moved to [`TASKS-DONE.md`](TASKS-DONE.md); row in Completed
+tickets below. Four of the five buildings are now levelable, and `training_hall_xp_bonus` finally
+multiplies by something a player can raise. **Read its Findings before citing a test as coverage** —
+the ticket's own claim that `save_roundtrip_check.gd` round-tripped all five building indices was
+wrong, and the `verifier` caught it: the loop ran over five and only ever drove one non-zero.
 ---
 
 **P2-13 — the five questions a `game-designer` ruling must answer before it can be written.**
@@ -716,6 +723,7 @@ needs to re-read.
 | `P2-19` | Sacrifice's `fodder.level` term — wired, not struck | `4922d2e` |
 | `P2-17` | A refused save is moved aside, not overwritten | `786acf5` |
 | `P2-20` | A crashed save leaves the previous save intact | `8c526b7` |
+| `P2-21` | The Training Hall is buildable, so its XP bonus can fire | |
 
 ---
 

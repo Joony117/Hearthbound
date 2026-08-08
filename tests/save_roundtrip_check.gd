@@ -376,13 +376,18 @@ func _check_buildings_round_trip() -> int:
 	var building_levels: Array[int] = _game_session.get("building_levels")
 	building_levels.fill(0)
 	_parts().fill(0)
-	_parts()[0] = 20
+	_parts()[0] = 40
 	_parts()[1] = 30
+	# Two buildings at two different levels, so a save that persists only the first index — or
+	# collapses the array to one value — fails here rather than passing on an all-zero tail.
+	var expected_levels: Array[int] = [0, 2, 1, 0, 0]
 	var balance := BalanceTable.new()
 	if not _game_session.call("upgrade_building", 1, balance):
 		return _fail("first Forge upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
 	if not _game_session.call("upgrade_building", 1, balance):
 		return _fail("second Forge upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
+	if not _game_session.call("upgrade_building", 2, balance):
+		return _fail("Training Hall upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
 	_save_service.call("save")
 
 	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
@@ -401,7 +406,7 @@ func _check_buildings_round_trip() -> int:
 	if raw_building_levels_array.size() != building_levels.size():
 		return _fail("raw save JSON building level count", str(building_levels.size()), str(raw_building_levels_array.size()))
 	for building_index: int in building_levels.size():
-		var expected_level: int = 2 if building_index == 1 else 0
+		var expected_level: int = expected_levels[building_index]
 		if int(raw_building_levels_array[building_index]) != expected_level:
 			return _fail("raw save JSON building level at index %d" % building_index, str(expected_level), str(raw_building_levels_array[building_index]))
 
@@ -410,7 +415,7 @@ func _check_buildings_round_trip() -> int:
 	if not _save_service.call("load_game"):
 		return _fail("building levels disk reload", "load_game() == true", "load_game() == false")
 	for building_index: int in building_levels.size():
-		var expected_level: int = 2 if building_index == 1 else 0
+		var expected_level: int = expected_levels[building_index]
 		if building_levels[building_index] != expected_level:
 			return _fail("building level after disk reload at index %d" % building_index, str(expected_level), str(building_levels[building_index]))
 	var salvaged_item := Item.new(DOOMED_ITEM_DEF_ID, SALVAGED_ITEM_RANK)

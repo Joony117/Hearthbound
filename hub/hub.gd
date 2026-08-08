@@ -18,6 +18,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _parts: Label = %Parts
 @onready var _circle_level: Label = %CircleLevel
 @onready var _forge_level: Label = %ForgeLevel
+@onready var _training_hall_level: Label = %TrainingHallLevel
 @onready var _sanctum_level: Label = %SanctumLevel
 @onready var _convert_rank_option: OptionButton = %ConvertRankOption
 @onready var _equipped_list: ItemList = %EquippedList
@@ -119,6 +120,7 @@ func _refresh_parts() -> void:
 func _refresh_buildings() -> void:
 	_circle_level.text = "Summoning Circle — Lv %d" % GameSession.building_levels[0]
 	_forge_level.text = "Forge — Lv %d" % GameSession.building_levels[1]
+	_training_hall_level.text = "Training Hall — Lv %d" % GameSession.building_levels[2]
 	_sanctum_level.text = "Sanctum — Lv %d" % GameSession.building_levels[3]
 
 
@@ -365,6 +367,10 @@ func _on_upgrade_circle_pressed() -> void:
 
 func _on_upgrade_forge_pressed() -> void:
 	_upgrade_building(1, "Forge", GameSession.upgrade_building(1, BALANCE))
+
+
+func _on_upgrade_training_hall_pressed() -> void:
+	_upgrade_building(2, "Training Hall", GameSession.upgrade_building(2, BALANCE))
 
 
 func _on_upgrade_sanctum_pressed() -> void:

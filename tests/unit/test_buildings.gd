@@ -82,3 +82,20 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	assert_eq(status.text, "Cannot enhance: item is already at the +6 cap.")
 	assert_eq(capped_item.enhance_level, 6)
 	assert_eq(GameSession.parts[3], parts_before)
+
+
+func test_training_hall_upgrade_updates_hub() -> void:
+	GameSession.parts[0] = 20
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeTrainingHall") as Button
+	var status: Label = hub.get_node("%Status") as Label
+	var training_hall_level: Label = hub.get_node("%TrainingHallLevel") as Label
+
+	upgrade_button.pressed.emit()
+	assert_eq(GameSession.building_levels[2], 1)
+	assert_eq(GameSession.parts[0], 0)
+	assert_eq(status.text, "Upgraded Training Hall to Lv 1 for 20 F parts.")
+	assert_eq(training_hall_level.text, "Training Hall — Lv 1")

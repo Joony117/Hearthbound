@@ -3615,3 +3615,92 @@ memory before reloading, emits `roster_changed` and autosaves the *empty* roster
 test had just written. Any test in this suite that writes a save, clears the session, then reloads
 must re-write the bytes after clearing. `before_each` has the same shape and gets away with it only
 because every existing test writes `SAVE_PATH` explicitly afterwards.
+
+---
+
+## P2-21 — The Training Hall is buildable, so its XP bonus can actually fire   [DONE]
+
+### Objective
+The Buildings panel offers a fourth building. Spending parts on the Training Hall raises expedition
+XP by `+15%` per level — a bonus the code already applies and no player can currently reach.
+
+### Existing architecture
+- `building_levels` (`systems/game_session.gd:17`) is a 5-element persisted `Array[int]`; the
+  **Training Hall is index 2**, reserved by `P2-07b` and never written outside tests.
+- `GameSession.upgrade_building(index, balance)` (`game_session.gd:116`) is already generic over the
+  index — bounds check, `10 * (n + 2)` parts of rank index `n`, cap `summoning_circle_level_cap`,
+  `roster_changed.emit()`. **It needs no change**, and neither does any balance field.
+- `hub/expedition/expedition.gd:33-38` already reads `building_levels[2]` and applies
+  `1.0 + BALANCE.training_hall_xp_bonus * level` to `xp_per_wave` and `zone.xp_reward` on every
+  outcome. The consumer landed with `P2-04g`; only the level is stuck at zero.
+- The panel is `UI/Root/BuildingsPanel/VBox` in `hub/hub.tscn` — three Label/Button pairs, each
+  button `[connection]`ed to a `_on_upgrade_*_pressed` handler that delegates to
+  `hub.gd:374 _upgrade_building(index, name, upgraded)`. That helper already writes the level, cap
+  and cost messages generically; the new handler is two lines.
+- **No design pass is needed.** `P2-07a` ruled the cost ladder and the cap for all five buildings
+  uniformly and named this exact follow-up (`SYSTEMS.md` § "Which buildings ship in `P2-07`",
+  lines 2088-2092): re-open Training Hall once `P2-04a` lands. It landed (`6e00e6f`), and `P2-04g`
+  (`dc6e090`) wired the curve.
+- **No save key changes** — `building_levels` has persisted all five indices since `P2-07b`, and
+  `to_dict`/`from_dict` special-case none of them. But `tests/save_roundtrip_check.gd` only ever
+  drove **index 1** to a non-zero value and asserted the other four were `0`, so nothing proved a
+  non-zero index 2 crossed real disk. Close that rather than reword it (criterion 8).
+
+### Acceptance criteria
+1. The Buildings panel shows `Training Hall — Lv N` with an Upgrade button, sited between Forge and
+   Sanctum so the panel order matches the `Buildings` child order the index scheme came from.
+2. The label refreshes from `_refresh_buildings()` on `roster_changed`, like the other three.
+3. Pressing Upgrade with sufficient parts raises `building_levels[2]` by one, deducts the ruled
+   cost, and sets the same status-line shape the other three produce.
+4. Pressing at cap, or without the parts, refuses and writes nothing — reusing `_upgrade_building`'s
+   existing messages, not new ones.
+5. A GUT test in `tests/unit/test_buildings.gd` **instantiates `hub.tscn` and emits `pressed` on the
+   real button node**, then asserts `building_levels[2]` moved and the status text is right. Calling
+   the handler directly does not satisfy this: the `[connection]` block and the `%UniqueName` are the
+   risky boundary here, and a typo'd method name in a `[connection]` leaves the import gate green.
+   (`P2-05g` shipped a Convert button no test has ever pressed — do not add a second.)
+6. `tests/unit/test_expedition.gd:106`'s existing level-5 XP assertions still pass unchanged; this
+   ticket makes that level reachable, it does not retune it.
+7. Import gate green with zero errors and zero warnings, and the full GUT suite green.
+8. `tests/save_roundtrip_check.gd`'s building check drives **two** buildings to two *different*
+   non-zero levels — Forge to 2 and Training Hall to 1 — so a save that persists only the first
+   index, or collapses the array, fails there instead of passing on an all-zero tail.
+
+### Files allowed to change
+`hub/hub.tscn`, `hub/hub.gd`, `tests/unit/test_buildings.gd`, `tests/save_roundtrip_check.gd`,
+`docs/TASKS.md`.
+
+### Non-goals
+- **The Reliquary (index 4) stays unbuildable.** `P2-04f` is still blocked on
+  `power_deficit_penalty` and a turn concept, so parts spent there would provably do nothing —
+  the precise reason `P2-07a` deferred both.
+- No change to `upgrade_building`, to any `BalanceTable` field, or to the XP formula.
+- No 3D mesh or `Buildings/TrainingHall` node changes — the grey box is already there.
+- No tooltip or cost preview on the button; the other three have none.
+
+### Findings
+
+**The verifier's only finding was in the ticket, not the code.** The "Existing architecture" bullet
+originally claimed `tests/save_roundtrip_check.gd:403` "already round-trips all five indices through
+real disk, index 2 included." It iterates all five, but line 404 read
+`expected_level: int = 2 if building_index == 1 else 0` — only the Forge was ever driven non-zero and
+the other four were asserted to *be* zero. A citation that names a line number and a loop reads as
+verified; what the loop actually asserts is a different question. Criterion 8 was added and the check
+now drives Forge to 2 and Training Hall to 1, so persisting only the first index — or collapsing the
+array to one value — fails there instead of passing on an all-zero tail.
+
+**The bonus was live before the building was.** `hub/expedition/expedition.gd:33-38` has multiplied
+every XP payout by `1.0 + training_hall_xp_bonus * building_levels[2]` since `P2-04g`, and
+`tests/unit/test_expedition.gd:106` asserted the level-5 figures by setting the array directly — so a
+green suite proved the arithmetic while the multiplier was pinned at `1.0` in every real game. This
+is the backlog's recurring "reads real, measures nothing" shape (`LostCache.turn_lost`,
+`Item.enhance_level`, `reliquary_decay_turns_bonus`, `P2-07d`'s `roundi()` ruling) inverted: not a
+field with no consumer, but a **consumer with no reachable input**. A test that sets the state
+directly cannot tell you whether anything in the game can produce that state. Only the Reliquary
+(index 4) remains in that condition, deliberately — `P2-04f` is still blocked.
+
+**The generic helper is why this was six lines of production code.** `GameSession.upgrade_building`
+and `hub.gd`'s `_upgrade_building` were both written index-generic by `P2-07b`, so the fourth
+building needed no new cost logic, no new message, and no new balance field — one `@onready`, one
+refresh line, one two-line handler, and a Label/Button/`[connection]` triple in the scene. `P2-07b`
+paying that cost once is what made this ticket small.

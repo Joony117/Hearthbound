@@ -197,6 +197,15 @@ text = "Forge — Lv 0"
 layout_mode = 2
 text = "Upgrade"
 
+[node name="TrainingHallLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Training Hall — Lv 0"
+
+[node name="UpgradeTrainingHall" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
+layout_mode = 2
+text = "Upgrade"
+
 [node name="SanctumLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -327,6 +336,7 @@ unique_name_in_owner = true
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeCircle" to="." method="_on_upgrade_circle_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeForge" to="." method="_on_upgrade_forge_pressed"]
+[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeTrainingHall" to="." method="_on_upgrade_training_hall_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeSanctum" to="." method="_on_upgrade_sanctum_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]
