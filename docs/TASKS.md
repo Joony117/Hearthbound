@@ -723,7 +723,7 @@ needs to re-read.
 | `P2-19` | Sacrifice's `fodder.level` term — wired, not struck | `4922d2e` |
 | `P2-17` | A refused save is moved aside, not overwritten | `786acf5` |
 | `P2-20` | A crashed save leaves the previous save intact | `8c526b7` |
-| `P2-21` | The Training Hall is buildable, so its XP bonus can fire | |
+| `P2-21` | The Training Hall is buildable, so its XP bonus can fire | `332466a` |
 
 ---
 
