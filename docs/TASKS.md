@@ -799,7 +799,7 @@ needs to re-read.
 | `P2-22` | Turn concept ruling — a turn is one resolved expedition | `44e112a` |
 | `P2-23` | Turns exist, and a lost cache records the one it died on | `1ce3f07` |
 | `P2-04f` | Recover a dead hero's gear, or lose it to the clock | `845c6c4` |
-| `P2-24` | The Reliquary is buildable, so its decay and damage bonuses can fire | `PENDING` |
+| `P2-24` | The Reliquary is buildable, so its decay and damage bonuses can fire | `77f8522` |
 
 ---
 
