@@ -1796,6 +1796,26 @@ Damaged gear with a perfect team and no way to avoid it. This is the same shape 
 zero-cancellation `P2-07a` flagged and did not own — sound as arithmetic, open as design.
 `P2-04f` owns the damage roll and should rule on it rather than discover it.
 
+> ⚠️ **RESOLVED by `P2-04f`.** Both residues are accepted as intended; the formula is unchanged.
+> Recomputed exactly (Codex thread `019fe03d-ec7d-72a3-aef5-1025b6311b73`): at Reliquary 5,
+> `turns_elapsed = 0`, a perfect team, `damage_chance` is precisely `0`; certain damage begins at
+> turn `33` (Reliquary 4) and turn `34` (Reliquary 5), matching the figures above exactly.
+>
+> The same-turn-zero-risk case needs exact rank-5 investment *and* noticing a death and running
+> the recovery before doing anything else — it rewards the single fastest possible response, not a
+> standing free pass; any turn spent elsewhere first reintroduces `0.03 * turns_elapsed` and starts
+> eating the margin back. The certain-damage tail is the mirror case: a Reliquary at that level
+> already bought `20`–`25` turns beyond the un-upgraded `15`, and a deadline whose last few turns
+> read as genuinely deadline-like is the point of a deadline, not a bug in one. Neither residue is
+> reopened on its own, because both are downstream of the level-5 cap chosen for the opposite
+> reason in Base buildings (`0.03 * 5` cancelling `0.15` cleanly, below) — reopening either residue
+> here would reopen that cap choice too, on no stronger evidence than justified it the first time.
+>
+> The practical stake is zero today regardless: the Reliquary has no upgrade path in the running
+> game (`hub/hub.tscn` offers buildings 0–3 only; `building_levels[4]` is fixed at `0`). This
+> callout settles the formula so a future ticket making the Reliquary buildable needs no further
+> design pass — it isn't settling something currently reachable in play.
+
 ---
 
 ## Death and gear recovery — *Phase 2*
@@ -1818,8 +1838,87 @@ power_deficit_penalty = clamp(0.2 * (r - 1), 0.0, 0.2)
 damage_chance = clamp(0.15 + 0.03 * turns_elapsed + power_deficit_penalty, 0.0, 1.0)
 ```
 
-Damaged means enhancement halved (rounded down), or if already at `+0`, one affix rolled
-down. **Any socketed Cores are lost.**
+**Ruling (`P2-04f`): Damaged means `enhance_level` halved (rounded down) if the item carries any;
+an item already at `+0` drops one rank instead, clamped at `F`. An `F`-rank item already at `+0`
+returns intact.**
+
+```
+if item.enhance_level > 0:
+    item.enhance_level = floori(item.enhance_level / 2.0)   # unchanged from the original clause
+elif item.rank > 0:
+    item.rank -= 1                                          # replaces "one affix rolled down"
+# else: F-rank, +0 — returns intact, see the boundary paragraph below
+```
+
+Two of the original clause's three parts named systems that don't exist in this codebase and
+aren't scheduled. `Item` (`equipment/item.gd:10-12`) is exactly `def_id`, `rank`, `enhance_level`
+— no affix data to roll down, no socket to hold a Core. **Cores are struck from this clause**, the
+way gold was struck from Enhancement's cost line: not deferred, removed. This document already
+tags Cores `*Phase 4*` on their own heading (Equipment, above), so a Phase-2 recovery roll naming
+them was always describing a system four phases away — struck rather than left to read real and
+resolve to nothing. **Affixes are replaced with rank**, not struck outright: `equipment_affix_counts`
+(`balance_table.gd:6`) is rank-indexed, so in this codebase's own terms an affix drop already *is*
+a rank drop — reading `item.rank` needs no new field, no new roll table, and no new system, only
+data every `Item` already carries. This follows a precedent already set on this exact array rather
+than reopening it: `P2-05b` (`docs/TASKS-DONE.md:1741-1742`) — "affixes and Cores do not exist. Do
+not let the affix column pull this ruling into inventing one."
+
+Checked before ruling (Codex thread `019fe03d-ec7d-72a3-aef5-1025b6311b73`): the magnitude
+concern raised against this option is real, and bounded. `equip_pct_per_rank`'s seven rank-down
+steps each cost `25.82%–26.02%` of that item's own stat contribution (not exactly geometric — the
+authored decimals carry rounding — but tight around `~25.9%`; `SSS→SS` specifically checks at
+`25.95%`). Enhancement-halving's cost varies by starting level and is usually *smaller*: `7.41%`
+at `+1`, climbing unevenly to `29.09%` only at `+15`. The two don't converge until `+13`
+(`27.45%`, the first level at which halving costs more than a rank drop) — below that, a rank drop
+is the harsher outcome across most of the enhance range. Ruled anyway, for three reasons:
+
+1. **A `+0` item has zero enhancement investment to lose.** The mechanic exists to make death cost
+   something recoverable-but-diminished; an item with nothing enhanced has nothing on that axis to
+   take, so the axis has to change or the roll stays inert on this branch — the exact problem this
+   ruling exists to fix, not a reason to leave it unfixed.
+2. **The fair comparison is the top of the enhance range, not the bottom.** A `+1` item losing
+   `7.41%` describes a barely-invested item; a `+13`–`+15` item losing `27–29%` describes a
+   heavily-invested one, closer to what a rank-carrying `+0` item actually represents — full rank
+   investment (the player chose to equip and carry this rank) paired with zero enhancement
+   investment. Read against the top of the range, `~26%` sits inside the band the existing
+   mechanic already produces at its own high end, not above it.
+3. **It stays inside data the game already has.** No new roll, no new array, no new save field —
+   `item.rank -= 1` reuses the same integer `Item.from_dict` already round-trips.
+
+**The `F`-rank, `+0` boundary returns the item intact.** This is a narrower dead case than the one
+it replaces — every `+0` item at rank `D` or above now drops a rank, and every item carrying any
+`enhance_level` still halves — and it is the correct floor rather than a gap: `F`/`+0` is already
+the least-invested item state the game can produce (base rank, zero enhancement), and "Damaged"
+cannot mean less than nothing. The alternative was destroying it outright (rejected below).
+
+> ⚠️ **PROVISIONAL** — the rank-drop magnitude (`~26%`, checked above) is arithmetically sized
+> against the existing enhancement-halving mechanic, not played. Whether losing a full rank on a
+> `+0` item reads as "a death costs something" or "recovery isn't worth it," the same tension the
+> `damage_chance` PROVISIONAL above already names, is unfelt. **Settled by:** a played recovery run
+> that actually rolls the `+0` branch, ideally on a rank-A-or-higher item so the drop is visible
+> against a real rank-name change.
+
+**Rejected: `+0` items return intact (no branch at all).** The status quo this ruling replaces.
+Honest, but concedes `damage_chance` decides nothing for the commonest case in the game — every
+fresh drop and every un-enhanced equip is `+0` until a built Forge and spent parts change that —
+which would make this the sixth "reads real, measures nothing" number this document has caught
+(`LostCache.turn_lost`, `Item.enhance_level`, the flat Forge salvage reading,
+`reliquary_decay_turns_bonus`, `P2-19`'s fodder-level integer division).
+
+**Rejected: destroy `+0` items outright** instead of rank-dropping them. Considered both
+generally and for the `F`/`+0` boundary specifically. Rejected generally because it's
+disproportionate at the top of the rank table: the recovery system's own stated point two
+paragraphs up is that "a weak B-team can go fetch a dead SSS hero's gear" — deleting an SSS drop
+outright on one unlucky roll contradicts a system built to make that gear *recoverable*, not to
+stack a second, harsher death roll on top of the first. Rejected at the `F`/`+0` boundary for
+consistency: nothing else in this ruling destroys an item, and a destroy branch for exactly one
+corner case — when "returns intact" already covers it without inventing a new outcome type — is
+the larger diff for no gain.
+
+**Rejected: invent an affix system to make the original clause literal.** Affixes are an
+unauthored system with no `Item` field, no roll table, and no ticket behind them; building one to
+satisfy a single clause in a recovery ruling is the scope change `CLAUDE.md` requires flagging
+explicitly, not a balance tweak, and `P2-05b` already declined this exact invitation once.
 
 `power_deficit_penalty` scales continuously with how underpowered the retrieval team is relative
 to the zone, rather than the pass/fail shape a flat bonus would give it — the required-power gate
