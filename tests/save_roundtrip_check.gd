@@ -31,6 +31,8 @@ const STONE_HERO_NAME := "Roundtrip Stone Hero"
 const STONE_REWARD := 75
 const PROGRESS_HERO_NAME := "Untrusted Progress Hero"
 const TURNS_AT_DEATH := 7
+const RECOVERED_ITEM_DEF_ID := &"recovery_round_trip"
+const EXPIRED_ITEM_DEF_ID := &"expired_round_trip"
 
 var _game_session: Node
 var _save_service: Node
@@ -73,7 +75,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, turn counter and lost-cache turn_lost, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, turn counter, lost-cache turn_lost, recovery and expiry, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -117,7 +119,10 @@ func _run() -> int:
 	var permadeath_code: int = _check_permadeath_and_version()
 	if permadeath_code != 0:
 		return permadeath_code
-	return _check_roster_wipe_floor_round_trip()
+	var roster_wipe_code: int = _check_roster_wipe_floor_round_trip()
+	if roster_wipe_code != 0:
+		return roster_wipe_code
+	return _check_recovery_round_trip()
 
 
 func _check_legacy_save() -> int:
@@ -656,6 +661,64 @@ func _check_roster_wipe_floor_round_trip() -> int:
 		return _fail("roster-wipe floor after disk reload", str(balance.summon_pull_cost), str(_stones()))
 	if not _roster().is_empty():
 		return _fail("roster-wipe floor roster after disk reload", "empty", _roster_summary())
+	return 0
+
+
+func _check_recovery_round_trip() -> int:
+	var balance: BalanceTable = load("res://balance.tres") as BalanceTable
+	if balance == null:
+		return _fail("recovery balance table load", "BalanceTable", "null")
+	var rescuer := Hero.new("Roundtrip Rescuer", 7)
+	rescuer.def_id = &"knight"
+	rescuer.level = balance.level_caps[7]
+	_game_session.call("add_hero", rescuer)
+	_game_session.set("turns", 15)
+	var recovered_cache := LostCache.new("Recovered Hero", &"verdant_outskirts", 15)
+	var recovered_item := Item.new(RECOVERED_ITEM_DEF_ID, 7)
+	recovered_item.enhance_level = 13
+	recovered_cache.items.append(recovered_item)
+	var expired_cache := LostCache.new("Expired Hero", &"verdant_outskirts", 0)
+	expired_cache.items.append(Item.new(EXPIRED_ITEM_DEF_ID, 7))
+	var lost_caches: Array[LostCache] = _game_session.get("lost_caches")
+	lost_caches.append(recovered_cache)
+	lost_caches.append(expired_cache)
+	var team: Array[Hero] = [rescuer]
+	var outcome: StringName = _game_session.call("recover_cache", recovered_cache, team, balance)
+	if outcome != &"completed":
+		return _fail("recovery before disk reload", "completed", str(outcome))
+	var inventory: Array[Item] = _game_session.get("inventory")
+	if not inventory.has(recovered_item):
+		return _fail("recovered item before disk reload", str(RECOVERED_ITEM_DEF_ID), "missing")
+	if lost_caches.has(recovered_cache):
+		return _fail("recovered cache before disk reload", "absent", "present")
+	if lost_caches.has(expired_cache):
+		return _fail("expired cache before disk reload", "absent", "present")
+	_save_service.call("save")
+
+	inventory.clear()
+	lost_caches.clear()
+	_game_session.set("turns", 0)
+	if not _save_service.call("load_game"):
+		return _fail("recovery disk reload", "load_game() == true", "load_game() == false")
+	if not lost_caches.is_empty():
+		return _fail("recovered and expired caches after disk reload", "empty", str(lost_caches.size()))
+	var reloaded_recovered_item: Item = null
+	# Counted, not just found: recover_cache appends each item to inventory without clearing
+	# cache.items, so the same Item is briefly reachable from two places. Presence alone would
+	# pass with a duplicate on disk.
+	var recovered_item_count: int = 0
+	for item: Item in inventory:
+		if item.def_id == RECOVERED_ITEM_DEF_ID:
+			reloaded_recovered_item = item
+			recovered_item_count += 1
+		if item.def_id == EXPIRED_ITEM_DEF_ID:
+			return _fail("expired cache item after disk reload", "absent", "present")
+	if reloaded_recovered_item == null:
+		return _fail("recovered item after disk reload", str(RECOVERED_ITEM_DEF_ID), "missing")
+	if recovered_item_count != 1:
+		return _fail("recovered item copies after disk reload", "1", str(recovered_item_count))
+	inventory.erase(reloaded_recovered_item)
+	_save_service.call("save")
 	return 0
 
 

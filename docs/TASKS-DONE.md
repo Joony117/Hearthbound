@@ -3927,3 +3927,161 @@ persisted state, so stamping it needs no signature change — the distinction `P
 autoload's own state and a balance number being smuggled through it. That kept this ticket clear of
 `P2-04e`'s dynamic-caller trap (`tests/save_roundtrip_check.gd` reaches `kill_hero` through
 `.call()`), which was checked anyway rather than assumed.
+
+---
+
+## P2-04f — Recover a dead hero's gear, or lose it to the clock          [DONE]
+
+### Objective
+The hub lists every lost cache with the turns it has left. Sending a team after one returns its
+items — sometimes Damaged — and a cache nobody reaches in time is gone with its gear.
+
+### Existing architecture
+
+1. `GameSession.lost_caches: Array[LostCache]` already persists and round-trips. `kill_hero()`
+   (`systems/game_session.gd:182`) is its only writer, per `ARCHITECTURE.md` r8. **Nothing reads it
+   anywhere** — no UI, no system. This ticket is its first consumer.
+2. `LostCache` is `hero_name`, `zone_id`, `items: Array[Item]`, `turn_lost` — all four persisted
+   (`P2-04e`, `P2-23`). `turn_lost` is stamped with `GameSession.turns` at the moment of death.
+3. `GameSession.advance_turn()` (`game_session.gd:49`) is the only place `turns` increases. It has
+   exactly **two** callers — `hub/expedition/expedition.gd:36` and `tests/unit/test_expedition.gd:102`
+   — and no dynamic ones (grepped `.call(`/`callv(`; the hits in `tests/save_roundtrip_check.gd` do
+   not include it).
+4. `Hero.compute_team_power(team, definitions, levels, balance)` (`heroes/hero.gd:134`) is the team
+   power the gate reads; `combat/quick_resolve.gd:27` shows the call shape, including
+   `Hero.definition_for()` and `Hero.level_for()` per hero.
+5. `zone.power` in `SYSTEMS.md` is `ZoneDefinition.recommended_power` — `900`/`4800`/`11500`. There
+   is **no zone lookup by `zone_id` anywhere in the codebase**: `hub.gd`'s `EXPEDITION_ZONES` is a
+   hardcoded `preload` array. A cache stores a `zone_id`, so this ticket needs one. The three
+   filenames under `zones/defs/` match their `zone_id`s exactly, so
+   `Hero.definition_for`/`Item.definition_for`'s path-template shape ports over unchanged.
+6. The ruling is `SYSTEMS.md` § Death and gear recovery, landed in `4772ffe`. **Damaged** halves
+   `enhance_level` if the item carries any, else drops one rank, else (F at `+0`) returns the item
+   intact. The Cores clause is struck and the affix clause is replaced by rank — do not invent
+   either system.
+
+### Acceptance criteria
+
+1. `ZoneDefinition.definition_for(zone_id) -> ZoneDefinition` exists, built like
+   `Item.definition_for` — `ResourceLoader.exists()` guard, `push_error` and `null` on a miss, no
+   `assert`. A cache carrying an unknown `zone_id` (a hand-edited save, or the `&""` a sacrifice
+   would write) must refuse recovery with a message, not crash.
+2. The hub shows every entry in `GameSession.lost_caches`: hero name, zone display name, item
+   count, and **turns remaining** (`turn_lost + 15 + reliquary_decay_turns_bonus * reliquary_level
+   - turns`). The readout refreshes on `roster_changed` like every other panel.
+3. Selecting one cache, selecting 1–5 heroes in the roster list, and pressing Recover attempts the
+   run. It is refused — with a message naming the shortfall, **no turn spent, nothing mutated** —
+   when: no cache is selected, the team is empty or over 5, the zone definition is missing, or
+   `team_power < zone.recommended_power * 0.5`. A refused attempt is `OUTCOME_INVALID_TEAM`'s
+   precedent: nothing happened, so nothing ticks.
+4. A permitted run computes, **before the turn ticks**:
+   `r = zone.recommended_power / team_power`,
+   `power_deficit_penalty = clampf(0.2 * (r - 1.0), 0.0, 0.2)`,
+   `damage_chance = clampf(0.15 + 0.03 * turns_elapsed + power_deficit_penalty
+   - reliquary_damage_chance_reduction * reliquary_level, 0.0, 1.0)`,
+   with `turns_elapsed = GameSession.turns - cache.turn_lost` and `reliquary_level =
+   clampi(building_levels[4], 0, summoning_circle_level_cap)`. **Pre-tick is the ruling, not an
+   implementation detail**: `P2-23` shipped `turn_lost` so that an immediate recovery reads
+   `turns_elapsed == 0`, and ticking first makes that `1` with every gate still green. The `0.15`,
+   `0.03` and `0.2` coefficients are authored nowhere in `BalanceTable` today; leave them as named
+   local constants rather than adding fields nothing else reads.
+5. Each item rolls independently against `damage_chance`. On a hit, Damaged applies per criterion
+   6's function. Every item in the cache then moves into `inventory` (damaged or not), the cache is
+   removed from `lost_caches`, and the turn ticks. Nothing is destroyed and no hero can die.
+6. The Damaged arithmetic is a pure `static func` on `Item`, callable without booting `GameSession`
+   — `DECISIONS.md` 2026-08-06 and `P2-06a`'s precedent. It reads `Item.clamped_enhance_level(item,
+   balance)`, not the raw field, since a save can carry any integer; and it clamps `rank` at `0` on
+   the way down. `enhance_level > 0` halves (integer division floors — that is the ruling, not a
+   bug); otherwise `rank > 0` decrements; otherwise the item is untouched.
+7. `advance_turn()` sweeps expired caches after incrementing, dropping them and their items. A cache
+   is **alive while `turns - turn_lost <= 15 + reliquary_decay_turns_bonus * reliquary_level`** and
+   dead the turn after — pin the boundary with a test at exactly the deadline and exactly one past
+   it. This makes `advance_turn(balance: BalanceTable)` an **autoload signature change**: fix both
+   callers named in Existing architecture 3.
+8. **Survives save and reload through real disk**, in `tests/save_roundtrip_check.gd`, not an
+   in-memory `to_dict`/`from_dict` pair — the shortcut `P2-05a` and `P2-04e` both shipped and were
+   reopened for. A recovered item is in `inventory` and its cache is gone after reload; a swept
+   cache stays gone. Note that file's checks share one `GameSession` in a fixed `_run()` order
+   (`P2-08`), so leave `inventory` as you found it.
+9. Existing tests still pass and the import gate is green — zero errors, zero warnings.
+
+### Files allowed to change
+
+`zones/zone_definition.gd` · `equipment/item.gd` · `equipment/lost_cache.gd` ·
+`systems/game_session.gd` · `hub/hub.gd` · `hub/hub.tscn` · `hub/expedition/expedition.gd` ·
+`tests/unit/test_expedition.gd` · `tests/save_roundtrip_check.gd` · a new `tests/unit/test_recovery.gd`
+
+Five consecutive tickets got this list wrong (`P2-04g`, `P2-18`, `P2-20`, `P2-21`, `P2-23`), four by
+omitting a live call site and one by naming a file that never changed. **Grep first, then write the
+list** — and if the work needs a file that is not here, say so in the return rather than editing it
+quietly or skipping the work.
+
+**And this one made it six.** `hub/expedition/expedition.gd` was added above *after* the fact: it is
+one of the two `advance_turn()` callers this ticket's own Existing architecture 3 names by
+`file:line`, and criterion 7 changes that signature, so the ticket forbade the file it required. The
+implementer flagged it and edited it rather than silently skipping criterion 7 — the right call, and
+the reason the streak cost nothing this time. The lesson is narrower than "grep first", which this
+list *did* do: **the grep found the caller and the list was written from the seam instead.** A
+signature change's allowed-file list is its call-site grep, not the files the feature is about.
+
+### Non-goals
+
+- **No combat, no waves, no death, no XP, no loot, no stones.** A recovery run is a power check and
+  a retrieval; `SYSTEMS.md` grants it no reward beyond the gear and no risk beyond Damaged. Do not
+  route it through `Expedition.resolve()` or `QuickResolve` — it has no wave to fight, and the
+  combat seam is ADR-fixed at two implementations of one signature.
+- **The Reliquary stays unbuildable.** `hub.tscn` offers upgrade buttons for buildings 0–3;
+  `building_levels[4]` stays `0`, so `reliquary_decay_turns_bonus` and
+  `reliquary_damage_chance_reduction` are read but never non-zero in play. Both are wired anyway so
+  the follow-up ticket is a button, not a rewrite. That follow-up is `P2-21`'s shape and is not
+  this ticket.
+- No affixes, no Cores, no new `BalanceTable` field, no zone-unlock check on a cache (the cache is
+  proof the player was already there).
+
+### Findings
+
+**The design gap was in the spec, not the code, and only reading for the ticket found it.** The row
+listed two open questions (both `clampf` residues). The one that actually blocked implementation was
+a third nobody had named: `SYSTEMS.md`'s Damaged clause described **two systems that do not exist**
+— an `Item` is `def_id`/`rank`/`enhance_level`, while `equipment_affix_counts` and
+`core_socket_counts` are authored and read by nothing. Its one implementable clause, halving
+enhancement, is **dead for the commonest case in the game**: enhancement is gated behind Forge Lv1
+and every fresh drop equips at `+0`, so a literal implementation would have returned typical caches
+completely intact and made `damage_chance` decide nothing. That is this backlog's "reads real,
+measures nothing" trap for the sixth time. The generalizable part: **a row's stated blocker list is
+not its blocker list.** `P2-11` and `P2-22` both shipped against stale premises; this one had a
+missing premise instead, and the only thing that surfaced it was tracing the ruling down to the
+fields it would have to write.
+
+**The two inherited `clampf` residues were accepted unchanged, and the reason is worth keeping.**
+Both are downstream of `P2-07a`'s level-5 cap, which was chosen *because* `0.03 * 5` cancels the
+`0.15` base cleanly — so reopening either residue reopens that cap on no stronger evidence than
+justified it originally. They are also unreachable in play: the Reliquary has no upgrade button, so
+`building_levels[4]` is permanently `0`. Both magnitudes are wired anyway, which makes the follow-up
+that adds the button a button and not a rewrite.
+
+**Pre-tick ordering is a ruling, not an implementation detail.** `recover_cache` computes
+`damage_chance` from `turns` and calls `advance_turn(balance)` last, so a cache recovered on the turn
+it was created reads `turns_elapsed == 0` — which is precisely what `P2-23` shipped `turn_lost` for.
+Ticking first would read `1`, and **every gate stays green either way**. It was written into the
+criterion rather than left to the implementer for that reason, following `P2-07b`'s precedent of
+putting the failure history in front of the person making the decision.
+
+**Sixth consecutive wrong allowed-file list, and the first where the grep was actually done.**
+`hub/expedition/expedition.gd` is named by `file:line` in the ticket's own Existing architecture 3 as
+one of two `advance_turn()` callers, and criterion 7 changes that signature — so the ticket forbade a
+file it required, having already found it. The narrower lesson is above: **a signature change's
+allowed-file list is its call-site grep, not the files the feature is about.** It cost nothing here
+only because the implementer flagged and edited rather than silently dropping the criterion.
+
+**`recover_cache` never clears `cache.items`,** so each recovered `Item` is briefly reachable from
+both `inventory` and the orphaned cache. Nothing duplicates — the cache leaves `lost_caches` in the
+same call and is collected — but the disk round-trip originally asserted only *presence* after
+reload, which a duplicate would have passed. It counts now. Verifier-flagged, fixed before commit.
+
+**Two accepted gaps.** `_refresh_lost_caches` resolves each cache's zone on every `roster_changed`
+emit, so a cache with an unresolvable `zone_id` `push_error`s per refresh rather than once — noise
+only, and reachable only from a hand-edited save, but a GUT test that provokes it will redden on the
+unconsumed error rather than on its assertion (`P2-23`). And `recover_cache`'s roster-membership
+refusal (`not roster.has(hero)`) is defensive code beyond criterion 3's four named refusals and has
+no dedicated test; traced correct, not asserted.

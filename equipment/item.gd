@@ -44,6 +44,16 @@ static func clamped_enhance_level(item: Item, balance: BalanceTable) -> int:
 	return clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
 
 
+## Applies the deterministic part of Damaged; the caller owns the independent random roll.
+static func apply_damaged(item: Item, balance: BalanceTable) -> void:
+	var enhance_level: int = clamped_enhance_level(item, balance)
+	if enhance_level > 0:
+		item.enhance_level = floori(float(enhance_level) / 2.0)
+	else:
+		var rank: int = clampi(item.rank, 0, balance.rank_names.size() - 1)
+		item.rank = maxi(rank - 1, 0) if rank > 0 else rank
+
+
 static func definition_for(p_def_id: StringName) -> EquipmentDefinition:
 	var path: String = DEF_PATH_TEMPLATE % str(p_def_id)
 	if not ResourceLoader.exists(path):

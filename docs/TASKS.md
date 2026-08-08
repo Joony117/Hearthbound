@@ -627,105 +627,21 @@ tickets below. The game counts something for the first time, and `LostCache.turn
 **Read its Findings before writing a test that drives an error branch** — GUT fails a test on an
 unconsumed `push_error`, so the `INVALID_TEAM` test went red on the error rather than the assertion.
 
-## P2-04f — Recover a dead hero's gear, or lose it to the clock          [TODO]
+## ~~P2-04f — Recover a dead hero's gear, or lose it to the clock~~       [DONE]
 
-### Objective
-The hub lists every lost cache with the turns it has left. Sending a team after one returns its
-items — sometimes Damaged — and a cache nobody reaches in time is gone with its gear.
+**Landed in the commit below, and the whole `P2-04` group is closed.** Body moved to
+[`TASKS-DONE.md`](TASKS-DONE.md); row in Completed tickets below. `lost_caches` has its first
+consumer since `P2-04e` created it — a hero's death now leads somewhere other than a save key nobody
+reads. The mandatory `verifier` pass returned **pass-with-concerns** on all 9 criteria.
 
-### Existing architecture
-
-1. `GameSession.lost_caches: Array[LostCache]` already persists and round-trips. `kill_hero()`
-   (`systems/game_session.gd:182`) is its only writer, per `ARCHITECTURE.md` r8. **Nothing reads it
-   anywhere** — no UI, no system. This ticket is its first consumer.
-2. `LostCache` is `hero_name`, `zone_id`, `items: Array[Item]`, `turn_lost` — all four persisted
-   (`P2-04e`, `P2-23`). `turn_lost` is stamped with `GameSession.turns` at the moment of death.
-3. `GameSession.advance_turn()` (`game_session.gd:49`) is the only place `turns` increases. It has
-   exactly **two** callers — `hub/expedition/expedition.gd:36` and `tests/unit/test_expedition.gd:102`
-   — and no dynamic ones (grepped `.call(`/`callv(`; the hits in `tests/save_roundtrip_check.gd` do
-   not include it).
-4. `Hero.compute_team_power(team, definitions, levels, balance)` (`heroes/hero.gd:134`) is the team
-   power the gate reads; `combat/quick_resolve.gd:27` shows the call shape, including
-   `Hero.definition_for()` and `Hero.level_for()` per hero.
-5. `zone.power` in `SYSTEMS.md` is `ZoneDefinition.recommended_power` — `900`/`4800`/`11500`. There
-   is **no zone lookup by `zone_id` anywhere in the codebase**: `hub.gd`'s `EXPEDITION_ZONES` is a
-   hardcoded `preload` array. A cache stores a `zone_id`, so this ticket needs one. The three
-   filenames under `zones/defs/` match their `zone_id`s exactly, so
-   `Hero.definition_for`/`Item.definition_for`'s path-template shape ports over unchanged.
-6. The ruling is `SYSTEMS.md` § Death and gear recovery, landed in the commit below. **Damaged**
-   halves `enhance_level` if the item carries any, else drops one rank, else (F at `+0`) returns the
-   item intact. The Cores clause is struck and the affix clause is replaced by rank — do not invent
-   either system.
-
-### Acceptance criteria
-
-1. `ZoneDefinition.definition_for(zone_id) -> ZoneDefinition` exists, built like
-   `Item.definition_for` — `ResourceLoader.exists()` guard, `push_error` and `null` on a miss, no
-   `assert`. A cache carrying an unknown `zone_id` (a hand-edited save, or the `&""` a sacrifice
-   would write) must refuse recovery with a message, not crash.
-2. The hub shows every entry in `GameSession.lost_caches`: hero name, zone display name, item
-   count, and **turns remaining** (`turn_lost + 15 + reliquary_decay_turns_bonus * reliquary_level
-   - turns`). The readout refreshes on `roster_changed` like every other panel.
-3. Selecting one cache, selecting 1–5 heroes in the roster list, and pressing Recover attempts the
-   run. It is refused — with a message naming the shortfall, **no turn spent, nothing mutated** —
-   when: no cache is selected, the team is empty or over 5, the zone definition is missing, or
-   `team_power < zone.recommended_power * 0.5`. A refused attempt is `OUTCOME_INVALID_TEAM`'s
-   precedent: nothing happened, so nothing ticks.
-4. A permitted run computes, **before the turn ticks**:
-   `r = zone.recommended_power / team_power`,
-   `power_deficit_penalty = clampf(0.2 * (r - 1.0), 0.0, 0.2)`,
-   `damage_chance = clampf(0.15 + 0.03 * turns_elapsed + power_deficit_penalty
-   - reliquary_damage_chance_reduction * reliquary_level, 0.0, 1.0)`,
-   with `turns_elapsed = GameSession.turns - cache.turn_lost` and `reliquary_level =
-   clampi(building_levels[4], 0, summoning_circle_level_cap)`. **Pre-tick is the ruling, not an
-   implementation detail**: `P2-23` shipped `turn_lost` so that an immediate recovery reads
-   `turns_elapsed == 0`, and ticking first makes that `1` with every gate still green. The `0.15`,
-   `0.03` and `0.2` coefficients are authored nowhere in `BalanceTable` today; leave them as named
-   local constants rather than adding fields nothing else reads.
-5. Each item rolls independently against `damage_chance`. On a hit, Damaged applies per criterion
-   6's function. Every item in the cache then moves into `inventory` (damaged or not), the cache is
-   removed from `lost_caches`, and the turn ticks. Nothing is destroyed and no hero can die.
-6. The Damaged arithmetic is a pure `static func` on `Item`, callable without booting `GameSession`
-   — `DECISIONS.md` 2026-08-06 and `P2-06a`'s precedent. It reads `Item.clamped_enhance_level(item,
-   balance)`, not the raw field, since a save can carry any integer; and it clamps `rank` at `0` on
-   the way down. `enhance_level > 0` halves (integer division floors — that is the ruling, not a
-   bug); otherwise `rank > 0` decrements; otherwise the item is untouched.
-7. `advance_turn()` sweeps expired caches after incrementing, dropping them and their items. A cache
-   is **alive while `turns - turn_lost <= 15 + reliquary_decay_turns_bonus * reliquary_level`** and
-   dead the turn after — pin the boundary with a test at exactly the deadline and exactly one past
-   it. This makes `advance_turn(balance: BalanceTable)` an **autoload signature change**: fix both
-   callers named in Existing architecture 3.
-8. **Survives save and reload through real disk**, in `tests/save_roundtrip_check.gd`, not an
-   in-memory `to_dict`/`from_dict` pair — the shortcut `P2-05a` and `P2-04e` both shipped and were
-   reopened for. A recovered item is in `inventory` and its cache is gone after reload; a swept
-   cache stays gone. Note that file's checks share one `GameSession` in a fixed `_run()` order
-   (`P2-08`), so leave `inventory` as you found it.
-9. Existing tests still pass and the import gate is green — zero errors, zero warnings.
-
-### Files allowed to change
-
-`zones/zone_definition.gd` · `equipment/item.gd` · `equipment/lost_cache.gd` ·
-`systems/game_session.gd` · `hub/hub.gd` · `hub/hub.tscn` · `tests/unit/test_expedition.gd` ·
-`tests/save_roundtrip_check.gd` · a new `tests/unit/test_recovery.gd`
-
-Five consecutive tickets got this list wrong (`P2-04g`, `P2-18`, `P2-20`, `P2-21`, `P2-23`), four by
-omitting a live call site and one by naming a file that never changed. **Grep first, then write the
-list** — and if the work needs a file that is not here, say so in the return rather than editing it
-quietly or skipping the work.
-
-### Non-goals
-
-- **No combat, no waves, no death, no XP, no loot, no stones.** A recovery run is a power check and
-  a retrieval; `SYSTEMS.md` grants it no reward beyond the gear and no risk beyond Damaged. Do not
-  route it through `Expedition.resolve()` or `QuickResolve` — it has no wave to fight, and the
-  combat seam is ADR-fixed at two implementations of one signature.
-- **The Reliquary stays unbuildable.** `hub.tscn` offers upgrade buttons for buildings 0–3;
-  `building_levels[4]` stays `0`, so `reliquary_decay_turns_bonus` and
-  `reliquary_damage_chance_reduction` are read but never non-zero in play. Both are wired anyway so
-  the follow-up ticket is a button, not a rewrite. That follow-up is `P2-21`'s shape and is not
-  this ticket.
-- No affixes, no Cores, no new `BalanceTable` field, no zone-unlock check on a cache (the cache is
-  proof the player was already there).
+**Read its Findings before trusting a row's stated blocker list.** This row named two open questions;
+the one that actually blocked implementation was a **third nobody had listed**, and it was in
+`SYSTEMS.md`'s own prose rather than in the code — the Damaged clause described affixes and Cores,
+neither of which exists, leaving one implementable clause that was dead for the commonest case in the
+game. `P2-11` and `P2-22` both shipped against *stale* premises; this one had a **missing** premise,
+which no amount of re-reading the row would have surfaced. Also read them before writing another
+signature change's allowed-file list — this was the sixth consecutive wrong one, and the first where
+the grep had already found the missing caller.
 
 ---
 
@@ -779,7 +695,7 @@ real. Recorded here so a cold session inherits the reasoning instead of rediscov
 | P2-05b | What a rank-`N` item contributes to a hero's stat | Body in `TASKS-DONE.md`; the ruling itself is `SYSTEMS.md` § Primary stat magnitude. Three new `BalanceTable` fields — `equip_pct_per_rank` (`0.04 × rank_mult`, eight non-crit slots, two per stat summing into one `equip_pct`), `equip_crit_pct_per_rank` (`0.015 × rank_mult`, necklace/ring, via `equip_flat`), `equip_crit_rate_cap = 0.75`. Not a reuse of `stat_multipliers`: same ratios, own scalar, so a hero-curve retune can't silently reprice every item. Unblocked `P2-05c`. |
 | P2-05c | Equipped gear changes combat power | Body in `TASKS-DONE.md`. **No signature change was needed** — this row predicted "the seam is an extra argument"; `compute_final_stats` already takes the `Hero`, and `equipped` has been on it since `P2-05a`, so gear applies in one function and `combat/` was never touched. `compute_team_power`'s crit-blindness is now pinned by an assertion (a ring moves `CRIT_DMG` and not team power), so the eventual fix has to delete it deliberately. Gear routing is indexed by `PrimaryStat` ordinal with `Hero.STAT_NAMES` mirroring it positionally — reordering either enum misroutes gear with a green gate, and only `tests/unit/test_equipment.gd` notices. |
 | P2-04e | Lost-gear cache created on hero permadeath | Body in `TASKS-DONE.md`. `turn_lost` deliberately absent from `LostCache` — no turn counter exists to stamp it with, so `P2-04f` adds both. `kill_hero()` gained a `zone_id`; its **second caller is dynamic** (`tests/save_roundtrip_check.gd` via `.call()`), which grep for `kill_hero(` misses and the import gate cannot catch — read its Findings before changing any autoload signature. Also reopened once: the round-trip test shipped as in-memory `to_dict`/`from_dict`, the exact gap `P2-05a` warned about, and the disk leg had to be added to `save_roundtrip_check.gd`. Unblocks `P2-04f`. |
-| P2-04f | Recovery expedition — damage roll + cache decay | **Unblocked.** Both design gaps are closed: `power_deficit_penalty` is `clamp(0.2 * (r - 1), 0.0, 0.2)` (`SYSTEMS.md` § Death and gear recovery, and it had been valued for some time while three rows here still called it a gap), and a turn is one resolved expedition (`P2-22`). Scope shrank — `P2-23` takes the counter and `turn_lost`, leaving the mission type, the damage roll and the expiry sweep. **Body above; all three design gaps are now ruled** (`SYSTEMS.md` § Death and gear recovery and § Turns, landed in the commit below), so it is an implementer dispatch rather than the `tech-lead` pass this row predicted — the scoping judgment was reading which seams it crosses, and those are named in the body. The **third** gap was not on anyone's list: `SYSTEMS.md`'s Damaged clause ("enhancement halved, or if already at `+0`, one affix rolled down; any socketed Cores are lost") named **two systems that do not exist** — `Item` is `def_id`/`rank`/`enhance_level` and nothing else, while `equipment_affix_counts` and `core_socket_counts` (`balance_table.gd:6-7`) are authored and read by nothing. Since enhancement is gated behind Forge Lv1 and every fresh drop equips at `+0`, the one implementable clause was dead for the commonest case in the game — the sixth "reads real, measures nothing" trap, caught at the desk. Ruled: `+0` drops a **rank** instead (affix counts are rank-indexed, so a rank drop already *is* an affix drop in this codebase's terms), Cores struck outright the way gold was, and F-at-`+0` returns intact. The **two** `clampf` residues `P2-07a`/`P2-22` raised and declined to own are **accepted unchanged**: at Reliquary 5 the `−3%`/level cancels `damage_chance`'s `0.15` base exactly, so a same-turn recovery is risk-free, and at Reliquary 4–5 the extended window outruns the clamp so the last 3 and 7 turns are certain-damage. Both reward or punish the response time a deadline is supposed to price, both are downstream of the level-5 cap chosen in `P2-07a` for the opposite reason, and both are **unreachable in play** — the Reliquary has no upgrade button, so `building_levels[4]` is permanently `0`. |
+| P2-04f | Recovery expedition — damage roll + cache decay | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Closes the whole `P2-04` group. `verifier` returned **pass-with-concerns** on all 9 criteria. The blocker that mattered was **not on this row**: `SYSTEMS.md`'s Damaged clause named affixes and Cores, neither of which exists, leaving only "halve enhancement" — dead for every `+0` item, which is every fresh drop, since enhancement is gated behind Forge Lv1. Ruled: `+0` drops a **rank** instead, Cores struck, F-at-`+0` intact. Both `clampf` residues **accepted unchanged** — they are downstream of `P2-07a`'s cap-5 choice and unreachable in play while the Reliquary has no upgrade button. Pre-tick `turns_elapsed` was written into a criterion rather than left to the implementer, because ticking first reads `1` instead of `0` **with every gate still green**. Original row, for reference — both design gaps are closed: `power_deficit_penalty` is `clamp(0.2 * (r - 1), 0.0, 0.2)` (`SYSTEMS.md` § Death and gear recovery, and it had been valued for some time while three rows here still called it a gap), and a turn is one resolved expedition (`P2-22`). Scope shrank — `P2-23` takes the counter and `turn_lost`, leaving the mission type, the damage roll and the expiry sweep. **Body above; all three design gaps are now ruled** (`SYSTEMS.md` § Death and gear recovery and § Turns, landed in the commit below), so it is an implementer dispatch rather than the `tech-lead` pass this row predicted — the scoping judgment was reading which seams it crosses, and those are named in the body. The **third** gap was not on anyone's list: `SYSTEMS.md`'s Damaged clause ("enhancement halved, or if already at `+0`, one affix rolled down; any socketed Cores are lost") named **two systems that do not exist** — `Item` is `def_id`/`rank`/`enhance_level` and nothing else, while `equipment_affix_counts` and `core_socket_counts` (`balance_table.gd:6-7`) are authored and read by nothing. Since enhancement is gated behind Forge Lv1 and every fresh drop equips at `+0`, the one implementable clause was dead for the commonest case in the game — the sixth "reads real, measures nothing" trap, caught at the desk. Ruled: `+0` drops a **rank** instead (affix counts are rank-indexed, so a rank drop already *is* an affix drop in this codebase's terms), Cores struck outright the way gold was, and F-at-`+0` returns intact. The **two** `clampf` residues `P2-07a`/`P2-22` raised and declined to own are **accepted unchanged**: at Reliquary 5 the `−3%`/level cancels `damage_chance`'s `0.15` base exactly, so a same-turn recovery is risk-free, and at Reliquary 4–5 the extended window outruns the clamp so the last 3 and 7 turns are certain-damage. Both reward or punish the response time a deadline is supposed to price, both are downstream of the level-5 cap chosen in `P2-07a` for the opposite reason, and both are **unreachable in play** — the Reliquary has no upgrade button, so `building_levels[4]` is permanently `0`. |
 | P2-06a | Sacrifice a hero for essence; spend essence to rank another up, dupe resonance counted | Body in `TASKS-DONE.md`. Shipped the flat `essence_base[fodder.rank]` yield with no level term. First ticket to follow `DECISIONS.md` 2026-08-06 instead of the `P2-12` debt shape — the arithmetic is two pure `static func`s on `Hero` and `tests/unit/test_sacrifice.gd` reaches both without booting an autoload. **Read its Findings before wiring another `OptionButton` to a destructive action:** `add_item()` auto-selects index 0 on a cleared button, so the fodder slot silently retargeted the next hero after a sacrifice and a blind second press killed the wrong one — permanently. Both gates stayed green through it; only driving the real scene caught it. Sharpens `P2-05g`'s `selected`-is-never-`-1` note into a data-loss rule. |
 | P2-06b | Resonance trait payoff — unlock a trait at 1/3/6 dupes | **Landed `26103f7`.** No body — this was a backlog row, and `SYSTEMS.md` § Traits was the spec. Shipped as eight lines in `Hero.compute_final_stats` and four tests: no new field, no signature change, no save key, no `.tres` touched. Left one gap nothing owns — **no hub UI shows resonance, traits or hero stats**, so the payoff is only observable through expedition outcomes; see above. Original spec, for reference — the data, the pools and `Hero.active_resonance_traits()` all exist; this ticket is the one call site that consumes them, extending `compute_final_stats`'s existing `equip_pct` accumulator (non-crit) and flat crit add (ahead of the `equip_crit_rate_cap` clamp). It touches no save key. Was a design gap — `SYSTEMS.md` named a "definition trait pool" that existed nowhere in the codebase. `SYSTEMS.md` § Traits is now the ruling: `TraitDefinition` Resource, two pools on `HeroDefinition`, 15 authored traits, and the `resonance_trait_thresholds` shape. Depends on `P2-06c` shipping the data first — this ticket is the *payoff* (traits applying in `compute_final_stats`), not the type. Resonance traits need **no new `Hero` field**: they derive from the already-saved `resonance` int, so this half is not a save-boundary change. |
 | P2-06c | Trait data exists — `TraitDefinition`, the two pools, the 15 authored traits | **Landed `f4eea87`.** No body — this was a backlog row, and `SYSTEMS.md` § Traits was the spec. Shipped **without `Hero.taught_traits`** (deferred to `P2-13`; see above and `SYSTEMS.md` § Traits §4), so no save key changed, no `verifier` pass was needed, and no ADR was written. Read its finding above before hand-authoring another `.tres` — typed arrays of a custom script class had no precedent here, and Godot omits default-valued fields so the five authored files are legitimately not uniform. Original spec, for reference — authored by `game-designer` in `SYSTEMS.md` § Traits, which settles every open input: the Resource type and why it isn't a `BalanceTable` effect table, `resonance_trait_pool` (exactly 3, ordered, unlock index = array index) and `instructor_trait_pool` (empty, reserved for `P2-13`), `resonance_trait_thresholds` on `BalanceTable`, and the two effect channels (percentage into `equip_pct` for HP/ATK/DEF/SPD, flat into `equip_flat` for the crit stats, ahead of the existing `equip_crit_rate_cap` clamp). `stat` reuses `EquipmentDefinition.PrimaryStat` rather than a second enum — **`P2-05c`'s warning applies: that ordinal positionally mirrors `Hero.STAT_NAMES`, so reordering either enum misroutes traits with a green gate.** Ships the data and the pure `static func`; `P2-06b` is what makes it visible. `godot-architect` should rule first on whether a new Resource class plus exported fields on two existing definition Resources needs an ADR. Adding `Hero.taught_traits` is a **save-boundary change** (`CLAUDE.md` risky boundary 1) and requires a `verifier` pass with a real save/reload cycle — a green import gate is not evidence. If it ships without `taught_traits` (reserved, unpopulated until `P2-13`), say so explicitly rather than leaving the field half-wired. |
@@ -881,6 +797,7 @@ needs to re-read.
 | `P2-12` | Salvage and enhance arithmetic moves off the autoload | `18fe317` |
 | `P2-22` | Turn concept ruling — a turn is one resolved expedition | `44e112a` |
 | `P2-23` | Turns exist, and a lost cache records the one it died on | `1ce3f07` |
+| `P2-04f` | Recover a dead hero's gear, or lose it to the clock | `PENDING` |
 
 ---
 

@@ -33,7 +33,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 	# Before the waves, not after: a hero dying below stamps its LostCache with the turn this
 	# expedition became, so an immediate recovery run reads turns_elapsed == 0 rather than -1
 	# (docs/SYSTEMS.md, Turns).
-	GameSession.advance_turn()
+	GameSession.advance_turn(BALANCE)
 	var training_hall_level: int = clampi(
 		GameSession.building_levels[2],
 		0,

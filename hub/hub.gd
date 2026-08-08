@@ -14,6 +14,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _essence: Label = %Essence
 @onready var _stones: Label = %Stones
 @onready var _turns: Label = %Turns
+@onready var _lost_cache_list: ItemList = %LostCacheList
 @onready var _summon_button: Button = %Summon
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _parts: Label = %Parts
@@ -34,6 +35,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_essence)
 	GameSession.roster_changed.connect(_refresh_stones)
 	GameSession.roster_changed.connect(_refresh_turns)
+	GameSession.roster_changed.connect(_refresh_lost_caches)
 	GameSession.roster_changed.connect(_refresh_inventory)
 	GameSession.roster_changed.connect(_refresh_parts)
 	GameSession.roster_changed.connect(_refresh_buildings)
@@ -44,6 +46,7 @@ func _ready() -> void:
 	_refresh_essence()
 	_refresh_stones()
 	_refresh_turns()
+	_refresh_lost_caches()
 	_refresh_inventory()
 	_refresh_parts()
 	_refresh_buildings()
@@ -103,6 +106,42 @@ func _refresh_stones() -> void:
 
 func _refresh_turns() -> void:
 	_turns.text = "Turn %d" % GameSession.turns
+
+
+func _refresh_lost_caches() -> void:
+	var selected_cache: LostCache = null
+	var selected: PackedInt32Array = _lost_cache_list.get_selected_items()
+	if selected.size() == 1:
+		selected_cache = _lost_cache_list.get_item_metadata(selected[0]) as LostCache
+	_lost_cache_list.clear()
+	var reliquary_level: int = clampi(
+		GameSession.building_levels[4],
+		0,
+		BALANCE.summoning_circle_level_cap,
+	)
+	for cache: LostCache in GameSession.lost_caches:
+		var zone: ZoneDefinition = ZoneDefinition.definition_for(cache.zone_id)
+		var zone_name: String = (
+			zone.display_name
+			if zone != null
+			else "[Missing definition: %s]" % cache.zone_id
+		)
+		var turns_remaining: int = LostCache.turns_remaining(
+			cache,
+			GameSession.turns,
+			reliquary_level,
+			BALANCE,
+		)
+		_lost_cache_list.add_item("%s — %s — %d items — %d turns remaining" % [
+			cache.hero_name,
+			zone_name,
+			cache.items.size(),
+			turns_remaining,
+		])
+		var item_index: int = _lost_cache_list.item_count - 1
+		_lost_cache_list.set_item_metadata(item_index, cache)
+		if cache == selected_cache:
+			_lost_cache_list.select(item_index)
 
 
 func _refresh_inventory() -> void:
@@ -453,3 +492,33 @@ func _on_expedition_pressed() -> void:
 			_status.text = "The expedition to %s lost heroes. Gone for good." % zone.display_name
 		Expedition.OUTCOME_INVALID_TEAM:
 			_status.text = "Expedition cannot start: every hero needs an archetype."
+
+
+func _on_recover_pressed() -> void:
+	var selected_caches: PackedInt32Array = _lost_cache_list.get_selected_items()
+	var cache: LostCache = null
+	if selected_caches.size() == 1:
+		cache = _lost_cache_list.get_item_metadata(selected_caches[0]) as LostCache
+	var selected_heroes: PackedInt32Array = _roster_list.get_selected_items()
+	var team: Array[Hero] = []
+	for selected_index: int in selected_heroes:
+		var hero: Hero = _roster_list.get_item_metadata(selected_index) as Hero
+		if hero != null:
+			team.append(hero)
+	var outcome: StringName = GameSession.recover_cache(cache, team, BALANCE)
+	match outcome:
+		GameSession.RECOVERY_COMPLETED:
+			_status.text = "Recovered %d items from %s's cache." % [cache.items.size(), cache.hero_name]
+		GameSession.RECOVERY_NO_CACHE:
+			_status.text = "Select one lost cache to recover."
+		GameSession.RECOVERY_INVALID_TEAM:
+			if selected_heroes.is_empty():
+				_status.text = "Select at least one hero for recovery."
+			elif selected_heroes.size() > MAX_TEAM_SIZE:
+				_status.text = "Select no more than 5 heroes for recovery."
+			else:
+				_status.text = "Recovery cannot start: every hero needs a valid archetype."
+		GameSession.RECOVERY_MISSING_ZONE:
+			_status.text = "Cannot recover cache: its zone definition is missing."
+		GameSession.RECOVERY_INSUFFICIENT_POWER:
+			_status.text = "Cannot recover cache: team power is below 50% of the zone recommendation."

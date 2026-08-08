@@ -10,6 +10,11 @@ signal roster_changed
 ## A fresh save must afford at least one pull or the game is unplayable from boot: the roster
 ## starts empty and only a pull can fill it (docs/SYSTEMS.md, Summon Stones, 3).
 const STARTING_STONES: int = 300
+const RECOVERY_COMPLETED: StringName = &"completed"
+const RECOVERY_NO_CACHE: StringName = &"no_cache"
+const RECOVERY_INVALID_TEAM: StringName = &"invalid_team"
+const RECOVERY_MISSING_ZONE: StringName = &"missing_zone"
+const RECOVERY_INSUFFICIENT_POWER: StringName = &"insufficient_power"
 
 var roster: Array[Hero] = []
 var inventory: Array[Item] = []
@@ -46,9 +51,52 @@ func summon_hero(hero: Hero, balance: BalanceTable) -> bool:
 
 ## Called once per expedition that actually runs. An expedition that never reaches a wave
 ## (OUTCOME_INVALID_TEAM) is not a turn - nothing happened.
-func advance_turn() -> void:
+func advance_turn(balance: BalanceTable) -> void:
 	turns += 1
+	var reliquary_level: int = clampi(building_levels[4], 0, balance.summoning_circle_level_cap)
+	for cache_index: int in range(lost_caches.size() - 1, -1, -1):
+		if LostCache.turns_remaining(lost_caches[cache_index], turns, reliquary_level, balance) < 0:
+			lost_caches.remove_at(cache_index)
 	roster_changed.emit()
+
+
+func recover_cache(cache: LostCache, team: Array[Hero], balance: BalanceTable) -> StringName:
+	if cache == null or not lost_caches.has(cache):
+		return RECOVERY_NO_CACHE
+	if team.is_empty() or team.size() > 5:
+		return RECOVERY_INVALID_TEAM
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(cache.zone_id)
+	if zone == null:
+		return RECOVERY_MISSING_ZONE
+	var definitions: Array[HeroDefinition] = []
+	var levels: Array[int] = []
+	for hero: Hero in team:
+		if not roster.has(hero):
+			return RECOVERY_INVALID_TEAM
+		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
+		if definition == null:
+			return RECOVERY_INVALID_TEAM
+		definitions.append(definition)
+		levels.append(Hero.level_for(hero, balance))
+	var team_power: float = Hero.compute_team_power(team, definitions, levels, balance)
+	if team_power < float(zone.recommended_power) * 0.5:
+		return RECOVERY_INSUFFICIENT_POWER
+	var reliquary_level: int = clampi(building_levels[4], 0, balance.summoning_circle_level_cap)
+	var damage_chance: float = LostCache.compute_damage_chance(
+		cache,
+		zone.recommended_power,
+		team_power,
+		turns,
+		reliquary_level,
+		balance,
+	)
+	for item: Item in cache.items:
+		if randf() < damage_chance:
+			Item.apply_damaged(item, balance)
+		inventory.append(item)
+	lost_caches.erase(cache)
+	advance_turn(balance)
+	return RECOVERY_COMPLETED
 
 
 func credit_stones(amount: int) -> void:

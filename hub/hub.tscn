@@ -137,6 +137,20 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Turn 0"
 
+[node name="LostCacheHeader" type="Label" parent="UI/Root/RosterPanel/VBox"]
+layout_mode = 2
+text = "LOST GEAR"
+
+[node name="LostCacheList" type="ItemList" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+select_mode = 0
+
+[node name="Recover" type="Button" parent="UI/Root/RosterPanel/VBox"]
+layout_mode = 2
+text = "Recover Selected Cache"
+
 [node name="FodderOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -332,6 +346,7 @@ modulate = Color(1, 1, 1, 0.4)
 unique_name_in_owner = true
 
 [connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
+[connection signal="pressed" from="UI/Root/RosterPanel/VBox/Recover" to="." method="_on_recover_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice" to="." method="_on_sacrifice_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/RankUp" to="." method="_on_rank_up_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Equip" to="." method="_on_equip_pressed"]

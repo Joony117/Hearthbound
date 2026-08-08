@@ -99,7 +99,7 @@ func test_hub_turn_readout_updates_without_leaving_the_scene() -> void:
 	var turns_label: Label = hub.get_node("%Turns") as Label
 
 	assert_eq(turns_label.text, "Turn 3")
-	GameSession.advance_turn()
+	GameSession.advance_turn(BALANCE)
 	assert_eq(turns_label.text, "Turn 4")
 
 
