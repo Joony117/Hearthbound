@@ -27,6 +27,10 @@ while you are in there.
   exists to outlive a scene change, not to accumulate behavior.
 - `snake_case` files and functions, `PascalCase` for `class_name` and scene nodes, `_` prefix for
   private, `CONSTANT_CASE` for constants, past tense for signals (`hero_died`).
+- Moving arithmetic out of a caller into a callee often leaves the callee holding a result the
+  caller still needs. If a caller reads it, it's public: no `_` prefix. Hit three times already
+  (`_int_field` → `int_field`, `_clamped_enhance_level`) — check every external read of a new
+  field before naming it.
 - Signals over `get_node("../../..")`. Scene-unique `%Name` over node paths.
 - Comments explain **why**. A deliberate shortcut gets a `ponytail:` comment naming the ceiling
   and the upgrade path — three files already do this; match their shape.
