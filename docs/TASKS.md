@@ -780,7 +780,7 @@ needs to re-read.
 | `P2-21` | The Training Hall is buildable, so its XP bonus can fire | `332466a` |
 | `P2-12` | Salvage and enhance arithmetic moves off the autoload | `18fe317` |
 | `P2-22` | Turn concept ruling — a turn is one resolved expedition | `44e112a` |
-| `P2-23` | Turns exist, and a lost cache records the one it died on | |
+| `P2-23` | Turns exist, and a lost cache records the one it died on | `1ce3f07` |
 
 ---
 
