@@ -234,6 +234,15 @@ text = "Sanctum — Lv 0"
 layout_mode = 2
 text = "Upgrade"
 
+[node name="ReliquaryLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Reliquary — Lv 0"
+
+[node name="UpgradeReliquary" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
+layout_mode = 2
+text = "Upgrade"
+
 [node name="Columns" type="HBoxContainer" parent="UI/Root/EquipmentPanel"]
 layout_mode = 2
 theme_override_constants/separation = 8
@@ -358,5 +367,6 @@ unique_name_in_owner = true
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeForge" to="." method="_on_upgrade_forge_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeTrainingHall" to="." method="_on_upgrade_training_hall_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeSanctum" to="." method="_on_upgrade_sanctum_pressed"]
+[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeReliquary" to="." method="_on_upgrade_reliquary_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]

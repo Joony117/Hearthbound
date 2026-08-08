@@ -22,6 +22,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _forge_level: Label = %ForgeLevel
 @onready var _training_hall_level: Label = %TrainingHallLevel
 @onready var _sanctum_level: Label = %SanctumLevel
+@onready var _reliquary_level: Label = %ReliquaryLevel
 @onready var _convert_rank_option: OptionButton = %ConvertRankOption
 @onready var _equipped_list: ItemList = %EquippedList
 @onready var _hero_detail: Label = %HeroDetail
@@ -168,6 +169,7 @@ func _refresh_buildings() -> void:
 	_forge_level.text = "Forge — Lv %d" % GameSession.building_levels[1]
 	_training_hall_level.text = "Training Hall — Lv %d" % GameSession.building_levels[2]
 	_sanctum_level.text = "Sanctum — Lv %d" % GameSession.building_levels[3]
+	_reliquary_level.text = "Reliquary — Lv %d" % GameSession.building_levels[4]
 
 
 func _refresh_equipped() -> void:
@@ -421,6 +423,10 @@ func _on_upgrade_training_hall_pressed() -> void:
 
 func _on_upgrade_sanctum_pressed() -> void:
 	_upgrade_building(3, "Sanctum", GameSession.upgrade_building(3, BALANCE))
+
+
+func _on_upgrade_reliquary_pressed() -> void:
+	_upgrade_building(4, "Reliquary", GameSession.upgrade_building(4, BALANCE))
 
 
 func _upgrade_building(index: int, building_name: String, upgraded: bool) -> void:

@@ -1811,10 +1811,22 @@ zero-cancellation `P2-07a` flagged and did not own — sound as arithmetic, open
 > reason in Base buildings (`0.03 * 5` cancelling `0.15` cleanly, below) — reopening either residue
 > here would reopen that cap choice too, on no stronger evidence than justified it the first time.
 >
-> The practical stake is zero today regardless: the Reliquary has no upgrade path in the running
+> ~~The practical stake is zero today regardless: the Reliquary has no upgrade path in the running
 > game (`hub/hub.tscn` offers buildings 0–3 only; `building_levels[4]` is fixed at `0`). This
 > callout settles the formula so a future ticket making the Reliquary buildable needs no further
-> design pass — it isn't settling something currently reachable in play.
+> design pass — it isn't settling something currently reachable in play.~~
+>
+> **That whole paragraph expired with `P2-24`**, which is the ticket it anticipated: the Buildings
+> panel now offers index 4, so both residues are reachable in play and this callout is doing the
+> work it was written for rather than deferring it. Nothing above is reopened — the ruling was
+> made on the arithmetic and the cap-5 dependency, neither of which a buildable Reliquary
+> changes. What *did* change is that "sound as arithmetic, open as design" is no longer answerable
+> at a desk on either residue.
+>
+> ⚠️ **PROVISIONAL** — whether a maxed Reliquary's risk-free same-turn recovery reads as a
+> *reward for a fast response* or as *the mechanic switching off* is a feel question, and it is
+> now askable for the first time. The arithmetic is not in question and neither is the cap.
+> **Settled by:** a played build in which a wipe strands a cache with the Reliquary at 4 or 5.
 
 ---
 

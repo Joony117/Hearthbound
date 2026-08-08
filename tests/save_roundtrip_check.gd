@@ -382,11 +382,12 @@ func _check_buildings_round_trip() -> int:
 	var building_levels: Array[int] = _game_session.get("building_levels")
 	building_levels.fill(0)
 	_parts().fill(0)
-	_parts()[0] = 40
+	_parts()[0] = 60
 	_parts()[1] = 30
-	# Two buildings at two different levels, so a save that persists only the first index — or
-	# collapses the array to one value — fails here rather than passing on an all-zero tail.
-	var expected_levels: Array[int] = [0, 2, 1, 0, 0]
+	# Three buildings at two different levels, one of them the array's **last** index, so a save
+	# that persists only the first index — or collapses the array to one value, or truncates its
+	# tail — fails here rather than passing on an all-zero remainder.
+	var expected_levels: Array[int] = [0, 2, 1, 0, 1]
 	var balance := BalanceTable.new()
 	if not _game_session.call("upgrade_building", 1, balance):
 		return _fail("first Forge upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
@@ -394,6 +395,8 @@ func _check_buildings_round_trip() -> int:
 		return _fail("second Forge upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
 	if not _game_session.call("upgrade_building", 2, balance):
 		return _fail("Training Hall upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
+	if not _game_session.call("upgrade_building", 4, balance):
+		return _fail("Reliquary upgrade before disk reload", "upgrade_building() == true", "upgrade_building() == false")
 	_save_service.call("save")
 
 	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)

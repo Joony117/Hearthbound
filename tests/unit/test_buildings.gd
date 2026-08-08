@@ -99,3 +99,69 @@ func test_training_hall_upgrade_updates_hub() -> void:
 	assert_eq(GameSession.parts[0], 0)
 	assert_eq(status.text, "Upgraded Training Hall to Lv 1 for 20 F parts.")
 	assert_eq(training_hall_level.text, "Training Hall — Lv 1")
+
+
+func test_reliquary_upgrade_updates_hub() -> void:
+	GameSession.parts[0] = 20
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeReliquary") as Button
+	var status: Label = hub.get_node("%Status") as Label
+	var reliquary_level: Label = hub.get_node("%ReliquaryLevel") as Label
+
+	upgrade_button.pressed.emit()
+	assert_eq(GameSession.building_levels[4], 1)
+	assert_eq(GameSession.parts[0], 0)
+	assert_eq(status.text, "Upgraded Reliquary to Lv 1 for 20 F parts.")
+	assert_eq(reliquary_level.text, "Reliquary — Lv 1")
+
+
+func test_reliquary_upgrade_refuses_without_parts() -> void:
+	GameSession.parts[0] = 19
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeReliquary") as Button
+	var status: Label = hub.get_node("%Status") as Label
+	var reliquary_level: Label = hub.get_node("%ReliquaryLevel") as Label
+
+	upgrade_button.pressed.emit()
+	assert_eq(GameSession.building_levels[4], 0)
+	assert_eq(GameSession.parts[0], 19)
+	assert_eq(status.text, "Cannot upgrade Reliquary: need 20 F parts.")
+	assert_eq(reliquary_level.text, "Reliquary — Lv 0")
+
+
+## The point of P2-24 is the wiring, not the formulas - both already read building_levels[4]
+## correctly. So the level has to arrive by pressing the button, never by writing the array:
+## P2-21 proved the Training Hall's arithmetic with a direct write, which would have passed
+## just as green with the button absent.
+func test_reliquary_upgrade_reaches_both_consumers_from_the_hub() -> void:
+	var balance := BalanceTable.new()
+	GameSession.parts[0] = 20
+	var cache := LostCache.new("Doomed", &"verdant_outskirts", 0)
+	GameSession.lost_caches.append(cache)
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeReliquary") as Button
+	var lost_cache_list: ItemList = hub.get_node("%LostCacheList") as ItemList
+	# team_power far above the zone's 900 keeps power_deficit_penalty at 0, so the only term
+	# moving between the two readings is the Reliquary's.
+	var damage_before: float = LostCache.compute_damage_chance(
+		cache, 900, 9000.0, GameSession.turns, GameSession.building_levels[4], balance
+	)
+	assert_eq(lost_cache_list.get_item_text(0), "Doomed — Verdant Outskirts — 0 items — 15 turns remaining")
+
+	upgrade_button.pressed.emit()
+
+	assert_eq(
+		lost_cache_list.get_item_text(0),
+		"Doomed — Verdant Outskirts — 0 items — %d turns remaining" % (15 + balance.reliquary_decay_turns_bonus)
+	)
+	var damage_after: float = LostCache.compute_damage_chance(
+		cache, 900, 9000.0, GameSession.turns, GameSession.building_levels[4], balance
+	)
+	assert_almost_eq(damage_before - damage_after, balance.reliquary_damage_chance_reduction, 0.0001)

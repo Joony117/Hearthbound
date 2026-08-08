@@ -4085,3 +4085,148 @@ only, and reachable only from a hand-edited save, but a GUT test that provokes i
 unconsumed error rather than on its assertion (`P2-23`). And `recover_cache`'s roster-membership
 refusal (`not roster.has(hero)`) is defensive code beyond criterion 3's four named refusals and has
 no dedicated test; traced correct, not asserted.
+
+---
+
+## P2-24 — The Reliquary is buildable, so its decay and damage bonuses can fire   [DONE]
+
+### Objective
+
+A player can spend parts to upgrade the Reliquary, and doing so visibly lengthens every lost
+cache's countdown and lowers the chance a recovered item comes back Damaged.
+
+### Existing architecture
+
+- `GameSession.building_levels` is a persisted 5-element `Array[int]`
+  (`systems/game_session.gd:22`). Index 4 is the Reliquary. **No save key changes** — the array
+  is already sized 5 and already round-trips.
+- `GameSession.upgrade_building(index, balance)` (`game_session.gd:172`) and `hub.gd`'s
+  `_upgrade_building(index, name, upgraded)` (`hub/hub.gd:426`) were written **index-generic**
+  by `P2-07b`. Neither needs a change.
+- **Both consumers already read index 4 and are already correct**:
+  `GameSession._expire_lost_caches` (`game_session.gd:56`) and `recover_lost_cache`
+  (`game_session.gd:84`) pass it to `LostCache.turns_remaining` / `compute_damage_chance`, and
+  `hub.gd:117` passes it to the cache-list readout. This ticket wires **no formula**. The only
+  reason `reliquary_decay_turns_bonus` and `reliquary_damage_chance_reduction` measure nothing
+  today is that `hub.tscn`'s Buildings panel offers indices 0–3 and index 4 is pinned at `0`.
+- The decorative `Buildings/Reliquary` mesh already exists in `hub.tscn` (line 80). Only the
+  panel Label/Button/`[connection]` triple is missing.
+- **No design pass is needed.** `SYSTEMS.md` § Death and gear recovery's `RESOLVED by P2-04f`
+  callout settled both `clampf` residues explicitly *so that this ticket would not need one* —
+  risk-free same-turn recovery at Reliquary 5, and certain damage in the last 3/7 turns at
+  Reliquary 4/5. Both are accepted as intended. This ticket makes them **reachable in play** for
+  the first time, so that callout's closing "the practical stake is zero today" paragraph goes
+  stale on landing and must be closed out, not left contradicting the code.
+
+### Acceptance criteria
+
+1. The Buildings panel shows `Reliquary — Lv 0` and an Upgrade button beneath the Sanctum row,
+   following the existing Label/Button ordering exactly.
+2. Pressing Upgrade with 20 F parts raises `building_levels[4]` to 1, spends the parts, and the
+   status line reads `Upgraded Reliquary to Lv 1 for 20 F parts.` — the same message shape the
+   other four produce through the shared `_upgrade_building`.
+3. Pressing Upgrade with insufficient parts changes nothing and says so. (Covered by the shared
+   handler; assert it rather than adding a branch.)
+4. **The level reaches both consumers through the scene, not through a direct array write.** One
+   test drives the hub's Upgrade button and then asserts the lost-cache readout's
+   `turns remaining` grew by `reliquary_decay_turns_bonus`, and one asserts
+   `LostCache.compute_damage_chance` at the new level is lower by
+   `reliquary_damage_chance_reduction`. `P2-21` shipped the Training Hall with its arithmetic
+   proven only by writing `building_levels[2]` directly; that proves the formula and not the
+   wiring, and the wiring is the entire ticket.
+5. **Survives save and reload through real disk** — `tests/save_roundtrip_check.gd`'s buildings
+   check drives index 4 non-zero alongside the Forge and Training Hall it already drives, so a
+   save that truncates or collapses the array's tail fails there. In-memory `to_dict`/`from_dict`
+   is not evidence (`P2-05a`, `P2-04e`).
+6. `SYSTEMS.md` § Death and gear recovery's "practical stake is zero today" paragraph is closed
+   out: both residues are now reachable, and the callout says so.
+7. Import gate exit 0 with zero errors and zero warnings; full GUT suite green;
+   `tests/save_roundtrip_check.gd` PASS.
+
+### Files allowed to change
+
+Written after the grep, not before it (`P2-23`'s finding — this list has been wrong six times
+running). `grep -rn "building_levels" --include=*.gd --include=*.tscn` returns exactly these as
+files needing an edit; every other hit is an already-correct index-generic read.
+
+- `hub/hub.gd` — one `@onready`, one line in `_refresh_buildings()`, one `_on_upgrade_*` handler.
+- `hub/hub.tscn` — `ReliquaryLevel` Label (`unique_name_in_owner`), `UpgradeReliquary` Button,
+  one `[connection]` block.
+- `tests/unit/test_buildings.gd`
+- `tests/save_roundtrip_check.gd`
+- `docs/SYSTEMS.md` (criterion 6 only), `docs/TASKS.md`, `docs/TASKS-DONE.md`
+
+### Non-goals
+
+- **No formula change.** Both residues are ruled; do not "fix" the level-5 zero-cancellation or
+  the certain-damage tail. Reopening either reopens `P2-07a`'s cap-5 choice.
+- No new `BalanceTable` field, no cost-ladder change, no Reliquary-specific cost.
+- No building panel restructure, no tooltips, no per-building cost display.
+- `P2-13` (fodder training) stays blocked; this touches nothing it needs.
+
+### Boundary
+
+Crosses **boundary 2** (scene ↔ script seam) — a new `%UniqueName` and a new `[connection]`
+block. A `verifier` pass is mandatory. It crosses **no save boundary**: `building_levels` is
+already a persisted 5-element array and no key is added, renamed or re-typed.
+
+
+### Findings
+
+**The last "reads real, measures nothing" entry closed, and it needed no code.** Both
+`reliquary_decay_turns_bonus` and `reliquary_damage_chance_reduction` were authored, wired and
+correct before this ticket; the only thing making them measure nothing was a missing Label/Button
+pair. `P2-04f` deliberately wired both magnitudes *while* the button was absent, which is what
+made this a button and not a rewrite — the generalizable move is to wire a bonus's consumer when
+you build the consumer, even if nothing can raise the level yet, so the follow-up is UI-only.
+
+**A red-proof that breaks parsing proves nothing.** The first attempt at proving criterion 4
+replaced the `[connection]` line with a junk token, which made `hub.tscn` fail to load entirely —
+so all three tests failed on `Failed loading resource`, not on the missing wire. That is a green
+light dressed as a red one: it would have looked identical if the tests asserted nothing at all.
+Redone by deleting only the connection line, leaving a scene that parses and still has both the
+Label and the Button. Then the failures were the real ones — decay readout stuck at
+`15 turns remaining` instead of `20`, and the damage-chance delta `0.00` instead of `0.03`.
+**When red-proofing a seam, break the seam, not the file.**
+
+**Criterion 4 is why this ticket has more than a smoke test.** `P2-21` shipped the Training Hall
+with its arithmetic proven by writing `building_levels[2]` directly, which passes just as green
+with the button absent — it proves the formula and not the wiring, and the wiring is the whole
+ticket. Here the level arrives by pressing the button and is observed through
+`%LostCacheList`'s rendered text. The verifier's finding on the other half stands and is worth
+inheriting: the damage-chance assertion recomputes `compute_damage_chance` from
+`building_levels[4]` rather than asserting through `GameSession.recover_cache`, so it would stay
+green if `recover_cache`'s forwarding of that argument (`systems/game_session.gd:84`) broke. No
+readout renders damage chance, and `recover_cache` is `randf()`-driven, so asserting through it
+needs a seeded or injected roll — **not** built here, and named rather than left implied.
+
+**The first docs closeout struck one sentence too few.** `SYSTEMS.md`'s `RESOLVED by P2-04f`
+callout ended with two sentences making the same claim; striking only the first left
+"it isn't settling something currently reachable in play" live, three lines above a new paragraph
+saying both residues are now reachable. The document asserted and refuted itself in adjacent
+paragraphs, and the import gate has no opinion about prose. Caught by the mandatory `verifier`,
+not by any gate.
+
+**The allowed-file list was right this time, and the reason is mechanical:** it was written after
+`grep -rn "building_levels" --include=*.gd --include=*.tscn`, with the grep output pasted into the
+ticket's own file-list section as the justification. Seven tickets running had wrong lists
+(`P2-04g`, `P2-18`, `P2-20`, `P2-23`, `P2-04f` among them); the fix is not "be careful" but
+"write the list from the grep, and say in the ticket that you did."
+
+**Cost is billed against the building's own current level, not its index.** `upgrade_building`'s
+`10 * (level + 2)` parts come from `parts[level]` — so Forge Lv0→1, Training Hall Lv0→1 and
+Reliquary Lv0→1 all draw `20` from `parts[0]`, which is why `save_roundtrip_check.gd`'s fixture
+went `40` → `60` rather than gaining a new rank. Easy to misread as rank-by-building.
+
+**Both `clampf` residues are now reachable in play for the first time**, and are accepted
+unchanged per `P2-04f`'s ruling — but the ruling's own "the practical stake is zero today"
+escape hatch is gone with them. `SYSTEMS.md` now carries a `PROVISIONAL` marker on whether a
+maxed Reliquary's risk-free same-turn recovery reads as a reward or as the mechanic switching
+off, settled by a played build. That is a feel question, not an arithmetic one; the arithmetic
+was re-derived exactly (`damage_before = 0.15`, `damage_after = 0.12`, delta exactly `0.03`,
+neither reading touching the outer clamp) and is not in question.
+
+**All five buildings are now buildable, which closes the `P2-07` line's staging.** `P2-07a`
+scoped three buildings because Training Hall and Reliquary had no live consumers; `P2-21` and this
+ticket added the two the staging deferred, and no second design pass was needed for either — the
+cost formula and cap covered all five uniformly from the start, exactly as `P2-07a` predicted.
