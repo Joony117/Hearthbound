@@ -84,23 +84,21 @@ func unequip_item(hero: Hero, slot: int) -> void:
 func salvage_item(item: Item, balance: BalanceTable) -> void:
 	if not inventory.has(item):
 		return
+	var salvage_yield: int = Item.compute_salvage_yield(item, building_levels[1], balance)
 	inventory.erase(item)
 	# item.rank arrives from an untrusted save and is never validated by Item.from_dict, so clamp
 	# before indexing, same as Item.rank_label and Hero.compute_final_stats. assert() cannot guard
 	# this - it is stripped in release, where a corrupt rank would crash after the erase (positive)
 	# or credit the wrong rank (negative, since GDScript indexes arrays from the end).
-	var enhance_level: int = clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
-	var forge_level: int = clampi(building_levels[1], 0, balance.summoning_circle_level_cap)
-	parts[clampi(item.rank, 0, parts.size() - 1)] += roundi((3 + enhance_level) * (1.0 + balance.forge_salvage_yield_bonus * forge_level))
+	parts[clampi(item.rank, 0, parts.size() - 1)] += salvage_yield
 	roster_changed.emit()
 
 
 func enhance_item(item: Item, balance: BalanceTable) -> bool:
 	if not inventory.has(item):
 		return false
-	var enhance_level: int = clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
-	var forge_level: int = clampi(building_levels[1], 0, balance.summoning_circle_level_cap)
-	var enhance_cap: int = mini(balance.forge_enhance_cap_max, forge_level * balance.forge_enhance_cap_per_level)
+	var enhance_level: int = Item.clamped_enhance_level(item, balance)
+	var enhance_cap: int = Item.compute_enhance_cap(building_levels[1], balance)
 	if enhance_level >= enhance_cap:
 		return false
 	var rank_index: int = clampi(item.rank, 0, parts.size() - 1)

@@ -167,6 +167,33 @@ func test_salvage_credits_enhance_level_at_unbuilt_forge() -> void:
 	assert_eq(GameSession.parts[item.rank], 7)
 
 
+func test_item_compute_salvage_yield_clamps_enhance_and_forge_levels() -> void:
+	var capped_item := Item.new(&"ring", 3)
+	var max_item := Item.new(&"ring", 3)
+	var negative_item := Item.new(&"ring", 3)
+	var unbonused_item := Item.new(&"ring", 3)
+	capped_item.enhance_level = 999
+	max_item.enhance_level = BALANCE.forge_enhance_cap_max
+	negative_item.enhance_level = -1
+	unbonused_item.enhance_level = 4
+
+	assert_eq(
+		Item.compute_salvage_yield(capped_item, 999, BALANCE),
+		Item.compute_salvage_yield(max_item, 5, BALANCE)
+	)
+	assert_eq(
+		Item.compute_salvage_yield(negative_item, 0, BALANCE),
+		Item.compute_salvage_yield(Item.new(&"ring", 3), 0, BALANCE)
+	)
+	assert_eq(Item.compute_salvage_yield(unbonused_item, 0, BALANCE), 7)
+
+
+func test_item_compute_enhance_cap_clamps_forge_level() -> void:
+	assert_eq(Item.compute_enhance_cap(0, BALANCE), 0)
+	assert_eq(Item.compute_enhance_cap(-1, BALANCE), 0)
+	assert_eq(Item.compute_enhance_cap(999, BALANCE), Item.compute_enhance_cap(5, BALANCE))
+
+
 func test_corrupt_forge_level_clamps_to_level_five_in_both_paths() -> void:
 	var enhanced_item := Item.new(&"ring", 3)
 	var salvaged_item := Item.new(&"ring", 4)

@@ -43,6 +43,15 @@ a `static func` taking the same arguments plus `balance`, leaving the `GameSessi
 thin validate → call → mutate → emit wrapper) is `tech-lead`'s to open; this entry is the citation
 for why.
 
+**Outcome (`P2-12`, landed).** Two of the three were extracted — `Item.compute_salvage_yield` and
+`Item.compute_enhance_cap`, both pure `static func`s that `tests/unit/test_equipment.gd` now calls
+without an autoload in the test body. `convert_parts` was **not**, deliberately: its arithmetic is
+`-3` and `+1` against a fixed rank index, with no `BalanceTable` number in it at all, so it is not
+the "balance-driven rule logic" this entry defined the debt as. `upgrade_building` shipped the same
+inline `10 * (level + 2)` shape after this entry was written and is the one open instance; its only
+honest home is a `buildings/` file that does not exist, so it stays named rather than relocated.
+The ruling itself is unchanged by any of this.
+
 **`P2-06a` may add `sacrifice_hero` and `rank_up_hero` to `GameSession`** — the orchestration
 (precondition checks against `roster`/`equipped`, calling `kill_hero()` for removal per
 `ARCHITECTURE.md` r8, mutating `essence`, incrementing `resonance`, one `roster_changed.emit()`)

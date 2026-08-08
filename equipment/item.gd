@@ -21,6 +21,29 @@ func rank_label(balance: BalanceTable) -> String:
 	return balance.rank_names[clampi(rank, 0, balance.rank_names.size() - 1)]
 
 
+## Parts a salvage pays, per docs/SYSTEMS.md, Base buildings. roundi(), never int() - truncation
+## makes the Forge bonus yield literally zero on an unenhanced drop, the commonest salvage there is.
+static func compute_salvage_yield(item: Item, forge_level: int, balance: BalanceTable) -> int:
+	var enhance_level: int = clamped_enhance_level(item, balance)
+	var clamped_forge_level: int = clampi(forge_level, 0, balance.summoning_circle_level_cap)
+	return roundi((3 + enhance_level) * (1.0 + balance.forge_salvage_yield_bonus * clamped_forge_level))
+
+
+## The highest enhance_level a Forge at this level permits (docs/SYSTEMS.md, Enhancement). Level 0
+## returns 0, so a fresh save cannot enhance at all until the Forge is built. This bounds *gaining*
+## a level; clamped_enhance_level() bounds *trusting* one an item already carries, and the two are
+## deliberately different numbers - see docs/TASKS-DONE.md P2-07d.
+static func compute_enhance_cap(forge_level: int, balance: BalanceTable) -> int:
+	var clamped_forge_level: int = clampi(forge_level, 0, balance.summoning_circle_level_cap)
+	return mini(balance.forge_enhance_cap_max, clamped_forge_level * balance.forge_enhance_cap_per_level)
+
+
+## Public for the same reason int_field() is: GameSession.enhance_item needs the clamped level to
+## price the upgrade and to write the new one, and a save can carry any integer at all.
+static func clamped_enhance_level(item: Item, balance: BalanceTable) -> int:
+	return clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
+
+
 static func definition_for(p_def_id: StringName) -> EquipmentDefinition:
 	var path: String = DEF_PATH_TEMPLATE % str(p_def_id)
 	if not ResourceLoader.exists(path):

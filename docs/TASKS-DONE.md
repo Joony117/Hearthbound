@@ -3704,3 +3704,124 @@ and `hub.gd`'s `_upgrade_building` were both written index-generic by `P2-07b`, 
 building needed no new cost logic, no new message, and no new balance field — one `@onready`, one
 refresh line, one two-line handler, and a Label/Button/`[connection]` triple in the scene. `P2-07b`
 paying that cost once is what made this ticket small.
+
+---
+
+## P2-12 — Salvage and enhance arithmetic moves off the autoload             [DONE]
+
+### Objective
+
+Nothing a player can see changes. `GameSession.salvage_item` and `enhance_item` keep their exact
+signatures and their exact outcomes; the two formulas behind them become pure `static func`s a
+test can call without booting an autoload. This is the cost `DECISIONS.md` 2026-08-06 predicted,
+being paid down.
+
+### Existing architecture
+
+- `DECISIONS.md` 2026-08-01 rejected balance logic as methods on `GameSession`; 2026-08-06
+  **reaffirmed** it rather than reversing it, and named these methods debt. `CODING_RULES.md:93-103`
+  states the rule in the present tense with `compute_essence_yield(fodder, target, balance)` as its
+  worked example.
+- `Hero` is the precedent: `compute_essence_yield`, `compute_rank_up_cost` and `grant_xp` are pure
+  `static func`s, and `tests/unit/test_sacrifice.gd` exercises the arithmetic with no `GameSession`
+  in the scene tree. `Item` (`equipment/item.gd`) is the analogous home for item arithmetic and
+  already carries one public static helper (`int_field`).
+- Both formulas are authored, not invented here: salvage is
+  `roundi((3 + enhance_level) * (1.0 + forge_salvage_yield_bonus * forge_level))` and the enhance
+  cap is `mini(forge_enhance_cap_max, forge_level * forge_enhance_cap_per_level)`
+  (`SYSTEMS.md` § Base buildings, § Enhancement). **`roundi()`, never `int()`** — truncation
+  reproduces `P2-07d`'s dead bonus.
+- The two caps eight lines apart in `game_session.gd` are **both correct and must stay different**
+  (`P2-07d` Findings): `enhance_item` gates on the forge-scaled cap because it governs *gaining* a
+  level, `salvage_item` clamps against the flat `forge_enhance_cap_max` because it governs
+  *trusting* a level an item already has.
+- Both `item.enhance_level` and `building_levels[1]` arrive from an untrusted save and are clamped
+  before use today, at the two mutation sites. Those clamps are part of the arithmetic and move
+  **into** the static funcs, which makes them total for any input and kills the `P2-07e`
+  preview-disagrees-with-payout hazard by construction rather than by discipline.
+
+### Acceptance criteria
+
+1. `Item.compute_salvage_yield(item: Item, forge_level: int, balance: BalanceTable) -> int` and
+   `Item.compute_enhance_cap(forge_level: int, balance: BalanceTable) -> int` exist as pure
+   `static func`s. Neither names `GameSession`, `SaveService` or `SceneRouter`.
+2. Both clamp their own untrusted inputs: `forge_level` into `[0, summoning_circle_level_cap]`, and
+   `item.enhance_level` into `[0, forge_enhance_cap_max]`. `GameSession` passes `building_levels[1]`
+   raw and clamps nothing itself.
+3. `salvage_item` and `enhance_item` keep their exact signatures and read as validate → call the
+   static func → mutate → emit. `enhance_item` still gates on the forge-scaled cap and `salvage_item`
+   still clamps against the flat one — criterion 3 of `P2-07d`'s test must still pass untouched.
+4. New GUT tests call both static funcs directly with a literal `forge_level` and a loaded
+   `BalanceTable`, and **name no autoload in the test body**. That is the entire point of the
+   ticket; a test that reaches the formula through `GameSession` does not satisfy it.
+5. The clamps are pinned: an `Item` at `enhance_level = 999` yields what one at
+   `forge_enhance_cap_max` yields, one at `-1` yields what `0` yields, and `forge_level = 999`
+   yields what level 5 yields.
+6. Forge level 0 still returns cap `0` (a fresh save cannot enhance — ruled, `SYSTEMS.md:807-811`)
+   and still salvages the unbonused `3 + enhance_level`.
+7. Every existing assertion in `tests/unit/test_equipment.gd` passes **unchanged** — no behavior
+   moved, so no existing expectation should need editing. Editing one is a signal the refactor
+   changed something.
+8. Import gate green with zero warnings; the full GUT suite green;
+   `tests/save_roundtrip_check.gd` green (it drives `salvage_item` and `convert_parts` on real disk
+   through `.call()`).
+
+### Files allowed to change
+
+`equipment/item.gd`, `systems/game_session.gd`, `tests/unit/test_equipment.gd`.
+
+### Non-goals
+
+- **`convert_parts` is deliberately not extracted**, though the row named it. Its "arithmetic" is
+  `-3` and `+1` against a fixed rank index — there is no formula, and a
+  `compute_conversion_cost() -> int` returning `3` is a config for a value that never changes. Its
+  guard already sits where the mutation does.
+- **`upgrade_building`'s `10 * (level + 2)` is out of scope.** Same shape, but it shipped after this
+  row was written, and its only honest home is a `buildings/` directory that does not exist —
+  inventing one for a single `static func` costs more than it pays. Recorded here so the next reader
+  reads it as known rather than missed.
+- No new `BalanceTable` field. The `3 +` and `2 +` literals stay put; moving them is a `.tres`
+  change and a different ticket. `2 + enhance_level` stays inline next to its own affordability
+  guard — one term is not a formula.
+- **No signature change on any `GameSession` method.** `tests/save_roundtrip_check.gd` reaches
+  `salvage_item`, `convert_parts` and `upgrade_building` dynamically through `.call()` (`P2-04e`'s
+  trap), where the import gate cannot catch an arity break.
+
+### Findings
+
+**The evidence that a pure refactor is pure is the assertions you did *not* touch.** 105/105 GUT
+tests pass and not one existing expectation in `tests/unit/test_equipment.gd` was edited — criterion
+7 exists so that "I had to adjust a test" becomes a reportable failure rather than a quiet judgment
+call. `tests/save_roundtrip_check.gd` is the other half of it: it reaches `salvage_item` and
+`convert_parts` through `.call()`, so an arity slip there is invisible to the import gate, and it
+was run on real disk rather than assumed.
+
+**The private-helper-called-from-outside mistake, for the third time.** The first pass shipped
+`Item._clamped_enhance_level` with a leading underscore and called it from `systems/game_session.gd`.
+That is exactly what `P2-05f` shipped as `Item._int_field` and `P2-11` had to correct to
+`Item.int_field` — a helper is private or it is cross-file, never both. Renamed to
+`clamped_enhance_level` with a comment naming *why* it is public, since the underscore is the only
+signal GDScript has and nothing enforces it. Worth generalizing: when arithmetic moves out of a
+caller, the caller usually still needs one of the intermediate values, and that intermediate is
+public API whether or not it looks like an implementation detail.
+
+**A saturating `mini()` hides a missing clamp.** The first test for `compute_enhance_cap` asserted
+`compute_enhance_cap(999) == compute_enhance_cap(5)`, which passes with the `forge_level` clamp
+deleted — `mini(15, 2997)` and `mini(15, 15)` are both `15`. Only the negative direction
+distinguishes them (`compute_enhance_cap(-1) == 0`), and that assertion was added. The salvage test
+did not have this problem because its formula is multiplicative and unbounded, so `forge_level = 999`
+diverges loudly. **A clamp test against a saturating operation proves nothing about the clamp.**
+
+**Moving the clamps *into* the pure functions is the part that buys something beyond testability.**
+Before, `item.enhance_level` and `building_levels[1]` were clamped at each mutation site, which is
+the shape that produced `P2-07e`'s preview-disagrees-with-payout hazard — `hub.gd` had to recompute
+"the identically-clamped level" by hand and stay in step forever. Now any caller passing a raw,
+corrupt, or negative value gets the same answer as the real path, by construction. That is the
+lazy fix and the root-cause fix at once: one clamp where all callers route through, rather than a
+clamp per caller.
+
+**Two of the three methods the row named were not worth extracting, and saying so is the ticket's
+job.** `convert_parts` has no formula — `-3`/`+1` — and `upgrade_building`'s `10 * (level + 2)` has
+no home short of inventing a `buildings/` directory for one function. Both are recorded in Non-goals
+rather than silently skipped, so the next reader sees a decision instead of an oversight. The debt
+`DECISIONS.md` named was *balance formulas on an autoload*; a constant is not a formula.
