@@ -59,6 +59,8 @@ func test_retreated_expedition_credits_no_stones() -> void:
 	assert_eq(outcome, Expedition.OUTCOME_RETREATED)
 	assert_eq(GameSession.stones, stones_before)
 	assert_eq(hero.xp, 12)
+	# A retreat is still a resolved expedition, so it costs a turn (docs/SYSTEMS.md, Turns).
+	assert_eq(GameSession.turns, 1)
 
 
 func test_defeated_expedition_credits_no_stones() -> void:
@@ -73,6 +75,64 @@ func test_defeated_expedition_credits_no_stones() -> void:
 
 	assert_eq(outcome, Expedition.OUTCOME_DEFEATED)
 	assert_eq(GameSession.stones, stones_before)
+
+
+func test_each_resolved_outcome_advances_the_turn_counter_by_one() -> void:
+	var completed_hero: Hero = _add_knight()
+	seed(1)
+	assert_eq(Expedition.new().resolve([completed_hero], _make_zone(0, 1.0, 1)), Expedition.OUTCOME_COMPLETED)
+	assert_eq(GameSession.turns, 1)
+
+	var defeated_hero: Hero = _add_knight("Doomed")
+	seed(1)
+	assert_eq(
+		Expedition.new().resolve([defeated_hero], _make_zone(1_000_000, 1.0, 1)),
+		Expedition.OUTCOME_DEFEATED,
+	)
+	assert_eq(GameSession.turns, 2)
+
+
+func test_hub_turn_readout_updates_without_leaving_the_scene() -> void:
+	GameSession.turns = 3
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var turns_label: Label = hub.get_node("%Turns") as Label
+
+	assert_eq(turns_label.text, "Turn 3")
+	GameSession.advance_turn()
+	assert_eq(turns_label.text, "Turn 4")
+
+
+func test_invalid_team_does_not_advance_the_turn_counter() -> void:
+	var hero := Hero.new("Ghost", 0)
+	hero.def_id = &"not_an_archetype"
+	GameSession.add_hero(hero)
+
+	assert_eq(
+		Expedition.new().resolve([hero], _make_zone(0, 1.0, 1)),
+		Expedition.OUTCOME_INVALID_TEAM,
+	)
+	assert_push_error("Missing HeroDefinition")
+	assert_eq(GameSession.turns, 0)
+
+
+## The tick lands before the wave loop, so a cache from a death on this expedition reads
+## turns_elapsed == 0 at an immediate recovery rather than -1 (docs/SYSTEMS.md, Turns).
+func test_a_death_stamps_the_cache_with_the_turn_its_own_expedition_became() -> void:
+	var hero: Hero = _add_knight("Doomed")
+	var item := Item.new(&"ring", 3)
+	GameSession.add_item(item)
+	GameSession.equip_item(hero, item)
+	GameSession.turns = 4
+	seed(1)
+
+	assert_eq(
+		Expedition.new().resolve([hero], _make_zone(1_000_000, 1.0, 1)),
+		Expedition.OUTCOME_DEFEATED,
+	)
+	assert_eq(GameSession.turns, 5)
+	assert_eq(GameSession.lost_caches.size(), 1)
+	assert_eq(GameSession.lost_caches[0].turn_lost, 5)
 
 
 func test_last_hero_death_below_pull_cost_restores_one_pull() -> void:

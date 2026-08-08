@@ -13,6 +13,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _target_option: OptionButton = %TargetOption
 @onready var _essence: Label = %Essence
 @onready var _stones: Label = %Stones
+@onready var _turns: Label = %Turns
 @onready var _summon_button: Button = %Summon
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _parts: Label = %Parts
@@ -32,6 +33,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_roster)
 	GameSession.roster_changed.connect(_refresh_essence)
 	GameSession.roster_changed.connect(_refresh_stones)
+	GameSession.roster_changed.connect(_refresh_turns)
 	GameSession.roster_changed.connect(_refresh_inventory)
 	GameSession.roster_changed.connect(_refresh_parts)
 	GameSession.roster_changed.connect(_refresh_buildings)
@@ -41,6 +43,7 @@ func _ready() -> void:
 	_refresh_roster()
 	_refresh_essence()
 	_refresh_stones()
+	_refresh_turns()
 	_refresh_inventory()
 	_refresh_parts()
 	_refresh_buildings()
@@ -96,6 +99,10 @@ func _refresh_essence() -> void:
 func _refresh_stones() -> void:
 	_stones.text = "Summon Stones: %d" % GameSession.stones
 	_summon_button.disabled = GameSession.stones < BALANCE.summon_pull_cost
+
+
+func _refresh_turns() -> void:
+	_turns.text = "Turn %d" % GameSession.turns
 
 
 func _refresh_inventory() -> void:

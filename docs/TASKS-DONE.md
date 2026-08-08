@@ -3825,3 +3825,105 @@ job.** `convert_parts` has no formula — `-3`/`+1` — and `upgrade_building`'s
 no home short of inventing a `buildings/` directory for one function. Both are recorded in Non-goals
 rather than silently skipped, so the next reader sees a decision instead of an oversight. The debt
 `DECISIONS.md` named was *balance formulas on an autoload*; a constant is not a formula.
+
+---
+
+## P2-23 — Turns exist, and a lost cache records the one it died on          [DONE]
+
+### Objective
+The hub shows a turn count that advances by one every time an expedition resolves, and a cache
+created by a hero's death records the turn it happened on. Both survive a save and reload.
+
+### Existing architecture
+- `GameSession` (`systems/game_session.gd`) is the autoload holding persisted profile state; every
+  mutator ends in `roster_changed.emit()`, which `_ready()` wires to `SaveService.save`.
+- `Expedition.resolve()` (`hub/expedition/expedition.gd:19`) returns one of four outcomes and is
+  the only code path that can kill a hero.
+- `kill_hero()` (`systems/game_session.gd:172`) is the sole permadeath writer (`ARCHITECTURE.md`
+  r8) and already builds a `LostCache` when the dying hero carries gear.
+- `LostCache` (`equipment/lost_cache.gd`) type-validates every field it decodes and has no `int()`
+  anywhere — `P2-11` proved it was already `null`-safe.
+- `Item.int_field(data, key, fallback, subject)` is the shared save-decode helper (`P2-11`); it
+  absorbs a missing key, an explicit `null`, and a JSON `float`.
+
+### Acceptance criteria
+1. `GameSession.turns` exists, is `0` on a fresh save, and only ever increases.
+2. `Expedition.resolve()` advances it by exactly one on `COMPLETED`, `RETREATED` and `DEFEATED`,
+   and **not at all** on `INVALID_TEAM` — that outcome returns before the first wave.
+3. The tick happens **before** the wave loop. A cache created by a death on that expedition is
+   therefore stamped with the turn the expedition became, so an immediate recovery reads
+   `turns_elapsed = 0` — the fresh-cache case `SYSTEMS.md` § Death and gear recovery verified at
+   `0.35`. Stamping the pre-increment value makes that case read `-1`.
+4. `LostCache.turn_lost` exists, defaults to `0`, and `kill_hero()` stamps it with
+   `GameSession.turns`. **No signature change** to `kill_hero()` — `turns` is the same autoload's
+   own state, not a balance number being smuggled in (`P2-05f`'s distinction).
+5. Both keys survive a **real disk** cycle through `SaveService` — a check in
+   `tests/save_roundtrip_check.gd`, not an in-memory `to_dict`/`from_dict` pair. `P2-05a`,
+   `P2-04e` and `P2-21` each shipped that shortcut and each was reopened.
+6. Both keys tolerate the three untrusted save shapes separately: key missing, explicit `null`,
+   and a JSON `float` (`12.0`, which is how an int reaches disk and back). A negative value floors
+   at `0`.
+7. The hub displays the turn count, and it updates without leaving the scene.
+8. The import gate is green with **zero warnings**, and the GUT suite passes.
+
+### Files allowed to change
+`systems/game_session.gd`, `equipment/lost_cache.gd`, `hub/expedition/expedition.gd`,
+`hub/hub.gd`, `hub/hub.tscn`, `tests/save_roundtrip_check.gd`, `tests/unit/test_expedition.gd`,
+`tests/unit/test_item.gd`.
+
+Corrected during the `verifier` pass, which caught it: the list first read
+`tests/unit/test_equipment.gd`, and the untrusted-shape tests went to `tests/unit/test_item.gd`
+instead, because that is where every existing `GameSession.from_dict` decode test already lives —
+including one that already drives `lost_caches`. `test_equipment.gd` was never touched.
+
+Four consecutive tickets have omitted a real call site from a list like this one (`P2-04g`,
+`P2-18`, `P2-20`, and `P2-17`'s audit). Grep rather than trust it — `kill_hero`'s second caller
+reaches it **dynamically** through `.call()` in `tests/save_roundtrip_check.gd`, which
+`grep "kill_hero("` finds but an arity check never would.
+
+### Non-goals
+No recovery expedition, no damage roll, no expiry sweep, no Reliquary upgrade panel — all
+`P2-04f`. No turn cost on any other action. **Nothing reads `turn_lost` yet**; this ticket makes it
+a real number, not a consumed one, which is the precise condition `P2-04e` said had to hold before
+the field could ship at all.
+
+### Findings
+
+**GUT fails a test on an unconsumed `push_error`, and the failure names the error rather than the
+assertion.** The only way to reach `OUTCOME_INVALID_TEAM` is a hero whose `def_id` resolves to no
+`HeroDefinition`, and `Hero.definition_for` pushes an error on that path. The first GUT run went red
+with `[Failed]: Unexpected Errors — Missing HeroDefinition for def_id 'not_an_archetype'` while every
+assertion in the test passed. `assert_push_error("Missing HeroDefinition")` fixes it, and the general
+rule is that **a test exercising an error branch must consume the error** or the suite reports a
+failure that looks nothing like the thing being tested. Nothing in `tests/unit/` had needed this
+outside `test_item.gd`'s decode tests, which is why it was not obvious.
+
+**`LostCache.from_dict` returns early on a malformed `items` array**, so any field decoded after that
+point silently defaults on exactly the saves most likely to be corrupt. `turn_lost` decodes *above*
+it, deliberately — a cache that lost its gear to a bad save should still know when it was created.
+`P2-11` established that `LostCache` was already `null`-safe; it did not establish that its decode
+order was safe to append to, and it is not.
+
+**The allowed-file list was wrong for the fifth consecutive ticket — in the opposite direction this
+time.** `P2-04g`, `P2-18`, `P2-20` and `P2-17` each *omitted* a file that had to change. This one
+*named* one that did not (`tests/unit/test_equipment.gd`) and omitted the one that did
+(`tests/unit/test_item.gd`), because the list was written from where the `LostCache` tests live
+rather than from where the `GameSession.from_dict` decode tests live. The `verifier` caught it and
+was right to; the list is now correct and the deviation is recorded above rather than left for an
+auditor to find. **Write the list after the grep, not before it** — that is the single change that
+would have prevented all five.
+
+**The tick's position is a real decision, and the test proves it rather than restating it.** Placing
+`advance_turn()` before the wave loop means a hero dying on that expedition stamps its cache with the
+turn the expedition *became*, so an immediate recovery run reads `turns_elapsed == 0` — the
+fresh-cache case `SYSTEMS.md` verified at `0.35`. Post-increment stamping makes the same case read
+`-1`, which no clamp in the formula catches.
+`test_a_death_stamps_the_cache_with_the_turn_its_own_expedition_became` asserts `turns == 5` **and**
+`turn_lost == 5`, so the off-by-one is a red test and not a code comment. The `verifier` independently confirmed there is no return path between the
+`INVALID_TEAM` guard and the loop, which is what makes the placement safe.
+
+**`kill_hero()` took no new argument, and that was the point.** `turns` is the same autoload's own
+persisted state, so stamping it needs no signature change — the distinction `P2-05f` drew between an
+autoload's own state and a balance number being smuggled through it. That kept this ticket clear of
+`P2-04e`'s dynamic-caller trap (`tests/save_roundtrip_check.gd` reaches `kill_hero` through
+`.call()`), which was checked anyway rather than assumed.

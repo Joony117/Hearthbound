@@ -132,6 +132,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Summon Stones: 300"
 
+[node name="Turns" type="Label" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Turn 0"
+
 [node name="FodderOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2

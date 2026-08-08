@@ -17,6 +17,9 @@ var parts: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0]
 var building_levels: Array[int] = [0, 0, 0, 0, 0]
 var essence: int = 0
 var stones: int = STARTING_STONES
+## One resolved expedition, per docs/SYSTEMS.md, Turns. Monotonic, never reset - lost-cache decay
+## is measured against it, so a clock that could go backwards would resurrect an expired cache.
+var turns: int = 0
 var lost_caches: Array[LostCache] = []
 var cleared_zone_ids: Dictionary[StringName, bool] = {}
 
@@ -39,6 +42,13 @@ func summon_hero(hero: Hero, balance: BalanceTable) -> bool:
 	roster.append(hero)
 	roster_changed.emit()
 	return true
+
+
+## Called once per expedition that actually runs. An expedition that never reaches a wave
+## (OUTCOME_INVALID_TEAM) is not a turn - nothing happened.
+func advance_turn() -> void:
+	turns += 1
+	roster_changed.emit()
 
 
 func credit_stones(amount: int) -> void:
@@ -171,7 +181,7 @@ func rank_up_hero(hero: Hero, balance: BalanceTable) -> bool:
 ## reachable from more than one call site is how this game rots.
 func kill_hero(hero: Hero, zone_id: StringName, balance: BalanceTable) -> void:
 	if not hero.equipped.is_empty():
-		var cache := LostCache.new(hero.hero_name, zone_id)
+		var cache := LostCache.new(hero.hero_name, zone_id, turns)
 		for item: Item in hero.equipped.values():
 			cache.items.append(item)
 		lost_caches.append(cache)
@@ -203,6 +213,7 @@ func to_dict() -> Dictionary:
 		"building_levels": building_levels.duplicate(),
 		"essence": essence,
 		"stones": stones,
+		"turns": turns,
 		"lost_caches": lost_cache_entries,
 		"cleared_zone_ids": cleared_entries,
 	}
@@ -215,6 +226,7 @@ func from_dict(data: Dictionary) -> void:
 	building_levels.fill(0)
 	essence = 0
 	stones = STARTING_STONES
+	turns = 0
 	lost_caches.clear()
 	cleared_zone_ids.clear()
 	for entry: Variant in _array_field(data, "roster"):
@@ -255,6 +267,7 @@ func from_dict(data: Dictionary) -> void:
 		building_levels[building_index] = level
 	essence = maxi(Item.int_field(data, "essence", 0, "game session"), 0)
 	stones = maxi(Item.int_field(data, "stones", STARTING_STONES, "game session"), 0)
+	turns = maxi(Item.int_field(data, "turns", 0, "game session"), 0)
 	for entry: Variant in _array_field(data, "lost_caches"):
 		if entry is Dictionary:
 			lost_caches.append(LostCache.from_dict(entry))

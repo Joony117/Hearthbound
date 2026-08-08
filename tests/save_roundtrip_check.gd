@@ -30,6 +30,7 @@ const SACRIFICE_RESONANCE := 1
 const STONE_HERO_NAME := "Roundtrip Stone Hero"
 const STONE_REWARD := 75
 const PROGRESS_HERO_NAME := "Untrusted Progress Hero"
+const TURNS_AT_DEATH := 7
 
 var _game_session: Node
 var _save_service: Node
@@ -72,7 +73,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, turn counter and lost-cache turn_lost, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -582,12 +583,17 @@ func _check_permadeath_and_version() -> int:
 	var doomed_item := Item.new(DOOMED_ITEM_DEF_ID, DOOMED_ITEM_RANK)
 	_game_session.call("add_item", doomed_item)
 	_game_session.call("equip_item", doomed_hero, doomed_item)
+	# Non-zero so a turn_lost that silently defaults to 0 fails here instead of passing by accident.
+	_game_session.set("turns", TURNS_AT_DEATH)
 	_game_session.call("kill_hero", doomed_hero, &"save_roundtrip", preload("res://balance.tres"))
 	_save_service.call("save")
 
 	_roster().clear()
+	_game_session.set("turns", 0)
 	if not _save_service.call("load_game"):
 		return _fail("post-permadeath disk reload", "load_game() == true", "load_game() == false")
+	if _game_session.get("turns") != TURNS_AT_DEATH:
+		return _fail("turn counter after disk reload", str(TURNS_AT_DEATH), str(_game_session.get("turns")))
 	if _roster().size() != 1:
 		return _fail("hero count after permadeath disk reload", "1", str(_roster().size()))
 	if _has_hero(FIRST_HERO_NAME, FIRST_HERO_RANK):
@@ -602,6 +608,8 @@ func _check_permadeath_and_version() -> int:
 		return _fail("lost cache hero name after disk reload", FIRST_HERO_NAME, lost_cache.hero_name)
 	if lost_cache.zone_id != &"save_roundtrip":
 		return _fail("lost cache zone ID after disk reload", "save_roundtrip", str(lost_cache.zone_id))
+	if lost_cache.turn_lost != TURNS_AT_DEATH:
+		return _fail("lost cache turn_lost after disk reload", str(TURNS_AT_DEATH), str(lost_cache.turn_lost))
 	if lost_cache.items.size() != 1:
 		return _fail("lost cache item count after disk reload", "1", str(lost_cache.items.size()))
 	var lost_item: Item = lost_cache.items[0]
@@ -623,6 +631,10 @@ func _check_permadeath_and_version() -> int:
 		return _fail("raw save JSON version key", "present", "missing")
 	if payload.get("version") != _save_version:
 		return _fail("raw save JSON version value", str(_save_version), str(payload.get("version")))
+	if not payload.has("turns"):
+		return _fail("raw save JSON turns key", "present", "missing")
+	if int(payload.get("turns")) != TURNS_AT_DEATH:
+		return _fail("raw save JSON turns value", str(TURNS_AT_DEATH), str(payload.get("turns")))
 
 	return 0
 

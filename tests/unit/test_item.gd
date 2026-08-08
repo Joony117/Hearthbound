@@ -66,6 +66,40 @@ func test_explicit_null_fields_decode_into_roster_and_lost_caches() -> void:
 	assert_true(GameSession.lost_caches[0].items.is_empty())
 
 
+func test_turns_and_turn_lost_absorb_the_three_untrusted_save_shapes() -> void:
+	var cache_entry: Dictionary = {"hero_name": "Ash", "zone_id": "ashfall", "items": []}
+
+	# Missing: both default to 0 rather than carrying the previous session's clock forward.
+	GameSession.turns = 9
+	GameSession.from_dict({"lost_caches": [cache_entry]})
+	assert_eq(GameSession.turns, 0)
+	assert_eq(GameSession.lost_caches[0].turn_lost, 0)
+
+	# Float: how every int reaches JSON and comes back.
+	GameSession.from_dict({
+		"turns": 12.0,
+		"lost_caches": [cache_entry.merged({"turn_lost": 5.0})],
+	})
+	assert_eq(GameSession.turns, 12)
+	assert_eq(GameSession.lost_caches[0].turn_lost, 5)
+
+	# Explicit null: Dictionary.get()'s default does not absorb it.
+	GameSession.from_dict({
+		"turns": null,
+		"lost_caches": [cache_entry.merged({"turn_lost": null})],
+	})
+	assert_eq(GameSession.turns, 0)
+	assert_eq(GameSession.lost_caches[0].turn_lost, 0)
+
+	# Negative: the clock is monotonic, so a corrupt save floors instead of running it backwards.
+	GameSession.from_dict({
+		"turns": -3,
+		"lost_caches": [cache_entry.merged({"turn_lost": -4})],
+	})
+	assert_eq(GameSession.turns, 0)
+	assert_eq(GameSession.lost_caches[0].turn_lost, 0)
+
+
 func test_explicit_null_version_loads_from_disk_instead_of_crashing_at_boot() -> void:
 	# load_game() reads version before any from_dict, so this one crashes earlier than the rest.
 	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
