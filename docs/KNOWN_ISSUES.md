@@ -24,6 +24,13 @@ deletion path work end to end.
 from an older build will load into a newer one and may produce garbage.
 **Fix in:** Phase 5.
 
+`P2-17`'s refused-save ruling (`docs/SYSTEMS.md` § Refused-save recovery) already covers what the
+newer-than-this-build branch (`version > SAVE_VERSION`) must do once it's reachable: refuse to
+boot, not move the file aside — that data isn't corrupt, only unreadable by this build, and
+move-aside would discard it. Unreachable today (`SAVE_VERSION` has never been bumped past `1`), so
+the error-rendering UI for it isn't built yet; whichever ticket first bumps `SAVE_VERSION` inherits
+that requirement rather than re-deciding it.
+
 ### No GUT until Phase 2
 There is no logic worth testing in the walking skeleton. Verification for Phase 1 is manual
 plus a clean headless import.

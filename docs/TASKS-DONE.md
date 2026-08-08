@@ -3351,3 +3351,127 @@ authored constants and no caller can produce one, so no guard was added.
 `balance_table.gd`, `balance.tres`, `zones/zone_definition.gd`, `zones/defs/*.tres` (all three),
 `tests/zone_definition_check.gd`, `tests/save_roundtrip_check.gd`, `tests/unit/test_hero_stats.gd`,
 `tests/unit/test_expedition.gd`, `tests/unit/test_loot.gd`. `combat/quick_resolve.gd` unchanged.
+
+---
+
+## P2-17 — A refused save is moved aside, not overwritten                    [DONE]
+
+### Objective
+A player whose `user://save.json` is corrupt boots into a fresh game and is **told so**, with the
+unreadable file preserved as `user://save.corrupt.json` instead of silently clobbered by the first
+thing they do.
+
+### Existing architecture
+- `SaveService.load_game()` (`systems/save_service.gd:21-45`) has three refusal branches — missing
+  file, top-level JSON not a Dictionary, `version > SAVE_VERSION` — each returning `false` and
+  leaving `GameSession` at constructor defaults. `tests/unit/test_save_service.gd` already pins
+  that "left untouched" half; nothing pins what happens next.
+- `GameSession._ready()` (`systems/game_session.gd:24-27`) connects `roster_changed` to
+  `SaveService.save` **after** the load, so the first summon/expedition/upgrade emits and
+  `save()` overwrites the refused file in place. That is the defect.
+- `SaveService.save()` writes directly to `SAVE_PATH` with no temp-file-then-rename — the reason
+  the corrupt branch is reachable at all. **Out of scope here** (see Non-goals).
+- `run/main_scene` is `res://ui/main_menu.tscn`; autoloads are `_ready()` before it, so anything
+  `load_game()` records is available to the menu's `_ready()`.
+- The ruling is `SYSTEMS.md` § Refused-save recovery (`P2-17`). It settles every open input —
+  read it, do not re-decide it.
+
+### Acceptance criteria
+1. A `user://save.json` whose top level is not a Dictionary is renamed to
+   `user://save.corrupt.json` before `load_game()` returns `false`; the renamed file's bytes are
+   byte-identical to what was on disk. An existing `save.corrupt.json` is overwritten (ruled).
+2. After that refusal, the next `roster_changed` emission writes a **valid** save at `SAVE_PATH`,
+   and `save.corrupt.json` still holds the original garbage. This is the whole ticket: assert both
+   files, not just one.
+3. `SaveService` carries a transient, **not persisted**, one-shot notice: set on the corrupt
+   branch, returned once and cleared by the reader. It appears in neither `GameSession.to_dict()`
+   nor the file on disk.
+4. `ui/main_menu.tscn` shows that notice on boot and is otherwise unchanged — hidden when the
+   notice is empty, which is every normal boot. Reach the label by `%UniqueName`, not by node
+   path: `P2-07d` reddened on absolute paths that a re-parent would break.
+5. The other two refusal branches are untouched. Missing file still returns `false` with **zero**
+   `push_error` calls (`test_missing_save_is_refused_without_error` asserts the count), and
+   `version > SAVE_VERSION` still refuses without renaming anything — ruled deliberately apart,
+   because that file is recoverable by running the build that wrote it.
+6. If the rename itself fails, `push_error` and return `false` anyway. No notice is set for a
+   move that did not happen.
+7. `tests/unit/test_save_service.gd` cleans up `save.corrupt.json` in `after_all` and still
+   restores `save.json` byte-identically. That file is the **only** one in the suite that backs
+   the real save up (`KNOWN_ISSUES.md` § Environment); breaking its restore breaks the guarantee
+   for everything after it.
+8. BUILT green — import gate **and** the GUT suite, zero errors and zero warnings.
+
+### Files allowed to change
+- `systems/save_service.gd`
+- `ui/main_menu.gd`, `ui/main_menu.tscn`
+- `tests/unit/test_save_service.gd`
+
+Checked before writing this list, because `P2-04g` and `P2-18` both omitted a real call site.
+`load_game()`'s only production caller is `GameSession._ready()`. It has **three** test callers,
+not the one this paragraph originally claimed — `tests/save_roundtrip_check.gd` and
+`tests/summon_def_id_roundtrip_check.gd:119`, both dynamic via `.call()` (`P2-04e`'s trap), and
+`tests/unit/test_item.gd:75`, a direct static call. All three feed `load_game()` a valid
+Dictionary before every reload and none reaches the corrupt branch, so none needs changing — but
+**grep `load_game` again if the signature moves**, since the import gate cannot see a `.call()`.
+The miss is itself the finding: the audit was written from the ticket that last touched this seam
+rather than from a grep, which is exactly how `P2-04e` describes the trap being sprung.
+
+### Non-goals
+- **Atomic write.** `save()` staying non-atomic is what makes branch 2 reachable; fixing it is a
+  different code path with a different acceptance test (kill the process mid-write, confirm the
+  *previous* save survived). Ruled a separate ticket — `P2-20`.
+- **Error-rendering UI for the newer-version branch.** Ruled "refuse to boot", but that branch is
+  unreachable until `SAVE_VERSION` is bumped past `1`. Do not build a screen for it.
+- Save migration. Phase 5 owns it (`save_service.gd:35-38`).
+- Any change to what `GameSession` holds. No new save key, no `to_dict`/`from_dict` edit.
+
+### Findings
+
+**1. The allowed-file list's own audit paragraph was wrong, and it was written to stop exactly
+that.** `P2-04g` and `P2-18` each shipped with a file list omitting a real call site, so this
+ticket added a paragraph naming every caller of the function it touches. That paragraph then
+named one of three: it missed `tests/summon_def_id_roundtrip_check.gd:119` (dynamic `.call()`)
+and `tests/unit/test_item.gd:75` (a plain static call). Nothing broke — all three feed valid
+dictionaries and none reaches the corrupt branch — but the paragraph is a **record**, and a
+wrong record is worse than none, because the next ticket to move this signature will trust it.
+The cause is worth copying out: it was written from `P2-04e`'s findings, which name
+`save_roundtrip_check.gd` as *the* dynamic caller, rather than from a fresh
+`grep -rn "load_game" --include=*.gd`. Citing the archive is not auditing the tree. The
+`verifier` caught it; no gate could have.
+
+**2. The mandatory `verifier` pass earned itself on the seam no gate covers.** The change adds a
+`%SaveNotice` `Label` to `main_menu.tscn` and a `_ready()` that dereferences it — and
+`main_menu.tscn` is `run/main_scene`. Nothing in `tests/` has ever instantiated it. A bad
+`unique_name_in_owner`, a misparented node or an erroring `_ready()` means **the game does not
+boot**, while the import gate (never instantiates a scene) and the GUT suite (never loads this
+one) both stay green. The verifier drove the scene directly with ad-hoc `SceneTree` scripts and
+proved both branches — notice shown with the right text, and hidden on a normal boot — plus a
+forced OS-level rename failure confirming `save.json` survives and no notice is set on that path.
+That coverage lives in a review artifact, not in the repo: **`main_menu.tscn` still has no
+committed test.** Whoever touches it next inherits that.
+
+**3. Closing the `FileAccess` before the rename is load-bearing, not tidiness.** `load_game()`
+holds the save file open for READ when the corrupt branch fires; on Windows a rename over a live
+handle is not reliable. `file.close()` sits immediately before `DirAccess.rename_absolute` for
+that reason. The ruled "overwrite any prior `save.corrupt.json`" behavior needs no hand-rolled
+delete — Godot's `DirAccess::rename` removes an existing destination first.
+
+**4. Two test gaps the verifier found, both since closed.** The next-save test set the one-shot
+notice and never consumed it; `SaveService` is a singleton alive for the whole GUT process, so
+that leaked forward into every later test — the `P2-08` cross-test-coupling shape in a new place.
+And `before_each()` deletes `save.corrupt.json`, so the ruled overwrite clause had no committed
+regression test at all despite the criterion naming it. Both are covered now
+(`test_a_second_corrupt_save_overwrites_the_first_one_moved_aside`), which is also the only test
+of a *second* corruption arriving before the player has read the first notice.
+
+**5. The ruling priced a cost the backlog row had not.** The row framed this as a choice between
+three behaviors; the `game-designer` pass ruled the three refusal branches **apart** rather than
+uniformly, and then added a requirement neither the row nor the director's cost estimate carried:
+a silent rename is indistinguishable from data loss, so one line of on-screen text is part of the
+fix. That turned "~3 lines in `load_game()`, no new UI" into a scene change — which is what made
+the `verifier` pass mandatory. Worth remembering when estimating a "three-line" save fix.
+
+### Files changed
+`systems/save_service.gd`, `ui/main_menu.gd`, `ui/main_menu.tscn`,
+`tests/unit/test_save_service.gd`. Docs: `docs/SYSTEMS.md` (the ruling), `docs/KNOWN_ISSUES.md`
+(cross-reference), `docs/TASKS.md`.

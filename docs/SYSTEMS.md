@@ -2243,3 +2243,85 @@ progression and you need to see what actually happened.
 
 **Include a `version: int` field from the first commit.** Migration logic is Phase 5, but
 retrofitting the field onto existing saves is not something you want to do later.
+
+### Refused-save recovery (`P2-17`)
+
+`load_game()` (`systems/save_service.gd:21-45`) has three refusal branches that return `false`
+and leave `GameSession` at constructor defaults. `_ready()` (`systems/game_session.gd:24-27`)
+then connects `roster_changed` to `SaveService.save` *after* the refused load, so the first
+summon/expedition/upgrade overwrites the refused file with that default session — silently,
+in place, no backup. This ruling is on what happens instead, per branch.
+
+**Ruling: the three branches do not get the same treatment.**
+
+- **Branch 1 (file missing) — untouched.** This is the legitimate fresh-start path and was never
+  the defect; nothing here changes it.
+- **Branch 2 (corrupt: top-level JSON is not a Dictionary) — move the file aside and start
+  fresh.** `load_game()` renames `user://save.json` to `user://save.corrupt.json` (overwriting
+  any prior one — see below) before returning `false`, so the *next* `save()` writes a clean file
+  at the canonical path instead of clobbering the refused one in place. `GameSession` proceeds
+  with constructor defaults exactly as it does today; nothing about the in-memory session changes,
+  only that the bad bytes no longer sit where the good ones are about to land.
+- **Branch 3 (`version > SAVE_VERSION`, newer-than-this-build) — refuse to boot instead.** This
+  file is not damaged — it is valid data a newer build wrote and this older build has declined to
+  parse. Moving it aside or starting fresh over it risks exactly the data loss this ticket exists
+  to prevent, except worse, because unlike branch 2 the data was perfectly recoverable by running
+  the build that wrote it. The correct recovery action is "run the newer build," not "start over,"
+  so the game must stop before entering play rather than pretend nothing is there.
+  **This branch is unreachable in shipped builds today** (`SAVE_VERSION` has never been bumped
+  past `1`), so nothing needs to render yet — the behavior is ruled now so it doesn't get
+  relitigated the first time a version bump makes it reachable, but building the error-rendering
+  UI for it is scoped to that future ticket, not `P2-17`. Noted in `KNOWN_ISSUES.md` under "No
+  save migration" so this doesn't get lost between now and then.
+
+**What the player sees (branch 2 only, since it's the only one reachable today).** A silent
+move-aside is indistinguishable from data loss from the player's side — a save that vanishes with
+no message reads as the game ate it, not as a recovery. This ruling therefore requires one line of
+on-screen text, which is a real addition beyond the "~3 lines inside `load_game()`" estimate: a
+transient, **not persisted**, flag — e.g. `SaveService` holding a one-shot notice string set on
+the corrupt branch — read and cleared by whichever scene the player lands on first (the main menu
+today, per `CLAUDE.md`'s note that `SceneRouter` and the main menu both already exist). Suggested
+copy: *"Your last save couldn't be read and was moved aside as save.corrupt.json. Starting a new
+game."* It must not be written into the save file itself — the whole point is that the next
+`save()` is clean. If `save.corrupt.json` already exists (a second corruption before the player
+has dealt with the first), overwrite it; a corrupt file has no gameplay value beyond one bug
+report, and keeping more than the latest is standing state this ruling doesn't need.
+
+**Whether the write side is in scope: named, not included.** `save()` (`save_service.gd:9-17`)
+writes directly to `user://save.json` with no temp-file-then-rename, which is *why* branch 2 is
+reachable at all — a crash or power loss mid-`store_string` leaves a truncated file that parses to
+`null`. Fixing that (write to a temp path, then rename over the real one) reduces how often branch
+2 fires; it does not change what happens *after* a refusal, which is the whole of what `P2-17`
+asked. They are different code paths (`save()` vs. `load_game()`) with different acceptance tests
+(kill the process mid-write and confirm the *previous* save survives intact, vs. drive a corrupt
+file through `load_game()` and confirm the notice and the rename). **Atomic write is a separate
+ticket**, not folded into `P2-17` and not left unmentioned — small and worth doing given it
+directly reduces recurrence of the defect this ruling handles, but the director's to open.
+
+**Rejected: read-only mode for the corrupt branch.** Requires a suppress-saving flag plus
+on-screen communication of *why* nothing persists — the harder of the two costs named in the
+task, by the task's own estimate — and buys nothing branch 2 needs: there is no in-app action that
+repairs corrupt bytes, so "read-only until resolved" has no resolution path and would suppress
+every future save indefinitely, converting "lost one save" into "lost this and every session
+after it," unless the resolve step *is* moving the file aside — at which point it has collapsed
+into the move-aside ruling above with more standing state (a flag watched forever) for the same
+outcome.
+
+**Rejected: refuse to boot for the corrupt branch.** Same premise problem as read-only: nothing
+in-game can fix a corrupt file, so refusing to boot is a permanent wall until the player manually
+deletes or moves it outside the game entirely — worse than `P2-18`'s own precedent that the game
+should never sit in a state a player cannot act their way out of. It also needs new
+error-rendering UI (the costliest of the three, per the task's own estimate) to protect a state
+that move-aside handles for three lines and no new screen.
+
+**Rejected: move-aside for the newer-version branch too (uniform treatment).** This is the point
+1 answer stated as a rejection: applying branch 2's fix to branch 3 would discard valid data the
+player could recover simply by running the right build, silently starting a fresh 300-stone
+session over it. Worse than doing nothing, since branch 3 is unreachable today and doing nothing
+about it costs zero risk.
+
+> ⚠️ **PROVISIONAL** — whether one boot-time line of text is enough, or a corruption event needs a
+> more persistent, reviewable trace (a settings-menu note, say) once the player is past the
+> initial moment. Arithmetically settled; never played. · **Settled by:** a played build that
+> actually reaches branch 2 — which needs a deliberately truncated save or a real crash-during-write
+> to trigger, so this may need a manufactured repro rather than incidental play.
