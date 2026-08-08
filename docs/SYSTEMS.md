@@ -1711,6 +1711,93 @@ eagerly in Ashfall and Sundered, where the current 25% already produces real, me
 
 ---
 
+## Turns — *Phase 2*
+
+`P2-22`. Rules the gap `P2-04f` and `P2-13` are both blocked on, and that four already-authored
+numbers are denominated in with nothing to count: cache expiry (`15 turns`),
+`reliquary_decay_turns_bonus` (`+5`/level, `balance_table.gd:30`), `damage_chance`'s
+`0.03 * turns_elapsed` term, and `LostCache.turn_lost` — a field `P2-04e` deliberately refused to
+ship because there was no counter to stamp it from.
+
+**Ruling: a turn is one resolved expedition.**
+
+The counter advances by one when `Expedition.resolve()` returns `COMPLETED`, `RETREATED`, or
+`DEFEATED`. `OUTCOME_INVALID_TEAM` returns before the first wave and does **not** tick — nothing
+happened. A recovery expedition (`P2-04f`) is an expedition and ticks like any other. The counter
+is `GameSession.turns`, a persisted profile field alongside `stones` and `essence`; it only ever
+increases and is never reset.
+
+`LostCache.turn_lost` is stamped with the counter's value at the moment of death, and
+`turns_elapsed = GameSession.turns - cache.turn_lost`. A cache's deadline is **evaluated at the
+recovery attempt, not frozen at death** — `turn_lost + 15 + 5 * reliquary_level` — so upgrading the
+Reliquary extends caches that already exist. That is one stored field instead of two, and the
+player-favourable reading of the two available; a building that fails to protect the gear you
+bought it for reads as a bug.
+
+Why an expedition and not something else:
+
+- **It is the only action in the game that can kill a hero**, and a death is the only thing that
+  creates the caches this clock measures. Any denominator that can advance with no possibility of
+  a death makes decay a tax on playing rather than a consequence of dying.
+- **It makes this document's own claim literally true.** Death and gear recovery below says "you
+  choose between pushing progression and mounting a salvage run." That is only a choice if both
+  spend the same unit. They do: a recovery run *is* an expedition, so fetching one cache costs
+  exactly one progression attempt, and fetching three costs three — with the third cache two turns
+  older than when you started.
+
+**Rejected: wall-clock time.** Needs a timestamp in the save, runs the clock while the game is
+closed, and is settable from the OS. It also imposes a real-world deadline in a game with no idle
+income to justify one — the whole point of `Expedition.resolve()` being synchronous.
+
+**Rejected: one hub action** (equip, salvage, upgrade, convert). Ages a cache for sorting your bag.
+The clock would measure UI traffic.
+
+**Rejected: one play session or boot.** Nothing counts sessions — the gap named at the foot of
+`docs/TASKS.md` — and it hands the player a trivial exploit: never quit, never decay.
+
+### What the authored decay numbers mean once turns are expeditions
+
+The check that matters is whether `15` is a window a player can actually miss, because a clock
+nobody can run out is `reliquary_decay_turns_bonus` joining `LostCache.turn_lost`,
+`Item.enhance_level` and the flat Forge reading in this document's list of numbers that read real
+and measure nothing.
+
+It is missable, and the reason is structural rather than tuned. A recovery needs
+`team_power >= zone.power * 0.5`, and the deaths that create caches worth fetching are the ones
+that wipe the squad capable of that. Rebuilding takes `~33.6` Verdant attempts to climb one fresh
+hero to F's cap (Expeditions § Hero leveling), `~19.5` with the Training Hall maxed — both longer
+than `15`. So an un-Reliquaried player who loses their only capable team loses the cache with it,
+and the building is what buys it back:
+
+| Reliquary level | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| Cache lifetime (turns) | 15 | 20 | 25 | 30 | 35 | 40 |
+| Covers a bare rebuild (`~33.6`) | no | no | no | no | marginal | **yes** |
+| Covers a Training-Hall-5 rebuild (`~19.5`) | no | **yes** | yes | yes | yes | yes |
+
+Two buildings reading one clock from opposite ends is worth keeping: the Training Hall shortens the
+rebuild, the Reliquary lengthens the window, and either alone gets a player over the line the other
+does not.
+
+Against the `~1,308`-clear Verdant spine to a manufactured SSS (Summoning § Summon Stones), `15`
+turns is `1.1%` of the run — a deadline inside a session, not a project.
+
+> ⚠️ **PROVISIONAL** — that `15` (and `40` at cap) is the *right* window. The unit is not
+> provisional; the count against it is unplayed, and an expedition is one button press with an
+> instant result, so 15 of them may read as a formality rather than a deadline at the keyboard even
+> though the rebuild arithmetic above says otherwise. · **Settled by:** a played build in which a
+> squad wipe in Ashfall or Sundered leaves a cache the surviving roster cannot reach.
+
+**Residue for `P2-04f`, not ruled here.** At Reliquary 4 and 5 the extended window outruns the
+`clampf` on `damage_chance`: solving `0.15 + 0.03 * turns_elapsed - 0.03 * reliquary_level >= 1.0`
+at `power_deficit_penalty = 0` gives certain damage from turn `33` at level 4 (lifetime `35`) and
+from turn `34` at level 5 (lifetime `40`). So the last 3 and 7 turns of those two windows return
+Damaged gear with a perfect team and no way to avoid it. This is the same shape as the
+zero-cancellation `P2-07a` flagged and did not own — sound as arithmetic, open as design.
+`P2-04f` owns the damage roll and should rule on it rather than discover it.
+
+---
+
 ## Death and gear recovery — *Phase 2*
 
 A dead hero's equipment does not vanish:
@@ -1764,8 +1851,10 @@ load-bearing at the top end of cache life, not a formality.
 > 0.5`) is specifically that a weak team *can* attempt this, so a played `0.80`-chance outcome that
 > reads as "don't bother" would contradict the system's own stated point.
 
-Caches **expire after 15 turns** (+5 per Reliquary level). The clock is what makes a death
-hurt: you choose between pushing progression and mounting a salvage run.
+Caches **expire after 15 turns** (+5 per Reliquary level), an expired cache taking its items with
+it. The clock is what makes a death hurt: you choose between pushing progression and mounting a
+salvage run. A turn is one resolved expedition and the deadline is evaluated at the attempt — see
+Turns, above, which also tabulates what `15` and `40` are worth against a rebuild.
 
 ---
 
@@ -2074,10 +2163,12 @@ read them at all:
   doc-only number until an implementer wires `Hero.level`/`xp` and the XP-grant path into code;
   whether Training Hall ships alongside that work or waits for a further ticket is `tech-lead`'s
   scheduling call, not this ruling's.
-- **Reliquary** reads against two things neither of which exists: the recovery-expedition damage
-  roll (`P2-04f`, blocked on `power_deficit_penalty`) and a "turn" concept at all (also `P2-04f`,
-  and the decay clock is turn-denominated). Same outcome — parts spent here are inert until
-  `P2-04f` unblocks and ships.
+- **Reliquary** read against two things neither of which existed: the recovery-expedition damage
+  roll (`P2-04f`, then blocked on `power_deficit_penalty`) and a "turn" concept at all (also
+  `P2-04f`, and the decay clock is turn-denominated). Same outcome — parts spent here are inert
+  until `P2-04f` unblocks and ships. **Both design gaps are now closed** — `power_deficit_penalty`
+  is `clamp(0.2 * (r - 1), 0.0, 0.2)` (Death and gear recovery) and a turn is one resolved
+  expedition (Turns) — so the block is on `P2-04f`'s *code* landing, not on a further ruling.
 - **Circle, Forge, and Sanctum** each read a system that already exists in code today: `summon`
   (roll-a-rank-then-a-definition, live), `forge` (`enhance_item`/`salvage_item`,
   `systems/game_session.gd:58-84`, live), and `sacrifice` (`sacrifice_hero`,
