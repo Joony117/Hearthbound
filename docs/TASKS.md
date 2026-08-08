@@ -769,7 +769,7 @@ needs to re-read.
 | `P2-20` | A crashed save leaves the previous save intact | `8c526b7` |
 | `P2-21` | The Training Hall is buildable, so its XP bonus can fire | `332466a` |
 | `P2-12` | Salvage and enhance arithmetic moves off the autoload | `18fe317` |
-| `P2-22` | Turn concept ruling — a turn is one resolved expedition | |
+| `P2-22` | Turn concept ruling — a turn is one resolved expedition | `44e112a` |
 
 ---
 
