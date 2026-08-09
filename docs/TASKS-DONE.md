@@ -4500,3 +4500,102 @@ movement-facing rotate the camera and silently defeated the requested decoupling
 **No combat or profile boundary moved.** `GameSession`, `Expedition`, `Wave`, `CombatResult`,
 permadeath and every save key are unchanged. Attack/root displacement/hit-stop remain `P2b-01c`;
 dodge and recovery cancelling remain `P2b-01d`.
+
+
+## P2b-01c — One attack defeats one enemy capsule                         [DONE]
+
+### Objective
+
+The player can commit to one facing-directed light attack that lunges into and defeats one passive
+enemy capsule with visible contact hit-stop.
+
+### Existing architecture
+
+- `combat/arena/arena.gd` already owns the scene-local `CharacterBody3D` movement and captured-mouse
+  camera; arena state may not move into an autoload (`ARCHITECTURE.md` rules 3 and 6).
+- `SYSTEMS.md` § Action arena fixes character-facing attacks, `1.5–2.5 m` first-light root
+  displacement and `0.04 s` light hit-stop, but leaves startup, active time, recovery and reach for
+  this ticket to author provisionally.
+- `P2b-01e` still owns the asynchronous `Wave`/`CombatResult` seam. This ticket has one passive
+  target and no expedition, reward, permadeath or profile state.
+- Tunables live in `balance.tres` (`ARCHITECTURE.md` rule 9). Native collision and an `Area3D`
+  hitbox are sufficient for this graybox slice.
+
+### Acceptance criteria
+
+1. `project.godot` defines `attack` on the physical left mouse button; no controller binding lands.
+2. `BalanceTable`/`balance.tres` author a `0.12 s` startup, `0.10 s` active window, `0.22 s`
+   recovery, `2.0 m` root displacement, `1.5 m` reach and `0.04 s` hit-stop. The first five values
+   remain explicitly PROVISIONAL pending the ticket's played-build gate.
+3. The arena visibly contains one passive enemy capsule four metres in front of the player. One
+   valid light-attack contact defeats it; no HP or general damage model is introduced.
+4. The attack follows the capsule's facing at activation, not camera forward. Movement input may
+   adjust facing during startup; facing is committed once the active window begins.
+5. Ordinary locomotion and sprint velocity do not run during the attack. The active window drives
+   exactly the authored forward root displacement, then recovery prevents another attack until the
+   full commitment ends.
+6. A native `Area3D` hitbox detects only the enemy body and can hit it once. On contact, attacker
+   displacement and target removal pause for `0.04 s`; the rest of the scene remains unpaused.
+7. Esc still returns through `SceneRouter`, and hub → arena → hub leaves the complete
+   `GameSession` profile unchanged.
+8. Focused GUT coverage drives the production attack input and hitbox path, pins the authored
+   values/binding, proves character-facing displacement and one target defeat, and leaves the
+   existing arena checks green.
+9. `tests/import_gate.ps1` exits 0 with zero errors/warnings and the full GUT suite is green.
+10. A rendered run confirms the lunge, hit-stop, target defeat and return to hub, then
+    `Get-Process Godot*` returns empty.
+11. `project.godot` input and `.tscn` node/script seams cross `CLAUDE.md` runtime boundary 2, so a
+    read-only verifier pass is mandatory after implementation.
+
+### Files allowed to change
+
+- `docs/SYSTEMS.md` — provisional first-light timeline, reach and exact displacement.
+- `balance_table.gd` and `balance.tres` — authored first-light tunables only.
+- `project.godot` — physical left-mouse `attack` action only.
+- `combat/arena/arena.gd` — scene-local attack commitment, hit detection and hit-stop.
+- `combat/arena/arena.tscn` — passive enemy capsule, hitbox and updated hint only.
+- `tests/unit/test_arena.gd` — focused attack binding, timeline, facing and contact coverage.
+- `docs/TASKS.md` and `docs/TASKS-DONE.md` — ticket lifecycle and findings.
+
+### Non-goals
+
+- Enemy AI, enemy attacks, dodge, i-frames, recovery cancels or input buffering (`P2b-01d`).
+- Combo trees, Smash/heavy attacks, attack-speed stats, health, reusable damage components,
+  hit-drag, aim assist, target lock or multiple enemies.
+- `Wave`, `CombatResult`, expedition integration, permadeath, rewards, turns or save keys
+  (`P2b-01e`).
+- Controller input (`P2b-02`), imported models, animation, audio, particles, camera shake or polish.
+
+### Findings
+
+**One elapsed timeline was enough.** Startup, active and recovery are three comparisons against one
+float; no action-state enum, reusable attack component or combat hierarchy was needed. Root motion
+uses the existing `CharacterBody3D.move_and_slide()` path, while hit-stop pauses only that timeline
+and target removal—never `SceneTree.paused` or `Engine.time_scale`.
+
+**The hitbox owns no authored copy of reach.** Its scene shape supplies only structural width and
+height. `_ready()` duplicates that shape before setting depth from `balance.tres`, so the shared
+scene subresource is not mutated and `arena_light_attack_reach` remains the single tunable. Godot
+4.7's `Area3D.body_entered`, `monitoring`, layer/mask and physics-step behavior were checked against
+the current docs; GUT's installed `wait_physics_frames()` API was checked in `addons/gut`.
+
+**The contact test proves the pause rather than just naming `0.04`.** It observes the hitbox's real
+active-to-contact transition and asserts the target is still alive after contact before waiting for
+the single `enemy_defeated` emission. Immediate removal now reddens the test even if the balance
+field still says `0.04`.
+
+**The first rendered failure was a harness timing error.** `enemy_defeated` fires when hit-stop ends,
+then the remaining active lunge resumes. The harness asserted the final `2.0 m` at the signal and
+failed on a partial displacement; waiting through recovery made the same production path pass. The
+final rendered flow dispatches a physical left-mouse event through Godot, defeats the target,
+completes the lunge, reaches the arena wall, returns through Esc and preserves the full profile.
+
+**The boundary-2 verifier passed.** Focused coverage pins the physical input binding, both
+`%UniqueName` nodes, the production `body_entered` connection, collision-driven defeat and the
+unchanged hub return. The import gate is clean, all 132 GUT tests pass, and every Godot process was
+reaped. `Wave`, `CombatResult`, `Expedition`, permadeath and save state remain untouched.
+
+**Feel is still a human gate.** The authored timeline, reach and displacement are mechanically
+coherent and rendered, but automation cannot decide whether the strike feels dense. Their
+`PROVISIONAL` marker remains until the graybox is played; `P2b-01d` must not treat them as settled
+when adding an enemy attack and dodge.

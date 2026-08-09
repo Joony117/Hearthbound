@@ -645,72 +645,6 @@ the grep had already found the missing caller.
 
 ---
 
-## P2b-01c — One attack defeats one enemy capsule                         [WIP]
-
-### Objective
-
-The player can commit to one facing-directed light attack that lunges into and defeats one passive
-enemy capsule with visible contact hit-stop.
-
-### Existing architecture
-
-- `combat/arena/arena.gd` already owns the scene-local `CharacterBody3D` movement and captured-mouse
-  camera; arena state may not move into an autoload (`ARCHITECTURE.md` rules 3 and 6).
-- `SYSTEMS.md` § Action arena fixes character-facing attacks, `1.5–2.5 m` first-light root
-  displacement and `0.04 s` light hit-stop, but leaves startup, active time, recovery and reach for
-  this ticket to author provisionally.
-- `P2b-01e` still owns the asynchronous `Wave`/`CombatResult` seam. This ticket has one passive
-  target and no expedition, reward, permadeath or profile state.
-- Tunables live in `balance.tres` (`ARCHITECTURE.md` rule 9). Native collision and an `Area3D`
-  hitbox are sufficient for this graybox slice.
-
-### Acceptance criteria
-
-1. `project.godot` defines `attack` on the physical left mouse button; no controller binding lands.
-2. `BalanceTable`/`balance.tres` author a `0.12 s` startup, `0.10 s` active window, `0.22 s`
-   recovery, `2.0 m` root displacement, `1.5 m` reach and `0.04 s` hit-stop. The first five values
-   remain explicitly PROVISIONAL pending the ticket's played-build gate.
-3. The arena visibly contains one passive enemy capsule four metres in front of the player. One
-   valid light-attack contact defeats it; no HP or general damage model is introduced.
-4. The attack follows the capsule's facing at activation, not camera forward. Movement input may
-   adjust facing during startup; facing is committed once the active window begins.
-5. Ordinary locomotion and sprint velocity do not run during the attack. The active window drives
-   exactly the authored forward root displacement, then recovery prevents another attack until the
-   full commitment ends.
-6. A native `Area3D` hitbox detects only the enemy body and can hit it once. On contact, attacker
-   displacement and target removal pause for `0.04 s`; the rest of the scene remains unpaused.
-7. Esc still returns through `SceneRouter`, and hub → arena → hub leaves the complete
-   `GameSession` profile unchanged.
-8. Focused GUT coverage drives the production attack input and hitbox path, pins the authored
-   values/binding, proves character-facing displacement and one target defeat, and leaves the
-   existing arena checks green.
-9. `tests/import_gate.ps1` exits 0 with zero errors/warnings and the full GUT suite is green.
-10. A rendered run confirms the lunge, hit-stop, target defeat and return to hub, then
-    `Get-Process Godot*` returns empty.
-11. `project.godot` input and `.tscn` node/script seams cross `CLAUDE.md` runtime boundary 2, so a
-    read-only verifier pass is mandatory after implementation.
-
-### Files allowed to change
-
-- `docs/SYSTEMS.md` — provisional first-light timeline, reach and exact displacement.
-- `balance_table.gd` and `balance.tres` — authored first-light tunables only.
-- `project.godot` — physical left-mouse `attack` action only.
-- `combat/arena/arena.gd` — scene-local attack commitment, hit detection and hit-stop.
-- `combat/arena/arena.tscn` — passive enemy capsule, hitbox and updated hint only.
-- `tests/unit/test_arena.gd` — focused attack binding, timeline, facing and contact coverage.
-- `docs/TASKS.md` and `docs/TASKS-DONE.md` — ticket lifecycle and findings.
-
-### Non-goals
-
-- Enemy AI, enemy attacks, dodge, i-frames, recovery cancels or input buffering (`P2b-01d`).
-- Combo trees, Smash/heavy attacks, attack-speed stats, health, reusable damage components,
-  hit-drag, aim assist, target lock or multiple enemies.
-- `Wave`, `CombatResult`, expedition integration, permadeath, rewards, turns or save keys
-  (`P2b-01e`).
-- Controller input (`P2b-02`), imported models, animation, audio, particles, camera shake or polish.
-
----
-
 **P2-13 — the five questions a `game-designer` ruling must answer before it can be written.**
 Filed blocked rather than dropped, because the idea is worth keeping and the dependencies are
 real. Recorded here so a cold session inherits the reasoning instead of rediscovering it:
@@ -797,20 +731,18 @@ range or timing is authored around it.
 | P2b-01a | Enter and leave a capsule graybox arena | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Native primitives only, no combat or mutable arena state. The boundary-2 verifier first found the GUT check bypassed `_unhandled_input`; the fixed test drives the real handler and captures its typed `SceneRouter.HUB` request. A rendered integration harness then dispatched `ui_cancel` through Godot and completed hub → arena → hub with the full profile unchanged. |
 | P2b-01b | WASD movement + mouse aim | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Mechanically proved the first input slice; its fixed-camera instant-movement ruling was superseded by `P2b-01b-2` before attacks depended on it. |
 | P2b-01b-2 | Vindictus movement and camera baseline | **Landed `1785f05`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Captured third-person camera, camera-relative facing, `5.8` jog/`8.0` sprint and `42`/`65` acceleration/deceleration replace the rejected prototype controls. Rendered hub → arena → hub verification passed with the complete profile unchanged. Unblocks `P2b-01c`; tuning remains provisional until attack displacement and hit-stop can be felt with it. |
-| P2b-01c | **[WIP]** One attack defeats one enemy capsule | Forward displacement and hit-stop from the supplied *Vindictus* target; no AI attack or dodge. Full ticket above. |
+| P2b-01c | One attack defeats one enemy capsule | **Landed `aa78d6a`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). One scene-local elapsed timeline drives startup, a `2.0 m` facing-directed lunge and recovery; one native `Area3D` defeats the passive capsule after `0.04 s` local hit-stop. The boundary-2 verifier and rendered physical-left-click flow passed with the full profile unchanged. Feel values remain PROVISIONAL until played. |
 | P2b-01d | One enemy attack and one dodge | Keeps damage avoidance separate from the first attack slice. |
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | Integration slice. `Expedition` remains the sole outcome/permadeath consumer. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
-<!-- Fresh-session handoff after P2b-01b-2: expand P2b-01c into one full ticket for one attack
- defeating one enemy capsule. SYSTEMS.md § Action arena fixes the control model: attacks follow
- character facing, not camera forward. The supplied Vindictus analysis gives the slice's defining
- targets: 1.5–2.5 m forward root displacement and contact hit-stop (0.04 s for a light strike;
- its broader 0.08 s MVFI value is not a second attack). Author startup/recovery and reach as
- PROVISIONAL because the source gives ranges, not one settled light-attack timeline. Read CLAUDE.md,
- AGENTS.md, ARCHITECTURE.md § The combat seam, GAME_SPEC.md § Combat model, and all three P2b-01
- bodies in TASKS-DONE.md. Do not add dodge, AI attacks, combo trees, combat state to an autoload,
- or a second result contract. Keep Godot engine access serialized and reap every process. -->
+<!-- Fresh-session handoff after P2b-01c: expand P2b-01d into one full ticket for one passive
+ enemy attack and one dodge. SYSTEMS.md § Action arena already fixes the `13.5 m/s` dodge burst,
+ `0.38 s` duration and `0.25 s` i-frame window, but enemy startup/recovery, reach and damage are
+ unauthored design inputs; rule those before code. Read CLAUDE.md, AGENTS.md, ARCHITECTURE.md § The
+ combat seam, GAME_SPEC.md § Combat model, and all four P2b-01 bodies in TASKS-DONE.md. Do not add
+ combo trees, multiple enemies, AI teammates, Wave/CombatResult integration, combat state to an
+ autoload or a second result contract. Keep Godot engine access serialized and reap every process. -->
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3.
@@ -894,6 +826,7 @@ needs to re-read.
 | `P2b-01a` | Enter and leave a capsule graybox arena | `5e44a9e` |
 | `P2b-01b` | Move and aim the arena capsule | `f024026` |
 | `P2b-01b-2` | Vindictus movement and camera baseline | `1785f05` |
+| `P2b-01c` | One light attack defeats one passive enemy capsule | `aa78d6a` |
 
 ---
 
