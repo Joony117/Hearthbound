@@ -500,6 +500,10 @@ func _on_expedition_pressed() -> void:
 			_status.text = "Expedition cannot start: every hero needs an archetype."
 
 
+func _on_enter_arena_pressed() -> void:
+	SceneRouter.go_to(SceneRouter.ARENA)
+
+
 func _on_recover_pressed() -> void:
 	var selected_caches: PackedInt32Array = _lost_cache_list.get_selected_items()
 	var cache: LostCache = null

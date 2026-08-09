@@ -4,6 +4,7 @@ extends Node
 
 const MAIN_MENU := "res://ui/main_menu.tscn"
 const HUB := "res://hub/hub.tscn"
+const ARENA := "res://combat/arena/arena.tscn"
 
 
 func go_to(scene_path: String) -> void:

@@ -346,6 +346,10 @@ text = "Summon"
 layout_mode = 2
 text = "Send on Expedition"
 
+[node name="EnterArena" type="Button" parent="UI/Root/Bottom/Buttons"]
+layout_mode = 2
+text = "Enter Arena"
+
 [node name="Hint" type="Label" parent="UI/Root/Bottom/Buttons"]
 layout_mode = 2
 text = "   Esc = pause"
@@ -370,3 +374,4 @@ unique_name_in_owner = true
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeReliquary" to="." method="_on_upgrade_reliquary_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
 [connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]
+[connection signal="pressed" from="UI/Root/Bottom/Buttons/EnterArena" to="." method="_on_enter_arena_pressed"]
