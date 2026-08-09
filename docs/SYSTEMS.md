@@ -928,9 +928,67 @@ directly: a `4.0 m` boom, `0.5 m` right shoulder offset and `0.25 m` collision s
 clamped to `35°` upward and `65°` downward. `Esc` releases the cursor and returns through
 `SceneRouter`; a combat-time cursor/UI toggle waits for an overlay that can consume it.
 
-Attacks follow the character's current facing, not camera forward. `P2b-01c` owns the first attack,
-its forward displacement and hit-stop; dodge, recovery cancelling and input buffering remain later
-slices.
+### Combat reference carried into future arena slices
+
+This project targets classic *Vindictus* / Vindictus Premiere. Do not borrow XE's jump attacks,
+air smashes or emergency i-frame actions, and do not borrow *Vindictus: Defying Fate*'s modern
+lock-on behavior: those are separate control models.
+
+Attacks follow the character's current facing, not camera forward. A normal/light attack has a
+short commitment and modest forward root displacement; a Smash is the high-commitment follow-up
+with larger displacement and longer recovery. Facing can adjust during startup only: active swings
+are limited to a `15°–35°` cone, with `25°` the initial target. Players must align before the active
+hit frame instead of snapping around a target mid-swing.
+
+| Mechanic | Initial carried-forward target | Ticket / constraint |
+|---|---|---|
+| First light attack root displacement | `1.5–2.5 m` forward | `P2b-01c`; choose one provisional value after its startup/recovery timeline is authored. |
+| Light hit-stop | `0.04 s` (`0.03–0.05 s` range) | Freeze attacker and valid target on contact; one hit only in the first slice. |
+| Heavy/Smash hit-stop | `0.09 s` (`0.08–0.12 s` range) | A later Smash slice, not a reason to make the first light attack heavier. |
+| Input buffer | `0.15–0.25 s` before a transition/cancel gate | Queue Normal, Smash or Dodge once action states exist; execute at the earliest permitted frame. |
+| Dodge burst | `13.5 m/s` decaying across `0.38 s` | `P2b-01d`; starts i-frames immediately and has `0.25 s` active invulnerability. |
+| Recovery dodge cancel | End-recovery only, primarily after a Smash | `P2b-01d`; no cancel during an active hit and no chained dodge until separately authored. |
+
+Hit-stop is contact feedback, not a global slow-motion effect. It lengthens the effective attack
+duration by the pause for each valid hit, and should affect both attacker and target. Root
+displacement is similarly part of the attack transition, not ordinary locomotion; it lets swings
+close distance and must remain distinct from sprint velocity.
+
+Hit-drag is the companion effect: weapon/root motion briefly resists as it crosses a valid hurtbox.
+No numeric drag curve was supplied, so it remains a later refinement after the first hit-stop reads
+correctly; do not fake it by increasing global movement friction.
+
+When an attack-speed stat is eventually authored, its timing multiplier is:
+
+```
+real_attack_time = base_attack_time / ((200 + attack_speed) / 200)
+```
+
+Do not map the existing `Hero.SPD` field to `attack_speed` by implication. That needs its own
+combat/stat ruling; the formula is reference data, not permission to change hero stats.
+
+The current `4.0 m` SpringArm is inside the source's `3.2–4.5 m` range; its `0.5 m` shoulder offset
+and `0.25 m` sweep are likewise in range. Obstruction retracts the camera immediately. Camera
+position smoothing (`~0.08–0.12 s` return or an equivalent `12 s⁻¹` filter) is deliberately
+deferred: direct orbit is the required baseline, and smoothing only lands if a played build shows
+camera jitter rather than solving an unobserved problem.
+
+`P2b-01c` stays one light attack against one passive capsule. `P2b-01d` owns enemy attack, dodge,
+i-frames, recovery cancels and buffering; `P2b-01e` alone connects the arena to `Wave` and
+`CombatResult`. No slice adds combat state to an autoload or a second result contract.
+
+### Playtest questions after `P2b-01c`
+
+- Does release decelerate with weight without sliding or stopping unnaturally hard?
+- Can the player orbit the camera without fighting it to keep the target in view?
+- Does a side/backward directional attack follow intended character facing rather than camera yaw?
+- Does a hit feel dense through root displacement and hit-stop rather than pass through the dummy?
+- Does attack displacement naturally close distance without replacing normal movement?
+
+Startup duration, recovery duration, reach and the exact first root-displacement value remain
+unsettled: the supplied research gives ranges rather than a single light-attack timeline. Future
+tickets must author them as provisional values and test them together, not silently choose a value
+inside a helper.
 
 > ⚠️ **PROVISIONAL** — these values are the supplied *Vindictus* prototype targets, not a claim that
 > the first implementation already feels identical. · **Settled by:** playing movement, camera,
