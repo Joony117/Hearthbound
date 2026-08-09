@@ -680,68 +680,6 @@ arena. The supplied *Vindictus* direction rejected that slice's instant velocity
 cursor aim before the human play gate; `P2b-01b-2` corrects that prerequisite before any attack
 range or timing is authored around it.
 
-## P2b-01b-2 — Vindictus movement and camera baseline                         [WIP]
-
-### Objective
-
-The player accelerates into camera-relative movement, sprints, and orbits a captured-mouse
-third-person camera so the arena has the requested classic *Vindictus* control baseline before
-attack timing is authored around it.
-
-### Existing architecture
-
-- `P2b-01b` shipped a `CharacterBody3D` capsule, four physical WASD actions, a fixed camera and
-  absolute visible-cursor aim; `combat/arena/arena.gd` owns all scene-local movement.
-- The supplied mechanical analysis rejects instant velocity and absolute cursor aim for a
-  *Vindictus* target and gives initial jog, sprint, acceleration, deceleration, turn and camera
-  values. `SYSTEMS.md` § Action arena now records those values as provisional authored design.
-- `BalanceTable`/`balance.tres` own tunables (`ARCHITECTURE.md` rule 9). `SceneRouter` remains the
-  only scene changer, and `GameSession` may not hold arena state (rules 5–6).
-- `P2b-01c` still owns attack displacement, hit-stop and the enemy capsule. Building those on the
-  rejected movement model would make their range and timing immediately stale.
-
-### Acceptance criteria
-
-1. `arena_move_speed` is `5.8 m/s`; sprint is `8.0 m/s`; acceleration/deceleration are
-   `42.0`/`65.0 m/s²`; uncommitted turn speed is `1200°/s`; mouse sensitivity is
-   `0.003 rad/pixel`.
-2. `project.godot` adds one physical `Shift` action named `sprint`; no controller action lands.
-3. WASD remains normalized but becomes camera-relative. The capsule faces the requested movement
-   vector without forcing camera yaw, preserving camera-decoupled attack direction for `P2b-01c`.
-4. Horizontal velocity approaches jog/sprint speed at the authored acceleration and approaches
-   zero at the higher authored deceleration instead of stepping instantly.
-5. Entering the arena captures and hides the cursor. Raw mouse motion orbits a third-person
-   `SpringArm3D`; pitch is clamped to `35°` up/`65°` down, the boom is `4.0 m`, and the camera is
-   offset `0.5 m` over the right shoulder with a `0.25 m` collision sweep.
-6. `Esc` restores the visible cursor before requesting `SceneRouter.HUB`; the hint names WASD,
-   Shift sprint, mouse camera and Esc.
-7. Hub → arena → hub still leaves the complete `GameSession` profile unchanged. No attack,
-   expedition, turn, reward or save behavior changes.
-8. Focused GUT coverage drives the production movement and mouse-input paths and pins the authored
-   values, camera nodes and Shift binding. A rendered check pins capture on entry and release on exit;
-   headless Godot does not apply captured mouse mode.
-9. `tests/import_gate.ps1` exits 0 with zero errors/warnings and the full GUT suite is green.
-10. `project.godot` input and `.tscn` node seams cross runtime boundary 2, so a read-only verifier
-    pass is mandatory after implementation.
-
-### Files allowed to change
-
-- `docs/SYSTEMS.md` — replace the rejected movement/aim ruling with the supplied target.
-- `balance_table.gd` and `balance.tres` — authored arena movement/camera tunables only.
-- `project.godot` — physical Shift sprint action only.
-- `combat/arena/arena.gd` — acceleration, facing, camera-relative movement and captured mouse orbit.
-- `combat/arena/arena.tscn` — third-person camera rig and updated hint only.
-- `tests/unit/test_arena.gd` — focused movement, camera and input coverage.
-- `docs/TASKS.md` and `docs/TASKS-DONE.md` — ticket lifecycle and findings.
-
-### Non-goals
-
-- Attack, damage, hitboxes, root displacement, hit-stop or an enemy capsule (`P2b-01c`).
-- Dodge, invulnerability, recovery cancelling or input buffering (`P2b-01d`).
-- `Wave`, `CombatResult`, expedition integration, permadeath or rewards (`P2b-01e`).
-- Controller input (`P2b-02`), remapping UI, sprint stamina or combat-time cursor overlays.
-- Imported models, animation, camera lock-on, position smoothing, audio, particles or polish.
-
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -791,18 +729,22 @@ attack timing is authored around it.
 | P2-13 | **[BLOCKED]** Fodder training — an instructor hero trains F–C fodder; survivors of background "culling" expeditions gain XP and rank up naturally | **All four missing systems have now landed or are ruled**, so the block is down to one thing: the `game-designer` ruling on the five questions below. `P2-04a`/`P2-04g` gave heroes a real `level` and `xp`; `P2-06c` shipped `instructor_trait_pool` (reserved and empty as intended, and this ticket still inherits `Hero.taught_traits`, which `P2-06c` deliberately deferred — `SYSTEMS.md` § Traits §4 specifies it in full); `P2-21` made the Training Hall buildable so `training_hall_xp_bonus` reads against something; and `P2-22` ruled the turn concept, with `P2-23` shipping the counter. **Do not read that as "nearly unblocked."** The dependency list was never the hard part — question 1 below is a conflict with the sacrifice spine's published `~327`-pull arithmetic, and it is now *more* pressing rather than less, since every system it would compete with is live. Four missing systems in one ticket was the "add an inventory system" shape this file exists to prevent; five unruled design questions is the same shape wearing a different coat. |
 | P2-24 | The Reliquary is buildable, so its decay and damage bonuses can fire | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). **All five buildings are now buildable**, closing `P2-07a`'s three-buildings staging with no second design pass, exactly as it predicted. Director-written and director-implemented per rung 1; the mandatory `verifier` pass (boundary 2, scene seam) returned **pass-with-concerns** and its one substantive finding was in `docs/`, not the code — a two-sentence closeout in `SYSTEMS.md` where only the first sentence was struck, leaving the document refuting itself three lines apart. **No production logic changed:** `upgrade_building` and `_upgrade_building` were already index-generic and both consumers already read `building_levels[4]`, so this was the Label/Button/`[connection]` triple and nothing else. **Read its Findings before red-proofing a seam** — the first attempt replaced the `[connection]` line with junk, which made `hub.tscn` fail to parse, so all three tests failed on `Failed loading resource` rather than on the missing wire; break the seam, not the file. Also before writing another wiring test: `P2-21` proved the Training Hall's arithmetic with a direct `building_levels[2]` write, which stays green with the button absent. Original row, for reference — `P2-21`'s shape at index 4, and the last unbuildable building. `P2-04f` gave `reliquary_decay_turns_bonus` and `reliquary_damage_chance_reduction` real consumers, so index 4 being pinned at `0` is now the seventh "reads real, measures nothing" entry rather than a deferral. **No design pass** — `SYSTEMS.md` § Death and gear recovery's `RESOLVED by P2-04f` callout settled both `clampf` residues *specifically so this ticket would not need one*, and its closing "practical stake is zero today" paragraph is what this ticket invalidates. Crosses boundary 2 only (scene seam); no save key changes. |
 | P2b-01a | Enter and leave a capsule graybox arena | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Native primitives only, no combat or mutable arena state. The boundary-2 verifier first found the GUT check bypassed `_unhandled_input`; the fixed test drives the real handler and captures its typed `SceneRouter.HUB` request. A rendered integration harness then dispatched `ui_cancel` through Godot and completed hub → arena → hub with the full profile unchanged. |
-| P2b-01b | WASD movement + mouse aim | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). `6.0 m/s`, screen-aligned normalized WASD and visible-cursor ground-plane aim are ruled in `SYSTEMS.md` § Action arena. The boundary review caught a helper-only aim test; the final check sends `InputEventMouseMotion` through `_unhandled_input()` and then drives `_physics_process()`, so deleting either production seam fails it. Native perimeter collisions kept the capsule on the `24 × 18` floor in the rendered run, and the complete profile remained unchanged. The feel ruling stays **PROVISIONAL** until a human plays it; do not author `P2b-01c` attack range/timing around it before then. |
-| P2b-01c | One attack defeats one enemy capsule | Expand only after `P2b-01b` is played; no AI attack or dodge yet. |
+| P2b-01b | WASD movement + mouse aim | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Mechanically proved the first input slice; its fixed-camera instant-movement ruling was superseded by `P2b-01b-2` before attacks depended on it. |
+| P2b-01b-2 | Vindictus movement and camera baseline | **Landed `1785f05`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Captured third-person camera, camera-relative facing, `5.8` jog/`8.0` sprint and `42`/`65` acceleration/deceleration replace the rejected prototype controls. Rendered hub → arena → hub verification passed with the complete profile unchanged. Unblocks `P2b-01c`; tuning remains provisional until attack displacement and hit-stop can be felt with it. |
+| P2b-01c | One attack defeats one enemy capsule | Next ticket: forward displacement and hit-stop from the supplied *Vindictus* target; no AI attack or dodge yet. |
 | P2b-01d | One enemy attack and one dodge | Keeps damage avoidance separate from the first attack slice. |
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | Integration slice. `Expedition` remains the sole outcome/permadeath consumer. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
-<!-- Fresh-session handoff after P2b-01b: the next action is a human/game-designer play ruling on
- SYSTEMS.md § Action arena's PROVISIONAL 6.0 m/s, immediate start/stop and visible-cursor aim. Only
- after that ruling, expand P2b-01c into one full ticket for one attack defeating one enemy capsule.
- Read CLAUDE.md, AGENTS.md, ARCHITECTURE.md § The combat seam, GAME_SPEC.md § Combat model, and both
- P2b-01 bodies in TASKS-DONE.md. Do not add dodge, AI attacks, combat state to an autoload, or a
- second result contract. Keep Godot engine access serialized and reap every process. -->
+<!-- Fresh-session handoff after P2b-01b-2: expand P2b-01c into one full ticket for one attack
+ defeating one enemy capsule. SYSTEMS.md § Action arena fixes the control model: attacks follow
+ character facing, not camera forward. The supplied Vindictus analysis gives the slice's defining
+ targets: 1.5–2.5 m forward root displacement and contact hit-stop (0.04 s for a light strike;
+ its broader 0.08 s MVFI value is not a second attack). Author startup/recovery and reach as
+ PROVISIONAL because the source gives ranges, not one settled light-attack timeline. Read CLAUDE.md,
+ AGENTS.md, ARCHITECTURE.md § The combat seam, GAME_SPEC.md § Combat model, and all three P2b-01
+ bodies in TASKS-DONE.md. Do not add dodge, AI attacks, combo trees, combat state to an autoload,
+ or a second result contract. Keep Godot engine access serialized and reap every process. -->
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3.
@@ -885,6 +827,7 @@ needs to re-read.
 | `P2-24` | The Reliquary is buildable, so its decay and damage bonuses can fire | `77f8522` |
 | `P2b-01a` | Enter and leave a capsule graybox arena | `5e44a9e` |
 | `P2b-01b` | Move and aim the arena capsule | `f024026` |
+| `P2b-01b-2` | Vindictus movement and camera baseline | `1785f05` |
 
 ---
 

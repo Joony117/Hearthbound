@@ -4412,3 +4412,91 @@ profile before and after. `P2b-01e` still owns combat-seam integration.
 implemented and mechanically verified, but an automated harness cannot decide whether they feel
 good. The `SYSTEMS.md` ruling remains PROVISIONAL, and `P2b-01c` must not author attack range or
 timing around it until a human plays this slice.
+
+
+## P2b-01b-2 — Vindictus movement and camera baseline                         [DONE]
+
+### Objective
+
+The player accelerates into camera-relative movement, sprints, and orbits a captured-mouse
+third-person camera so the arena has the requested classic *Vindictus* control baseline before
+attack timing is authored around it.
+
+### Existing architecture
+
+- `P2b-01b` shipped a `CharacterBody3D` capsule, four physical WASD actions, a fixed camera and
+  absolute visible-cursor aim; `combat/arena/arena.gd` owns all scene-local movement.
+- The supplied mechanical analysis rejects instant velocity and absolute cursor aim for a
+  *Vindictus* target and gives initial jog, sprint, acceleration, deceleration, turn and camera
+  values. `SYSTEMS.md` § Action arena now records those values as provisional authored design.
+- `BalanceTable`/`balance.tres` own tunables (`ARCHITECTURE.md` rule 9). `SceneRouter` remains the
+  only scene changer, and `GameSession` may not hold arena state (rules 5–6).
+- `P2b-01c` still owns attack displacement, hit-stop and the enemy capsule. Building those on the
+  rejected movement model would make their range and timing immediately stale.
+
+### Acceptance criteria
+
+1. `arena_move_speed` is `5.8 m/s`; sprint is `8.0 m/s`; acceleration/deceleration are
+   `42.0`/`65.0 m/s²`; uncommitted turn speed is `1200°/s`; mouse sensitivity is
+   `0.003 rad/pixel`.
+2. `project.godot` adds one physical `Shift` action named `sprint`; no controller action lands.
+3. WASD remains normalized but becomes camera-relative. The capsule faces the requested movement
+   vector without forcing camera yaw, preserving camera-decoupled attack direction for `P2b-01c`.
+4. Horizontal velocity approaches jog/sprint speed at the authored acceleration and approaches
+   zero at the higher authored deceleration instead of stepping instantly.
+5. Entering the arena captures and hides the cursor. Raw mouse motion orbits a third-person
+   `SpringArm3D`; pitch is clamped to `35°` up/`65°` down, the boom is `4.0 m`, and the camera is
+   offset `0.5 m` over the right shoulder with a `0.25 m` collision sweep.
+6. `Esc` restores the visible cursor before requesting `SceneRouter.HUB`; the hint names WASD,
+   Shift sprint, mouse camera and Esc.
+7. Hub → arena → hub still leaves the complete `GameSession` profile unchanged. No attack,
+   expedition, turn, reward or save behavior changes.
+8. Focused GUT coverage drives the production movement and mouse-input paths and pins the authored
+   values, camera nodes and Shift binding. A rendered check pins capture on entry and release on exit;
+   headless Godot does not apply captured mouse mode.
+9. `tests/import_gate.ps1` exits 0 with zero errors/warnings and the full GUT suite is green.
+10. `project.godot` input and `.tscn` node seams cross runtime boundary 2, so a read-only verifier
+    pass is mandatory after implementation.
+
+### Files allowed to change
+
+- `docs/SYSTEMS.md` — replace the rejected movement/aim ruling with the supplied target.
+- `balance_table.gd` and `balance.tres` — authored arena movement/camera tunables only.
+- `project.godot` — physical Shift sprint action only.
+- `combat/arena/arena.gd` — acceleration, facing, camera-relative movement and captured mouse orbit.
+- `combat/arena/arena.tscn` — third-person camera rig and updated hint only.
+- `tests/unit/test_arena.gd` — focused movement, camera and input coverage.
+- `docs/TASKS.md` and `docs/TASKS-DONE.md` — ticket lifecycle and findings.
+
+### Non-goals
+
+- Attack, damage, hitboxes, root displacement, hit-stop or an enemy capsule (`P2b-01c`).
+- Dodge, invulnerability, recovery cancelling or input buffering (`P2b-01d`).
+- `Wave`, `CombatResult`, expedition integration, permadeath or rewards (`P2b-01e`).
+- Controller input (`P2b-02`), remapping UI, sprint stamina or combat-time cursor overlays.
+- Imported models, animation, camera lock-on, position smoothing, audio, particles or polish.
+
+### Findings
+
+**The requested target invalidated the previous gate instead of tuning it.** The supplied analysis
+does not ask whether `P2b-01b`'s fixed camera and absolute cursor need a smaller adjustment; it names
+captured camera orbit, acceleration/deceleration and movement-facing as foundational. Correcting
+that baseline before `P2b-01c` is smaller than retuning every attack range and displacement later.
+
+**Headless Godot does not apply captured mouse mode.** Both first-pass assertions read
+`MOUSE_MODE_VISIBLE` after production requested `MOUSE_MODE_CAPTURED`. The test suite therefore pins
+the handler and camera behavior, while the rendered hub → arena → hub flow proves capture on entry
+and visible restoration on exit. No test-only cursor state or mock signal was added.
+
+**A rendered scene transition has three states.** The integration harness first treated any
+non-null `current_scene` as the returned hub, but the outgoing arena remains current for a frame,
+then becomes null while the hub loads. Waiting for a non-null scene that is not the arena fixed the
+harness; production `SceneRouter` behavior was already correct.
+
+**The camera stays independent without a second player controller.** `CameraPivot` is a sibling of
+the capsule and follows only its position. Parenting it under the turning capsule would have made
+movement-facing rotate the camera and silently defeated the requested decoupling.
+
+**No combat or profile boundary moved.** `GameSession`, `Expedition`, `Wave`, `CombatResult`,
+permadeath and every save key are unchanged. Attack/root displacement/hit-stop remain `P2b-01c`;
+dodge and recovery cancelling remain `P2b-01d`.
