@@ -949,6 +949,29 @@ hit frame instead of snapping around a target mid-swing.
 | Dodge burst | `13.5 m/s` decaying across `0.38 s` | `P2b-01d`; starts i-frames immediately and has `0.25 s` active invulnerability. |
 | Recovery dodge cancel | End-recovery only, primarily after a Smash | `P2b-01d`; no cancel during an active hit and no chained dodge until separately authored. |
 
+#### First light attack timeline (`P2b-01c`)
+
+The first graybox light attack uses one short commitment and defeats its one passive target on
+contact; it does not introduce HP or a general damage model.
+
+| Tunable | Value |
+|---|---:|
+| Startup | `0.12 s` |
+| Active window | `0.10 s` |
+| Recovery | `0.22 s` |
+| Root displacement | `2.0 m` forward |
+| Hitbox reach | `1.5 m` from the capsule's front |
+| Contact hit-stop | `0.04 s` |
+
+Facing may follow movement input during startup, then commits for the active window and recovery.
+The root displacement is delivered uniformly across the active window and pauses during hit-stop;
+ordinary locomotion and sprint velocity do not run during the attack. Hit-stop freezes only the
+attacker and passive target, never the scene tree.
+
+> ⚠️ **PROVISIONAL** — startup, active time, recovery, reach and the exact `2.0 m` displacement are
+> first-playable values inside the supplied ranges, not settled feel. · **Settled by:** playing the
+> `P2b-01c` graybox and tuning these five provisional fields together.
+
 Hit-stop is contact feedback, not a global slow-motion effect. It lengthens the effective attack
 duration by the pause for each valid hit, and should affect both attacker and target. Root
 displacement is similarly part of the attack transition, not ordinary locomotion; it lets swings

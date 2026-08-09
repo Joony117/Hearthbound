@@ -11,7 +11,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back", &"sprint"]:
+	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back", &"sprint", &"attack"]:
 		Input.action_release(action)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -31,6 +31,8 @@ func test_arena_loads_native_graybox_without_mutating_profile() -> void:
 	assert_not_null(hero_capsule)
 	assert_not_null(arena.get_node_or_null("HeroCapsule/CollisionShape3D"))
 	assert_not_null(arena.get_node_or_null("HeroCapsule/FacingMarker"))
+	assert_not_null(arena.get_node_or_null("HeroCapsule/AttackHitbox"))
+	assert_not_null(arena.get_node_or_null("EnemyCapsule"))
 	assert_not_null(arena.get_node_or_null("ArenaBounds/LeftWall"))
 	var spring_arm := arena.get_node_or_null("CameraPivot/SpringArm3D") as SpringArm3D
 	assert_not_null(spring_arm)
@@ -58,6 +60,78 @@ func test_arena_movement_actions_use_physical_wasd_keys() -> void:
 		var key_event := events[0] as InputEventKey
 		assert_not_null(key_event)
 		assert_eq(key_event.physical_keycode, expected_keys[action])
+
+
+func test_arena_attack_uses_left_mouse_and_authored_timeline() -> void:
+	assert_true(InputMap.has_action(&"attack"))
+	var events: Array[InputEvent] = InputMap.action_get_events(&"attack")
+	assert_eq(events.size(), 1)
+	var mouse_event := events[0] as InputEventMouseButton
+	assert_not_null(mouse_event)
+	assert_eq(mouse_event.button_index, MOUSE_BUTTON_LEFT)
+	assert_eq(BALANCE.arena_light_attack_startup, 0.12)
+	assert_eq(BALANCE.arena_light_attack_active, 0.10)
+	assert_eq(BALANCE.arena_light_attack_recovery, 0.22)
+	assert_eq(BALANCE.arena_light_attack_displacement, 2.0)
+	assert_eq(BALANCE.arena_light_attack_reach, 1.5)
+	assert_eq(BALANCE.arena_light_attack_hit_stop, 0.04)
+
+
+func test_arena_attack_uses_character_facing_and_ignores_reentry_during_recovery() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	var camera_pivot := arena.get_node("CameraPivot") as Node3D
+	hero_capsule.rotation.y = PI * 0.5
+	enemy_capsule.position = Vector3(8.0, 1.25, 0.0)
+	var attack_direction: Vector3 = -hero_capsule.global_basis.z.normalized()
+	var camera_forward: Vector3 = -camera_pivot.global_basis.z.normalized()
+	var start_position: Vector3 = hero_capsule.global_position
+	assert_lt(absf(attack_direction.dot(camera_forward)), 0.01)
+
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	arena._unhandled_input(attack_event)
+	await wait_physics_frames(15)
+	arena._unhandled_input(attack_event)
+	await wait_physics_frames(20)
+
+	var displacement: Vector3 = hero_capsule.global_position - start_position
+	assert_almost_eq(displacement.dot(attack_direction), BALANCE.arena_light_attack_displacement, 0.05)
+	assert_almost_eq(displacement.dot(camera_forward), 0.0, 0.05)
+
+
+func test_arena_attack_hitbox_defeats_target_once_after_hit_stop() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	var attack_hitbox := arena.get_node("HeroCapsule/AttackHitbox") as Area3D
+	assert_true(attack_hitbox.body_entered.is_connected(Callable(arena, "_on_attack_hitbox_body_entered")))
+	watch_signals(arena)
+
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	arena._unhandled_input(attack_event)
+	var saw_active: bool = false
+	var saw_contact: bool = false
+	for _frame: int in range(20):
+		await wait_physics_frames(1)
+		if attack_hitbox.monitoring:
+			saw_active = true
+		elif saw_active:
+			saw_contact = true
+			assert_true(is_instance_valid(enemy_capsule))
+			break
+	assert_true(saw_contact)
+	await wait_physics_frames(35)
+
+	assert_signal_emit_count(arena, "enemy_defeated", 1)
+	assert_false(is_instance_valid(enemy_capsule))
 
 
 func test_arena_movement_uses_authored_kinematics_and_normalizes_diagonal() -> void:
