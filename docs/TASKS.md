@@ -674,10 +674,10 @@ real. Recorded here so a cold session inherits the reasoning instead of rediscov
 an enemy, and the asynchronous half of the combat seam. That is the arena subsystem, not one
 observable behavior. It also asks an implementer to invent movement speed, mouse sensitivity,
 attack/dodge timing, damage, and enemy behavior: none exists in the authoritative docs. Split it
-into a numbered sequence. Start with `P2b-01a`, which proves the arena scene lifecycle without
-inventing feel numbers or touching combat state. `P2b-01b` needs a `game-designer` ruling before it
-can be expanded; the later combat slices stay one-line placeholders until that first played input
-slice teaches us enough to specify them honestly.
+into a numbered sequence. `P2b-01a` proved the arena scene lifecycle without combat state;
+`P2b-01b` then shipped the first played-input slice against a ruling in `SYSTEMS.md` § Action
+arena. The later combat slices stay one-line placeholders until a human play pass settles that
+ruling's provisional speed and aim feel.
 
 | # | Objective | Notes |
 |---|---|---|
@@ -728,17 +728,18 @@ slice teaches us enough to specify them honestly.
 | P2-13 | **[BLOCKED]** Fodder training — an instructor hero trains F–C fodder; survivors of background "culling" expeditions gain XP and rank up naturally | **All four missing systems have now landed or are ruled**, so the block is down to one thing: the `game-designer` ruling on the five questions below. `P2-04a`/`P2-04g` gave heroes a real `level` and `xp`; `P2-06c` shipped `instructor_trait_pool` (reserved and empty as intended, and this ticket still inherits `Hero.taught_traits`, which `P2-06c` deliberately deferred — `SYSTEMS.md` § Traits §4 specifies it in full); `P2-21` made the Training Hall buildable so `training_hall_xp_bonus` reads against something; and `P2-22` ruled the turn concept, with `P2-23` shipping the counter. **Do not read that as "nearly unblocked."** The dependency list was never the hard part — question 1 below is a conflict with the sacrifice spine's published `~327`-pull arithmetic, and it is now *more* pressing rather than less, since every system it would compete with is live. Four missing systems in one ticket was the "add an inventory system" shape this file exists to prevent; five unruled design questions is the same shape wearing a different coat. |
 | P2-24 | The Reliquary is buildable, so its decay and damage bonuses can fire | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). **All five buildings are now buildable**, closing `P2-07a`'s three-buildings staging with no second design pass, exactly as it predicted. Director-written and director-implemented per rung 1; the mandatory `verifier` pass (boundary 2, scene seam) returned **pass-with-concerns** and its one substantive finding was in `docs/`, not the code — a two-sentence closeout in `SYSTEMS.md` where only the first sentence was struck, leaving the document refuting itself three lines apart. **No production logic changed:** `upgrade_building` and `_upgrade_building` were already index-generic and both consumers already read `building_levels[4]`, so this was the Label/Button/`[connection]` triple and nothing else. **Read its Findings before red-proofing a seam** — the first attempt replaced the `[connection]` line with junk, which made `hub.tscn` fail to parse, so all three tests failed on `Failed loading resource` rather than on the missing wire; break the seam, not the file. Also before writing another wiring test: `P2-21` proved the Training Hall's arithmetic with a direct `building_levels[2]` write, which stays green with the button absent. Original row, for reference — `P2-21`'s shape at index 4, and the last unbuildable building. `P2-04f` gave `reliquary_decay_turns_bonus` and `reliquary_damage_chance_reduction` real consumers, so index 4 being pinned at `0` is now the seventh "reads real, measures nothing" entry rather than a deferral. **No design pass** — `SYSTEMS.md` § Death and gear recovery's `RESOLVED by P2-04f` callout settled both `clampf` residues *specifically so this ticket would not need one*, and its closing "practical stake is zero today" paragraph is what this ticket invalidates. Crosses boundary 2 only (scene seam); no save key changes. |
 | P2b-01a | Enter and leave a capsule graybox arena | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Native primitives only, no combat or mutable arena state. The boundary-2 verifier first found the GUT check bypassed `_unhandled_input`; the fixed test drives the real handler and captures its typed `SceneRouter.HUB` request. A rendered integration harness then dispatched `ui_cancel` through Godot and completed hub → arena → hub with the full profile unchanged. |
-| P2b-01b | WASD movement + mouse aim | `game-designer` first: movement speed and mouse-aim behavior are unauthored. |
+| P2b-01b | WASD movement + mouse aim | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). `6.0 m/s`, screen-aligned normalized WASD and visible-cursor ground-plane aim are ruled in `SYSTEMS.md` § Action arena. The boundary review caught a helper-only aim test; the final check sends `InputEventMouseMotion` through `_unhandled_input()` and then drives `_physics_process()`, so deleting either production seam fails it. Native perimeter collisions kept the capsule on the `24 × 18` floor in the rendered run, and the complete profile remained unchanged. The feel ruling stays **PROVISIONAL** until a human plays it; do not author `P2b-01c` attack range/timing around it before then. |
 | P2b-01c | One attack defeats one enemy capsule | Expand only after `P2b-01b` is played; no AI attack or dodge yet. |
 | P2b-01d | One enemy attack and one dodge | Keeps damage avoidance separate from the first attack slice. |
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | Integration slice. `Expedition` remains the sole outcome/permadeath consumer. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
-<!-- Fresh-session handoff after P2b-01a: start with a game-designer ruling for P2b-01b's
-movement speed and mouse-aim behavior, then expand P2b-01b into one full ticket. Read CLAUDE.md,
-AGENTS.md, ARCHITECTURE.md § The combat seam, GAME_SPEC.md § Combat model, and P2b-01a's body in
-TASKS-DONE.md. Do not add attack, dodge, enemies, combat state to an autoload, or a second result
-contract. Keep Godot engine access serialized and reap every process. -->
+<!-- Fresh-session handoff after P2b-01b: the next action is a human/game-designer play ruling on
+ SYSTEMS.md § Action arena's PROVISIONAL 6.0 m/s, immediate start/stop and visible-cursor aim. Only
+ after that ruling, expand P2b-01c into one full ticket for one attack defeating one enemy capsule.
+ Read CLAUDE.md, AGENTS.md, ARCHITECTURE.md § The combat seam, GAME_SPEC.md § Combat model, and both
+ P2b-01 bodies in TASKS-DONE.md. Do not add dodge, AI attacks, combat state to an autoload, or a
+ second result contract. Keep Godot engine access serialized and reap every process. -->
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3.
@@ -820,6 +821,7 @@ needs to re-read.
 | `P2-04f` | Recover a dead hero's gear, or lose it to the clock | `845c6c4` |
 | `P2-24` | The Reliquary is buildable, so its decay and damage bonuses can fire | `77f8522` |
 | `P2b-01a` | Enter and leave a capsule graybox arena | `5e44a9e` |
+| `P2b-01b` | Move and aim the arena capsule | `PENDING` |
 
 ---
 

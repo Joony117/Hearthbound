@@ -897,6 +897,35 @@ That is the whole system. No per-tier currencies, no conversion matrix, no recip
 
 ---
 
+## Action arena — *Phase 2b*
+
+### Player movement and mouse aim (`P2b-01b`)
+
+The arena uses a fixed camera. Movement is screen-aligned on the ground plane: `W` moves toward
+the top of the screen (`-Z`), `S` toward the bottom (`+Z`), and `A`/`D` left/right (`-X`/`+X`).
+Diagonal input is normalized to the same speed as cardinal input.
+
+`arena_move_speed = 6.0` metres per second. On the `24 × 18` greybox floor that is `4` seconds
+across its width and `3` across its depth: quick enough to test positioning without making the
+first arena too small to read. Movement starts and stops immediately. Acceleration, sprinting and
+movement-speed stats do not exist yet.
+
+Movement and facing are independent. Every physics tick, the camera projects the visible mouse
+cursor onto the arena's horizontal ground plane; the controlled capsule turns around `Y` to face
+that point, including while idle. If the projection has no intersection or lands exactly on the
+capsule, the previous facing is retained. This is absolute cursor aim, so there is no mouse
+sensitivity value to author and the cursor remains visible and unconfined.
+
+The greybox floor has a collidable perimeter, and the capsule has a visible forward marker so both
+movement bounds and aim can be judged before attack exists. `P2b-01b` adds no attack, dodge,
+enemy, hero-stat scaling or combat result state.
+
+> ⚠️ **PROVISIONAL** — `6.0 m/s`, immediate start/stop and visible-cursor aim are coherent against
+> the greybox dimensions but have not been felt in a played combat build. · **Settled by:** playing
+> `P2b-01b` with mouse and keyboard before `P2b-01c` authors attack range or timing around them.
+
+---
+
 ## Expeditions — *Phase 2*
 
 `ZoneDefinition`: name, recommended power, wave list, loot table, unlock condition.

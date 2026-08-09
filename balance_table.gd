@@ -12,6 +12,7 @@ extends Resource
 @export var summon_pull_cost: int = 100
 @export var xp_coefficient: int = 10
 @export var xp_per_wave: int = 4
+@export var arena_move_speed: float = 6.0
 @export var rank_names: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
 @export var equip_pct_per_rank: Array[float] = [0.04, 0.054, 0.0728, 0.0984, 0.1328, 0.1792, 0.242, 0.3268]
 @export var equip_crit_pct_per_rank: Array[float] = [0.015, 0.02025, 0.0273, 0.0369, 0.0498, 0.0672, 0.09075, 0.12255]

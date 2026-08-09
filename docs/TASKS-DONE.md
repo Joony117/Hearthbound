@@ -4324,3 +4324,91 @@ and after. No save key changed, so a disk round-trip was deliberately not added.
 **No combat boundary moved.** `Expedition`, `QuickResolve`, `CombatResult`, `GameSession`, and the
 autoload list are unchanged. The new scene holds no combat state and returns no alternate result;
 later `P2b-01e` still owns `Wave`/`CombatResult` integration and leaves permadeath in `Expedition`.
+
+
+## P2b-01b — Move and aim the arena capsule                         [DONE]
+
+### Objective
+
+The player can move the arena capsule with WASD and independently face the visible mouse cursor.
+
+### Existing architecture
+
+- `combat/arena/arena.tscn` already owns a fixed camera, a `24 × 18` native-primitive floor and one
+  capsule placeholder; `arena.gd` owned only its exit input before this ticket.
+- `SYSTEMS.md` § Action arena rules `6.0 m/s`, screen-aligned normalized movement, immediate
+  start/stop and absolute visible-cursor aim on the horizontal ground plane.
+- Tunables live in `balance.tres` (`ARCHITECTURE.md` rule 9); arena state remains scene-local
+  (`ARCHITECTURE.md` rule 6).
+- `SceneRouter` remains the only scene changer, and the arena still has no `Wave` input or
+  `CombatResult` output; those are `P2b-01e`.
+
+### Acceptance criteria
+
+1. `project.godot` defines `move_left`, `move_right`, `move_forward` and `move_back` for physical
+   A/D/W/S keys. No controller bindings are added; `P2b-02` owns them.
+2. `BalanceTable` and `balance.tres` author `arena_move_speed = 6.0`.
+3. Holding a movement action drives the capsule through the production physics path at
+   `arena_move_speed`; diagonal input is normalized and cannot move faster.
+4. Movement is screen-aligned on the fixed camera (`W/S = -Z/+Z`, `A/D = -X/+X`), starts and stops
+   immediately, and does not turn the capsule toward its travel direction.
+5. The visible cursor projects through `Camera3D` to the `Y = 0` ground plane every physics tick.
+   The capsule rotates around `Y` to face it while moving or idle and keeps its previous facing for
+   an invalid or zero-length aim.
+6. The placeholder is a `CharacterBody3D` with a capsule collision shape and visible native-
+   primitive facing marker. Native collision keeps it inside the visible greybox floor.
+7. The on-screen hint names WASD, mouse aim and Esc. Esc still returns through `SceneRouter`, and
+   hub → arena → hub still leaves the complete `GameSession` profile unchanged.
+8. Focused GUT coverage exercises the real movement/aim handler, input actions and scene nodes;
+   `tests/import_gate.ps1` and the full GUT suite are green with zero errors and warnings.
+9. A rendered run confirms movement, facing, bounds and return-to-hub behavior, then
+   `Get-Process Godot*` returns empty.
+10. This changes `project.godot` input actions and `.tscn` node/script seams, so `CLAUDE.md`
+    runtime boundary 2 requires a read-only verifier pass after implementation.
+
+### Files allowed to change
+
+- `docs/SYSTEMS.md` — movement and aim ruling.
+- `balance_table.gd` — arena movement-speed field only.
+- `balance.tres` — authored movement speed only.
+- `project.godot` — four keyboard movement actions only.
+- `combat/arena/arena.gd` — scene-local movement and mouse aim.
+- `combat/arena/arena.tscn` — physics capsule, facing marker and perimeter collisions.
+- `tests/unit/test_arena.gd` — focused input, movement and aim checks.
+- `docs/TASKS.md` and `docs/TASKS-DONE.md` — ticket lifecycle and findings.
+
+### Non-goals
+
+- Attack, damage, dodge, invulnerability, enemies, health UI or AI teammates (`P2b-01c`/`d`).
+- `Wave`, `CombatResult`, expedition integration, permadeath or arena outcome state (`P2b-01e`).
+- Controller input (`P2b-02`), remapping UI, mouse sensitivity, cursor capture or camera controls.
+- Hero/archetype/stat-driven movement, acceleration, sprint, animation, imported assets or polish.
+
+### Findings
+
+**Absolute cursor aim has no sensitivity number.** The mouse selects a point on the ground plane;
+it does not rotate a camera by a relative delta. Authoring a sensitivity value would create a
+setting with no consumer, so the ruling explicitly leaves the cursor visible and unconfined.
+
+**A symmetric capsule cannot show aim.** The smallest readable graybox change was one gold
+`BoxMesh` child on the capsule's `-Z` face. No animation, reticle or imported asset was needed.
+
+**Headless Godot does not move the viewport cursor for a warp or parsed mouse motion.** Two test
+attempts proved that `get_viewport().get_mouse_position()` remained unchanged. The production
+arena now remembers the real `InputEventMouseMotion.position` it receives and projects that stored
+position during `_physics_process()`. The final test drives both production seams; a helper-only
+test was rejected because deleting the physics call would have left it green.
+
+**Synthetic physical-key holds were flaky only in the rendered harness.** The committed GUT check
+pins the four `InputMap` actions to physical A/D/W/S, while the rendered flow presses the named
+`move_right` action through the real physics loop. It reaches the right perimeter at `x ≈ 11.25`,
+proving both movement and native collision without relying on window focus.
+
+**No combat or profile boundary moved.** `GameSession`, `Expedition`, `Wave`, `CombatResult`,
+permadeath and all save keys are unchanged. The rendered hub → arena → hub flow compared the full
+profile before and after. `P2b-01e` still owns combat-seam integration.
+
+**Feel remains a human gate.** The `6.0 m/s` speed, immediate start/stop and visible-cursor aim are
+implemented and mechanically verified, but an automated harness cannot decide whether they feel
+good. The `SYSTEMS.md` ruling remains PROVISIONAL, and `P2b-01c` must not author attack range or
+timing around it until a human plays this slice.

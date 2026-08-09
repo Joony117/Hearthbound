@@ -1,11 +1,18 @@
 extends GutTest
 
+const BALANCE: BalanceTable = preload("res://balance.tres")
+
 var _requested_scene: String = ""
 
 
 func before_each() -> void:
 	GameSession.from_dict({"roster": []})
 	_requested_scene = ""
+
+
+func after_each() -> void:
+	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back"]:
+		Input.action_release(action)
 
 
 func test_arena_loads_native_graybox_without_mutating_profile() -> void:
@@ -19,10 +26,70 @@ func test_arena_loads_native_graybox_without_mutating_profile() -> void:
 	add_child_autofree(arena)
 
 	assert_not_null(arena.get_node_or_null("Floor"))
-	assert_not_null(arena.get_node_or_null("HeroCapsule"))
+	var hero_capsule := arena.get_node_or_null("HeroCapsule") as CharacterBody3D
+	assert_not_null(hero_capsule)
+	assert_not_null(arena.get_node_or_null("HeroCapsule/CollisionShape3D"))
+	assert_not_null(arena.get_node_or_null("HeroCapsule/FacingMarker"))
+	assert_not_null(arena.get_node_or_null("ArenaBounds/LeftWall"))
 	assert_not_null(arena.get_node_or_null("Camera3D"))
 	assert_not_null(arena.get_node_or_null("Sun"))
 	assert_eq(GameSession.to_dict(), profile_before)
+
+
+func test_arena_movement_actions_use_physical_wasd_keys() -> void:
+	var expected_keys: Dictionary[StringName, Key] = {
+		&"move_left": KEY_A,
+		&"move_right": KEY_D,
+		&"move_forward": KEY_W,
+		&"move_back": KEY_S,
+	}
+
+	for action: StringName in expected_keys:
+		assert_true(InputMap.has_action(action))
+		var events: Array[InputEvent] = InputMap.action_get_events(action)
+		assert_eq(events.size(), 1)
+		var key_event := events[0] as InputEventKey
+		assert_not_null(key_event)
+		assert_eq(key_event.physical_keycode, expected_keys[action])
+
+
+func test_arena_movement_uses_authored_speed_and_normalizes_diagonal() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	assert_eq(BALANCE.arena_move_speed, 6.0)
+
+	Input.action_press(&"move_right")
+	arena._physics_process(0.0)
+	assert_almost_eq(hero_capsule.velocity.x, BALANCE.arena_move_speed, 0.001)
+	assert_almost_eq(hero_capsule.velocity.z, 0.0, 0.001)
+
+	Input.action_press(&"move_forward")
+	arena._physics_process(0.0)
+	assert_almost_eq(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), BALANCE.arena_move_speed, 0.001)
+	assert_lt(hero_capsule.velocity.z, 0.0)
+
+	Input.action_release(&"move_right")
+	Input.action_release(&"move_forward")
+	arena._physics_process(0.0)
+	assert_eq(hero_capsule.velocity, Vector3.ZERO)
+
+
+func test_arena_mouse_aim_turns_capsule_without_pitching() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+
+	var mouse_event := InputEventMouseMotion.new()
+	mouse_event.position = Vector2(1000.0, 360.0)
+	arena._unhandled_input(mouse_event)
+	arena._physics_process(0.0)
+	var facing_direction := -hero_capsule.global_basis.z.normalized()
+
+	assert_gt(facing_direction.x, 0.0)
+	assert_almost_eq(facing_direction.y, 0.0, 0.001)
 
 
 func test_hub_enter_arena_button_connection_targets_handler() -> void:
