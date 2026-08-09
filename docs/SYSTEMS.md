@@ -899,30 +899,43 @@ That is the whole system. No per-tier currencies, no conversion matrix, no recip
 
 ## Action arena — *Phase 2b*
 
-### Player movement and mouse aim (`P2b-01b`)
+### Vindictus movement and camera baseline (`P2b-01b-2`)
 
-The arena uses a fixed camera. Movement is screen-aligned on the ground plane: `W` moves toward
-the top of the screen (`-Z`), `S` toward the bottom (`+Z`), and `A`/`D` left/right (`-X`/`+X`).
-Diagonal input is normalized to the same speed as cardinal input.
+The target is classic *Vindictus*' grounded, camera-decoupled combat rather than the fixed-camera
+absolute-cursor prototype from `P2b-01b`. The earlier `6.0 m/s` instant start/stop and visible-
+cursor aim are rejected before attack range or timing is authored around them.
 
-`arena_move_speed = 6.0` metres per second. On the `24 × 18` greybox floor that is `4` seconds
-across its width and `3` across its depth: quick enough to test positioning without making the
-first arena too small to read. Movement starts and stops immediately. Acceleration, sprinting and
-movement-speed stats do not exist yet.
+The arena uses camera-relative ground movement. `W` runs along the camera's horizontal forward
+vector and `A`/`D` strafe relative to it; diagonal input remains normalized. The capsule turns
+toward the movement vector at `arena_turn_speed = 1200°/s`, so an uncommitted character runs in
+the requested direction instead of backpedalling. Movement does not force the camera to turn.
 
-Movement and facing are independent. Every physics tick, the camera projects the visible mouse
-cursor onto the arena's horizontal ground plane; the controlled capsule turns around `Y` to face
-that point, including while idle. If the projection has no intersection or lands exactly on the
-capsule, the previous facing is retained. This is absolute cursor aim, so there is no mouse
-sensitivity value to author and the cursor remains visible and unconfined.
+| Tunable | Value |
+|---|---:|
+| `arena_move_speed` | `5.8 m/s` |
+| `arena_sprint_speed` | `8.0 m/s` |
+| `arena_acceleration` | `42.0 m/s²` |
+| `arena_deceleration` | `65.0 m/s²` |
+| `arena_turn_speed_degrees` | `1200°/s` |
+| `arena_mouse_sensitivity` | `0.003 rad/pixel` |
 
-The greybox floor has a collidable perimeter, and the capsule has a visible forward marker so both
-movement bounds and aim can be judged before attack exists. `P2b-01b` adds no attack, dodge,
-enemy, hero-stat scaling or combat result state.
+`Shift` selects sprint speed. Acceleration reaches the jog cap in about `0.14 s`; the higher
+deceleration stops it in about `0.09 s`. Sprint stamina does not exist yet, so sprint is an input
+state rather than a resource cost.
 
-> ⚠️ **PROVISIONAL** — `6.0 m/s`, immediate start/stop and visible-cursor aim are coherent against
-> the greybox dimensions but have not been felt in a played combat build. · **Settled by:** playing
-> `P2b-01b` with mouse and keyboard before `P2b-01c` authors attack range or timing around them.
+Combat captures and hides the cursor. Raw mouse motion orbits a third-person `SpringArm3D` camera
+directly: a `4.0 m` boom, `0.5 m` right shoulder offset and `0.25 m` collision sweep. Pitch is
+clamped to `35°` upward and `65°` downward. `Esc` releases the cursor and returns through
+`SceneRouter`; a combat-time cursor/UI toggle waits for an overlay that can consume it.
+
+Attacks follow the character's current facing, not camera forward. `P2b-01c` owns the first attack,
+its forward displacement and hit-stop; dodge, recovery cancelling and input buffering remain later
+slices.
+
+> ⚠️ **PROVISIONAL** — these values are the supplied *Vindictus* prototype targets, not a claim that
+> the first implementation already feels identical. · **Settled by:** playing movement, camera,
+> root displacement and hit-stop together after `P2b-01c`; tune the authored values, not the control
+> model, unless that play pass shows the model itself is wrong.
 
 ---
 

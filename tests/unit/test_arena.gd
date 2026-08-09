@@ -11,8 +11,9 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back"]:
+	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back", &"sprint"]:
 		Input.action_release(action)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func test_arena_loads_native_graybox_without_mutating_profile() -> void:
@@ -31,7 +32,12 @@ func test_arena_loads_native_graybox_without_mutating_profile() -> void:
 	assert_not_null(arena.get_node_or_null("HeroCapsule/CollisionShape3D"))
 	assert_not_null(arena.get_node_or_null("HeroCapsule/FacingMarker"))
 	assert_not_null(arena.get_node_or_null("ArenaBounds/LeftWall"))
-	assert_not_null(arena.get_node_or_null("Camera3D"))
+	var spring_arm := arena.get_node_or_null("CameraPivot/SpringArm3D") as SpringArm3D
+	assert_not_null(spring_arm)
+	assert_almost_eq(spring_arm.spring_length, BALANCE.arena_camera_spring_length, 0.001)
+	var camera := arena.get_node_or_null("CameraPivot/SpringArm3D/Camera3D") as Camera3D
+	assert_not_null(camera)
+	assert_almost_eq(camera.position.x, 0.5, 0.001)
 	assert_not_null(arena.get_node_or_null("Sun"))
 	assert_eq(GameSession.to_dict(), profile_before)
 
@@ -42,6 +48,7 @@ func test_arena_movement_actions_use_physical_wasd_keys() -> void:
 		&"move_right": KEY_D,
 		&"move_forward": KEY_W,
 		&"move_back": KEY_S,
+		&"sprint": KEY_SHIFT,
 	}
 
 	for action: StringName in expected_keys:
@@ -53,43 +60,78 @@ func test_arena_movement_actions_use_physical_wasd_keys() -> void:
 		assert_eq(key_event.physical_keycode, expected_keys[action])
 
 
-func test_arena_movement_uses_authored_speed_and_normalizes_diagonal() -> void:
+func test_arena_movement_uses_authored_kinematics_and_normalizes_diagonal() -> void:
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena
 	add_child_autofree(arena)
 	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
-	assert_eq(BALANCE.arena_move_speed, 6.0)
+	assert_eq(BALANCE.arena_move_speed, 5.8)
+	assert_eq(BALANCE.arena_sprint_speed, 8.0)
+	assert_eq(BALANCE.arena_acceleration, 42.0)
+	assert_eq(BALANCE.arena_deceleration, 65.0)
+	assert_eq(BALANCE.arena_turn_speed_degrees, 1200.0)
 
 	Input.action_press(&"move_right")
-	arena._physics_process(0.0)
+	arena._physics_process(0.1)
+	assert_almost_eq(hero_capsule.velocity.x, 4.2, 0.001)
+	arena._physics_process(0.1)
 	assert_almost_eq(hero_capsule.velocity.x, BALANCE.arena_move_speed, 0.001)
 	assert_almost_eq(hero_capsule.velocity.z, 0.0, 0.001)
 
 	Input.action_press(&"move_forward")
-	arena._physics_process(0.0)
+	arena._physics_process(0.2)
 	assert_almost_eq(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), BALANCE.arena_move_speed, 0.001)
 	assert_lt(hero_capsule.velocity.z, 0.0)
 
+	Input.action_press(&"sprint")
+	arena._physics_process(0.1)
+	assert_almost_eq(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), BALANCE.arena_sprint_speed, 0.001)
+
 	Input.action_release(&"move_right")
 	Input.action_release(&"move_forward")
-	arena._physics_process(0.0)
+	Input.action_release(&"sprint")
+	arena._physics_process(0.1)
+	assert_gt(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), 0.0)
+	arena._physics_process(0.1)
 	assert_eq(hero_capsule.velocity, Vector3.ZERO)
 
 
-func test_arena_mouse_aim_turns_capsule_without_pitching() -> void:
+func test_arena_mouse_orbit_makes_movement_camera_relative_and_turns_capsule() -> void:
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena
 	add_child_autofree(arena)
 	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var camera_pivot := arena.get_node("CameraPivot") as Node3D
 
 	var mouse_event := InputEventMouseMotion.new()
-	mouse_event.position = Vector2(1000.0, 360.0)
+	mouse_event.screen_relative = Vector2(PI * 0.5 / BALANCE.arena_mouse_sensitivity, 0.0)
 	arena._unhandled_input(mouse_event)
-	arena._physics_process(0.0)
+	assert_almost_eq(camera_pivot.rotation.y, -PI * 0.5, 0.001)
+
+	Input.action_press(&"move_forward")
+	arena._physics_process(0.2)
 	var facing_direction := -hero_capsule.global_basis.z.normalized()
 
-	assert_gt(facing_direction.x, 0.0)
+	assert_gt(hero_capsule.velocity.x, 0.0)
+	assert_almost_eq(hero_capsule.velocity.z, 0.0, 0.001)
+	assert_gt(facing_direction.x, 0.99)
 	assert_almost_eq(facing_direction.y, 0.0, 0.001)
+
+
+func test_arena_mouse_pitch_uses_authored_clamps() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var camera_pivot := arena.get_node("CameraPivot") as Node3D
+	var mouse_event := InputEventMouseMotion.new()
+
+	mouse_event.screen_relative = Vector2(0.0, 10000.0)
+	arena._unhandled_input(mouse_event)
+	assert_almost_eq(camera_pivot.rotation.x, -deg_to_rad(BALANCE.arena_camera_pitch_down_degrees), 0.001)
+
+	mouse_event.screen_relative = Vector2(0.0, -10000.0)
+	arena._unhandled_input(mouse_event)
+	assert_almost_eq(camera_pivot.rotation.x, deg_to_rad(BALANCE.arena_camera_pitch_up_degrees), 0.001)
 
 
 func test_hub_enter_arena_button_connection_targets_handler() -> void:

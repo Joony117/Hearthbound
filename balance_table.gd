@@ -12,7 +12,15 @@ extends Resource
 @export var summon_pull_cost: int = 100
 @export var xp_coefficient: int = 10
 @export var xp_per_wave: int = 4
-@export var arena_move_speed: float = 6.0
+@export var arena_move_speed: float = 5.8
+@export var arena_sprint_speed: float = 8.0
+@export var arena_acceleration: float = 42.0
+@export var arena_deceleration: float = 65.0
+@export var arena_turn_speed_degrees: float = 1200.0
+@export var arena_mouse_sensitivity: float = 0.003
+@export var arena_camera_spring_length: float = 4.0
+@export var arena_camera_pitch_up_degrees: float = 35.0
+@export var arena_camera_pitch_down_degrees: float = 65.0
 @export var rank_names: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
 @export var equip_pct_per_rank: Array[float] = [0.04, 0.054, 0.0728, 0.0984, 0.1328, 0.1792, 0.242, 0.3268]
 @export var equip_crit_pct_per_rank: Array[float] = [0.015, 0.02025, 0.0273, 0.0369, 0.0498, 0.0672, 0.09075, 0.12255]

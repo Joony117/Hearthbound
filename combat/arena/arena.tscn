@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://combat/arena/arena.gd" id="1_arena"]
 
@@ -28,6 +28,9 @@ height = 2.5
 radius = 0.75
 height = 2.5
 
+[sub_resource type="SphereShape3D" id="Shape_camera"]
+radius = 0.25
+
 [sub_resource type="StandardMaterial3D" id="Material_facing"]
 albedo_color = Color(1, 0.72, 0.18, 1)
 
@@ -46,10 +49,6 @@ script = ExtResource("1_arena")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_arena")
-
-[node name="Camera3D" type="Camera3D" parent="."]
-unique_name_in_owner = true
-transform = Transform3D(1, 0, 0, 0, 0.906308, 0.422618, 0, -0.422618, 0.906308, 0, 6, 11)
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-55, -35, 0)
@@ -90,6 +89,21 @@ mesh = SubResource("Mesh_hero")
 position = Vector3(0, 0, -1)
 mesh = SubResource("Mesh_facing")
 
+[node name="CameraPivot" type="Node3D" parent="."]
+unique_name_in_owner = true
+position = Vector3(0, 2.25, 0)
+rotation_degrees = Vector3(-20, 0, 0)
+
+[node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot"]
+unique_name_in_owner = true
+shape = SubResource("Shape_camera")
+margin = 0.1
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot/SpringArm3D"]
+unique_name_in_owner = true
+position = Vector3(0.5, 0, 0)
+current = true
+
 [node name="UI" type="CanvasLayer" parent="."]
 
 [node name="Hint" type="Label" parent="UI"]
@@ -97,4 +111,4 @@ offset_left = 24.0
 offset_top = 24.0
 offset_right = 360.0
 offset_bottom = 55.0
-text = "WASD: move — Mouse: aim — Esc: return to hub"
+text = "WASD: move — Shift: sprint — Mouse: camera — Esc: hub"
