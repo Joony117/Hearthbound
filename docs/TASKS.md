@@ -821,7 +821,7 @@ needs to re-read.
 | `P2-04f` | Recover a dead hero's gear, or lose it to the clock | `845c6c4` |
 | `P2-24` | The Reliquary is buildable, so its decay and damage bonuses can fire | `77f8522` |
 | `P2b-01a` | Enter and leave a capsule graybox arena | `5e44a9e` |
-| `P2b-01b` | Move and aim the arena capsule | `PENDING` |
+| `P2b-01b` | Move and aim the arena capsule | `f024026` |
 
 ---
 
