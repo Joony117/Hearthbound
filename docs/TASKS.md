@@ -896,7 +896,7 @@ needs to re-read.
 | `P2b-01c` | One light attack defeats one passive enemy capsule | `aa78d6a` |
 | `P2b-01d` | One enemy attack and one dodge | `b4b8e7f` |
 | `P2b-01f` | Facing follows the camera, and a standstill press parries | `46e16c2` |
-| `P2b-01e` | Arena accepts the existing `Wave` and returns the existing `CombatResult` | *this commit* |
+| `P2b-01e` | Arena accepts the existing `Wave` and returns the existing `CombatResult` | `342c6d1` |
 
 ---
 
