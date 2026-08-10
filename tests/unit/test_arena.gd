@@ -94,6 +94,13 @@ func test_arena_enemy_attack_and_dodge_use_authored_values() -> void:
 	assert_eq(BALANCE.arena_dodge_duration, 0.38)
 	assert_eq(BALANCE.arena_dodge_iframe_duration, 0.25)
 	assert_eq(BALANCE.arena_dodge_cooldown, 0.15)
+	assert_eq(BALANCE.arena_parry_startup, 0.0)
+	assert_eq(BALANCE.arena_parry_active_window, 0.18)
+	assert_eq(BALANCE.arena_parry_whiff_recovery, 0.35)
+	assert_eq(BALANCE.arena_parry_success_recovery, 0.10)
+	assert_eq(BALANCE.arena_parry_cooldown, 0.15)
+	assert_eq(BALANCE.arena_parry_hit_stop, 0.08)
+	assert_eq(BALANCE.arena_parry_enemy_stagger, 0.6)
 
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena
@@ -104,19 +111,23 @@ func test_arena_enemy_attack_and_dodge_use_authored_values() -> void:
 	assert_almost_eq(enemy_attack_shape.size.z, BALANCE.arena_enemy_attack_reach, 0.001)
 
 
-func test_arena_attack_uses_character_facing_and_ignores_reentry_during_recovery() -> void:
+func test_arena_attack_captures_camera_facing_after_startup_and_ignores_reentry_during_recovery() -> void:
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena
 	add_child_autofree(arena)
 	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
 	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
 	var camera_pivot := arena.get_node("CameraPivot") as Node3D
-	hero_capsule.rotation.y = PI * 0.5
 	enemy_capsule.position = Vector3(8.0, 1.25, 0.0)
-	var attack_direction: Vector3 = -hero_capsule.global_basis.z.normalized()
-	var camera_forward: Vector3 = -camera_pivot.global_basis.z.normalized()
+	var mouse_event := InputEventMouseMotion.new()
+	mouse_event.screen_relative = Vector2(PI * 0.5 / BALANCE.arena_mouse_sensitivity, 0.0)
+	arena._unhandled_input(mouse_event)
+	var camera_forward: Vector3 = -camera_pivot.global_basis.z
+	camera_forward.y = 0.0
+	camera_forward = camera_forward.normalized()
 	var start_position: Vector3 = hero_capsule.global_position
-	assert_lt(absf(attack_direction.dot(camera_forward)), 0.01)
+	arena._physics_process(0.2)
+	assert_gt((-hero_capsule.global_basis.z).normalized().dot(camera_forward), 0.99)
 
 	var attack_event := InputEventAction.new()
 	attack_event.action = &"attack"
@@ -127,8 +138,7 @@ func test_arena_attack_uses_character_facing_and_ignores_reentry_during_recovery
 	await wait_physics_frames(20)
 
 	var displacement: Vector3 = hero_capsule.global_position - start_position
-	assert_almost_eq(displacement.dot(attack_direction), BALANCE.arena_light_attack_displacement, 0.05)
-	assert_almost_eq(displacement.dot(camera_forward), 0.0, 0.05)
+	assert_gt(displacement.dot(camera_forward), BALANCE.arena_light_attack_displacement * 0.9)
 
 
 func test_arena_attack_hitbox_defeats_target_once_after_hit_stop() -> void:
@@ -216,6 +226,7 @@ func test_enemy_hit_stops_then_knocks_back_and_locks_input() -> void:
 	dodge_event.pressed = true
 	Input.action_press(&"move_right")
 	arena._unhandled_input(attack_event)
+	Input.action_press(&"move_back")
 	arena._unhandled_input(dodge_event)
 	arena._physics_process(0.01)
 	assert_almost_eq(hero_capsule.velocity.x, 0.0, 0.001)
@@ -238,6 +249,7 @@ func test_dodge_iframes_prevent_enemy_hit() -> void:
 	var dodge_event := InputEventAction.new()
 	dodge_event.action = &"dodge"
 	dodge_event.pressed = true
+	Input.action_press(&"move_back")
 	arena._unhandled_input(dodge_event)
 	arena._physics_process(0.01)
 	await wait_physics_frames(2)
@@ -256,6 +268,7 @@ func test_dodge_cooldown_starts_when_burst_ends() -> void:
 	dodge_event.action = &"dodge"
 	dodge_event.pressed = true
 
+	Input.action_press(&"move_back")
 	arena._unhandled_input(dodge_event)
 	assert_almost_eq(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), BALANCE.arena_dodge_speed, 0.001)
 	arena._physics_process(BALANCE.arena_dodge_duration)
@@ -265,6 +278,24 @@ func test_dodge_cooldown_starts_when_burst_ends() -> void:
 	arena._physics_process(BALANCE.arena_dodge_cooldown)
 	arena._unhandled_input(dodge_event)
 	assert_almost_eq(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), BALANCE.arena_dodge_speed, 0.001)
+
+
+func test_dodge_cooldown_does_not_gate_parry() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+
+	Input.action_press(&"move_back")
+	arena._unhandled_input(dodge_event)
+	arena._physics_process(BALANCE.arena_dodge_duration)
+	assert_almost_eq(arena._dodge_cooldown_remaining, BALANCE.arena_dodge_cooldown, 0.001)
+
+	Input.action_release(&"move_back")
+	arena._unhandled_input(dodge_event)
+	assert_eq(arena._parry_elapsed, 0.0)
 
 
 func test_arena_movement_uses_authored_kinematics_and_normalizes_diagonal() -> void:
@@ -323,6 +354,101 @@ func test_arena_mouse_orbit_makes_movement_camera_relative_and_turns_capsule() -
 	assert_almost_eq(hero_capsule.velocity.z, 0.0, 0.001)
 	assert_gt(facing_direction.x, 0.99)
 	assert_almost_eq(facing_direction.y, 0.0, 0.001)
+
+
+func test_neutral_dodge_press_starts_parry_instead_of_dodge() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+
+	arena._unhandled_input(dodge_event)
+
+	assert_eq(arena._dodge_elapsed, -1.0)
+	assert_eq(arena._parry_elapsed, 0.0)
+
+
+func test_parry_in_window_staggers_enemy_without_knockback_or_hit_stun() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var enemy_hitbox := arena.get_node("EnemyCapsule/EnemyAttackHitbox") as Area3D
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+	arena._unhandled_input(dodge_event)
+	arena._enemy_attack_active = true
+	arena._on_enemy_attack_hitbox_body_entered(hero_capsule)
+
+	assert_eq(arena._hit_stop_outcome, Arena.HitStopOutcome.PARRY_HERO)
+	arena._physics_process(BALANCE.arena_parry_hit_stop)
+
+	assert_eq(hero_capsule.velocity, Vector3.ZERO)
+	assert_eq(arena._hit_stun_remaining, 0.0)
+	assert_almost_eq(arena._enemy_stagger_remaining, BALANCE.arena_parry_enemy_stagger, 0.001)
+	assert_false(enemy_hitbox.monitoring)
+
+
+func test_parry_after_active_window_uses_ordinary_hit_reaction() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+	arena._unhandled_input(dodge_event)
+	arena._physics_process(BALANCE.arena_parry_active_window)
+	arena._enemy_attack_active = true
+	arena._on_enemy_attack_hitbox_body_entered(hero_capsule)
+	arena._physics_process(BALANCE.arena_enemy_attack_hit_stop)
+
+	assert_gt(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), 0.0)
+	assert_almost_eq(arena._hit_stun_remaining, BALANCE.arena_enemy_hit_stun, 0.001)
+
+
+func test_parry_whiff_recovery_locks_actions() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	arena._unhandled_input(dodge_event)
+	arena._physics_process(BALANCE.arena_parry_active_window + 0.01)
+	arena._unhandled_input(attack_event)
+	arena._unhandled_input(dodge_event)
+
+	assert_gt(arena._parry_elapsed, BALANCE.arena_parry_active_window)
+	assert_eq(arena._attack_elapsed, -1.0)
+	assert_eq(arena._dodge_elapsed, -1.0)
+
+
+func test_attack_cancels_successful_parry_recovery() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	arena._unhandled_input(dodge_event)
+	arena._enemy_attack_active = true
+	arena._on_enemy_attack_hitbox_body_entered(hero_capsule)
+	arena._physics_process(BALANCE.arena_parry_hit_stop)
+	arena._unhandled_input(attack_event)
+
+	assert_eq(arena._parry_elapsed, -1.0)
+	assert_eq(arena._attack_elapsed, 0.0)
 
 
 func test_arena_mouse_pitch_uses_authored_clamps() -> void:

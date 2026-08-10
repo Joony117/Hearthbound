@@ -10,6 +10,7 @@ enum HitStopOutcome {
 	NONE,
 	DEFEAT_ENEMY,
 	HIT_HERO,
+	PARRY_HERO,
 }
 
 @onready var _camera_pivot: Node3D = %CameraPivot
@@ -25,6 +26,9 @@ var _attack_hit: bool = false
 var _attack_direction: Vector3 = Vector3.FORWARD
 var _dodge_elapsed: float = -1.0
 var _dodge_cooldown_remaining: float = 0.0
+var _parry_elapsed: float = -1.0
+var _parry_succeeded: bool = false
+var _parry_cooldown_remaining: float = 0.0
 var _hit_stun_remaining: float = 0.0
 var _hit_stop_remaining: float = 0.0
 var _hit_stop_outcome: int = HitStopOutcome.NONE
@@ -32,6 +36,7 @@ var _enemy_attack_elapsed: float = -1.0
 var _enemy_attack_active: bool = false
 var _enemy_attack_hit: bool = false
 var _enemy_attack_cooldown_remaining: float = 0.0
+var _enemy_stagger_remaining: float = 0.0
 
 
 func _ready() -> void:
@@ -65,10 +70,13 @@ func _physics_process(delta: float) -> void:
 	else:
 		_update_enemy(delta)
 		_update_dodge_cooldown(delta)
+		_update_parry_cooldown(delta)
 		if _hit_stun_remaining > 0.0:
 			_update_hit_stun(delta)
 		elif _dodge_elapsed >= 0.0:
 			_update_dodge(delta)
+		elif _parry_elapsed >= 0.0:
+			_update_parry(delta)
 		elif _attack_elapsed >= 0.0:
 			_update_attack(delta)
 		else:
@@ -88,8 +96,7 @@ func _update_locomotion(delta: float) -> void:
 	_hero_capsule.velocity.x = horizontal_velocity.x
 	_hero_capsule.velocity.z = horizontal_velocity.y
 
-	if move_direction != Vector3.ZERO:
-		_turn_hero(move_direction, delta)
+	_turn_hero(delta)
 
 
 func _update_attack(delta: float) -> void:
@@ -98,10 +105,7 @@ func _update_attack(delta: float) -> void:
 	var recovery_end: float = active_end + BALANCE.arena_light_attack_recovery
 
 	if _attack_elapsed < BALANCE.arena_light_attack_startup:
-		var input_direction: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
-		var move_direction: Vector3 = _camera_relative_direction(input_direction)
-		if move_direction != Vector3.ZERO:
-			_turn_hero(move_direction, delta)
+		_turn_hero(delta)
 		_stop_horizontal()
 		return
 
@@ -144,6 +148,22 @@ func _update_dodge_cooldown(delta: float) -> void:
 		_dodge_cooldown_remaining = maxf(0.0, _dodge_cooldown_remaining - delta)
 
 
+func _update_parry_cooldown(delta: float) -> void:
+	if _parry_elapsed < 0.0:
+		_parry_cooldown_remaining = maxf(0.0, _parry_cooldown_remaining - delta)
+
+
+func _update_parry(delta: float) -> void:
+	_parry_elapsed += delta
+	var recovery: float = BALANCE.arena_parry_success_recovery if _parry_succeeded else BALANCE.arena_parry_whiff_recovery
+	if _parry_elapsed >= BALANCE.arena_parry_startup + BALANCE.arena_parry_active_window + recovery:
+		if _parry_succeeded:
+			_parry_cooldown_remaining = BALANCE.arena_parry_cooldown
+		_parry_elapsed = -1.0
+		_parry_succeeded = false
+		_stop_horizontal()
+
+
 func _update_hit_stun(delta: float) -> void:
 	_hit_stun_remaining = maxf(0.0, _hit_stun_remaining - delta)
 	var horizontal_velocity := Vector2(_hero_capsule.velocity.x, _hero_capsule.velocity.z)
@@ -169,11 +189,21 @@ func _update_hit_stop(delta: float) -> void:
 		_hero_capsule.velocity.x = knockback_direction.x * BALANCE.arena_enemy_knockback_speed
 		_hero_capsule.velocity.z = knockback_direction.z * BALANCE.arena_enemy_knockback_speed
 		_hit_stun_remaining = BALANCE.arena_enemy_hit_stun
+	elif _hit_stop_outcome == HitStopOutcome.PARRY_HERO:
+		_enemy_attack_elapsed = -1.0
+		_enemy_attack_active = false
+		_enemy_attack_hitbox.monitoring = false
+		_enemy_stagger_remaining = BALANCE.arena_parry_enemy_stagger
 	_hit_stop_outcome = HitStopOutcome.NONE
 
 
 func _update_enemy(delta: float) -> void:
 	if not is_instance_valid(_enemy_capsule):
+		return
+	if _enemy_stagger_remaining > 0.0:
+		_enemy_stagger_remaining = maxf(0.0, _enemy_stagger_remaining - delta)
+		if _enemy_stagger_remaining <= 0.0:
+			_enemy_attack_cooldown_remaining = BALANCE.arena_enemy_attack_cooldown
 		return
 	if _enemy_attack_elapsed < 0.0:
 		_turn_enemy(delta)
@@ -212,10 +242,15 @@ func _start_attack() -> void:
 	if (
 		_attack_elapsed >= 0.0
 		or _dodge_elapsed >= 0.0
+		or (_parry_elapsed >= 0.0 and not _parry_succeeded)
 		or _hit_stun_remaining > 0.0
 		or _hit_stop_remaining > 0.0
 	):
 		return
+	if _parry_elapsed >= 0.0:
+		_parry_elapsed = -1.0
+		_parry_succeeded = false
+		_parry_cooldown_remaining = BALANCE.arena_parry_cooldown
 	_attack_elapsed = 0.0
 	_attack_active = false
 	_attack_hit = false
@@ -225,7 +260,7 @@ func _start_attack() -> void:
 func _start_dodge() -> void:
 	if (
 		_dodge_elapsed >= 0.0
-		or _dodge_cooldown_remaining > 0.0
+		or _parry_elapsed >= 0.0
 		or _hit_stun_remaining > 0.0
 		or _hit_stop_remaining > 0.0
 	):
@@ -233,30 +268,46 @@ func _start_dodge() -> void:
 	var attack_recovery_start: float = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
 	if _attack_elapsed >= 0.0 and _attack_elapsed < attack_recovery_start:
 		return
+	var input_direction: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
+	if input_direction == Vector2.ZERO:
+		if _parry_cooldown_remaining <= 0.0:
+			_start_parry()
+		return
+	if _dodge_cooldown_remaining > 0.0:
+		return
 	if _attack_elapsed >= 0.0:
 		_attack_elapsed = -1.0
 		_attack_active = false
 		_attack_hitbox.monitoring = false
-	var input_direction: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	var dodge_direction: Vector3 = _camera_relative_direction(input_direction)
-	if dodge_direction == Vector3.ZERO:
-		dodge_direction = _hero_capsule.global_basis.z.normalized()
 	_dodge_elapsed = 0.0
 	_hero_capsule.velocity.x = dodge_direction.x * BALANCE.arena_dodge_speed
 	_hero_capsule.velocity.z = dodge_direction.z * BALANCE.arena_dodge_speed
+
+
+func _start_parry() -> void:
+	if _attack_elapsed >= 0.0:
+		_attack_elapsed = -1.0
+		_attack_active = false
+		_attack_hitbox.monitoring = false
+	_parry_elapsed = 0.0
+	_parry_succeeded = false
+	_stop_horizontal()
 
 
 func _cancel_player_action_for_hit() -> void:
 	if _dodge_elapsed >= 0.0:
 		_dodge_cooldown_remaining = BALANCE.arena_dodge_cooldown
 	_dodge_elapsed = -1.0
+	_parry_elapsed = -1.0
+	_parry_succeeded = false
 	_attack_elapsed = -1.0
 	_attack_active = false
 	_attack_hitbox.monitoring = false
 
 
-func _turn_hero(move_direction: Vector3, delta: float) -> void:
-	var target_yaw := atan2(-move_direction.x, -move_direction.z)
+func _turn_hero(delta: float) -> void:
+	var target_yaw: float = _camera_pivot.global_rotation.y
 	_hero_capsule.rotation.y = rotate_toward(
 		_hero_capsule.rotation.y,
 		target_yaw,
@@ -302,13 +353,25 @@ func _on_enemy_attack_hitbox_body_entered(body: Node3D) -> void:
 	):
 		return
 	_enemy_attack_hit = true
-	_hit_stop_remaining = BALANCE.arena_enemy_attack_hit_stop
-	_hit_stop_outcome = HitStopOutcome.HIT_HERO
+	if _hero_has_active_parry():
+		_parry_succeeded = true
+		_hit_stop_remaining = BALANCE.arena_parry_hit_stop
+		_hit_stop_outcome = HitStopOutcome.PARRY_HERO
+	else:
+		_hit_stop_remaining = BALANCE.arena_enemy_attack_hit_stop
+		_hit_stop_outcome = HitStopOutcome.HIT_HERO
 	_enemy_attack_hitbox.set_deferred("monitoring", false)
 
 
 func _hero_has_iframes() -> bool:
 	return _dodge_elapsed >= 0.0 and _dodge_elapsed < BALANCE.arena_dodge_iframe_duration
+
+
+func _hero_has_active_parry() -> bool:
+	return (
+		_parry_elapsed >= BALANCE.arena_parry_startup
+		and _parry_elapsed < BALANCE.arena_parry_startup + BALANCE.arena_parry_active_window
+	)
 
 
 func _camera_relative_direction(input_direction: Vector2) -> Vector3:

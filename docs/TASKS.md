@@ -656,6 +656,18 @@ with both gates green.
 
 ---
 
+## ~~P2b-01f — Facing follows the camera, and a standstill press parries~~   [DONE]
+
+**Landed in the commit below.** Body moved to [`TASKS-DONE.md`](TASKS-DONE.md); row in Completed
+tickets below. Facing now tracks camera yaw in every uncommitted state, so a standstill attack
+swings where the player is looking, and the neutral dodge press became a parry stance that negates
+the hit reaction and staggers the enemy into a counter window. **Read its Findings before adding a
+second action to an existing button** — the delivered diff left dodge's cooldown in the shared entry
+guard, so dodging locked the parry out for `0.15 s`, with both gates green and the exact coupling
+`SYSTEMS.md` had explicitly rejected.
+
+---
+
 **P2-13 — the five questions a `game-designer` ruling must answer before it can be written.**
 Filed blocked rather than dropped, because the idea is worth keeping and the dependencies are
 real. Recorded here so a cold session inherits the reasoning instead of rediscovering it:
@@ -744,6 +756,7 @@ range or timing is authored around it.
 | P2b-01b-2 | Vindictus movement and camera baseline | **Landed `1785f05`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Captured third-person camera, camera-relative facing, `5.8` jog/`8.0` sprint and `42`/`65` acceleration/deceleration replace the rejected prototype controls. Rendered hub → arena → hub verification passed with the complete profile unchanged. Unblocks `P2b-01c`; tuning remains provisional until attack displacement and hit-stop can be felt with it. |
 | P2b-01c | One attack defeats one enemy capsule | **Landed `aa78d6a`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). One scene-local elapsed timeline drives startup, a `2.0 m` facing-directed lunge and recovery; one native `Area3D` defeats the passive capsule after `0.04 s` local hit-stop. The boundary-2 verifier and rendered physical-left-click flow passed with the full profile unchanged. Feel values remain PROVISIONAL until played. |
 | P2b-01d | One enemy attack and one dodge | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Kept damage avoidance separate from the first attack slice. `game-designer` ruled all four missing inputs (`SYSTEMS.md` § "Enemy attack, dodge and hit reaction"): a `0.55/0.10/0.45 s` enemy swing on a `3.0 m` proximity-gated cadence, a physical hit-reaction instead of arena-local HP, and dodge's cooldown/cancel/neutral-direction terms. The input buffer stayed deferred — it is cross-cutting across Normal/Smash/Dodge, and authoring it for dodge alone is a worse inconsistency than having none. |
+| P2b-01f | Facing follows the camera, and a standstill press parries | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Two played-build corrections, ruled in `SYSTEMS.md` § "Camera-forward facing and the parry stance". Sequenced **before** `P2b-01e`: both are arena-local feel and neither touches the combat seam, so shipping them first keeps the integration slice clean. |
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | Integration slice. `Expedition` remains the sole outcome/permadeath consumer. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
@@ -839,6 +852,7 @@ needs to re-read.
 | `P2b-01b-2` | Vindictus movement and camera baseline | `1785f05` |
 | `P2b-01c` | One light attack defeats one passive enemy capsule | `aa78d6a` |
 | `P2b-01d` | One enemy attack and one dodge | `b4b8e7f` |
+| `P2b-01f` | Facing follows the camera, and a standstill press parries | see below |
 
 ---
 

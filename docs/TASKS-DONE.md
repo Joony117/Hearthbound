@@ -4725,3 +4725,88 @@ against the `0.53 s` dodge cycle. Whether the telegraph reads as "timed" rather 
 "trivial", and whether a `3.0 m` trigger range makes a dummy worth dodging rather than a wall to walk
 around, are exactly what the `PROVISIONAL` marker in `SYSTEMS.md` says only a played build settles.
 `P2b-01e` must not treat them as settled.
+
+---
+
+## P2b-01f — Facing follows the camera, and a standstill press parries      [DONE]
+
+Two changes the designer asked for after playing the `P2b-01d` build. Both are ruled in full in
+`SYSTEMS.md` § "Camera-forward facing and the parry stance (`P2b-01f`)" — read that section before
+writing anything; this ticket does not restate its values or its rejected alternatives.
+
+### Objective
+The hero always faces where the mouse is pointing, so an attack from a standstill swings where the
+player is looking; and pressing the dodge key with no movement input enters a parry stance that
+stops the enemy's swing and staggers it instead of eating the hit.
+
+### Existing architecture
+- `combat/arena/arena.gd` (352 lines) is the whole arena. One `_physics_process` dispatches to
+  exactly one state per frame — hit-stop, then enemy update, then the first of hit-stun / dodge /
+  attack / locomotion that applies. Every state is a `float` elapsed timer, `-1.0` when inactive.
+- `_turn_hero(move_direction, delta)` is called only when the camera-relative WASD vector is
+  non-zero, from `_update_locomotion` and from attack startup. That gate is the bug the first half
+  of this ticket removes; the target becomes the camera pivot's yaw, still rate-limited.
+- `_start_dodge()` currently backsteps when the movement input is neutral. `SYSTEMS.md` retires
+  that case — neutral is now the parry.
+- All tunables live on `balance_table.gd` as `@export var` and are authored in `balance.tres`.
+  A field added to one and not the other loads silently as the script default; both change together.
+- `_on_enemy_attack_hitbox_body_entered` already gates on `_hero_has_iframes()`. A successful parry
+  is a second gate on the same path with a different outcome, not a second hit path.
+- `HitStopOutcome` is an enum tagging *why* the frozen frames are running. `P2b-01d`'s finding:
+  hit-stop with an untagged cause deletes the wrong actor. A parry needs its own outcome value.
+
+### Acceptance criteria
+- Standing still, orbiting the camera 180°, then attacking swings toward the camera, not the old
+  facing. Facing tracks camera yaw while idle, strafing and backpedalling alike, and during attack
+  startup; it stays locked during the attack's active window and recovery, dodge, hit-stun,
+  hit-stop and the parry stance.
+- `_attack_direction` is still captured once when the active window opens. Active-window facing
+  does not change.
+- Pressing dodge with a movement input held still dodges in that direction, unchanged.
+- Pressing dodge with no movement input enters the parry stance, on the availability gate
+  `SYSTEMS.md` specifies.
+- An enemy swing landing inside the parry window produces no knockback and no hit-stun: instead
+  `arena_parry_hit_stop`, `arena_parry_enemy_stagger` on the enemy, and
+  `arena_parry_success_recovery` on the hero.
+- An enemy swing landing outside the window produces the ordinary `P2b-01d` hit reaction.
+- A whiffed parry locks movement, attack and dodge for `arena_parry_whiff_recovery`.
+- Pressing attack during a successful parry's recovery cancels it into light-attack startup.
+- The seven `arena_parry_*` fields exist on **both** `balance_table.gd` and `balance.tres` with the
+  authored values, and a test asserts the `.tres` values rather than the script defaults.
+- No state persists: nothing here touches `Hero`, `GameSession` or `SaveService`, so the save
+  round-trip is unchanged and the arena still leaves the profile untouched on entry and exit.
+- BUILT green (import gate, zero errors and zero warnings) and the full GUT suite green, including
+  the existing dodge tests — `test_dodge_iframes_prevent_enemy_hit` and
+  `test_dodge_cooldown_starts_when_burst_ends` drive dodge from what is now the parry input and
+  must be updated to hold a direction, not deleted.
+
+### Files allowed to change
+`combat/arena/arena.gd` · `balance_table.gd` · `balance.tres` · `tests/unit/test_arena.gd`
+
+### Non-goals
+HP, a damage model, stamina, a second enemy, animation, UI or a parry indicator, a perfect/late
+guard tier split, a hold-to-guard input, an input buffer, lock-on, and any change to `_turn_enemy`.
+No `.tscn` edit: the parry adds no node and no hitbox. Do not touch `Wave`, `CombatResult` or
+`Expedition` — `P2b-01e` owns that seam and this ticket must not anticipate it.
+
+### Findings
+
+**Dodge's cooldown was gating the parry.** The delivered diff kept `_dodge_cooldown_remaining > 0.0`
+in `_start_dodge`'s shared entry guard, above the neutral-input branch, so for `0.15 s` after every
+dodge the parry was unavailable. Both gates were green — no test covered the interaction, because
+before this ticket the two mechanics did not exist side by side. This is precisely the coupling
+`SYSTEMS.md` **rejected** when it refused to let parry share `arena_dodge_cooldown`: "they only
+share an input binding, not a balance axis." Fixed by the director (7 lines) — the cooldown check
+moved below the neutral-input branch into the dodge path only — and a
+`test_dodge_cooldown_does_not_gate_parry` case was added, which fails against the delivered version. **A design ruling that rejects
+sharing a tunable is also rejecting sharing its guard;** an input binding two actions share is
+where that leaks back in.
+
+**Feel is unplayed, same as `P2b-01c` and `P2b-01d` before it.** All seven parry values and the
+facing reversal itself are desk guesses, and this slice has less arithmetic backing than `P2b-01d`
+did — that section could check dodge-window coverage against a fixed enemy attack cycle, and there
+is no equivalent check for a `0.18 s` parry window nobody has attempted against a `0.55 s`
+telegraph. The `PROVISIONAL` markers in `SYSTEMS.md` say what settles them. The facing change is
+the sharper risk of the two: it *reverses* a documented, already-played direction rather than
+adding a new one, and the capsule has no strafe animation to sell a body that faces the camera
+while moving sideways.

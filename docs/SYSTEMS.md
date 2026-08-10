@@ -934,11 +934,16 @@ This project targets classic *Vindictus* / Vindictus Premiere. Do not borrow XE'
 air smashes or emergency i-frame actions, and do not borrow *Vindictus: Defying Fate*'s modern
 lock-on behavior: those are separate control models.
 
-Attacks follow the character's current facing, not camera forward. A normal/light attack has a
-short commitment and modest forward root displacement; a Smash is the high-commitment follow-up
-with larger displacement and longer recovery. Facing can adjust during startup only: active swings
-are limited to a `15°–35°` cone, with `25°` the initial target. Players must align before the active
-hit frame instead of snapping around a target mid-swing.
+~~Attacks follow the character's current facing, not camera forward.~~ **Superseded by
+`P2b-01f`:** hero facing now tracks camera forward continuously, so "current facing" and "camera
+forward" describe the same target — attacks follow camera forward. Classic Vindictus' actual
+reference behavior is movement-direction facing decoupled from the camera; this project departs
+from that reference on this one axis by the designer's explicit played-build call after `P2b-01d`,
+not by drift. Everything else below is unaffected. A normal/light attack has a short commitment
+and modest forward root displacement; a Smash is the high-commitment follow-up with larger
+displacement and longer recovery. Facing can adjust during startup only: active swings are limited
+to a `15°–35°` cone, with `25°` the initial target. Players must align before the active hit frame
+instead of snapping around a target mid-swing.
 
 | Mechanic | Initial carried-forward target | Ticket / constraint |
 |---|---|---|
@@ -1004,7 +1009,9 @@ i-frames, recovery cancels and buffering; `P2b-01e` alone connects the arena to 
 
 - Does release decelerate with weight without sliding or stopping unnaturally hard?
 - Can the player orbit the camera without fighting it to keep the target in view?
-- Does a side/backward directional attack follow intended character facing rather than camera yaw?
+- ~~Does a side/backward directional attack follow intended character facing rather than camera
+  yaw?~~ **Resolved by `P2b-01f`:** this question presupposed the rejected model. It follows
+  camera yaw, by design.
 - Does a hit feel dense through root displacement and hit-stop rather than pass through the dummy?
 - Does attack displacement naturally close distance without replacing normal movement?
 
@@ -1104,12 +1111,17 @@ and a number on screen is a weaker "you got hit" signal than a shove and a stun.
   recovery only, primarily after a Smash; no cancel during an active hit and no chained dodge")
   applies as written — dodge may start once the light attack's own state reaches its recovery
   window, and the `0.15 s` dodge cooldown already forecloses chaining a second dodge.
-- **Neutral dodge (no movement input held):** a backstep — dodge direction is the camera-relative
+- **Neutral dodge (no movement input held):** ~~a backstep — dodge direction is the camera-relative
   input direction if one is held (reusing the existing `_camera_relative_direction` helper used
-  for locomotion and attack facing), otherwise directly away from the capsule's current facing.
-  Rejected: a facing-forward roll — defaulting a defensive action toward whatever the player
-  happens to be facing (usually the enemy) risks rolling into the attack it exists to avoid, and a
-  backstep is the legible "no input" default this genre already uses.
+  for locomotion and attack facing), otherwise directly away from the capsule's current facing.~~
+  **Superseded by `P2b-01f`:** a neutral-input press of `dodge` no longer backsteps — it starts the
+  parry stance instead (below). Dodge direction is still the camera-relative input direction
+  whenever a movement input is held; there is no longer a no-input dodge case. A player wanting
+  pure backward evasion now holds `S` and presses `dodge`, an ordinary directional dodge, not a
+  special case. The rejection of a facing-forward roll (defaulting a defensive action toward
+  whatever the player happens to be facing, usually the enemy, risks rolling into the attack it
+  exists to avoid) still holds as reasoning against ever reviving a no-input roll default; only the
+  backstep behavior it was defending is gone.
 - **Input buffer:** deferred, not authored in this slice. The `0.15–0.25 s` buffer in the
   "Combat reference" table is cross-cutting (Normal, Smash and Dodge together); authoring it for
   dodge alone would give one action a buffer the others lack, which is a worse inconsistency than
@@ -1122,6 +1134,127 @@ and a number on screen is a weaker "you got hit" signal than a shove and a stun.
 > whether the `0.40–0.55 s` full-coverage dodge window reads as "timed" rather than "twitch" or
 > "trivial," and whether `720°/s` enemy tracking and the `3.0 m` trigger range feel like a dummy
 > worth dodging rather than a wall the player just walks around.
+
+### Camera-forward facing and the parry stance (`P2b-01f`)
+
+Two played-build changes from the `P2b-01d` build, ruled after the designer played it. Both
+override text written before either was played; the superseded lines are struck and amended in
+place above and in "Combat reference carried into future arena slices" and "Playtest questions
+after `P2b-01c`" rather than left standing in contradiction.
+
+#### Camera-forward facing
+
+**Ruling:** hero facing tracks camera forward continuously — idle, moving forward, strafing,
+backpedaling, and during attack startup alike — not only while a movement input vector happens to
+be held. Today `_turn_hero` is called only when `move_direction != Vector3.ZERO` and turns toward
+that camera-relative movement vector; the new model turns toward the camera pivot's own yaw
+regardless of movement input, still rate-limited by `arena_turn_speed_degrees`.
+
+| Question | Ruling |
+|---|---|
+| Track camera forward while strafing/backpedalling too, or only when input is neutral? | At all times, as asked — target yaw is always the camera pivot's yaw, whether the movement input is zero, forward, side, or reversed. |
+| Still rate-limited at `arena_turn_speed_degrees = 1200°/s`, or snap? | Still rate-limited. At ordinary mouse-look speeds the camera's own per-frame yaw delta stays far below `1200°/s`, so hero yaw keeps pace with camera yaw and the two are visually indistinguishable from a snap — but the cap stays in the model rather than being special-cased away, so an unusually fast orbit still turns the capsule physically instead of teleporting its facing. |
+| Does startup track camera forward instead of movement input? | Yes. The committed-active-window rule is unchanged: facing tracks its source through the end of `arena_light_attack_startup`, then commits — `_attack_direction` is still captured once when the active window opens, and the documented `15°–35°` active cone still governs how far a swing may continue to turn relative to its start. Only the *source* facing tracks during startup changes, from movement-direction to camera-forward. |
+| Does the enemy's facing logic change? | No. `_turn_enemy` tracks the hero's position, not a camera — the enemy has no camera to track. |
+| Does facing track camera forward during dodge, hit-stun, hit-stop, or the parry stance below? | No. Those remain committed states with facing locked at whatever it was on entry, same as today. The ask was that idle/strafing/backpedalling stop being exceptions to camera tracking, not that every combat state gain it; extending this into dodge/hit-stun/parry is a separate, unasked-for change and stays out of scope here. |
+
+**Superseded, struck/amended in place (see those sections, not restated here):**
+- "Combat reference carried into future arena slices" — *"Attacks follow the character's current
+  facing, not camera forward."*
+- "Playtest questions after `P2b-01c`" — *"Does a side/backward directional attack follow intended
+  character facing rather than camera yaw?"*
+
+> ⚠️ **PROVISIONAL** — camera-forward facing is an unplayed reversal of a direction that was
+> already played and documented once. Nothing has confirmed it reads better than movement-direction
+> facing did — only that the designer wants it tried. · **Settled by:** playing the reworked build
+> and checking whether strafing/backpedalling while facing the enemy (now possible, previously
+> impossible) reads as intentional aim rather than as the capsule's body looking unnaturally
+> twisted relative to its own movement, since this is a graybox capsule with no strafe-specific
+> animation state to sell the pose.
+
+#### The parry stance
+
+Reference: classic Vindictus Fiona/Vella guard, named explicitly by the user — a stance entered on
+command that can stop an incoming attack, stagger the attacker on a good read, and open a counter.
+The arena has no HP and no damage model, so "parry/block" here can only mean: negate the physical
+hit-reaction a landed enemy attack currently causes, and, on success, punish the enemy with a
+matching physical lockout instead.
+
+**Trigger, and the dodge conflict.** Bound to the existing `dodge` action, disambiguated by
+movement input at the moment of the press: a **press** (not hold) of `dodge` while the
+camera-relative movement input vector is `Vector2.ZERO` starts the parry stance instead of a
+dodge. A press with any movement input held still starts an ordinary directional dodge, unchanged.
+Press, not hold — every action state in `arena.gd` (`_start_attack`, `_start_dodge`) is a single
+press committing to a fixed startup/active/recovery timeline, and nothing in the file tracks a
+held-input duration anywhere. A hold-to-guard variant would be the first held-input combat state
+in the arena and duplicates dodge's own shape for no reason the user's own phrasing ("pressing
+space... initiates a parry stance") asked for.
+
+This **removes the neutral-input backstep** `P2b-01d` gave dodge — struck and amended in that
+subsection above, not restated here. A player wanting pure backward evasion now holds `S` and
+presses `dodge`: an ordinary directional dodge aimed away from the camera, not a special case.
+
+Availability gate: the same base guard `_start_dodge` already uses today (not already dodging,
+parrying, hit-stunned, or in hit-stop) plus the same attack-recovery-only cancel rule
+(`P2b-01d`'s "Cancels light-attack recovery") — parry can interrupt the player's own attack
+recovery on the same terms dodge already does, since it is dispatched from the same button.
+
+| Tunable | Value | Rationale |
+|---|---:|---|
+| `arena_parry_startup` | `0.0 s` | No windup — the active window opens the instant the stance is entered, matching the dodge i-frame precedent (`P2b-01d`): a defensive window's value is entirely in timing against an already-telegraphed swing, not in adding its own tell. |
+| `arena_parry_active_window` | `0.18 s` | Tighter than dodge's `0.25 s` i-frame window — parry's payoff (stagger + counter, below) is stronger than dodge's (avoidance only), so the read it demands is stricter. |
+| `arena_parry_whiff_recovery` | `0.35 s` | Movement, attack, and dodge are locked for this long after an active window closes with nothing parried. Set equal to `arena_enemy_hit_stun` on purpose: guessing wrong costs about what actually eating the hit costs, so parry is not a strictly-safer default over standing still and reading the telegraph. |
+| `arena_parry_success_recovery` | `0.10 s` | Short recovery after a stopped hit; cancellable early into an attack (below) rather than a fixed lockout. |
+| `arena_parry_cooldown` | `0.15 s` | Own `BalanceTable` field, numerically matched to `arena_dodge_cooldown` at first-playable but tracked independently since parry and dodge are different actions sharing only a button. Applies after a successful parry's recovery (or its counter-attack) completes; the `0.35 s` whiff recovery already serves as that path's effective cooldown, so nothing stacks on top of it. |
+| `arena_parry_hit_stop` | `0.08 s` | Contact freeze on a successful parry, distinct from `arena_light_attack_hit_stop` (`0.04 s`) and `arena_enemy_attack_hit_stop` (`0.06 s`) — pulled from the already-authored Heavy/Smash hit-stop band (`0.08–0.12 s`) rather than a new range, so a correct parry reads as a bigger moment than an ordinary exchange. |
+| `arena_parry_enemy_stagger` | `0.6 s` | On a successful parry, the enemy's attack state is cancelled and it cannot begin a new attack for this long — long enough to fit one full player light-attack cycle (`0.12 + 0.10 + 0.22 = 0.44 s`) with margin for a real counter. Value reused from the already-authored `arena_enemy_attack_cooldown` rather than inventing a new constant. |
+
+**What a successful parry does.** At minimum, negates the standard hit reaction entirely: no
+`arena_enemy_knockback_speed` impulse, no `arena_enemy_hit_stun`, no hero-side hit-stop under the
+enemy-attack-hit path. In its place: `arena_parry_hit_stop` freezes both capsules on contact, the
+enemy is staggered for `arena_parry_enemy_stagger` (its attack state cancels the same way a hero
+hit-stun already cancels the hero's own attack/dodge state today, and its cooldown does not begin
+ticking again until the stagger ends), and the hero enters `arena_parry_success_recovery` instead
+of `arena_parry_whiff_recovery`.
+
+**Counter cancel: yes.** Pressing `attack` during `arena_parry_success_recovery` (or during the
+stagger it opens) cancels the remaining recovery early and transitions straight into light-attack
+startup — the Vindictus counter window the user named explicitly. This reuses the cancel pattern
+`P2b-01d` already established for dodge cancelling attack recovery, mirrored the other direction
+(attack cancelling parry-success recovery). Rejected: recover-only with no cancel — it would
+mechanically reward a correct parry with nothing but a faster idle, which delivers only half of
+what Fiona/Vella guard is actually known for and the user explicitly invoked.
+
+**Binary, not late/early.** In the active window or not — no partial-credit "Just Guard vs. late
+guard" tiering. Classic Vindictus does split perfect-guard from ordinary guard, but this slice
+already carries seven new unplayed fields; a two-tier response multiplies that by adding a timing
+sub-window nothing has tested yet. Matches the binary shape `_hero_has_iframes()` already uses for
+dodge, keeping the two defensive mechanics structurally consistent. An attack landing after the
+window closes gets the ordinary hit reaction, exactly as if no parry had been attempted — no
+special penalty beyond having already spent `arena_parry_whiff_recovery` locked out.
+
+**Rejected.**
+- **Hold-to-guard input** — see "Trigger, and the dodge conflict" above; rejected for introducing
+  a held-input tracking pattern nothing else in `arena.gd` uses, against the user's own "pressing"
+  phrasing.
+- **Sharing `arena_dodge_cooldown`** — rejected because parry and dodge are mechanically distinct
+  (different payoff, different active-window math) and sharing one tunable would silently retune
+  dodge's cooldown every time parry needs adjusting, or vice versa; they only share an input
+  binding, not a balance axis.
+- **A perfect/late guard split** — rejected above under "Binary, not late/early."
+- **Arena-local block damage reduction** — not applicable; there is no damage number to reduce (no
+  HP model). Parry's entire payoff has to be physical (negated reaction + stagger), which is what
+  is ruled above.
+
+> ⚠️ **PROVISIONAL** — every value in the table above is a first-playable guess with no arithmetic
+> precedent the way `P2b-01d`'s dodge-window numbers had (that section could check interval overlap
+> against a fixed enemy attack cycle; this section has no equivalent check, since parry timing
+> hasn't been played against that cycle at all yet). · **Settled by:** playing the reworked build
+> against the existing `0.55 s`-startup enemy attack and checking whether `0.18 s` reads as a fair
+> "you earned that" window or a hair-trigger coin flip, whether `0.35 s` whiff recovery feels like a
+> real cost or an unnoticed footnote, and whether the `0.6 s` enemy stagger gives enough room for
+> the counter to land before the enemy recovers control — none of which can be checked at a desk
+> the way the dodge-cycle arithmetic in `P2b-01d` could.
 
 ---
 

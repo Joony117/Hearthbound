@@ -41,6 +41,13 @@ extends Resource
 @export var arena_dodge_duration: float = 0.38
 @export var arena_dodge_iframe_duration: float = 0.25
 @export var arena_dodge_cooldown: float = 0.15
+@export var arena_parry_startup: float = 0.0
+@export var arena_parry_active_window: float = 0.18
+@export var arena_parry_whiff_recovery: float = 0.35
+@export var arena_parry_success_recovery: float = 0.10
+@export var arena_parry_cooldown: float = 0.15
+@export var arena_parry_hit_stop: float = 0.08
+@export var arena_parry_enemy_stagger: float = 0.6
 @export var rank_names: PackedStringArray = ["F", "D", "C", "B", "A", "S", "SS", "SSS"]
 @export var equip_pct_per_rank: Array[float] = [0.04, 0.054, 0.0728, 0.0984, 0.1328, 0.1792, 0.242, 0.3268]
 @export var equip_crit_pct_per_rank: Array[float] = [0.015, 0.02025, 0.0273, 0.0369, 0.0498, 0.0672, 0.09075, 0.12255]
