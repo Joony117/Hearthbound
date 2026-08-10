@@ -125,6 +125,18 @@ shape = SubResource("Shape_hero")
 [node name="Mesh" type="MeshInstance3D" parent="EnemyCapsule"]
 mesh = SubResource("Mesh_enemy")
 
+[node name="EnemyAttackHitbox" type="Area3D" parent="EnemyCapsule"]
+unique_name_in_owner = true
+position = Vector3(0, 0, -0.75)
+collision_layer = 0
+collision_mask = 1
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyCapsule/EnemyAttackHitbox"]
+position = Vector3(0, 0, -0.75)
+shape = SubResource("Shape_attack")
+
 [node name="CameraPivot" type="Node3D" parent="."]
 unique_name_in_owner = true
 position = Vector3(0, 2.25, 0)
