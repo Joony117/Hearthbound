@@ -4599,3 +4599,129 @@ reaped. `Wave`, `CombatResult`, `Expedition`, permadeath and save state remain u
 coherent and rendered, but automation cannot decide whether the strike feels dense. Their
 `PROVISIONAL` marker remains until the graybox is played; `P2b-01d` must not treat them as settled
 when adding an enemy attack and dodge.
+
+## P2b-01d — One enemy attack and one dodge                                    [DONE]
+
+### Objective
+The enemy capsule telegraphs a swing and hits back. The player can dodge through it — and a landed
+enemy hit shoves and briefly stuns the player instead of passing through them.
+
+### Existing architecture
+- `combat/arena/arena.gd` (173 lines) runs one branch chain in `_physics_process` — hit-stop, else
+  attack, else locomotion — then a single `move_and_slide()` and a camera-pivot follow. The light
+  attack is a scene-local elapsed timeline (`_attack_elapsed`) read against `arena_light_attack_*`;
+  the enemy's swing is the same shape plus a proximity trigger.
+- `%AttackHitbox` is an `Area3D` under `%HeroCapsule` whose `BoxShape3D` is **`duplicate()`d in
+  `_ready()`** before being resized from `arena_light_attack_reach`. That copy is not optional —
+  writing through to the shared shape persists to disk for every consumer
+  (`ARCHITECTURE.md` § "Reaching shared Resources"). The enemy's hitbox needs the identical
+  treatment.
+- `%EnemyCapsule` is a passive `CharacterBody3D` with no script, no velocity and no facing logic. It
+  is `queue_free()`d by `_update_hit_stop`, which then emits `enemy_defeated`.
+- All 15 `arena_*` tunables live on `BalanceTable` (`balance_table.gd`, `balance.tres:18-32`) and are
+  reached through `Arena.BALANCE`. The arena holds no state on any autoload, mutates no save key and
+  never touches `GameSession` — `tests/unit/test_arena.gd` pins that with a `to_dict()` comparison.
+- `project.godot`'s `[input]` map has six actions (`move_left/right/forward/back`, `sprint`,
+  `attack` on left mouse). There is no `dodge` action.
+- `docs/SYSTEMS.md` § Action arena § "Enemy attack, dodge and hit reaction (`P2b-01d`)" authors all
+  14 values and every behavioral rule below. It is the spec; do not re-derive or re-pick anything
+  inside a helper.
+
+### Acceptance criteria
+1. The 14 `arena_*` fields named in that subsection exist on `BalanceTable` and are authored in
+   `balance.tres` with exactly the ruled values. **No timing, speed or distance literal from the
+   ruling appears in `arena.gd`.**
+2. A `dodge` input action exists in `project.godot`, bound to physical `Space`, and the existing six
+   actions are unchanged.
+3. The enemy attacks on cadence gated on proximity: it may only *start* a swing while the player is
+   within `arena_enemy_attack_trigger_range`, runs
+   startup → active → recovery (`0.55`/`0.10`/`0.45 s`), then waits `arena_enemy_attack_cooldown`
+   before becoming eligible again. It turns toward the player at
+   `arena_enemy_turn_speed_degrees` in every state **except** its own active window and recovery,
+   where facing locks — mirroring the player's own attack facing-commit.
+4. A hit landing on the player during the enemy's active window, with the player not in i-frames,
+   produces all three effects in order: `arena_enemy_attack_hit_stop` freezing both capsules, then a
+   `arena_enemy_knockback_speed` impulse directed away from the enemy and decaying under the
+   existing `arena_deceleration`, and `arena_enemy_hit_stun` of input lockout (movement, attack and
+   dodge) **starting when hit-stop ends**, not when contact happens.
+5. Dodge bursts at `arena_dodge_speed` decaying across `arena_dodge_duration`, with i-frames active
+   for the first `arena_dodge_iframe_duration` only. Direction is the camera-relative movement input
+   if one is held (reuse `_camera_relative_direction`), otherwise a backstep directly away from the
+   capsule's current facing.
+6. Dodge may start during the light attack's **recovery** window, but not during its startup or
+   active window, and not within `arena_dodge_cooldown` of a previous dodge's burst ending. A second
+   dodge pressed during a dodge does nothing.
+7. Pressing dodge so that i-frames cover the enemy's active window results in **no hit** — no
+   hit-stop, no knockback, no stun.
+8. `P2b-01c` behavior is intact: the player's light attack still defeats the enemy on contact with
+   its own `0.04 s` hit-stop, `Esc` still releases the cursor and routes to `SceneRouter.HUB`, and
+   `GameSession.to_dict()` is byte-identical across an arena load/unload.
+9. New GUT coverage in `tests/unit/test_arena.gd` **drives the real handlers** — `_physics_process`
+   and `_unhandled_input` on an instantiated arena, not private state pokes — for: the enemy
+   swinging when the player is in range and not swinging when out of it, a landed hit producing
+   knockback and lockout, a dodge's i-frames preventing that hit, and the dodge cooldown refusing an
+   immediate second dodge. Existing tests still pass.
+10. BUILT green: the import gate with **zero** script errors and zero warnings, and the GUT suite
+    green.
+
+### Files allowed to change
+Written after grepping every `arena` reference in `*.gd`/`*.tscn`/`*.tres`/`project.godot`:
+`balance_table.gd`, `balance.tres`, `combat/arena/arena.gd`, `combat/arena/arena.tscn`,
+`project.godot`, `tests/unit/test_arena.gd`. `hub/hub.gd`, `hub/hub.tscn`,
+`systems/scene_router.gd` and `systems/game_session.gd` reference only the arena's *scene path* and
+must not change.
+
+### Non-goals
+Combo trees, a Smash, enemy HP or any damage number, arena-local player HP, multiple enemies, enemy
+death from anything but the existing single light-attack contact, the `0.15–0.25 s` input buffer
+(deferred by the ruling), hit-drag, any HUD or on-screen readout, controller support (`P2b-02`), and
+anything touching `Wave`, `CombatResult`, an autoload or a save key.
+
+### Boundary
+Crosses `CLAUDE.md` boundary 2 (scene ↔ script seam: new `.tscn` nodes and a new input-map action),
+so a `verifier` pass is **mandatory**. No save key changes, so boundary 1 is untouched.
+
+### Findings
+
+**The allowed-file list was right this time, and the grep is why.** Several consecutive tickets before
+this one shipped a list that omitted or invented a call site. Writing it *after* grepping every
+`arena` reference — rather than from memory of which files "sound involved" — cost one command and
+was the whole difference: `hub/hub.gd`, `hub/hub.tscn`, `systems/scene_router.gd` and
+`systems/game_session.gd` all mention the arena, and all of them mention only its scene *path*, which
+is exactly the distinction a list written off a bare file-name grep gets wrong in the other
+direction.
+
+**Hit-stop had one meaning and now has two, so it is tagged rather than shared.** Before this ticket
+`_hit_stop_remaining` could only mean "the player's swing landed", and `_update_hit_stop` ended by
+deleting the enemy unconditionally. Reusing that timer for the enemy's swing landing on the player
+would have deleted the enemy every time *you* got hit — with both gates green, since nothing asserted
+which contact caused the freeze. The fix is a `HitStopOutcome` enum set at the contact site and read
+once at the end of the freeze. The generalizable form: when a single timer gains a second cause, tag
+the cause where it is known, rather than adding a second boolean beside the timer.
+
+**A test that steps a state machine once proves almost nothing.** The `verifier` rejected the first
+"enemy does not swing out of range" test because it asserted after a single `_physics_process` call —
+the enemy could not have reached its active window in one step whether range gating existed or not,
+so the assertion passed identically with the gate deleted. The fixed test steps through the full
+startup *plus* active window at the enemy's out-of-range default position. Same family as the
+repeated "reads real, measures nothing" entries, in test form rather than data form: check that an
+assertion can fail before trusting that it passed.
+
+**Running the engine rewrites `project.godot`'s pinned header.** This session opened with an
+uncommitted modification to that file left by the previous one: Godot had replaced
+`; Pinned to Godot 4.7.1 stable - see docs/DECISIONS.md.` with its own default multi-line header.
+Any ticket that runs the engine *and* legitimately edits `project.godot` — this one added the `dodge`
+action — must diff the file before committing, or the pin note disappears inside a real change.
+
+**One unexplained red, recorded rather than smoothed over.** A single mid-session GUT run failed
+`test_save_service.gd::test_non_dictionary_save_is_refused_without_resetting_game_session`; three
+later runs, including the director's own verification run, were 137/137. The file is untouched by
+this diff and the failure was not root-caused. If it recurs it is a real flake in the save-refusal
+path and worth its own ticket, not an arena problem.
+
+**Feel is still entirely unplayed.** Every one of the 14 values is a desk number inside a verified
+arithmetic relationship — the `0.40–0.55 s` full-coverage dodge window, the `1.70 s` enemy cycle
+against the `0.53 s` dodge cycle. Whether the telegraph reads as "timed" rather than "twitch" or
+"trivial", and whether a `3.0 m` trigger range makes a dummy worth dodging rather than a wall to walk
+around, are exactly what the `PROVISIONAL` marker in `SYSTEMS.md` says only a played build settles.
+`P2b-01e` must not treat them as settled.

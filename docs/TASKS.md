@@ -643,86 +643,16 @@ which no amount of re-reading the row would have surfaced. Also read them before
 signature change's allowed-file list — this was the sixth consecutive wrong one, and the first where
 the grep had already found the missing caller.
 
-## P2b-01d — One enemy attack and one dodge                                    [WIP]
+## ~~P2b-01d — One enemy attack and one dodge~~                             [DONE]
 
-### Objective
-The enemy capsule telegraphs a swing and hits back. The player can dodge through it — and a landed
-enemy hit shoves and briefly stuns the player instead of passing through them.
-
-### Existing architecture
-- `combat/arena/arena.gd` (173 lines) runs one branch chain in `_physics_process` — hit-stop, else
-  attack, else locomotion — then a single `move_and_slide()` and a camera-pivot follow. The light
-  attack is a scene-local elapsed timeline (`_attack_elapsed`) read against `arena_light_attack_*`;
-  the enemy's swing is the same shape plus a proximity trigger.
-- `%AttackHitbox` is an `Area3D` under `%HeroCapsule` whose `BoxShape3D` is **`duplicate()`d in
-  `_ready()`** before being resized from `arena_light_attack_reach`. That copy is not optional —
-  writing through to the shared shape persists to disk for every consumer
-  (`ARCHITECTURE.md` § "Reaching shared Resources"). The enemy's hitbox needs the identical
-  treatment.
-- `%EnemyCapsule` is a passive `CharacterBody3D` with no script, no velocity and no facing logic. It
-  is `queue_free()`d by `_update_hit_stop`, which then emits `enemy_defeated`.
-- All 15 `arena_*` tunables live on `BalanceTable` (`balance_table.gd`, `balance.tres:18-32`) and are
-  reached through `Arena.BALANCE`. The arena holds no state on any autoload, mutates no save key and
-  never touches `GameSession` — `tests/unit/test_arena.gd` pins that with a `to_dict()` comparison.
-- `project.godot`'s `[input]` map has six actions (`move_left/right/forward/back`, `sprint`,
-  `attack` on left mouse). There is no `dodge` action.
-- `docs/SYSTEMS.md` § Action arena § "Enemy attack, dodge and hit reaction (`P2b-01d`)" authors all
-  14 values and every behavioral rule below. It is the spec; do not re-derive or re-pick anything
-  inside a helper.
-
-### Acceptance criteria
-1. The 14 `arena_*` fields named in that subsection exist on `BalanceTable` and are authored in
-   `balance.tres` with exactly the ruled values. **No timing, speed or distance literal from the
-   ruling appears in `arena.gd`.**
-2. A `dodge` input action exists in `project.godot`, bound to physical `Space`, and the existing six
-   actions are unchanged.
-3. The enemy attacks on cadence gated on proximity: it may only *start* a swing while the player is
-   within `arena_enemy_attack_trigger_range`, runs
-   startup → active → recovery (`0.55`/`0.10`/`0.45 s`), then waits `arena_enemy_attack_cooldown`
-   before becoming eligible again. It turns toward the player at
-   `arena_enemy_turn_speed_degrees` in every state **except** its own active window and recovery,
-   where facing locks — mirroring the player's own attack facing-commit.
-4. A hit landing on the player during the enemy's active window, with the player not in i-frames,
-   produces all three effects in order: `arena_enemy_attack_hit_stop` freezing both capsules, then a
-   `arena_enemy_knockback_speed` impulse directed away from the enemy and decaying under the
-   existing `arena_deceleration`, and `arena_enemy_hit_stun` of input lockout (movement, attack and
-   dodge) **starting when hit-stop ends**, not when contact happens.
-5. Dodge bursts at `arena_dodge_speed` decaying across `arena_dodge_duration`, with i-frames active
-   for the first `arena_dodge_iframe_duration` only. Direction is the camera-relative movement input
-   if one is held (reuse `_camera_relative_direction`), otherwise a backstep directly away from the
-   capsule's current facing.
-6. Dodge may start during the light attack's **recovery** window, but not during its startup or
-   active window, and not within `arena_dodge_cooldown` of a previous dodge's burst ending. A second
-   dodge pressed during a dodge does nothing.
-7. Pressing dodge so that i-frames cover the enemy's active window results in **no hit** — no
-   hit-stop, no knockback, no stun.
-8. `P2b-01c` behavior is intact: the player's light attack still defeats the enemy on contact with
-   its own `0.04 s` hit-stop, `Esc` still releases the cursor and routes to `SceneRouter.HUB`, and
-   `GameSession.to_dict()` is byte-identical across an arena load/unload.
-9. New GUT coverage in `tests/unit/test_arena.gd` **drives the real handlers** — `_physics_process`
-   and `_unhandled_input` on an instantiated arena, not private state pokes — for: the enemy
-   swinging when the player is in range and not swinging when out of it, a landed hit producing
-   knockback and lockout, a dodge's i-frames preventing that hit, and the dodge cooldown refusing an
-   immediate second dodge. Existing tests still pass.
-10. BUILT green: the import gate with **zero** script errors and zero warnings, and the GUT suite
-    green.
-
-### Files allowed to change
-Written after grepping every `arena` reference in `*.gd`/`*.tscn`/`*.tres`/`project.godot`:
-`balance_table.gd`, `balance.tres`, `combat/arena/arena.gd`, `combat/arena/arena.tscn`,
-`project.godot`, `tests/unit/test_arena.gd`. `hub/hub.gd`, `hub/hub.tscn`,
-`systems/scene_router.gd` and `systems/game_session.gd` reference only the arena's *scene path* and
-must not change.
-
-### Non-goals
-Combo trees, a Smash, enemy HP or any damage number, arena-local player HP, multiple enemies, enemy
-death from anything but the existing single light-attack contact, the `0.15–0.25 s` input buffer
-(deferred by the ruling), hit-drag, any HUD or on-screen readout, controller support (`P2b-02`), and
-anything touching `Wave`, `CombatResult`, an autoload or a save key.
-
-### Boundary
-Crosses `CLAUDE.md` boundary 2 (scene ↔ script seam: new `.tscn` nodes and a new input-map action),
-so a `verifier` pass is **mandatory**. No save key changes, so boundary 1 is untouched.
+**Landed in the commit below.** Body moved to [`TASKS-DONE.md`](TASKS-DONE.md); row in Completed
+tickets below. The arena stops being a training dummy — the enemy telegraphs a swing, a landed hit
+shoves and stuns instead of passing through, and dodge answers it with i-frames. The mandatory
+boundary-2 `verifier` pass rejected one test and was right: the "enemy does not swing out of range"
+assertion ran a single physics step and passed identically with range gating deleted. **Read its
+Findings before reusing a timer that gains a second cause** — hit-stop meant "your swing landed"
+until this ticket, and sharing it untagged would have deleted the enemy every time *you* got hit,
+with both gates green.
 
 ---
 
@@ -813,13 +743,17 @@ range or timing is authored around it.
 | P2b-01b | WASD movement + mouse aim | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Mechanically proved the first input slice; its fixed-camera instant-movement ruling was superseded by `P2b-01b-2` before attacks depended on it. |
 | P2b-01b-2 | Vindictus movement and camera baseline | **Landed `1785f05`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Captured third-person camera, camera-relative facing, `5.8` jog/`8.0` sprint and `42`/`65` acceleration/deceleration replace the rejected prototype controls. Rendered hub → arena → hub verification passed with the complete profile unchanged. Unblocks `P2b-01c`; tuning remains provisional until attack displacement and hit-stop can be felt with it. |
 | P2b-01c | One attack defeats one enemy capsule | **Landed `aa78d6a`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). One scene-local elapsed timeline drives startup, a `2.0 m` facing-directed lunge and recovery; one native `Area3D` defeats the passive capsule after `0.04 s` local hit-stop. The boundary-2 verifier and rendered physical-left-click flow passed with the full profile unchanged. Feel values remain PROVISIONAL until played. |
-| P2b-01d | One enemy attack and one dodge | **[WIP]** — body above. Keeps damage avoidance separate from the first attack slice. `game-designer` ruled all four missing inputs (`SYSTEMS.md` § "Enemy attack, dodge and hit reaction"): a `0.55/0.10/0.45 s` enemy swing on a `3.0 m` proximity-gated cadence, a physical hit-reaction instead of arena-local HP, and dodge's cooldown/cancel/neutral-direction terms. The input buffer stayed deferred — it is cross-cutting across Normal/Smash/Dodge, and authoring it for dodge alone is a worse inconsistency than having none. |
+| P2b-01d | One enemy attack and one dodge | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Kept damage avoidance separate from the first attack slice. `game-designer` ruled all four missing inputs (`SYSTEMS.md` § "Enemy attack, dodge and hit reaction"): a `0.55/0.10/0.45 s` enemy swing on a `3.0 m` proximity-gated cadence, a physical hit-reaction instead of arena-local HP, and dodge's cooldown/cancel/neutral-direction terms. The input buffer stayed deferred — it is cross-cutting across Normal/Smash/Dodge, and authoring it for dodge alone is a worse inconsistency than having none. |
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | Integration slice. `Expedition` remains the sole outcome/permadeath consumer. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
-<!-- Fresh-session handoff: P2b-01d is expanded into a full body above and its four design inputs
- are ruled (SYSTEMS.md § "Enemy attack, dodge and hit reaction"). It is an implementer dispatch,
- not a tech-lead pass. Keep Godot engine access serialized and reap every process. -->
+<!-- Fresh-session handoff after P2b-01d: P2b-01e is next and needs a tech-lead pass, not a direct
+ dispatch — it is the integration slice where the arena accepts the existing `Wave` and returns the
+ existing `CombatResult`, so it crosses the combat seam (CLAUDE.md boundary 4) and must keep
+ `Expedition` the sole outcome/permadeath consumer. Read ARCHITECTURE.md § The combat seam,
+ combat/quick_resolve.gd, hub/expedition/expedition.gd and the P2b-01d body in TASKS-DONE.md before
+ scoping it. The arena's 14 P2b-01d values are still PROVISIONAL and unplayed; do not tune or build
+ around them as settled. Keep Godot engine access serialized and reap every process. -->
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3.
@@ -904,6 +838,7 @@ needs to re-read.
 | `P2b-01b` | Move and aim the arena capsule | `f024026` |
 | `P2b-01b-2` | Vindictus movement and camera baseline | `1785f05` |
 | `P2b-01c` | One light attack defeats one passive enemy capsule | `aa78d6a` |
+| `P2b-01d` | One enemy attack and one dodge | `b4b8e7f` |
 
 ---
 
