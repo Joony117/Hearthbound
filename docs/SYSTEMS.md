@@ -1018,6 +1018,111 @@ inside a helper.
 > root displacement and hit-stop together after `P2b-01c`; tune the authored values, not the control
 > model, unless that play pass shows the model itself is wrong.
 
+### Enemy attack, dodge and hit reaction (`P2b-01d`)
+
+The `EnemyCapsule` gains one telegraphed attack and the player gains dodge. This stays graybox:
+one enemy, one attack, no HP anywhere, no combo trees, no Wave/`CombatResult` connection — `P2b-01e`
+alone does that integration.
+
+**Enemy attack timeline.** Same startup/active/recovery shape as the player's light attack, plus a
+proximity trigger the light attack didn't need.
+
+| Tunable | Value |
+|---|---:|
+| `arena_enemy_attack_startup` | `0.55 s` |
+| `arena_enemy_attack_active` | `0.10 s` |
+| `arena_enemy_attack_recovery` | `0.45 s` |
+| `arena_enemy_attack_reach` | `1.6 m` |
+| `arena_enemy_attack_trigger_range` | `3.0 m` |
+| `arena_enemy_attack_cooldown` | `0.6 s` |
+| `arena_enemy_turn_speed_degrees` | `720°/s` |
+| `arena_enemy_attack_hit_stop` | `0.06 s` |
+| `arena_enemy_knockback_speed` | `6.0 m/s` |
+| `arena_enemy_hit_stun` | `0.35 s` |
+| `arena_dodge_speed` | `13.5 m/s` |
+| `arena_dodge_duration` | `0.38 s` |
+| `arena_dodge_iframe_duration` | `0.25 s` |
+| `arena_dodge_cooldown` | `0.15 s` |
+
+The dodge burst, duration and i-frame window were already fixed by the "Combat reference" table
+above; they are listed here only because this is the first slice that gives them `BalanceTable`
+field names.
+
+**Why `0.55 s` startup is fair.** i-frames last `0.25 s` from the moment dodge is pressed, and the
+enemy's active (hit) window is `0.10 s`, so pressing dodge anywhere in the last `0.25 s` of the
+telegraph (`t = 0.30 s` to `t = 0.55 s`, telegraph running `t = 0 s` to `t = 0.55 s`) keeps
+i-frames overlapping the hit moment at all, and pressing in the last `0.15 s` of that
+(`t = 0.40 s` to `t = 0.55 s`) covers the entire active window. That is a real, learnable "dodge
+when the swing is about to land" read — not a hair-trigger reaction to the first frame of
+telegraph, and not a free reaction window either: a player who dodges the instant the telegraph
+starts (`t ≈ 0 s`–`0.2 s`) is too early and gets hit. `0.55 s` is roughly 4.5× the player's own
+`0.12 s` attack startup, deliberately: the enemy's tell has to be readable at a glance, the
+player's own attack does not.
+
+Dodge is not spam-proof against this timing. The dodge cycle (`0.38 s` burst + `0.15 s` cooldown =
+`0.53 s`) and the enemy's attack cycle (`0.55 + 0.10 + 0.45 + 0.6 s` = `1.70 s`) are not integer
+multiples of each other, so dodging on cooldown without watching the telegraph does not guarantee
+a full-coverage window lands inside every enemy swing — confirmed by interval arithmetic, not
+assumed. That is intentional: the decision the Phase 2 exit question asks about ("is spending a
+hero's life a decision you actually feel") only exists if avoidance takes a real read, not a
+metronome button-press.
+
+**Trigger and facing.** Cadence gated on proximity, the middle option between a pure fixed
+cadence (attacks fire uselessly while the player is out of range) and a pure proximity trigger
+(attacks the instant the player enters range with no downtime, feels twitchy for a first pass):
+the enemy may only start an attack while the player is within `arena_enemy_attack_trigger_range`,
+and after a swing's recovery ends it waits `arena_enemy_attack_cooldown` before it is eligible to
+attack again, still gated on the player remaining in range. The enemy turns to face the player at
+`arena_enemy_turn_speed_degrees = 720°/s` — half the player's own `1200°/s` — during any state
+other than its own attack active window and recovery, where facing locks, mirroring the player's
+own attack facing-commit rule. `720°/s` covers a full turn in half a second, so in practice the
+enemy is always facing the player by the time it attacks regardless of circling; the fairness
+lever in this slice is timing, not out-turning the enemy's tracking, and a graybox dummy that
+could be out-run by circling would not test the dodge at all. Rejected: instant snap-to-face
+(removes the last shred of positioning read, and reads as unfair rather than simple) and a frozen
+facing sampled once at telegraph start (lets the player trivially sidestep out of a locked cone,
+which tests movement more than it tests dodge — not what this ticket owns).
+
+**Landed hit on the player.** No arena-local HP, no on-screen readout — a physical hit-reaction:
+`arena_enemy_attack_hit_stop` freezes both capsules on contact (same pattern as the player's own
+light attack landing), then a `arena_enemy_knockback_speed` impulse fires away from the enemy and
+decays under the existing `arena_deceleration` (no new decel constant needed — it stops in
+`6.0 / 65.0 ≈ 0.09 s`), and `arena_enemy_hit_stun` locks player input (movement, attack, dodge)
+starting when hit-stop ends, comfortably outlasting the knockback's own decay. Rejected:
+arena-local HP — it would invent a damage number with no real stakes attached (nothing consumes
+it), and the obvious next move is wiring it to `kill_hero()` or a home-grown death path, which is
+exactly the second result contract `P2b-01e` alone is supposed to own. Rejected: an on-screen
+readout — the arena has no HUD yet, so this is new UI scope smuggled into a combat-timing ticket,
+and a number on screen is a weaker "you got hit" signal than a shove and a stun.
+
+**Dodge's remaining terms.**
+- **Cooldown:** `arena_dodge_cooldown = 0.15 s` after the burst ends before another dodge may
+  start. Rejected: no cooldown — immediate re-dodge turns dodge into a near-permanent i-frame
+  toggle (the 0.53 s finding above assumes this floor exists; without it there is no "decision" at
+  all, which is the opposite of the Phase 2 exit question).
+- **Cancels light-attack recovery:** confirmed, not tightened. The already-fixed rule ("end-
+  recovery only, primarily after a Smash; no cancel during an active hit and no chained dodge")
+  applies as written — dodge may start once the light attack's own state reaches its recovery
+  window, and the `0.15 s` dodge cooldown already forecloses chaining a second dodge.
+- **Neutral dodge (no movement input held):** a backstep — dodge direction is the camera-relative
+  input direction if one is held (reusing the existing `_camera_relative_direction` helper used
+  for locomotion and attack facing), otherwise directly away from the capsule's current facing.
+  Rejected: a facing-forward roll — defaulting a defensive action toward whatever the player
+  happens to be facing (usually the enemy) risks rolling into the attack it exists to avoid, and a
+  backstep is the legible "no input" default this genre already uses.
+- **Input buffer:** deferred, not authored in this slice. The `0.15–0.25 s` buffer in the
+  "Combat reference" table is cross-cutting (Normal, Smash and Dodge together); authoring it for
+  dodge alone would give one action a buffer the others lack, which is a worse inconsistency than
+  having none yet. Raw per-frame input polling (already how `_start_attack` and locomotion read
+  input in `arena.gd`) is sufficient to make one enemy attack and one dodge playable.
+
+> ⚠️ **PROVISIONAL** — every value in the table above is a first-playable number inside a verified
+> arithmetic relationship, not felt design; the enemy turn speed and trigger/cooldown cadence in
+> particular are guesses with no play behind them. · **Settled by:** playing `P2b-01d` and checking
+> whether the `0.40–0.55 s` full-coverage dodge window reads as "timed" rather than "twitch" or
+> "trivial," and whether `720°/s` enemy tracking and the `3.0 m` trigger range feel like a dummy
+> worth dodging rather than a wall the player just walks around.
+
 ---
 
 ## Expeditions — *Phase 2*
