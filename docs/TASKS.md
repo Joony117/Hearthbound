@@ -760,13 +760,15 @@ range or timing is authored around it.
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | Integration slice. `Expedition` remains the sole outcome/permadeath consumer. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
-<!-- Fresh-session handoff after P2b-01d: P2b-01e is next and needs a tech-lead pass, not a direct
+<!-- Fresh-session handoff after P2b-01f: P2b-01e is next and needs a tech-lead pass, not a direct
  dispatch — it is the integration slice where the arena accepts the existing `Wave` and returns the
  existing `CombatResult`, so it crosses the combat seam (CLAUDE.md boundary 4) and must keep
  `Expedition` the sole outcome/permadeath consumer. Read ARCHITECTURE.md § The combat seam,
  combat/quick_resolve.gd, hub/expedition/expedition.gd and the P2b-01d body in TASKS-DONE.md before
  scoping it. The arena's 14 P2b-01d values are still PROVISIONAL and unplayed; do not tune or build
- around them as settled. Keep Godot engine access serialized and reap every process. -->
+ around them as settled, and P2b-01f added seven more parry values plus a facing reversal in the
+ same state. Nobody has played any of it. Keep Godot engine access serialized and reap every
+ process. -->
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3.
@@ -852,7 +854,7 @@ needs to re-read.
 | `P2b-01b-2` | Vindictus movement and camera baseline | `1785f05` |
 | `P2b-01c` | One light attack defeats one passive enemy capsule | `aa78d6a` |
 | `P2b-01d` | One enemy attack and one dodge | `b4b8e7f` |
-| `P2b-01f` | Facing follows the camera, and a standstill press parries | see below |
+| `P2b-01f` | Facing follows the camera, and a standstill press parries | `46e16c2` |
 
 ---
 
