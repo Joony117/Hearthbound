@@ -1256,6 +1256,127 @@ special penalty beyond having already spent `arena_parry_whiff_recovery` locked 
 > the counter to land before the enemy recovers control — none of which can be checked at a desk
 > the way the dodge-cycle arithmetic in `P2b-01d` could.
 
+### Hero HP and the death rule (`P2b-01e`)
+
+`P2b-01d` shipped the enemy's full hit-stop/knockback/hit-stun timeline but deliberately shipped no
+HP anywhere, naming this ticket as the owner once `CombatResult` gives the number real stakes
+(`docs/TASKS.md:671`). Three questions, ruled in order.
+
+**1. How a landed hit becomes HP loss.** A flat hit count, not a per-hit fraction compared against
+a floating HP total. `arena_enemy_hits_to_kill_hero = 3`: the arena tracks one integer,
+`_hits_taken`, incremented once per landed, un-dodged, un-parried enemy hit (the existing
+`HitStopOutcome.HIT_HERO` branch, `combat/arena/arena.gd:183-191` — it already exists and only
+needs the counter added beside it). The hero is dead the instant `_hits_taken >= 3`; that integer
+comparison, not a float crossing zero, is the authoritative death signal. `CombatResult.hp_after`
+is populated for display/contract purposes only, derived from the same count:
+
+```
+damage_fraction = clamp(float(hits_taken) / float(arena_enemy_hits_to_kill_hero), 0.0, 1.0)
+hp_after = maximum_hp * (1.0 - damage_fraction)
+```
+
+which mirrors `quick_resolve.gd:41`/`:51`'s existing `maximum_hp * (1.0 - damage_fraction)` shape
+rather than inventing a new one. `maximum_hp` is sourced from
+`Hero.compute_final_stats(hero, definition, BALANCE, level)[Hero.STAT_HP]`, already required by the
+ticket's acceptance criterion 1. Routing to `survivors`/`dead_heroes` reads `_hits_taken`, never
+`hp_after <= 0.0`.
+
+**Rejected: a per-hit HP fraction with float-threshold death** (`hp_after <= 0.0` decides).
+Codex-verified (thread `019fed84-aa60-7591-9d13-585de410ce7f`) that a fixed `1/3`-per-hit fraction
+*can* be made to land exactly on `0.0` after three hits, but only if the constant is computed as
+the expression `1.0 / 3.0` at the point of use — the moment that value instead comes from a `.tres`
+decimal literal with finite digits (the normal way `BalanceTable` fields are authored and the
+normal way the Godot editor round-trips a saved float), `3 * fraction` rounds to something a hair
+under `1.0`, `clamp(..., 0.0, 1.0)` doesn't trigger, and the "killing" third hit leaves the hero
+alive at a `~1e-13`-fraction sliver of HP. An integer hit counter has no equivalent failure mode
+and is also less code than getting float rounding right on purpose, so it wins outright — not just
+by being safer.
+
+**Rejected: iterative decay (`hp_after *= (1.0 - fraction)` per hit).** Also Codex-verified: this
+is a different model (diminishing returns per hit, not three equal-sized hits) and leaves the hero
+alive at `~29.6%` HP after three hits instead of dead. It's a plausible model on its own terms but
+not the one three hits killing means.
+
+**Why 3, not 1 or 2.** 1 hit is inconsistent with what `P2b-01d` already shipped: hit-stop then a
+knockback impulse then `0.35 s` of locked player input only make sense if the encounter continues
+afterward — a one-hit death would have to replace that whole reaction with an immediate end-state,
+contradicting the "comfortably outlasting the knockback's own decay" framing already written for
+it (`SYSTEMS.md:1097`). 2 hits was the tighter alternative considered and rejected for this first
+slice: it halves the margin for a player who is still learning the `0.55 s` telegraph read
+`P2b-01d` was written to teach, without any played evidence that the tighter number reads better —
+3 gives a "first hit is a scare, second is a real warning, third is death" arc, consistent with the
+"learnable, not hair-trigger" intent already on record for the dodge window. Nothing here retunes
+`P2b-01d`'s own ~21 values; only the new hit-count field is authored.
+
+**Timeline check — winnable, and losable.** Using the already-shipped cadence (`P2b-01d`) and the
+already-shipped player attack cycle (`P2b-01c`), Codex-verified from `_update_enemy` and
+`_update_hit_stun` directly (same thread):
+- **Losable, and not trivially so.** `_update_hit_stun` never gates `_update_enemy`
+  (`combat/arena/arena.gd:67-83`), so a player who stands in range and never dodges or parries
+  keeps taking hits on the enemy's own clock regardless of being stunned. Landed-hit-to-landed-hit
+  interval is `0.06 s` hit-stop + `0.10 s` active + `0.45 s` recovery + `0.6 s` cooldown + `0.55 s`
+  startup = `1.76 s` (not the raw `1.70 s` telegraph-to-telegraph figure from `P2b-01d`, which
+  didn't account for the hit-stop pause). Third hit — death — lands at roughly `t ≈ 4.07 s` into
+  the encounter if the player does nothing but stand still and eat every swing. That is long enough
+  to register as "I could have dodged that" more than once, not a single unlucky frame.
+- **Winnable without requiring perfect play.** The enemy stays a one-hit kill (below), and the
+  player's full attack cycle (`0.12 + 0.10 = 0.22 s` to the active hit frame) is shorter than the
+  enemy's own `0.55 s` telegraph, so a player who closes distance and swings during the *first*
+  telegraph can land the killing blow before ever being hit, without needing to dodge at all. A
+  player who instead reads dodges (already shown non-spammable but learnable in `P2b-01d`'s
+  interval-arithmetic finding) survives indefinitely on defense and only needs one clean opening in
+  the enemy's `0.45 s` recovery or gaps in its cadence to end it. Both a competent-play win and a
+  do-nothing loss are reachable through the real input handlers, which is what the ticket's GUT
+  acceptance criteria (2)/(3) need.
+
+**2. Does the enemy capsule get HP too.** No — it keeps `P2b-01c`'s existing one-hit-kill rule,
+unconditionally, regardless of `wave.enemy_power`. No new field. **Rejected: enemy HP scaled off
+`wave.enemy_power`** — there is no authored player-damage-per-hit number to scale against (light
+attack has never had one; it has only ever been "defeats the passive target on contact"), so this
+would mean inventing a full enemy stat/damage model, which is exactly the "enemy bestiary/species"
+scope the ticket's Non-goals already excludes. It would also retune a mechanic `P2b-01c` shipped
+and is itself unplayed feel, which this ruling is told not to touch.
+
+**3. Does either number scale with the power ratio.** No — fixed for this slice. Neither
+`arena_enemy_hits_to_kill_hero` nor the enemy's one-hit-kill rule reads `wave.enemy_power` or
+`effective_enemy_power / team_power`. **Rejected: deriving the hit count (or a per-hit fraction)
+from `r = effective_enemy_power / team_power`**, the ratio `quick_resolve.gd:29-32` already
+computes — the arena is exactly one hero against exactly one enemy in real time; there is no
+`team_power` analogue for a single capsule (`Hero.compute_team_power` sums four stats across a
+roster the arena never builds), and inventing one solely to feed an `r` this slice's timeline
+doesn't otherwise use is authoring a system where a constant already suffices. Concretely, this
+means a graybox dummy fed Verdant Outskirts' `Wave` (`recommended_power = 900`) and one fed
+Sundered Vault's (`recommended_power = 11500`, ~12.8× harder) currently die and kill on identical
+terms — the fixed number doesn't know the difference. That's acceptable for an integration slice
+whose own enemy is still a single graybox capsule with no bestiary, but it is the concrete fact
+that forces this ruling open again once the arena needs to represent more than one zone's actual
+difficulty, not a hypothetical. A side effect worth flagging to whoever scopes the implementation:
+because nothing here reads `wave.enemy_power`, the `Wave` the ticket requires passing into the
+arena is presently an inert pass-through for combat purposes — carried for the
+`docs/KNOWN_ISSUES.md` § "Quick resolve and the arena will disagree" reconciliation Phase 3 already
+defers, not consumed by anything in this slice. Not a scope change; the ticket already requires
+accepting a real `Wave` regardless of whether its number is used yet.
+
+**New `BalanceTable` field.**
+
+| Tunable | Value |
+|---|---:|
+| `arena_enemy_hits_to_kill_hero` | `3` (int) |
+
+Sits beside `arena_enemy_hit_stun` in both `balance_table.gd` and `balance.tres`, in the same block
+as the rest of `P2b-01d`'s enemy attack tunables (`balance.tres:38-40`). No field is added for the
+enemy capsule's HP — it has none.
+
+> ⚠️ **PROVISIONAL** — `3` is a first-playable number chosen for consistency with the already-shipped
+> (also-PROVISIONAL) hit-reaction timeline, not felt design; nobody has died in the arena yet. The
+> `4.07 s` worst-case-tank timeline above is checked arithmetic, not played experience. · **Settled
+> by:** playing the real fight `P2b-01e` produces and checking whether three tank-hits reads as
+> "I had time to learn the read" or "the fight was already over before I understood what hit me,"
+> whether a single landed hit already feels sufficiently costly given the knockback+stun that
+> lands before any HP is even lost, and — per the Phase 2 exit question — whether losing the arena
+> hero (once this reaches a real permadeath consumer, which this slice explicitly does not) reads
+> as a decision anyone felt or as an inevitability nobody could have avoided.
+
 ---
 
 ## Expeditions — *Phase 2*

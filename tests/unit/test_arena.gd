@@ -3,17 +3,21 @@ extends GutTest
 const BALANCE: BalanceTable = preload("res://balance.tres")
 
 var _requested_scene: String = ""
+var _combat_result: CombatResult
 
 
 func before_each() -> void:
 	GameSession.from_dict({"roster": []})
+	SceneRouter.reset_arena_transition_state()
 	_requested_scene = ""
+	_combat_result = null
 
 
 func after_each() -> void:
 	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back", &"sprint", &"attack", &"dodge"]:
 		Input.action_release(action)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	SceneRouter.reset_arena_transition_state()
 
 
 func test_arena_loads_native_graybox_without_mutating_profile() -> void:
@@ -90,6 +94,7 @@ func test_arena_enemy_attack_and_dodge_use_authored_values() -> void:
 	assert_eq(BALANCE.arena_enemy_attack_hit_stop, 0.06)
 	assert_eq(BALANCE.arena_enemy_knockback_speed, 6.0)
 	assert_eq(BALANCE.arena_enemy_hit_stun, 0.35)
+	assert_eq(BALANCE.arena_enemy_hits_to_kill_hero, 3)
 	assert_eq(BALANCE.arena_dodge_speed, 13.5)
 	assert_eq(BALANCE.arena_dodge_duration, 0.38)
 	assert_eq(BALANCE.arena_dodge_iframe_duration, 0.25)
@@ -503,5 +508,83 @@ func test_arena_cancel_handler_requests_hub() -> void:
 	assert_eq(_requested_scene, SceneRouter.HUB)
 
 
+func test_arena_win_returns_surviving_hero_without_mutating_profile() -> void:
+	var hero := Hero.new("Winner", 0)
+	hero.def_id = &"knight"
+	GameSession.from_dict({"roster": [hero.to_dict()]})
+	hero = GameSession.roster[0]
+	var profile_before: Dictionary = GameSession.to_dict()
+	var wave: Wave = Wave.from_zone(preload("res://zones/defs/verdant_outskirts.tres"), 0)
+	var team: Array[Hero] = [hero]
+	SceneRouter.prepare_arena(team, wave)
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	arena.combat_resolved.connect(_capture_combat_result)
+
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	arena._unhandled_input(attack_event)
+	for _frame: int in range(80):
+		await wait_physics_frames(1)
+		if _combat_result != null:
+			break
+
+	assert_not_null(_combat_result)
+	assert_true(_combat_result.survivors.has(hero))
+	assert_true(_combat_result.dead_heroes.is_empty())
+	assert_true(_combat_result.maximum_hp.has(hero))
+	assert_true(_combat_result.hp_after.has(hero))
+	assert_gt(_combat_result.maximum_hp[hero], 0.0)
+	assert_eq(_combat_result.hp_after[hero], _combat_result.maximum_hp[hero])
+	assert_eq(GameSession.to_dict(), profile_before)
+
+
+func test_arena_loss_returns_dead_hero_without_mutating_profile() -> void:
+	var hero := Hero.new("Loser", 0)
+	hero.def_id = &"knight"
+	GameSession.from_dict({"roster": [hero.to_dict()]})
+	hero = GameSession.roster[0]
+	var profile_before: Dictionary = GameSession.to_dict()
+	var wave: Wave = Wave.from_zone(preload("res://zones/defs/verdant_outskirts.tres"), 0)
+	var team: Array[Hero] = [hero]
+	SceneRouter.prepare_arena(team, wave)
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	arena.combat_resolved.connect(_capture_combat_result)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	enemy_capsule.position = Vector3(0.0, 1.25, -2.0)
+
+	for hit_index: int in BALANCE.arena_enemy_hits_to_kill_hero:
+		var hits_before: int = arena._hits_taken
+		for _frame: int in range(240):
+			await wait_physics_frames(1)
+			if arena._hits_taken > hits_before:
+				break
+		assert_eq(arena._hits_taken, hits_before + 1)
+		if hit_index < BALANCE.arena_enemy_hits_to_kill_hero - 1:
+			enemy_capsule.global_position = hero_capsule.global_position + Vector3(0.0, 0.0, -2.0)
+			for _frame: int in range(240):
+				await wait_physics_frames(1)
+				if not arena._enemy_attack_hit:
+					break
+			assert_false(arena._enemy_attack_hit)
+
+	assert_not_null(_combat_result)
+	assert_true(_combat_result.dead_heroes.has(hero))
+	assert_true(_combat_result.survivors.is_empty())
+	assert_true(_combat_result.maximum_hp.has(hero))
+	assert_true(_combat_result.hp_after.has(hero))
+	assert_eq(_combat_result.hp_after[hero], 0.0)
+	assert_eq(GameSession.to_dict(), profile_before)
+
+
 func _capture_scene_request(scene_path: String) -> void:
 	_requested_scene = scene_path
+
+
+func _capture_combat_result(result: CombatResult) -> void:
+	_combat_result = result

@@ -4810,3 +4810,152 @@ telegraph. The `PROVISIONAL` markers in `SYSTEMS.md` say what settles them. The 
 the sharper risk of the two: it *reverses* a documented, already-played direction rather than
 adding a new one, and the capsule has no strafe animation to sell a body that faces the camera
 while moving sideways.
+
+---
+
+## P2b-01e — Arena accepts the existing `Wave` and returns the existing `CombatResult`     [TODO]
+
+### Was blocked by — now ruled
+`P2b-01d` shipped the enemy's swing timeline with deliberately **no HP anywhere** and named this
+ticket as the owner of the number. `game-designer` has ruled it: `docs/SYSTEMS.md` § "Hero HP and
+the death rule (`P2b-01e`)". The three answers this ticket implements verbatim:
+
+1. **One new `int` field, `arena_enemy_hits_to_kill_hero = 3`**, beside `arena_enemy_hit_stun` in
+   both `balance_table.gd` and `balance.tres`. Death is the **integer** comparison
+   `_hits_taken >= 3` on the existing `HitStopOutcome.HIT_HERO` branch — never `hp_after <= 0.0`.
+   `hp_after` is a cosmetic derivative for the contract only:
+   `maximum_hp * (1.0 - clamp(float(hits_taken) / float(cap), 0.0, 1.0))`.
+   **A float threshold was rejected for a measured reason**, not a stylistic one: a `1/3` per-hit
+   fraction authored as a `.tres` decimal literal sums to a hair under `1.0`, so the killing third
+   hit leaves the hero alive at a `~1e-13` sliver with every gate green. Do not reintroduce it.
+2. **The enemy keeps `P2b-01c`'s unconditional one-hit kill.** No enemy HP, no new field.
+3. **Nothing scales with `effective_enemy_power / team_power`.** Fixed for this slice — there is no
+   `team_power` analogue for a single capsule. Consequence to expect and not "fix": the `Wave` this
+   ticket passes in is an **inert pass-through** for combat purposes; a Verdant wave and a Sundered
+   wave (`~12.8×` apart) kill and die on identical terms. That is the ruled outcome, carried for the
+   Phase 3 reconciliation `KNOWN_ISSUES.md` already defers — not an omission to correct here.
+
+The `3` is **PROVISIONAL** and nobody has died in the arena yet; the `~4.07 s` do-nothing death
+timeline is checked arithmetic, not played experience. Ship it as authored — do not tune it, and do
+not tune `P2b-01d`/`P2b-01f`'s ~21 values around it.
+
+### Objective
+Playing the arena with one real hero against one real `Wave` produces a real `CombatResult` when
+the fight ends — win or lose — **structurally interchangeable** with what `combat/quick_resolve.gd`
+returns for the same `team`/`wave`: the same contract, every field populated the same way, without
+either `resolve()` implementation touching the other and without the arena touching `GameSession`.
+
+**Interchangeable in shape, not in value.** The two halves are *expected* to disagree on outcome —
+reconciling them is Phase 3 (`docs/KNOWN_ISSUES.md` § "Quick resolve and the arena will disagree"),
+and this ticket's own Non-goals defer it. An earlier draft of this line said "matching what
+`quick_resolve` would return", which contradicted both and was unfalsifiable as an acceptance bar;
+the `verifier` caught it. What must match is the contract.
+
+### Existing architecture
+- The seam is `func resolve(team: Array[Hero], wave: Wave) -> CombatResult`, implemented twice
+  with no shared base (`docs/ARCHITECTURE.md` § "The combat seam"; `docs/DECISIONS.md`,
+  2026-08-02). `combat/quick_resolve.gd:9` is the statistical half; `combat/arena/arena.gd` is
+  meant to be the real-time half but today accepts no `team` and no `Wave` at all.
+- `Wave` (`zones/wave.gd:1-22`) is a plain `RefCounted` holding one `enemy_power: float`, built
+  once by `Wave.from_zone(zone, wave_index)` and handed unchanged to whichever `resolve()` runs
+  it — the ramp interpolation must not be re-derived inside the arena.
+- `CombatResult` (`combat/combat_result.gd:1-8`) is the only output contract: `survivors`,
+  `hp_after`, `maximum_hp` (both `Dictionary[Hero, float]`), `dead_heroes`, `loot_seed`.
+  `quick_resolve.gd:21-25` sources `maximum_hp` from `Hero.compute_final_stats(hero, definition,
+  BALANCE, level)[Hero.STAT_HP]` — the same call is available to the arena for the entering hero.
+- `hub/expedition/expedition.gd` is the **only** place a `CombatResult` currently reaches
+  `GameSession`: `resolve()` calls `QuickResolve.resolve()` per wave (`expedition.gd:49`) and its
+  own comment marks it "the sole permadeath writer" at the `kill_hero()` call site
+  (`expedition.gd:67-68`). This ticket's arena output must never reach `Expedition` or call any
+  `GameSession` mutator directly.
+- `combat/arena/arena.gd` today (`P2b-01a`–`P2b-01f`) is a standalone graybox: exactly one
+  controllable `%HeroCapsule` and one `%EnemyCapsule`, entered via a bare
+  `SceneRouter.go_to(SceneRouter.ARENA)` from `hub/hub.gd:503-504` with nothing passed in and
+  nothing returned out. The enemy is defeated in exactly one hit (`P2b-01c`); the hero has **no
+  HP and no death condition** — a landed enemy hit only knocks back and hit-stuns
+  (`arena.gd:346-363`, `SYSTEMS.md:1093-1103`). Neither side's numbers derive from a `Wave` or a
+  `Hero`'s stats today.
+- `SceneRouter` is the only autoload permitted to change the main scene
+  (`docs/ARCHITECTURE.md:24-25`), and its own table entry scopes it to own "Main-scene
+  transitions, **transition state**" (`docs/ARCHITECTURE.md:46-50`) — the boundary-respecting
+  place to carry a one-hero `team`/`Wave` payload into the arena and a `CombatResult` back out,
+  without a fourth autoload and without adding level state to `GameSession` (`CLAUDE.md`
+  standing constraints).
+- `hub/hub.gd:467-500` (`_on_expedition_pressed`) already builds an `Array[Hero]` from
+  `_roster_list`'s selection and reads a `ZoneDefinition` off `_zone_option`, then reports the
+  outcome through `_status`. `_on_enter_arena_pressed` (`hub.gd:503-504`) is the analogous, still
+  empty, entry point — the same three widgets are reusable rather than new UI.
+
+### Acceptance criteria
+*(Applies once the `game-designer` ruling above lands with real numbers — do not dispatch to an
+`implementer` before that.)*
+
+1. The arena accepts exactly one `Hero` and a real `Wave` (via `Wave.from_zone`, never a
+   hand-built value), sets the entering hero's tracked maximum HP from
+   `Hero.compute_final_stats(...)[Hero.STAT_HP]`, and — when the fight ends — emits a
+   `CombatResult`-bearing signal in place of (or alongside) the current bare `enemy_defeated`.
+2. A GUT test drives the win branch with the ruled numbers set so the outcome is deterministic
+   (through the real `_physics_process`/`_unhandled_input` handlers, not private state pokes —
+   `P2b-01d`'s pattern) and asserts the emitted `CombatResult.survivors` contains the hero,
+   `dead_heroes` is empty, and `hp_after`/`maximum_hp` are populated for it.
+3. A second GUT test drives the loss branch the same way and asserts `dead_heroes` contains the
+   hero and `survivors` is empty.
+4. `hub.gd`'s Enter Arena flow requires exactly one selected hero, reads a real `Wave` off the
+   selected zone, and displays the returned `CombatResult` through `_status` only — mirroring
+   `_on_expedition_pressed`'s reporting, not its `GameSession` side effects.
+5. `GameSession.to_dict()` is byte-identical before and after an arena run reaches either
+   outcome — no call anywhere in the arena's path to `kill_hero`, `credit_team_xp`,
+   `credit_stones`, `mark_zone_cleared`, or `add_item`. A test proves this the same way
+   `test_arena.gd` already pins scene load/unload. "Survives save and reload" does not apply
+   beyond this — the ticket changes no save key.
+6. `combat/quick_resolve.gd` and `hub/expedition/expedition.gd` are byte-unmodified — this ticket
+   is a second producer of the existing contract, not an edit to the first.
+7. All existing `tests/unit/test_arena.gd` coverage (`P2b-01a`/`b`/`b-2`/`c`/`d`/`f` behavior)
+   still passes; import gate zero script errors and zero warnings; GUT suite green.
+8. This ticket's diff touches no file under `docs/` — the ruling that unblocks it is a separate,
+   already-landed `game-designer` deliverable.
+
+### Files allowed to change
+Grepped `enemy_defeated`, `CombatResult`, `SceneRouter.ARENA`/`SceneRouter.go_to`, and every
+`arena` reference project-wide before writing this list (six prior tickets in this file shipped a
+wrong one). **Resolved now that the ruling has landed** — it adds exactly one tunable, so the
+conditional entries below are in, not maybe-in:
+
+`combat/arena/arena.gd`, `systems/scene_router.gd`, `hub/hub.gd`, `tests/unit/test_arena.gd`,
+`balance_table.gd`, `balance.tres`.
+
+`combat/arena/arena.tscn` and `hub/hub.tscn` are **out** — no HUD, no new geometry, and the ruling
+explicitly declined to visualize HP (`SYSTEMS.md:1101-1103`). If you find you need a node or a
+`[connection]` in either, stop and report it rather than widening the list yourself: that is a
+scene-seam change (boundary 2) on top of boundary 4, and it means this scoping was wrong.
+
+**Re-run the grep before you trust this list.** Six consecutive tickets here shipped a wrong one —
+five omitted a real call site, one named a file that never changed. Two shapes specific to this
+repo have bitten before: a **dynamic** caller invisible to grep (`tests/save_roundtrip_check.gd`
+reaches `kill_hero` via `.call()`, `P2b-04e`), and a defaulted argument that lets an un-updated
+caller compile and silently do the wrong thing (`roll(circle_level: int = 0)`, `P2-07c`). If
+`resolve`/the arena entry point gains a parameter, prefer the **required** form — `P2-07e`'s
+precedent — so a missed call site is a compile error, not a green gate.
+
+### Non-goals
+- `team.size() > 1` — the scene has exactly one controllable `%HeroCapsule`; multi-hero party
+  representation in real time is a separate ticket, not this integration slice.
+- Feeding the arena's `CombatResult` into `GameSession` — permadeath, turns, loot and stones stay
+  `Expedition`'s alone. Using the arena as an alternate resolver *inside* a real expedition is
+  Phase 3 scope (`docs/KNOWN_ISSUES.md` § "Quick resolve and the arena will disagree").
+- Reconciling `quick_resolve`'s statistical outcome against the arena's real-time outcome for the
+  same `Wave` — same Phase 3 deferral.
+- Any HP/stagger HUD or on-screen readout — already rejected once for the hit-reaction case
+  (`SYSTEMS.md:1101-1103`) and nothing here reopens it.
+- Multiple enemies, an enemy bestiary/species, a Smash, or any new attack.
+- Tuning any of the ~21 already-PROVISIONAL feel values from `P2b-01d`/`P2b-01f`.
+- Gamepad input (`P2b-02`).
+- Any edit to `combat/quick_resolve.gd`, `combat/combat_result.gd`, `zones/wave.gd`, or
+  `hub/expedition/expedition.gd`.
+
+### Boundary
+Crosses `CLAUDE.md` boundary 4 (the combat seam) — a `verifier` pass is **mandatory**, and a
+green import gate is not evidence by itself; criteria 2/3/5 above exist so the verifier has a
+real win branch, a real loss branch and a real "GameSession untouched" check to run, not just a
+compiled scene. No save key changes, so boundary 1 is untouched.
+

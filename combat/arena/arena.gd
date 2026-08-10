@@ -3,6 +3,7 @@ extends Node3D
 
 signal scene_change_requested(scene_path: String)
 signal enemy_defeated
+signal combat_resolved(result: CombatResult)
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 
@@ -37,6 +38,11 @@ var _enemy_attack_active: bool = false
 var _enemy_attack_hit: bool = false
 var _enemy_attack_cooldown_remaining: float = 0.0
 var _enemy_stagger_remaining: float = 0.0
+var _hero: Hero
+var _wave: Wave
+var _maximum_hp: float = 0.0
+var _hits_taken: int = 0
+var _combat_finished: bool = false
 
 
 func _ready() -> void:
@@ -45,6 +51,11 @@ func _ready() -> void:
 	_spring_arm.add_excluded_object(_hero_capsule.get_rid())
 	_attack_hitbox.body_entered.connect(_on_attack_hitbox_body_entered)
 	_enemy_attack_hitbox.body_entered.connect(_on_enemy_attack_hitbox_body_entered)
+	var entering_team: Array[Hero] = SceneRouter.arena_team.duplicate()
+	var entering_wave: Wave = SceneRouter.arena_wave
+	SceneRouter.clear_arena_payload()
+	if not entering_team.is_empty() or entering_wave != null:
+		_begin_combat(entering_team, entering_wave)
 	var shape_node: CollisionShape3D = _attack_hitbox.get_node("CollisionShape3D") as CollisionShape3D
 	var attack_shape: BoxShape3D = shape_node.shape.duplicate() as BoxShape3D
 	assert(attack_shape != null)
@@ -65,6 +76,11 @@ func _exit_tree() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _combat_finished:
+		_stop_horizontal()
+		_hero_capsule.move_and_slide()
+		_camera_pivot.global_position = _hero_capsule.global_position + Vector3.UP
+		return
 	if _hit_stop_remaining > 0.0:
 		_update_hit_stop(delta)
 	else:
@@ -180,8 +196,14 @@ func _update_hit_stop(delta: float) -> void:
 	if _hit_stop_outcome == HitStopOutcome.DEFEAT_ENEMY and is_instance_valid(_enemy_capsule):
 		_enemy_capsule.queue_free()
 		enemy_defeated.emit()
+		_finish_combat()
 	elif _hit_stop_outcome == HitStopOutcome.HIT_HERO:
+		_hits_taken += 1
 		_cancel_player_action_for_hit()
+		if _hits_taken >= BALANCE.arena_enemy_hits_to_kill_hero:
+			_finish_combat()
+			_hit_stop_outcome = HitStopOutcome.NONE
+			return
 		var knockback_direction: Vector3 = _hero_capsule.global_position - _enemy_capsule.global_position
 		knockback_direction.y = 0.0
 		assert(knockback_direction != Vector3.ZERO)
@@ -195,6 +217,55 @@ func _update_hit_stop(delta: float) -> void:
 		_enemy_attack_hitbox.monitoring = false
 		_enemy_stagger_remaining = BALANCE.arena_parry_enemy_stagger
 	_hit_stop_outcome = HitStopOutcome.NONE
+
+
+func _begin_combat(team: Array[Hero], wave: Wave) -> void:
+	assert(team.size() == 1)
+	assert(team[0] != null)
+	assert(wave != null)
+	var definition: HeroDefinition = Hero.definition_for(team[0].def_id)
+	if definition == null:
+		push_error("Arena cannot start without a valid HeroDefinition for '%s'." % team[0].hero_name)
+		return
+	var level: int = Hero.level_for(team[0], BALANCE)
+	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(
+		team[0],
+		definition,
+		BALANCE,
+		level,
+	)
+	_hero = team[0]
+	_wave = wave
+	_maximum_hp = stats[Hero.STAT_HP]
+
+
+func resolve(team: Array[Hero], wave: Wave) -> CombatResult:
+	assert(team.size() == 1)
+	assert(team[0] == _hero)
+	assert(wave == _wave)
+	var result := CombatResult.new()
+	var damage_fraction: float = clamp(
+		float(_hits_taken) / float(BALANCE.arena_enemy_hits_to_kill_hero),
+		0.0,
+		1.0,
+	)
+	result.maximum_hp[_hero] = _maximum_hp
+	result.hp_after[_hero] = _maximum_hp * (1.0 - damage_fraction)
+	if _hits_taken >= BALANCE.arena_enemy_hits_to_kill_hero:
+		result.dead_heroes.append(_hero)
+	else:
+		result.survivors.append(_hero)
+	return result
+
+
+func _finish_combat() -> void:
+	if _hero == null or _combat_finished:
+		return
+	_combat_finished = true
+	var team: Array[Hero] = [_hero]
+	var result: CombatResult = resolve(team, _wave)
+	SceneRouter.store_arena_result(result)
+	combat_resolved.emit(result)
 
 
 func _update_enemy(delta: float) -> void:
@@ -240,7 +311,8 @@ func _update_enemy(delta: float) -> void:
 
 func _start_attack() -> void:
 	if (
-		_attack_elapsed >= 0.0
+		_combat_finished
+		or _attack_elapsed >= 0.0
 		or _dodge_elapsed >= 0.0
 		or (_parry_elapsed >= 0.0 and not _parry_succeeded)
 		or _hit_stun_remaining > 0.0
@@ -259,7 +331,8 @@ func _start_attack() -> void:
 
 func _start_dodge() -> void:
 	if (
-		_dodge_elapsed >= 0.0
+		_combat_finished
+		or _dodge_elapsed >= 0.0
 		or _parry_elapsed >= 0.0
 		or _hit_stun_remaining > 0.0
 		or _hit_stop_remaining > 0.0

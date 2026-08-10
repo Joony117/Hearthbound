@@ -57,6 +57,7 @@ func _ready() -> void:
 	_populate_zones()
 	_refresh_zone_unlocks()
 	_status.text = "Summon a hero, then send it out. It might not come back."
+	_show_pending_arena_result()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -501,7 +502,41 @@ func _on_expedition_pressed() -> void:
 
 
 func _on_enter_arena_pressed() -> void:
+	var selected: PackedInt32Array = _roster_list.get_selected_items()
+	if selected.is_empty():
+		_status.text = "Select a hero first."
+		return
+	if selected.size() > 1:
+		_status.text = "Select exactly one hero for the arena."
+		return
+	var hero: Hero = _roster_list.get_item_metadata(selected[0]) as Hero
+	assert(hero != null)
+	if Hero.definition_for(hero.def_id) == null:
+		_status.text = "Arena cannot start: the selected hero needs a valid archetype."
+		return
+	var zone: ZoneDefinition = _zone_option.get_item_metadata(_zone_option.selected) as ZoneDefinition
+	assert(zone != null)
+	assert(is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids))
+	var team: Array[Hero] = [hero]
+	var wave: Wave = Wave.from_zone(zone, 0)
+	SceneRouter.prepare_arena(team, wave)
 	SceneRouter.go_to(SceneRouter.ARENA)
+
+
+func _show_pending_arena_result() -> void:
+	var result: CombatResult = SceneRouter.take_arena_result()
+	if result == null:
+		return
+	if not result.survivors.is_empty():
+		var survivor: Hero = result.survivors[0]
+		_status.text = "Arena victory: %s survived with %d/%d HP." % [
+			survivor.hero_name,
+			roundi(result.hp_after[survivor]),
+			roundi(result.maximum_hp[survivor]),
+		]
+		return
+	assert(result.dead_heroes.size() == 1)
+	_status.text = "Arena defeat: %s fell." % result.dead_heroes[0].hero_name
 
 
 func _on_recover_pressed() -> void:

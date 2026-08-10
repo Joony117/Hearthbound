@@ -668,6 +668,41 @@ guard, so dodging locked the parry out for `0.15 s`, with both gates green and t
 
 ---
 
+## ~~P2b-01e — Arena accepts the existing `Wave` and returns the existing `CombatResult`~~   [DONE]
+
+**Landed in the commit below.** Body moved to [`TASKS-DONE.md`](TASKS-DONE.md); row in Completed
+tickets below. The arena is now the combat seam's second implementation: it takes a real one-hero
+`team` and a real `Wave.from_zone` instance in through `SceneRouter`'s transition state and returns
+a real `CombatResult` out, display-only, with `Expedition` still the sole outcome and permadeath
+consumer. The mandatory boundary-4 `verifier` pass returned **pass-with-concerns** on all 8
+criteria, and red-proved the new win and loss tests by mutation — neutered hit counter, inverted
+death comparison, suppressed emission — rather than trusting that they went green.
+
+**Read its Findings before writing another `resolve()`-shaped function.** The delivered
+`resolve(team, wave)` **ignores both of its declared parameters** and reports on internally stored
+`_hero`/`_wave`/`_hits_taken`; the only thing between a mismatched caller and a result attributed to
+a hero who never fought is two `assert()`s, and asserts are stripped in release — `P2-05d`'s lesson
+in a new shape. Unreachable today (the sole caller is `_finish_combat()` four lines below, and it
+builds `team` from `_hero` itself), so it was accepted rather than chased. But this half of a seam
+whose entire purpose is *two implementations that agree* does not currently consume its own inputs.
+Whoever first makes the arena resolve a wave it did not itself set up owns fixing it.
+
+Also read them before writing another ticket's Objective. This one's said the arena's result must
+"match what `quick_resolve` would return" — which its **own Non-goals and `KNOWN_ISSUES.md` both
+explicitly defer to Phase 3**. An acceptance bar that contradicted the ticket containing it, and
+that nothing could ever have satisfied. Corrected to structural interchangeability before
+archiving; no gate could have seen it, and nothing but a reader ever would.
+
+Two smaller residues, recorded rather than fixed: a null `HeroDefinition` inside `_begin_combat`
+leaves the fight live but permanently unresolvable (guarded upstream in `hub.gd`, not in
+`arena.gd`), and `CombatResult.loot_seed` stays `0` on the arena path — inert while the result is
+display-only, live the moment Phase 3 wires it to loot.
+
+`arena_enemy_hits_to_kill_hero = 3` is **PROVISIONAL and still unplayed**, like the ~21 feel values
+around it. Nobody has died in the arena.
+
+---
+
 **P2-13 — the five questions a `game-designer` ruling must answer before it can be written.**
 Filed blocked rather than dropped, because the idea is worth keeping and the dependencies are
 real. Recorded here so a cold session inherits the reasoning instead of rediscovering it:
@@ -757,18 +792,24 @@ range or timing is authored around it.
 | P2b-01c | One attack defeats one enemy capsule | **Landed `aa78d6a`;** body in [`TASKS-DONE.md`](TASKS-DONE.md). One scene-local elapsed timeline drives startup, a `2.0 m` facing-directed lunge and recovery; one native `Area3D` defeats the passive capsule after `0.04 s` local hit-stop. The boundary-2 verifier and rendered physical-left-click flow passed with the full profile unchanged. Feel values remain PROVISIONAL until played. |
 | P2b-01d | One enemy attack and one dodge | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Kept damage avoidance separate from the first attack slice. `game-designer` ruled all four missing inputs (`SYSTEMS.md` § "Enemy attack, dodge and hit reaction"): a `0.55/0.10/0.45 s` enemy swing on a `3.0 m` proximity-gated cadence, a physical hit-reaction instead of arena-local HP, and dodge's cooldown/cancel/neutral-direction terms. The input buffer stayed deferred — it is cross-cutting across Normal/Smash/Dodge, and authoring it for dodge alone is a worse inconsistency than having none. |
 | P2b-01f | Facing follows the camera, and a standstill press parries | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Two played-build corrections, ruled in `SYSTEMS.md` § "Camera-forward facing and the parry stance". Sequenced **before** `P2b-01e`: both are arena-local feel and neither touches the combat seam, so shipping them first keeps the integration slice clean. |
-| P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | Integration slice. `Expedition` remains the sole outcome/permadeath consumer. |
+| P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). The integration slice — the arena is the seam's second implementation, `CombatResult` display-only, `Expedition` still the sole outcome/permadeath consumer. Blocked on one `game-designer` ruling for exactly one pass (`SYSTEMS.md` § "Hero HP and the death rule"): `arena_enemy_hits_to_kill_hero = 3`, **integer** hit counter and not a float HP threshold — a `.tres`-authored `1/3` leaves the killing hit `~1e-13` short with both gates green. Enemy keeps its one-hit kill; nothing scales with the power ratio, so the `Wave` is a ruled inert pass-through this slice. Boundary-4 `verifier` returned **pass-with-concerns** on all 8 criteria and red-proved the new tests by mutation. **Read its Findings before writing another `resolve()`-shaped function** — the delivered one ignores both declared parameters, guarded only by release-stripped `assert()`s. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 
-<!-- Fresh-session handoff after P2b-01f: P2b-01e is next and needs a tech-lead pass, not a direct
- dispatch — it is the integration slice where the arena accepts the existing `Wave` and returns the
- existing `CombatResult`, so it crosses the combat seam (CLAUDE.md boundary 4) and must keep
- `Expedition` the sole outcome/permadeath consumer. Read ARCHITECTURE.md § The combat seam,
- combat/quick_resolve.gd, hub/expedition/expedition.gd and the P2b-01d body in TASKS-DONE.md before
- scoping it. The arena's 14 P2b-01d values are still PROVISIONAL and unplayed; do not tune or build
- around them as settled, and P2b-01f added seven more parry values plus a facing reversal in the
- same state. Nobody has played any of it. Keep Godot engine access serialized and reap every
- process. -->
+<!-- Fresh-session handoff after P2b-01e: the whole P2b-01 split is now DONE and the combat seam has
+ its second implementation. Only P2b-02 (controller input) is left in the P2b row set, and it is a
+ hard constraint rather than a deferral. Before scoping it, read the P2b-01e closeout above: two
+ accepted residues are live debt, not closed questions — arena.gd's resolve(team, wave) ignores both
+ declared parameters behind release-stripped asserts, and CombatResult.loot_seed stays 0 on the
+ arena path. Both are inert only while the arena result is display-only; Phase 3's reconciliation
+ (KNOWN_ISSUES.md § "Quick resolve and the arena will disagree") is what makes them live.
+
+ The real blocker on this whole line is no longer a ticket. NOBODY HAS PLAYED ANY OF IT: 21 feel
+ values from P2b-01d/P2b-01f plus arena_enemy_hits_to_kill_hero = 3 are all PROVISIONAL and unfelt,
+ and the Phase 2 exit question ("is spending a hero's life a decision you actually feel?") cannot be
+ answered at a desk. Building more arena tickets on top of unplayed values is how 22 provisional
+ numbers become 40. Consider a play pass before the next dispatch.
+
+ Keep Godot engine access serialized and reap every process. -->
 
 **Phase 2 exit question:** is spending a hero's life a decision you actually feel? If not,
 the fix is design, not code — and finding out here is much cheaper than after Phase 3.
@@ -855,6 +896,7 @@ needs to re-read.
 | `P2b-01c` | One light attack defeats one passive enemy capsule | `aa78d6a` |
 | `P2b-01d` | One enemy attack and one dodge | `b4b8e7f` |
 | `P2b-01f` | Facing follows the camera, and a standstill press parries | `46e16c2` |
+| `P2b-01e` | Arena accepts the existing `Wave` and returns the existing `CombatResult` | *this commit* |
 
 ---
 

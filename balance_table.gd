@@ -37,6 +37,7 @@ extends Resource
 @export var arena_enemy_attack_hit_stop: float = 0.06
 @export var arena_enemy_knockback_speed: float = 6.0
 @export var arena_enemy_hit_stun: float = 0.35
+@export var arena_enemy_hits_to_kill_hero: int = 3
 @export var arena_dodge_speed: float = 13.5
 @export var arena_dodge_duration: float = 0.38
 @export var arena_dodge_iframe_duration: float = 0.25
