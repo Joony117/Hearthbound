@@ -34,6 +34,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 # Held between the press that asks and the press that confirms. The dialog is exclusive, so no
 # second action can be queued while one is pending.
 var _pending_action: Callable
+var _slot_filter: int = -1
 
 
 func _ready() -> void:
@@ -153,14 +154,29 @@ func _refresh_lost_caches() -> void:
 
 func _refresh_inventory() -> void:
 	_inventory_list.clear()
-	for item: Item in GameSession.inventory:
+	var items: Array[Item] = GameSession.inventory.duplicate()
+	items.sort_custom(_sort_inventory_items)
+	for item: Item in items:
 		var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+		if _slot_filter != -1 and (definition == null or definition.slot != _slot_filter):
+			continue
 		var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
 		if definition == null:
 			_inventory_list.add_item("%s [Missing definition: %s]%s" % [item.rank_label(BALANCE), item.def_id, enhance_suffix])
 		else:
 			_inventory_list.add_item("%s %s%s" % [item.rank_label(BALANCE), definition.display_name, enhance_suffix])
 		_inventory_list.set_item_metadata(_inventory_list.item_count - 1, item)
+
+
+static func _sort_inventory_items(first: Item, second: Item) -> bool:
+	if first.rank != second.rank:
+		return first.rank > second.rank
+	if first.enhance_level != second.enhance_level:
+		return first.enhance_level > second.enhance_level
+	# def_id, not display_name: Item.definition_for() push_errors on a miss, and a comparator runs
+	# it O(n log n) times. All ten authored display names are the title-cased def_id, so the order
+	# is identical without the lookup.
+	return str(first.def_id) < str(second.def_id)
 
 
 func _refresh_parts() -> void:
@@ -183,11 +199,15 @@ func _refresh_equipped() -> void:
 	var hero: Hero = _selected_hero()
 	if hero == null:
 		return
-	for slot: int in hero.equipped:
-		assert(slot >= 0 and slot < EquipmentDefinition.Slot.size())
-		var item: Item = hero.equipped[slot]
-		assert(item != null)
+	_equipped_list.add_item("All slots")
+	_equipped_list.set_item_metadata(0, -1)
+	for slot: int in EquipmentDefinition.Slot.size():
 		var slot_name: String = (EquipmentDefinition.Slot.keys()[slot] as String).capitalize()
+		var item: Item = hero.equipped.get(slot) as Item
+		if item == null:
+			_equipped_list.add_item("%s — (empty)" % slot_name)
+			_equipped_list.set_item_metadata(_equipped_list.item_count - 1, slot)
+			continue
 		var definition: EquipmentDefinition = Item.definition_for(item.def_id)
 		var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
 		if definition == null:
@@ -195,6 +215,7 @@ func _refresh_equipped() -> void:
 		else:
 			_equipped_list.add_item("%s %s %s%s" % [slot_name, item.rank_label(BALANCE), definition.display_name, enhance_suffix])
 		_equipped_list.set_item_metadata(_equipped_list.item_count - 1, slot)
+	_equipped_list.select(_slot_filter + 1)
 
 
 func _refresh_hero_detail() -> void:
@@ -369,6 +390,11 @@ func _on_roster_list_multi_selected(_index: int, _selected: bool) -> void:
 	_refresh_hero_detail()
 
 
+func _on_equipped_list_item_selected(index: int) -> void:
+	_slot_filter = _equipped_list.get_item_metadata(index) as int
+	_refresh_inventory()
+
+
 func _on_equip_pressed() -> void:
 	var hero: Hero = _selected_hero()
 	if hero == null:
@@ -497,9 +523,12 @@ func _on_unequip_pressed() -> void:
 		_status.text = "Select exactly one equipped item."
 		return
 	var slot: int = _equipped_list.get_item_metadata(selected[0]) as int
+	if slot == -1:
+		_status.text = "Select an equipment slot first."
+		return
 	var item: Item = hero.equipped.get(slot) as Item
 	if item == null:
-		_status.text = "Selected equipped item is no longer available."
+		_status.text = "That slot is empty."
 		return
 	var definition: EquipmentDefinition = Item.definition_for(item.def_id)
 	GameSession.unequip_item(hero, slot)

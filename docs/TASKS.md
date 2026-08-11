@@ -851,7 +851,7 @@ destroys something unrecoverable, and the report named expeditions and sacrifice
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). The integration slice — the arena is the seam's second implementation, `CombatResult` display-only, `Expedition` still the sole outcome/permadeath consumer. Blocked on one `game-designer` ruling for exactly one pass (`SYSTEMS.md` § "Hero HP and the death rule"): `arena_enemy_hits_to_kill_hero = 3`, **integer** hit counter and not a float HP threshold — a `.tres`-authored `1/3` leaves the killing hit `~1e-13` short with both gates green. Enemy keeps its one-hit kill; nothing scales with the power ratio, so the `Wave` is a ruled inert pass-through this slice. Boundary-4 `verifier` returned **pass-with-concerns** on all 8 criteria and red-proved the new tests by mutation. **Read its Findings before writing another `resolve()`-shaped function** — the delivered one ignores both declared parameters, guarded only by release-stripped `assert()`s. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 | P2-26 | Destructive hub actions ask before they fire | **Body below.** Playtest feedback, 2026-08-10. First of the six because it is the only one that prevents *permanent* loss. Guards Expedition, Sacrifice, Salvage and Recover behind one shared `ConfirmationDialog`; the dialog text doubles as the "what is being sacrificed, to whom" indication the report asked for separately. Crosses `CLAUDE.md` boundary 2 (scene seam) only — no save key, no autoload signature. **Four test files press these buttons directly** (`test_expedition.gd`, `test_sanctum.gd`, `test_buildings.gd`, `test_recovery.gd`) and all four are in the allowed list; the archive's five consecutive wrong allowed-file lists were all this mistake. |
-| P2-25 | Each hero has ten equipment slots, and picking one filters the bag | Playtest feedback, 2026-08-10; closes three reported items (dedicated slot UI, sort by rank/type, a tab per type) — see the merge reasoning above. `_refresh_equipped()` (`hub/hub.gd:176`) iterates `hero.equipped`, which only holds *filled* slots, so an empty slot is invisible and there is nowhere to click to say "show me boots". Render all ten `EquipmentDefinition.Slot` entries always, empty ones included; selecting one filters `_refresh_inventory()` to items whose definition matches that slot, ordered rank-descending then `+enhance` descending. **The `Slot` ordinal positionally mirrors `Hero.STAT_NAMES`** — `P2-05c`/`P2-06c` both warn that reordering either enum misroutes gear with a green gate, so this ticket displays the ordinal and must not renumber it. No save key changes; scene seam only. Needs a `tech-lead` pass or a director-written body — it is a real UI restructure, unlike `P2-26`. |
+| P2-25 | Each hero has ten equipment slots, and picking one filters the bag | **Body below.** Playtest feedback, 2026-08-10; closes three reported items (dedicated slot UI, sort by rank/type, a tab per type) — see the merge reasoning above. `_refresh_equipped()` (`hub/hub.gd:176`) iterates `hero.equipped`, which only holds *filled* slots, so an empty slot is invisible and there is nowhere to click to say "show me boots". Render all ten `EquipmentDefinition.Slot` entries always, empty ones included; selecting one filters `_refresh_inventory()` to items whose definition matches that slot, ordered rank-descending then `+enhance` descending. **The `Slot` ordinal positionally mirrors `Hero.STAT_NAMES`** — `P2-05c`/`P2-06c` both warn that reordering either enum misroutes gear with a green gate, so this ticket displays the ordinal and must not renumber it. No save key changes; scene seam only. Body written by the director per rung 1 rather than routed to `tech-lead` — the open questions were UI mechanics (how the filter is cleared, where a missing-definition item goes, how ties order), none of which needs a balance number. |
 | P2-27 | Sacrifice and salvage in batches | Playtest feedback, 2026-08-10. Sequenced **after** `P2-25`: batching a flat unordered list is batching the complaint. Fodder is currently a single `OptionButton` (`%FodderOption`) and `%InventoryList` is `select_mode = 0`; both become multi-select, and the payout is summed once rather than per-press. **Read `P2-06a`'s Findings first** — `add_item()` auto-selects index 0 on a cleared button, which is how a blind second press once killed the wrong hero permanently; a batch path multiplies that failure by the batch size. Inherits `P2-26`'s confirm text, which is what makes a 12-item press safe. `GameSession.sacrifice_hero`/`salvage_item` stay one-at-a-time — the loop belongs in `hub.gd`, not in a new autoload method (`DECISIONS.md` 2026-08-06). |
 | P2-28 | Hover detail on roster and inventory rows | Playtest feedback, 2026-08-10, and the *residue* of "clearer indications" once `P2-26`'s confirm text and `P2-25`'s slot layout have taken the load-bearing half. `ItemList.set_item_tooltip()` is native and one line per `add_item()` call, so this is small. Trails everything; blocks nothing. |
 | P2b-03 | The capsules show what is happening — telegraph, hit flash, parry flash | Playtest feedback, 2026-08-10; merges "no enemy telegraph" and "hit effects" — one mechanism, see above. A `StandardMaterial3D` tint on each capsule driven by state `arena.gd` already tracks: enemy startup (`_enemy_attack_elapsed < arena_enemy_attack_startup`), `HitStopOutcome.HIT_HERO`, `.PARRY_HERO`, `.DEFEAT_ENEMY`. Telegraph is included despite the report deferring it, and is a separable criterion. **The materials must be `duplicate()`d per instance** — `arena.tscn`'s capsules are native primitives and a shared material writes back to disk for every consumer, the hazard `ARCHITECTURE.md` § "Reaching shared Resources" names by example (`P2-07c` hit it with `summon_weights`). The report's "still needs tuning for combat weight" is recorded here and **not acted on**: `arena_light_attack_hit_stop` is `0.04 s` and may well be too short, but tuning weight against an invisible hit is tuning against a missing signal. Re-ask after this ships. |
@@ -941,10 +941,128 @@ Two things worth carrying forward:
 
 ---
 
+## P2-25 — Each hero has ten equipment slots, and picking one filters the bag      [DONE]
+
+### Objective
+
+The Equipped column shows all ten slots, empty ones included, so there is somewhere to click to
+say "show me boots". Clicking a slot filters the Inventory list to items that fit it, ordered
+best-first. That closes three reported items with one mechanism: the slot UI, the per-type tab and
+the sort.
+
+### Existing architecture
+
+- `_refresh_equipped()` (`hub/hub.gd:181`) iterates `hero.equipped`, a `Dictionary` that holds
+  **only filled slots**, so an empty slot renders as nothing at all. Row metadata is the slot
+  ordinal.
+- `_refresh_inventory()` (`hub/hub.gd:154`) appends every `Item` in `GameSession.inventory` in
+  insertion order into one flat `ItemList`. Row metadata is the `Item` itself, which is what
+  `_on_equip_pressed()`/`_on_salvage_pressed()`/`_on_enhance_pressed()` read — none of them care
+  about row order.
+- Both lists are `select_mode = 0` (`SELECT_SINGLE`, `hub.tscn:262`, `:302`) and neither has a
+  `[connection]` today. `%EquippedList` is read only by `_on_unequip_pressed()` (`hub/hub.gd:490`).
+- Both `_refresh_*` functions are connected to `GameSession.roster_changed` (`hub/hub.gd:45`,
+  `:48`) and both `clear()` first, so **any equip, salvage or expedition wipes the selection**.
+- `EquipmentDefinition.Slot` is `{ HEAD, CHEST, LEGS, GLOVES, BOOTS, MAIN_HAND, OFF_HAND, NECKLACE,
+  RING, BELT }` (`equipment/equipment_definition.gd:4`). `P2-05c` and `P2-06c` both warn that this
+  ordinal positionally mirrors `Hero.STAT_NAMES`: **display it, never renumber it.**
+- `Item.definition_for()` (`equipment/item.gd:57`) `push_error`s and returns `null` for a missing
+  definition. Both refresh functions already handle that branch; an item in that state has **no
+  slot**, so no slot filter can show it.
+
+### Acceptance criteria
+
+1. `_refresh_equipped()` renders exactly eleven rows for a selected hero: an `All slots` row first,
+   then all ten `Slot` entries in ordinal order whether filled or empty. A filled row keeps today's
+   text; an empty one reads `Boots — (empty)`. Metadata is `-1` for the `All slots` row and the
+   slot ordinal for the other ten.
+2. Selecting a row sets the filter; `_refresh_inventory()` then shows only items whose
+   `EquipmentDefinition.slot` matches. `-1` shows everything, and is the state a fresh scene starts
+   in.
+3. **Items with a missing definition are reachable only under `All slots`** — they have no slot to
+   match. That is the ticket's answer to "where did my broken item go", and it must be deliberate,
+   not incidental.
+4. The inventory is ordered `rank` descending, then `enhance_level` descending, then `def_id`
+   ascending, in both the filtered and unfiltered views. The third key exists because
+   `Array.sort_custom` is not stable and a test that selects an index needs a defined winner.
+   It is `def_id` and **not** display name because a comparator runs O(n log n) times and
+   `Item.definition_for()` `push_error`s on a miss, which GUT fails a test for; all ten authored
+   display names are the title-cased `def_id`, so the order is identical without the lookup.
+5. **The filter is a member variable, not the list's selection.** `roster_changed` clears
+   `%EquippedList` (see above), so reading the filter off the selection loses it on every equip.
+   After a refresh the row matching the filter is re-selected.
+6. Selecting a different hero leaves the filter alone — slots are hero-independent.
+7. `_on_unequip_pressed()` refuses cleanly rather than acting on a slot with nothing in it:
+   `Select an equipment slot first.` for the `All slots` row, `That slot is empty.` for an unfilled
+   one. It still unequips normally from a filled one.
+8. `_on_equip_pressed()`, `_on_salvage_pressed()` and `_on_enhance_pressed()` are untouched — they
+   read `Item` metadata, which row order does not affect. Equipping an item while its own slot is
+   the active filter leaves the filter intact and the item gone from the list.
+9. `tests/unit/test_buildings.gd:73` breaks on criterion 4: it holds two rank-B rings (`+0` and
+   `+6`) and `select(0)` currently picks the `+0`, which under the new order is at index 1. It must
+   keep salvaging the `+0` for `4` parts — salvaging index 0 destroys the `+6` and leaves a `+0`
+   that *can* be enhanced, which deletes the enhance-cap half of the test. Reach the item by
+   identity and assert its index, so the ordering is pinned without the test being rewritten around
+   it.
+10. No save key changes, no autoload signature changes. The scene seam (`CLAUDE.md` boundary 2) is
+    crossed by the new `[connection]`, so a `verifier` pass is mandatory and a GUT test must drive
+    the real signal — `ItemList.select()` does not emit it (`P2-14`).
+
+### Files allowed to change
+
+`hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_equipment.gd`, `tests/unit/test_buildings.gd`,
+`docs/TASKS.md`.
+
+### Non-goals
+
+Multi-select or batch anything (`P2-27`). Tooltips (`P2-28`). Any change to what equip, unequip,
+salvage or enhance actually do. Renumbering `Slot`. Icons, drag-and-drop, or a paper-doll layout —
+this is still an `ItemList`.
+
+### Findings
+
+**Shipped in the commit below.** Director-written body, Codex-implemented (`gpt-5.6-terra`, medium),
+mandatory boundary-2 `verifier` pass returned **fail** first time and was right to.
+
+**Criterion 9 was wrong as written, and the implementation was right to ignore it.** The criterion
+told the implementer that `test_buildings.gd`'s `select(0)` should now pick the `+6` ring and assert
+`11` parts. It should not: `salvaged_item` is the `+0` and `capped_item` the `+6`, so salvaging
+index 0 **destroys the `+6`** and leaves behind a `+0` that can legally be enhanced — which deletes
+the "already at the `+6` cap" half of the same test. Codex reached the item by identity instead and
+kept both assertions, which preserved what the test exists to prove. The `verifier` correctly
+flagged the divergence from the written criterion; the criterion is what changed. What it was
+actually reaching for — *pin the new order at this call site* — is now one `assert_eq(salvage_index,
+1)` line, which costs nothing and fails if the sort regresses.
+
+Two things worth carrying forward:
+
+- **A `sort_custom` comparator must not call anything that `push_error`s.** The first pass tie-broke
+  on `display_name`, which meant `Item.definition_for()` inside the comparator — a function that
+  `push_error`s on a miss, called O(n log n) times, in a suite where GUT fails a test on any
+  unconsumed `push_error`. No current test puts a missing-definition item in `inventory` during a
+  hub render, so it was a dormant landmine rather than a red gate: exactly the shape that lands on
+  whoever writes the next test. Tie-breaking on `def_id` deletes the lookup and five lines, and
+  orders identically — all ten authored `display_name`s are the title-cased `def_id`.
+- **The scene seam is mutation-proven.** The `verifier` retargeted the new `[connection]`'s *method*
+  to an existing zero-arg handler rather than corrupting the line (`P2-24`'s finding: junk makes
+  `hub.tscn` fail to parse and every test fails for the wrong reason), and the new test failed
+  specifically on the filter assertions. `ItemList.select()` still does not emit `item_selected`, so
+  the test emits it — `P2-14`'s rule, now applied to a second signal.
+
+Three `verifier` `LOW`s were accepted rather than fixed: criterion 8 (equip while filtered) is
+covered by code trace only; the two asserts dropped from `_refresh_equipped()` are stripped in
+release anyway and the loop now iterates the enum, which is what they guarded; and
+`"Select exactly one equipped item."` is unreachable while a hero is selected, since the list
+auto-selects a row.
+
+---
+
 <!-- Fresh-session handoff after P2-26: the playtest feedback of 2026-08-10 is filed as six rows
  (P2-25, P2-26, P2-27, P2-28, P2b-03, P2b-04) with the merge reasoning in "Playtest feedback" above
  — read that before re-splitting any of them, since three reported items collapsed into P2-25 and
- two into P2b-03 on purpose. P2-26 has landed. Next by the stated sequencing is P2-25.
+ two into P2b-03 on purpose. P2-26 and P2-25 have both landed. Next by the stated sequencing is
+ P2-27 (batch sacrifice/salvage), which was deliberately queued behind P2-25 and now has the
+ slot-filtered, rank-ordered inventory it was waiting for.
 
  P2b-04 is BLOCKED on a game-designer ruling and is the only one of the six that is; do not dispatch
  it to an implementer on the strength of "it is three lines".

@@ -372,6 +372,7 @@ unique_name_in_owner = true
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Salvage" to="." method="_on_salvage_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Enhance" to="." method="_on_enhance_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Convert" to="." method="_on_convert_pressed"]
+[connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Equipped/EquippedList" to="." method="_on_equipped_list_item_selected"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeCircle" to="." method="_on_upgrade_circle_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeForge" to="." method="_on_upgrade_forge_pressed"]

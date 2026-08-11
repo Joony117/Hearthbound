@@ -57,6 +57,58 @@ func test_unequip_returns_item_to_inventory_and_clears_slot() -> void:
 	assert_eq(_count_item(hero, item), 1)
 
 
+func test_hub_equipment_slots_filter_inventory_and_refuse_empty_unequip() -> void:
+	var hero := Hero.new("Slot Hero", 1)
+	var head := Item.new(&"head", 3)
+	var boots := Item.new(&"boots", 2)
+	var ring := Item.new(&"ring", 3)
+	ring.enhance_level = 1
+	GameSession.add_hero(hero)
+	GameSession.add_item(head)
+	GameSession.add_item(boots)
+	GameSession.add_item(ring)
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	assert_not_null(hub_scene)
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
+	var equipped_list: ItemList = hub.get_node("%EquippedList") as ItemList
+	var unequip_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Equipped/Unequip") as Button
+	var status: Label = hub.get_node("%Status") as Label
+
+	roster_list.select(0)
+	roster_list.multi_selected.emit(0, true)
+	assert_eq(equipped_list.item_count, 11)
+	assert_eq(equipped_list.get_item_text(0), "All slots")
+	assert_eq(equipped_list.get_item_metadata(0), -1)
+	for slot: int in EquipmentDefinition.Slot.size():
+		var slot_name: String = (EquipmentDefinition.Slot.keys()[slot] as String).capitalize()
+		assert_eq(equipped_list.get_item_metadata(slot + 1), slot)
+		assert_eq(equipped_list.get_item_text(slot + 1), "%s — (empty)" % slot_name)
+	assert_eq(inventory_list.get_item_metadata(0), ring)
+	assert_eq(inventory_list.get_item_metadata(1), head)
+	assert_eq(inventory_list.get_item_metadata(2), boots)
+
+	var boots_index: int = EquipmentDefinition.Slot.BOOTS + 1
+	equipped_list.select(boots_index)
+	# select() does not emit; the [connection] block in hub.tscn owns the filter refresh.
+	equipped_list.item_selected.emit(boots_index)
+	assert_eq(inventory_list.item_count, 1)
+	assert_eq(inventory_list.get_item_metadata(0), boots)
+	GameSession.roster_changed.emit()
+	assert_eq(equipped_list.get_selected_items(), PackedInt32Array([boots_index]))
+	assert_eq(inventory_list.item_count, 1)
+
+	unequip_button.pressed.emit()
+	assert_eq(status.text, "That slot is empty.")
+	equipped_list.select(0)
+	equipped_list.item_selected.emit(0)
+	assert_eq(inventory_list.item_count, 3)
+	unequip_button.pressed.emit()
+	assert_eq(status.text, "Select an equipment slot first.")
+
+
 func test_salvage_removes_inventory_item_and_credits_only_its_rank() -> void:
 	var item := Item.new(&"ring", 3)
 	var balance := BalanceTable.new()

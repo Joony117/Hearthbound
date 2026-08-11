@@ -70,7 +70,16 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	var enhance_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Inventory/Enhance") as Button
 	var status: Label = hub.get_node("%Status") as Label
 
-	inventory_list.select(0)
+	var salvage_index: int = -1
+	for item_index: int in inventory_list.item_count:
+		if inventory_list.get_item_metadata(item_index) == salvaged_item:
+			salvage_index = item_index
+			break
+	assert_ne(salvage_index, -1)
+	# Same rank, so the +6 sorts first (P2-25 criterion 4). The +0 is what this test salvages —
+	# selecting index 0 would destroy the +6 and leave nothing for the enhance-cap half below.
+	assert_eq(salvage_index, 1)
+	inventory_list.select(salvage_index)
 	var parts_before: int = GameSession.parts[3]
 	salvage_button.pressed.emit()
 	# The press only asks; salvage destroys the item, so it waits for the confirm.
@@ -79,7 +88,13 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	assert_eq(status.text, "Salvaged B item into 4 B parts.")
 	assert_eq(GameSession.parts[3] - parts_before, 4)
 
-	inventory_list.select(0)
+	var capped_index: int = -1
+	for item_index: int in inventory_list.item_count:
+		if inventory_list.get_item_metadata(item_index) == capped_item:
+			capped_index = item_index
+			break
+	assert_ne(capped_index, -1)
+	inventory_list.select(capped_index)
 	parts_before = GameSession.parts[3]
 	enhance_button.pressed.emit()
 	assert_eq(status.text, "Cannot enhance: item is already at the +6 cap.")
