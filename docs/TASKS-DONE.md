@@ -5600,3 +5600,198 @@ cosmetic — arena tests want the frame boundary chosen, not inherited.
 **Test count, per criterion 7:** `Scripts 14 / Tests 162`, up from `14 / 158`, with four tests
 added — the script count holding at 14 is what rules out `P2-28`'s silent-parse-failure trap,
 where `gut_cmdln.gd` exits `0` and prints "All tests passed" having dropped a whole file.
+
+---
+
+## P2-13 — An instructor teaches a trait at the trainee's rank cap             [DONE]
+
+Director-written per rung 1 rather than routed to `tech-lead` as the row predicted, and for the
+reason `P2-16` records: `SYSTEMS.md` § "Fodder training (P2-13)" already names the field, the grant
+condition, the pool shape, the application loop and every file, and rules it one ticket in so many
+words — *"`tech-lead` can write the ticket body directly from this section."* There was no scoping
+judgment left to route. The one thing the ruling deferred is the fifteen trait magnitudes, which are
+a balance number and therefore `game-designer`'s: they are authored in `SYSTEMS.md` § Fodder
+training's instructor trait table. **This ticket authors no number.**
+
+**Crosses `CLAUDE.md` boundary 1** (`Hero.taught_traits` is a new save key). The `verifier` pass is
+mandatory and needs a real save/reload cycle — a green import gate is not evidence.
+
+### Objective
+
+A hero that reaches its own rank's level cap on an expedition where a higher-ranked hero was
+fielded alongside it **permanently learns one trait**. The hub names it, it moves the hero's
+stats from then on, and it survives save and reload.
+
+### Existing architecture
+
+1. **The field is fully specified and does not exist.** `SYSTEMS.md` § Traits §4 writes
+   `taught_traits`'s type, both save legs and their defensive shapes; `P2-06c` deliberately shipped
+   without it so no save key would change for a field whose only possible value was `[]`. This
+   ticket is the write path that makes it real.
+2. **The pool exists and is empty.** `HeroDefinition.instructor_trait_pool`
+   (`heroes/hero_definition.gd:17`) is exported, authored as `[]` in all five
+   `heroes/defs/*.tres`, and reserved for this ticket. `resonance_trait_pool` beside it is the
+   authoring pattern — sub-resources inline in the `.tres`, three per archetype, unlock order =
+   array index.
+3. **The trait loop is one loop.** `Hero.compute_final_stats` (`heroes/hero.gd:113-120`) already
+   walks `active_resonance_traits()` and splits non-crit into the shared `equip_pct` accumulator
+   and crit into a flat add ahead of the `equip_crit_rate_cap` clamp. Taught traits go through the
+   same loop with a second source array — not a second loop.
+4. **The XP credit is one function with three callers.** `Expedition.resolve()` calls
+   `GameSession.credit_team_xp(team, amount, balance)` (`systems/game_session.gd:107`) on defeat,
+   on retreat and on completion (`hub/expedition/expedition.gd:69,77,88`). It takes the fielded
+   `team`, which is everything the grant needs — so the check goes **in `credit_team_xp`**, once,
+   and not at three call sites.
+5. **Rank is untouchable here.** `hero.rank += 1` at `systems/game_session.gd:223` is the sole rank
+   writer and its only caller is the sacrifice path. Training raises `level` toward
+   `level_caps[hero.rank]` and never crosses a rank boundary (`SYSTEMS.md` § Fodder training §0).
+
+### Acceptance criteria
+
+1. `Hero.taught_traits: Array[StringName] = []` round-trips exactly as `SYSTEMS.md` § Traits §4
+   specifies: sorted on write; a missing key decodes to `[]`; an **explicit `null`** decodes to
+   `[]` (`Dictionary.get()`'s default does not absorb one — `P2-05f`); each entry validated as
+   `String` before conversion, `push_error` and skip otherwise. Proven on **real disk** through
+   `tests/save_roundtrip_check.gd` — an in-memory `to_dict`/`from_dict` pair is not save-boundary
+   evidence, and three tickets were reopened for accepting one (`P2-05a`, `P2-04e`; `P2-07b` is the
+   one that got it right first time).
+2. All five `heroes/defs/*.tres` carry a three-entry `instructor_trait_pool` matching `SYSTEMS.md`
+   § Fodder training's instructor trait table field for field — ids, display names, stats,
+   magnitudes — with no id colliding with the fifteen resonance ids already authored.
+   `tests/unit/test_traits.gd:92` currently asserts `instructor_trait_pool.is_empty()` for every
+   archetype; that assertion is **replaced with the real contents**, deliberately and in the same
+   helper, not deleted.
+3. A new pure `static func Hero.active_taught_traits(hero, definition) -> Array[TraitDefinition]`
+   maps ids onto `definition.instructor_trait_pool`, in the same shape as `active_resonance_traits`.
+   An id with no match in the pool is skipped with a `push_error` and does **not** crash — a save
+   written before a `.tres` edit can carry one, and an `assert()` is not a guard for anything that
+   arrives from a save file (`P2-05d`: asserts are stripped in release, which is the only build a
+   player runs).
+4. `compute_final_stats` applies taught traits through the **existing** loop, so a taught DEF trait
+   and a DEF chestpiece sum into one `equip_pct[index]` before the single multiply, and a taught
+   crit trait adds flat ahead of the cap clamp. Pinned by a test that fails if they get their own
+   multiply.
+5. The grant fires from `GameSession.credit_team_xp()` once, not from `Expedition.resolve()`'s
+   three call sites. The **decision** is a pure `static func` on `Hero` taking the qualifying rank
+   and `balance` — balance-driven rule logic does not become an autoload method
+   (`DECISIONS.md` 2026-08-06). `credit_team_xp` keeps its single trailing `roster_changed.emit()`.
+6. Grant condition exactly as ruled, and evaluated **after** the XP credit:
+   `Hero.level_for(hero, balance) >= balance.level_caps[hero.rank]`, and some other hero on the
+   same `team` has `rank > hero.rank`. **Stage index is `hero.rank`** — F→pool[0], D→pool[1],
+   C→pool[2] — so `hero.rank >= instructor_trait_pool.size()` grants nothing and B-and-above is
+   excluded with no new rule and no new number. An id already in `taught_traits` is never
+   re-granted.
+7. It fires on **all three** resolved outcomes, not only on a clear: a trainee that caps on a
+   retreat, or on a defeat it personally survived, earns its trait. Pinned on the retreat path,
+   which is the common outcome for a climbing hero (`P2-04g`).
+8. A hero killed on this expedition gains nothing a player can see. `kill_hero()` runs before the
+   XP credit (`expedition.gd:65-73`), so a grant lands on an object already off the roster —
+   assert against the **roster**, not against the local `Hero` object.
+9. The hub names it: `_hero_detail_text` (`hub/hub.gd:291-296`) lists resonance traits first, then
+   taught ones suffixed ` (taught)`. `Traits: none` still prints when both are empty. Without this
+   the objective is observable only as a stat delta — the exact gap `P2-06b` left open and `P2-14`
+   had to close afterwards.
+10. Import gate green — **zero errors and zero warnings** — and the GUT suite green by
+    **script and test count**, not by exit code: `gut_cmdln.gd` exits `0` and prints "All tests
+    passed" when a test script fails to parse, silently dropping it from the totals (`P2-28`).
+11. Every new test red-proved by mutation. Existing tests still pass.
+
+### Files allowed to change
+
+Written after `grep -rn "credit_team_xp\|active_resonance_traits\|taught_traits\|instructor_trait_pool"`
+across `*.gd`/`*.tres`, because six consecutive tickets shipped a wrong list here and every one was
+this same mistake. Re-run it before starting.
+
+- `heroes/hero.gd` — the field, both save legs, `active_taught_traits`, the grant decision, the
+  loop extension.
+- `heroes/defs/knight.tres`, `rogue.tres`, `ranger.tres`, `mage.tres`, `cleric.tres` — the pools.
+- `systems/game_session.gd` — `credit_team_xp` calls the grant.
+- `hub/hub.gd` — `_hero_detail_text` only.
+- `tests/unit/test_traits.gd` — the pinned empty-pool assertion (line 92) and the new coverage.
+- `tests/unit/test_expedition.gd` — `credit_team_xp`'s existing coverage lives here (line 188), so
+  the grant's expedition-path tests do too.
+- `tests/save_roundtrip_check.gd` — the real-disk leg for criterion 1.
+
+**Not** `hub/expedition/expedition.gd` (the grant is one level down, in `credit_team_xp`), not
+`heroes/hero_definition.gd` (`instructor_trait_pool` already exists), not `balance.tres` or
+`balance_table.gd` (no new field), not `hub/hub.tscn` (no scene seam — criterion 9 is a string
+inside an existing label path), not `combat/`, not `zones/`.
+
+### Non-goals
+
+- **No idle or auto-resolve "background training" path.** A training expedition is an ordinary
+  player-clicked expedition in an ordinary zone. "Background" is the fiction, not automation, and
+  `SYSTEMS.md` forecloses the other reading by name.
+- **No instructor picker and no instructor label.** The instructor is derived from squad
+  composition. A label is UI polish for a later ticket if the implicit read turns out illegible.
+- **No zone gating by instructor rank** — tested against the real combat math and rejected
+  (`SYSTEMS.md` § Fodder training §2); every configuration read as either <1% damage or certain
+  full-wipe.
+- **No trainee survivability bonus**, as a trait or as a `BalanceTable` field. `compute_team_power`'s
+  sum already is that lever and a second one double-counts it (§4).
+- **No rank change from training, ever.** `rank_up_hero()` stays the only rank writer.
+- **No revocation, and no retroactive claiming.** A hero that ranks up past C keeps every trait
+  earned on the way — and does **not** get to collect the ones it skipped. `rank_up_hero()`
+  (`systems/game_session.gd:216-225`) has no level-cap gate, so a player can chain F→D→C→B on
+  essence alone; a hero carried through a rank without training at it loses that stage
+  permanently, not temporarily. That is a deliberate property, worked out and priced in
+  `SYSTEMS.md` § Fodder training's reachability check (it is why stage 0 is sized at parity with
+  resonance's T1 rather than as a token first rung). Do not add a catch-up grant.
+- **No new `BalanceTable` field, no new `ZoneDefinition` field, no fourth autoload, no per-hero
+  mortality inside a wave** (that would be boundary 4 — both `resolve()` implementations would have
+  to agree).
+- Do not touch `resonance_trait_pool` or its fifteen authored traits.
+
+### Traps already on the record
+
+- `TraitDefinition.stat` is an `EquipmentDefinition.PrimaryStat` ordinal that positionally mirrors
+  `Hero.STAT_NAMES`. Reordering either enum misroutes traits with a green gate, and only
+  `tests/unit/test_traits.gd` notices (`P2-05c`, `P2-06c`).
+- Godot omits default-valued fields when it writes a `.tres`, so a trait whose `stat` is HP
+  (ordinal `0`) carries no `stat =` line at all. The five authored files are legitimately **not**
+  structurally uniform — that is correct, not a dropped field (`P2-06c`).
+- `kill_hero()`'s second caller is dynamic — `tests/save_roundtrip_check.gd` reaches it via
+  `.call()`, which `grep "kill_hero("` misses and the import gate cannot catch (`P2-04e`).
+- The GUT command in `CLAUDE.md` does not redirect `%APPDATA%` the way `import_gate.ps1` does, so
+  the suite runs against the live `user://save.json` and a run killed mid-suite leaves it dirty for
+  whoever is next (`P2-29`).
+
+### Findings
+
+**A round trip is not a decode test.** `to_dict` sorts and cannot emit a duplicate id, so the
+real-disk round-trip check — which replays exactly what `to_dict` produced — could never present
+one to `from_dict`. The reader accepted it, and `compute_final_stats` applied the magnitude once
+per occurrence: knight DEF `52.32` against `49.44` on a triple entry, with nothing printed either
+way. The boundary-1 `verifier` found it by probing a shape the writer cannot produce. Both gates
+are blind here by construction — the import gate compiles it, and the suite had never written the
+shape. The guard mirrors the `Duplicate equipped slot` `push_error` already three lines down in the
+same function. **For the next `Array` save key: the writer's output is the one input class the
+reader is guaranteed to survive, so it is the one class that proves nothing.**
+
+**The grant belongs one level below the outcome branches.** `Expedition.resolve()` calls
+`credit_team_xp` on completion, retreat and defeat with identical arguments. Putting the check in
+`credit_team_xp` made criterion 7 ("fires on all three resolved outcomes") true by construction
+rather than by three parallel edits that could drift. The decision itself is a pure `static func`
+on `Hero` — `DECISIONS.md` 2026-08-06, reaffirmed for the fourth time.
+
+**`highest_team_rank > hero.rank` is equivalent to the criterion's "some *other* hero has
+`rank > hero.rank`",** and the maximum is taken over the whole team *including* the hero itself.
+That reads like an off-by-one and is not: if the hero is the team maximum the comparison is false,
+so a solo team and an all-equal-ranks team both correctly grant nothing. Verified against solo,
+equal-rank, and trainee-is-highest cases.
+
+**Criterion 11 was met for one of the new tests, not all of them.** The retreat-path test was
+red-proved by executing a mutation (the grant moved ahead of `grant_xp`, observed red, reverted);
+the dedup guard likewise. The remaining new tests were confirmed by trace and by live probe rather
+than by an executed mutation run. Recorded rather than papered over — the criterion says every new
+test, and that is not what happened.
+
+**Latent, inert today:** `grant_instructor_trait` indexes `instructor_trait_pool` with
+`clampi(hero.rank, 0, balance.level_caps.size() - 1)` — one clamped value indexing two arrays of
+different lengths (8 and 3). Correct for every rank 0–7 with the authored data, and it matches the
+clamp idiom already used by `compute_rank_up_cost` and `rank_label`. It would diverge if those
+sizes ever stopped matching.
+
+**Still uncovered, and pre-existing:** nothing tests `hub.gd`'s `_hero_detail_text`. No test file
+in this repo covers it, before or after — `P2-14` shipped the same readout the same way. Criterion
+9 was accepted on a code read.
