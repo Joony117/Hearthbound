@@ -29,6 +29,11 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _zone_option: OptionButton = %ZoneOption
 @onready var _status: Label = %Status
 @onready var _pause_menu: CanvasLayer = %PauseMenu
+@onready var _confirm_dialog: ConfirmationDialog = %ConfirmDialog
+
+# Held between the press that asks and the press that confirms. The dialog is exclusive, so no
+# second action can be queued while one is pending.
+var _pending_action: Callable
 
 
 func _ready() -> void:
@@ -289,6 +294,19 @@ func _on_summon_pressed() -> void:
 		_status.text = "Need %d Summon Stones, have %d." % [BALANCE.summon_pull_cost, GameSession.stones]
 
 
+func _ask(prompt: String, action: Callable) -> void:
+	_pending_action = action
+	_confirm_dialog.dialog_text = prompt
+	_confirm_dialog.popup_centered()
+
+
+func _on_confirm_dialog_confirmed() -> void:
+	var action: Callable = _pending_action
+	_pending_action = Callable()
+	if action.is_valid():
+		action.call()
+
+
 func _on_sacrifice_pressed() -> void:
 	var fodder: Hero = _fodder_option.get_selected_metadata() as Hero if _fodder_option.selected >= 0 else null
 	var target: Hero = _target_option.get_selected_metadata() as Hero if _target_option.selected >= 0 else null
@@ -306,6 +324,20 @@ func _on_sacrifice_pressed() -> void:
 		return
 	var sanctum_level: int = clampi(GameSession.building_levels[3], 0, BALANCE.summoning_circle_level_cap)
 	var essence_yield: int = Hero.compute_essence_yield(fodder, target, BALANCE, sanctum_level)
+	_ask(
+		"Sacrifice [%s] %s into [%s] %s for %d essence?\n\n%s is destroyed permanently." % [
+			fodder.rank_label(BALANCE),
+			fodder.hero_name,
+			target.rank_label(BALANCE),
+			target.hero_name,
+			essence_yield,
+			fodder.hero_name,
+		],
+		_do_sacrifice.bind(fodder, target, essence_yield),
+	)
+
+
+func _do_sacrifice(fodder: Hero, target: Hero, essence_yield: int) -> void:
 	var fodder_name: String = fodder.hero_name
 	if GameSession.sacrifice_hero(fodder, target, BALANCE):
 		_status.text = "Sacrificed %s for %d essence." % [fodder_name, essence_yield]
@@ -366,6 +398,18 @@ func _on_salvage_pressed() -> void:
 	var rank_label: String = item.rank_label(BALANCE)
 	var forge_level: int = clampi(GameSession.building_levels[1], 0, BALANCE.summoning_circle_level_cap)
 	var salvage_yield: int = roundi((3 + clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max)) * (1.0 + BALANCE.forge_salvage_yield_bonus * forge_level))
+	var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+	var item_name: String = definition.display_name if definition != null else str(item.def_id)
+	var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
+	_ask(
+		"Salvage %s %s%s into %d %s parts?\n\nThe item is destroyed." % [
+			rank_label, item_name, enhance_suffix, salvage_yield, rank_label,
+		],
+		_do_salvage.bind(item, rank_label, salvage_yield),
+	)
+
+
+func _do_salvage(item: Item, rank_label: String, salvage_yield: int) -> void:
 	GameSession.salvage_item(item, BALANCE)
 	_status.text = "Salvaged %s item into %d %s parts." % [rank_label, salvage_yield, rank_label]
 
@@ -482,6 +526,24 @@ func _on_expedition_pressed() -> void:
 	var zone: ZoneDefinition = _zone_option.get_item_metadata(_zone_option.selected) as ZoneDefinition
 	assert(zone != null)
 	assert(is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids))
+	_ask(
+		"Send %d hero(es) to %s?\n\n%s\n\nHeroes that fall are gone for good." % [
+			team.size(),
+			zone.display_name,
+			", ".join(_hero_names(team)),
+		],
+		_do_expedition.bind(team, zone),
+	)
+
+
+func _hero_names(team: Array[Hero]) -> PackedStringArray:
+	var names: PackedStringArray = []
+	for hero: Hero in team:
+		names.append("[%s] %s" % [hero.rank_label(BALANCE), hero.hero_name])
+	return names
+
+
+func _do_expedition(team: Array[Hero], zone: ZoneDefinition) -> void:
 	var expedition := Expedition.new()
 	var outcome: StringName = expedition.resolve(team, zone)
 	match outcome:
@@ -550,6 +612,35 @@ func _on_recover_pressed() -> void:
 		var hero: Hero = _roster_list.get_item_metadata(selected_index) as Hero
 		if hero != null:
 			team.append(hero)
+	# Recovery is the one action with no dry run — `recover_cache()` validates and mutates in the
+	# same call. Its cheap refusals are re-checked here so a misclick still reports itself instead
+	# of opening a dialog; the zone and power legs are deliberately left to `recover_cache()`, since
+	# re-deriving team power here is how a preview and a payout start disagreeing.
+	if cache == null:
+		_status.text = "Select one lost cache to recover."
+		return
+	if team.is_empty():
+		_status.text = "Select at least one hero for recovery."
+		return
+	if team.size() > MAX_TEAM_SIZE:
+		_status.text = "Select no more than 5 heroes for recovery."
+		return
+	for hero: Hero in team:
+		if Hero.definition_for(hero.def_id) == null:
+			_status.text = "Recovery cannot start: every hero needs a valid archetype."
+			return
+	_ask(
+		"Send %d hero(es) to recover %d item(s) from %s's cache?\n\n%s\n\nThis costs a turn, and recovered items can come back damaged." % [
+			team.size(),
+			cache.items.size(),
+			cache.hero_name,
+			", ".join(_hero_names(team)),
+		],
+		_do_recover.bind(cache, team),
+	)
+
+
+func _do_recover(cache: LostCache, team: Array[Hero]) -> void:
 	var outcome: StringName = GameSession.recover_cache(cache, team, BALANCE)
 	match outcome:
 		GameSession.RECOVERY_COMPLETED:
@@ -557,9 +648,9 @@ func _on_recover_pressed() -> void:
 		GameSession.RECOVERY_NO_CACHE:
 			_status.text = "Select one lost cache to recover."
 		GameSession.RECOVERY_INVALID_TEAM:
-			if selected_heroes.is_empty():
+			if team.is_empty():
 				_status.text = "Select at least one hero for recovery."
-			elif selected_heroes.size() > MAX_TEAM_SIZE:
+			elif team.size() > MAX_TEAM_SIZE:
 				_status.text = "Select no more than 5 heroes for recovery."
 			else:
 				_status.text = "Recovery cannot start: every hero needs a valid archetype."

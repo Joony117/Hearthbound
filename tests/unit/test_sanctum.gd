@@ -20,12 +20,20 @@ func test_sacrifice_preview_matches_sanctum_bonused_payout() -> void:
 	var fodder_option: OptionButton = hub.get_node("%FodderOption") as OptionButton
 	var target_option: OptionButton = hub.get_node("%TargetOption") as OptionButton
 	var sacrifice_button: Button = hub.get_node("UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice") as Button
+	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
 	var status: Label = hub.get_node("%Status") as Label
 	var essence_before: int = GameSession.essence
 
 	fodder_option.select(0)
 	target_option.select(1)
 	sacrifice_button.pressed.emit()
+
+	# The press only asks. Nothing may die until the dialog is confirmed.
+	assert_true(GameSession.roster.has(fodder))
+	assert_eq(GameSession.essence, essence_before)
+	assert_string_contains(confirm_dialog.dialog_text, "Sacrifice [C] Fodder into [F] Target for 98 essence?")
+
+	confirm_dialog.confirmed.emit()
 
 	assert_eq(status.text, "Sacrificed Fodder for 98 essence.")
 	assert_eq(GameSession.essence - essence_before, 98)

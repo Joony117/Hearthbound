@@ -73,6 +73,9 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	inventory_list.select(0)
 	var parts_before: int = GameSession.parts[3]
 	salvage_button.pressed.emit()
+	# The press only asks; salvage destroys the item, so it waits for the confirm.
+	assert_eq(GameSession.parts[3], parts_before)
+	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).confirmed.emit()
 	assert_eq(status.text, "Salvaged B item into 4 B parts.")
 	assert_eq(GameSession.parts[3] - parts_before, 4)
 

@@ -355,9 +355,15 @@ layout_mode = 2
 text = "   Esc = pause"
 modulate = Color(1, 1, 1, 0.4)
 
+[node name="ConfirmDialog" type="ConfirmationDialog" parent="UI"]
+unique_name_in_owner = true
+title = "Confirm"
+ok_button_text = "Confirm"
+
 [node name="PauseMenu" parent="." instance=ExtResource("2_pause")]
 unique_name_in_owner = true
 
+[connection signal="confirmed" from="UI/ConfirmDialog" to="." method="_on_confirm_dialog_confirmed"]
 [connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/Recover" to="." method="_on_recover_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice" to="." method="_on_sacrifice_pressed"]

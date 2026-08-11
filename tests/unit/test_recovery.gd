@@ -190,6 +190,8 @@ func test_hub_recover_button_reuses_roster_selection() -> void:
 	seed(1)
 
 	recover_button.pressed.emit()
+	assert_false(GameSession.lost_caches.is_empty())
+	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).confirmed.emit()
 	assert_eq(status.text, "Recovered 1 items from Aster's cache.")
 	assert_true(GameSession.inventory.has(cache.items[0]))
 	assert_true(GameSession.lost_caches.is_empty())

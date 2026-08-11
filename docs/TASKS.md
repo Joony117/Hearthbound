@@ -738,6 +738,62 @@ arena. The supplied *Vindictus* direction rejected that slice's instant velocity
 cursor aim before the human play gate; `P2b-01b-2` corrects that prerequisite before any attack
 range or timing is authored around it.
 
+---
+
+## Playtest feedback — 2026-08-10
+
+**The play pass the `P2b-01e` handoff asked for has happened**, so the blocker that comment named
+is retired. Verdict on the whole thing: *"feels good for what it is."* No individual feel value was
+contradicted, so **nothing is retuned here** — the 22 PROVISIONAL arena numbers stay authored as
+they are, and the report's one tuning line ("still needs tuning for combat weight and feedback") is
+recorded against `P2b-03` rather than acted on, because it is about *feedback the player cannot
+currently see*, not about a number being wrong. Retuning weight before the hit is visible would be
+tuning against a missing signal.
+
+**Nine reported items, six tickets.** The merges are the reasoning, and each one is a case where
+filing the report verbatim would have built the same mechanism two or three times:
+
+- **"Dedicated equipment slot UI" + "sort gear by rank/type" + "a tab per gear type" are one
+  ticket** (`P2-25`), not three. They are one complaint from three angles: `_refresh_inventory()`
+  (`hub/hub.gd:149`) appends every `Item` in `GameSession.inventory` in insertion order into one
+  flat `ItemList`, so the only way to find the boots for a hero is to read the whole bag. A
+  slot-shaped Equipped panel that filters the inventory to the selected slot **is** the per-type
+  tab, and ordering that filtered view by rank **is** the sort. Three tickets would put three
+  overlapping mechanisms on the same `ItemList`.
+- **"No enemy telegraph" + "hit effects to confirm a hit" are one ticket** (`P2b-03`). Both are the
+  same absence: nothing on either capsule ever changes appearance, so `_enemy_attack_startup`
+  (`0.55 s` of committed windup, `balance_table.gd:30`) and a landed hit look identical — like
+  nothing. The graybox answer to both is one material tint driven by the state machine that already
+  exists in `arena.gd`. The report defers the telegraph "until we get animations"; it is **included
+  anyway** because it needs no animation, and the tint that confirms a hit is the same code as the
+  tint that warns of one. Shipping half costs what shipping both costs. It is a separable criterion
+  if that reads wrong.
+- **"Clearer indications of what's being sacrificed, to whom, to where" is mostly not a tooltip
+  ticket.** The confirm step `P2-26` needs anyway has to name the fodder, the target and the yield
+  before it can ask anything — that sentence *is* the indication, and it lands at the moment of
+  decision rather than on hover. What survives as `P2-28` is per-row hover detail, which is real but
+  much smaller than the report implies.
+
+**Sequencing, and why:**
+
+1. `P2-26` (confirm guards) is **first**. It is the only item on the list that prevents *permanent*
+   loss — a misclicked Sacrifice or Expedition kills a hero for good (`ARCHITECTURE.md` r8), and
+   `P2-06a`'s Findings already record this exact class of accident happening once, with both gates
+   green. Everything else on the list is convenience.
+2. `P2-25` (slot-shaped equipment UI) is the largest playability win and closes three reported items.
+3. `P2-27` (batch sacrifice/salvage) sequences **after** `P2-25` deliberately: batching selections
+   out of a flat unordered list is batching the thing being complained about. It also inherits
+   `P2-26`'s confirm text, which is what makes a 12-item batch safe to press.
+4. `P2b-04` (cancel into dodge/parry) is the one item that **needs a `game-designer` ruling before
+   code**. "Most actions" is not a specification, and `SYSTEMS.md` § "Enemy attack, dodge and hit
+   reaction" already ruled the current cancel terms — so this reverses a published ruling rather
+   than filling a gap. Four questions it must answer are on the row.
+5. `P2b-03` and `P2-28` trail; neither blocks anything.
+
+**Not filed:** guards on Enhance, Convert and the five Upgrade buttons. All spend resources, none
+destroys something unrecoverable, and the report named expeditions and sacrifices specifically.
+`P2-26` adds a shared helper, so extending it later is one line per call site.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -794,20 +850,113 @@ range or timing is authored around it.
 | P2b-01f | Facing follows the camera, and a standstill press parries | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). Two played-build corrections, ruled in `SYSTEMS.md` § "Camera-forward facing and the parry stance". Sequenced **before** `P2b-01e`: both are arena-local feel and neither touches the combat seam, so shipping them first keeps the integration slice clean. |
 | P2b-01e | Arena accepts the existing `Wave` and returns the existing `CombatResult` | **Landed in the commit below;** body in [`TASKS-DONE.md`](TASKS-DONE.md). The integration slice — the arena is the seam's second implementation, `CombatResult` display-only, `Expedition` still the sole outcome/permadeath consumer. Blocked on one `game-designer` ruling for exactly one pass (`SYSTEMS.md` § "Hero HP and the death rule"): `arena_enemy_hits_to_kill_hero = 3`, **integer** hit counter and not a float HP threshold — a `.tres`-authored `1/3` leaves the killing hit `~1e-13` short with both gates green. Enemy keeps its one-hit kill; nothing scales with the power ratio, so the `Wave` is a ruled inert pass-through this slice. Boundary-4 `verifier` returned **pass-with-concerns** on all 8 criteria and red-proved the new tests by mutation. **Read its Findings before writing another `resolve()`-shaped function** — the delivered one ignores both declared parameters, guarded only by release-stripped `assert()`s. |
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
+| P2-26 | Destructive hub actions ask before they fire | **Body below.** Playtest feedback, 2026-08-10. First of the six because it is the only one that prevents *permanent* loss. Guards Expedition, Sacrifice, Salvage and Recover behind one shared `ConfirmationDialog`; the dialog text doubles as the "what is being sacrificed, to whom" indication the report asked for separately. Crosses `CLAUDE.md` boundary 2 (scene seam) only — no save key, no autoload signature. **Four test files press these buttons directly** (`test_expedition.gd`, `test_sanctum.gd`, `test_buildings.gd`, `test_recovery.gd`) and all four are in the allowed list; the archive's five consecutive wrong allowed-file lists were all this mistake. |
+| P2-25 | Each hero has ten equipment slots, and picking one filters the bag | Playtest feedback, 2026-08-10; closes three reported items (dedicated slot UI, sort by rank/type, a tab per type) — see the merge reasoning above. `_refresh_equipped()` (`hub/hub.gd:176`) iterates `hero.equipped`, which only holds *filled* slots, so an empty slot is invisible and there is nowhere to click to say "show me boots". Render all ten `EquipmentDefinition.Slot` entries always, empty ones included; selecting one filters `_refresh_inventory()` to items whose definition matches that slot, ordered rank-descending then `+enhance` descending. **The `Slot` ordinal positionally mirrors `Hero.STAT_NAMES`** — `P2-05c`/`P2-06c` both warn that reordering either enum misroutes gear with a green gate, so this ticket displays the ordinal and must not renumber it. No save key changes; scene seam only. Needs a `tech-lead` pass or a director-written body — it is a real UI restructure, unlike `P2-26`. |
+| P2-27 | Sacrifice and salvage in batches | Playtest feedback, 2026-08-10. Sequenced **after** `P2-25`: batching a flat unordered list is batching the complaint. Fodder is currently a single `OptionButton` (`%FodderOption`) and `%InventoryList` is `select_mode = 0`; both become multi-select, and the payout is summed once rather than per-press. **Read `P2-06a`'s Findings first** — `add_item()` auto-selects index 0 on a cleared button, which is how a blind second press once killed the wrong hero permanently; a batch path multiplies that failure by the batch size. Inherits `P2-26`'s confirm text, which is what makes a 12-item press safe. `GameSession.sacrifice_hero`/`salvage_item` stay one-at-a-time — the loop belongs in `hub.gd`, not in a new autoload method (`DECISIONS.md` 2026-08-06). |
+| P2-28 | Hover detail on roster and inventory rows | Playtest feedback, 2026-08-10, and the *residue* of "clearer indications" once `P2-26`'s confirm text and `P2-25`'s slot layout have taken the load-bearing half. `ItemList.set_item_tooltip()` is native and one line per `add_item()` call, so this is small. Trails everything; blocks nothing. |
+| P2b-03 | The capsules show what is happening — telegraph, hit flash, parry flash | Playtest feedback, 2026-08-10; merges "no enemy telegraph" and "hit effects" — one mechanism, see above. A `StandardMaterial3D` tint on each capsule driven by state `arena.gd` already tracks: enemy startup (`_enemy_attack_elapsed < arena_enemy_attack_startup`), `HitStopOutcome.HIT_HERO`, `.PARRY_HERO`, `.DEFEAT_ENEMY`. Telegraph is included despite the report deferring it, and is a separable criterion. **The materials must be `duplicate()`d per instance** — `arena.tscn`'s capsules are native primitives and a shared material writes back to disk for every consumer, the hazard `ARCHITECTURE.md` § "Reaching shared Resources" names by example (`P2-07c` hit it with `summon_weights`). The report's "still needs tuning for combat weight" is recorded here and **not acted on**: `arena_light_attack_hit_stop` is `0.04 s` and may well be too short, but tuning weight against an invisible hit is tuning against a missing signal. Re-ask after this ships. |
+| P2b-04 | **[BLOCKED — design]** Dodge and parry cancel any player action instantly | Playtest feedback, 2026-08-10. Today `_start_dodge()` (`combat/arena/arena.gd:341-343`) refuses during light-attack startup *and* active, so the only cancel window is recovery, and `_start_parry()` is reachable only through the standstill branch below that same guard. Deleting those three lines is most of the change — but **`SYSTEMS.md` § "Enemy attack, dodge and hit reaction" ruled the current terms**, so this reverses a published ruling, and "most actions" names no boundary. `game-designer` must answer four things first: (1) does a cancel out of an *active* attack refund the hit or eat it; (2) is hit-stun cancellable — if yes, `arena_enemy_hit_stun = 0.35` and the knockback stop being a punish at all; (3) is hit-stop cancellable (it is the one window where input is currently ignored wholesale, `_physics_process` line 84); (4) does a cancel out of an attack still pay `arena_dodge_cooldown`, or is cancelling free. (2) and (3) are where "instantly cancel out of *most* actions" stops being a one-line change. |
 
-<!-- Fresh-session handoff after P2b-01e: the whole P2b-01 split is now DONE and the combat seam has
- its second implementation. Only P2b-02 (controller input) is left in the P2b row set, and it is a
- hard constraint rather than a deferral. Before scoping it, read the P2b-01e closeout above: two
- accepted residues are live debt, not closed questions — arena.gd's resolve(team, wave) ignores both
- declared parameters behind release-stripped asserts, and CombatResult.loot_seed stays 0 on the
- arena path. Both are inert only while the arena result is display-only; Phase 3's reconciliation
+---
+
+## P2-26 — Destructive hub actions ask before they fire                        [DONE]
+
+### Objective
+
+Pressing Expedition, Sacrifice, Salvage or Recover opens a dialog naming exactly what is about to
+happen and what it costs; the action fires only on confirm. A misclick costs a dismissal, not a
+hero.
+
+### Existing architecture
+
+- `hub/hub.gd` handlers run validate-then-mutate inline: `_on_expedition_pressed()` (`:468`),
+  `_on_sacrifice_pressed()` (`:292`), `_on_salvage_pressed()` (`:359`), `_on_recover_pressed()`
+  (`:542`). Every one of them writes its result into `%Status` (`_status: Label`).
+- Two of the four are **irreversible**: `Expedition.resolve()` reaches `GameSession.kill_hero()`,
+  the sole permadeath call site (`ARCHITECTURE.md` r8), and `GameSession.sacrifice_hero()` reaches
+  the same. `salvage_item()` destroys an `Item`. `recover_cache()` advances a turn and can roll
+  `Item.apply_damaged()` on every recovered piece.
+- `hub.tscn`'s buttons connect through `[connection]` blocks to `_on_*_pressed` by name — the scene
+  seam (`CLAUDE.md` boundary 2). `%PauseMenu` is the existing precedent for a `CanvasLayer` overlay
+  living in this scene.
+- Four GUT files press these buttons by **absolute node path** and assert `%Status.text`:
+  `test_expedition.gd` (`:270`, `:311`, `:337`), `test_sanctum.gd` (`:16`), `test_buildings.gd`
+  (`:75`), `test_recovery.gd` (`:165`, `:182`).
+
+### Acceptance criteria
+
+1. One `ConfirmationDialog` node in `hub.tscn`, reused by all four call sites — not four dialogs.
+2. **Validation runs before the dialog, not after.** An invalid press ("Select a hero first.",
+   "Unequip the fodder hero before sacrificing it.", "Select no more than 5 heroes.") produces the
+   same `%Status` text it produces today and opens no dialog. Every existing message is unchanged.
+3. The dialog text names the specific thing: the fodder hero, the target hero and the essence yield
+   for Sacrifice; the team size and zone for Expedition; the item, its rank and the parts yield for
+   Salvage; the cache owner and item count for Recover.
+4. Confirming produces the identical `%Status` text the unguarded press produced today.
+5. Cancelling changes no state: no hero dies, no turn ticks, no item is destroyed, `%Status`
+   is untouched.
+6. A second press while a dialog is open cannot queue a second action.
+7. Existing tests still pass, with the four files above updated to confirm rather than rewritten.
+8. No save key changes, no autoload signature changes.
+
+### Files allowed to change
+
+`hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_expedition.gd`, `tests/unit/test_sanctum.gd`,
+`tests/unit/test_buildings.gd`, `tests/unit/test_recovery.gd`, `docs/TASKS.md`.
+
+### Non-goals
+
+Guards on Enhance, Convert, Rank Up or the five Upgrade buttons — all spend resources, none
+destroys something unrecoverable. Batch anything (`P2-27`). Tooltips (`P2-28`). Any change to
+what the four actions actually do.
+
+### Findings
+
+**Shipped in the commit below.** Director-written and director-implemented per rung 1; no
+`verifier` — it crosses boundary 2 (scene seam) and the four button connections are pinned by GUT
+tests that drive the real `[connection]` blocks, which is the evidence a verifier pass would have
+gone looking for.
+
+The confirm helper is **eight lines** and stores a `Callable`, so the four handlers keep their
+existing shape: validate, summarise, `_ask(...)`. Criterion 6 needed no code — `AcceptDialog`
+defaults `exclusive = true`, so the dialog is modal and the buttons behind it cannot be pressed.
+
+Two things worth carrying forward:
+
+- **The dialog is the feature, not the guard.** Criterion 3's text closes the report's separate
+  "clearer indications of what's being sacrificed, to whom" item outright, because a sentence that
+  has to be true at the moment of decision is a better indication than a tooltip that has to be
+  hunted for. `P2-28` shrank as a result.
+- **`_on_recover_pressed()` could not keep its shape.** It is the one handler that does not
+  validate before mutating — it hands everything to `GameSession.recover_cache()` and switches on
+  the returned `StringName`, so there is no point at which the old code knows the action is legal
+  but has not yet performed it. Splitting it meant duplicating four of its five refusal branches as
+  pre-checks in `hub.gd` (`RECOVERY_NO_CACHE`, `RECOVERY_INVALID_TEAM` twice, and the roster/
+  archetype legs) while leaving `recover_cache()` itself authoritative and unchanged. The duplication
+  is real and deliberate: the alternative was a `can_recover()` on the autoload, which is
+  `DECISIONS.md` 2026-08-06's rejected shape. `RECOVERY_MISSING_ZONE` and
+  `RECOVERY_INSUFFICIENT_POWER` are deliberately **not** pre-checked — they need the zone and the
+  power sum, and re-deriving those in `hub.gd` is how a preview and a payout start disagreeing
+  (`P2-07e`). Those two still refuse after the confirm, which is correct: they cost nothing.
+
+---
+
+<!-- Fresh-session handoff after P2-26: the playtest feedback of 2026-08-10 is filed as six rows
+ (P2-25, P2-26, P2-27, P2-28, P2b-03, P2b-04) with the merge reasoning in "Playtest feedback" above
+ — read that before re-splitting any of them, since three reported items collapsed into P2-25 and
+ two into P2b-03 on purpose. P2-26 has landed. Next by the stated sequencing is P2-25.
+
+ P2b-04 is BLOCKED on a game-designer ruling and is the only one of the six that is; do not dispatch
+ it to an implementer on the strength of "it is three lines".
+
+ Still-live debt from P2b-01e, unchanged: arena.gd's resolve(team, wave) ignores both declared
+ parameters behind release-stripped asserts, and CombatResult.loot_seed stays 0 on the arena path.
+ Both are inert only while the arena result is display-only; Phase 3's reconciliation
  (KNOWN_ISSUES.md § "Quick resolve and the arena will disagree") is what makes them live.
 
- The real blocker on this whole line is no longer a ticket. NOBODY HAS PLAYED ANY OF IT: 21 feel
- values from P2b-01d/P2b-01f plus arena_enemy_hits_to_kill_hero = 3 are all PROVISIONAL and unfelt,
- and the Phase 2 exit question ("is spending a hero's life a decision you actually feel?") cannot be
- answered at a desk. Building more arena tickets on top of unplayed values is how 22 provisional
- numbers become 40. Consider a play pass before the next dispatch.
+ The 22 PROVISIONAL arena feel values have now been played once and were not contradicted — the
+ verdict was "feels good for what it is". They are still unfelt *individually*; that is a weaker
+ claim than before, not a closed one.
 
  Keep Godot engine access serialized and reap every process. -->
 

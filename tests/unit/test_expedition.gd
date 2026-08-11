@@ -309,6 +309,7 @@ func test_zone_selection_uses_metadata_after_option_reorder() -> void:
 	assert_eq(zone_option.get_item_text(zone_option.selected), selected_zone.display_name)
 	_seed_for_rolls_above(20.0 / HERO_POWER, 2)
 	expedition_button.pressed.emit()
+	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).confirmed.emit()
 	assert_eq(status.text, "1-hero team cleared Sundered Vault. Found F Legs.")
 
 
@@ -335,6 +336,9 @@ func test_roster_refresh_does_not_select_survivors_after_selected_heroes_die() -
 	seed(1)
 
 	expedition_button.pressed.emit()
+	# The press only asks. A misclicked expedition must not be able to kill anyone.
+	assert_eq(GameSession.roster.size(), 5)
+	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).confirmed.emit()
 
 	assert_eq(GameSession.roster.size(), 3)
 	assert_true(GameSession.roster.has(hero_a))
