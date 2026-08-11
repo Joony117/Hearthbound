@@ -1420,6 +1420,213 @@ excellent answer to the first and no answer at all to the second.
 
 ---
 
+**P2b-09 split.** The ask bundles asset selection, a repo location for binary asset files, hero-model
+wiring, enemy-model wiring, the tint channel's fate, and a re-ask of the parry window behind one
+line — a research task with no owner in this delegation chain, two independent boundary-2 scene
+changes, and a feel ruling that trails the pass that would decide it. None of that is one ticket, and
+one piece of it is not a ticket at all: nobody in this dispatch chain — this session, or a Codex
+worker in this repo's sandboxed `workspace-write` — can reach the internet to download a KayKit or
+Quaternius pack and read its actual animation clip names, so "check what the pack ships against the
+state list, and say which states have no clip" (the ask's own instruction) cannot be executed by
+anything this ticket can dispatch. That is the one genuine blocker, and it is operational, not a
+design ruling: the user or the director (who has `computer-use`/Chrome tooling this role does not)
+has to pick a specific pack, download it, and stage the raw files under `combat/arena/models/` before
+either ticket below can move off `[BLOCKED]`.
+
+Everything else the ask asked to be ruled or flagged is resolved here rather than left open, because
+none of it needed a balance number or a boundary move:
+
+- **Where assets live.** `ARCHITECTURE.md`'s "Project layout" section already answers this without a
+  `godot-architect` pass: "assets live next to the scenes that use them, not in type-based silos"
+  (`ARCHITECTURE.md:123-124`), and `combat/arena/` already exists as the arena's feature folder.
+  `combat/arena/models/hero/` and `combat/arena/models/enemy/` are subdirectories of an existing
+  folder, not a new top-level one — the ask's own flag ("a new top-level asset directory... flag it")
+  does not fire, because nothing here proposes one. If `D-01`'s town ever reuses this rig, that reuse
+  is the trigger for an architect pass, not this ticket.
+- **Hero first, enemy second.** Two tickets, not one, mirroring the exact precedent already in this
+  file: `P2b-01c` shipped one light attack against a passive enemy capsule before `P2b-01d` gave the
+  enemy its own attack and dodge. The enemy's telegraph is the single most load-bearing read in the
+  fight (`0.55 s` wind-up, two-stage colour, `SYSTEMS.md` § "The parry window, made visible") — that
+  is the argument for shipping it soon, immediately after the hero proves the pipeline, not for
+  skipping it or merging it into one subsystem-sized ticket.
+- **What proves it.** `test_arena.gd` already reaches into `Arena`'s private fields directly
+  (`arena._enemy_attack_elapsed = 0.0; arena._physics_process(0.0)`, `test_arena.gd:68-69`) and
+  asserts `MeshInstance3D.material_override.albedo_color` by state (`test_arena.gd:52-103`,
+  `:1040-1062`). The same pattern drives an `AnimationPlayer`/`AnimationTree` assertion: set the
+  state field, tick `_physics_process`, assert the node's current animation name. "It looks right" is
+  not a criterion either ticket below accepts.
+- **Licence residue.** In-scope, one line: a root `CREDITS.md` naming the pack and its CC0 licence.
+  Free, and the alternative — silently omitting it — is a decision by omission rather than one made
+  on purpose.
+
+Left open, flagged and not decided:
+
+- **The tint channel's fate.** `material_override` albedo tints carry telegraph, hit flash, parry
+  flash, parry window and hero-hit state today (`SYSTEMS.md` §§ "Five-hit chain...", "Smash, super
+  armor and the parry cue"; `arena.gd:179-222`). Whether a textured, multi-surface model should keep
+  whole-body albedo tinting, move to an emission/outline channel, or hand the read to the animation
+  itself is a feel ruling — `game-designer`'s call, not this ticket's. Both tickets below **preserve
+  the existing mechanism exactly** (apply the override to every surface the model has, so the whole
+  body still recolors as one) rather than pre-empting that ruling.
+- **The parry window re-ask.** `arena_parry_active_window = 0.18 s` (`balance_table.gd:79`) was set
+  against the `0.2 s` telegraph flash with the arithmetic in `SYSTEMS.md` § "The parry window, made
+  visible" — react to the flash, press at about the active frame, the window covers the hit. A real
+  wind-up pose changes the *read*, not necessarily the number. Re-ask **after** `P2b-09`/`P2b-10`
+  land, by playing it — `game-designer`'s call, sequenced, not bundled here.
+
+---
+
+## P2b-09 — The hero capsule becomes a real animated model            [BLOCKED]
+
+**Blocked on:** a specific KayKit or Quaternius character pack, downloaded and staged as raw files
+under `combat/arena/models/hero/` — nobody in this ticket's dispatch chain can fetch it. Once staged,
+this ticket is otherwise fully specified and can move straight to `[TODO]`.
+
+### Objective
+The hero's arena capsule is a real rigged low-poly humanoid that idles, runs, sprints, chains a light
+attack, swings a smash, dodges, holds a parry stance and reacts to being hit — instead of a
+solid-colour capsule that only ever changes tint. `arena.gd`'s existing state machine drives it;
+nothing about combat timing, damage or the state machine itself changes.
+
+### Existing architecture
+- `_hero_capsule_mesh: MeshInstance3D = get_node("HeroCapsule/Mesh")` (`arena.gd:38`) is the one
+  node-path lookup this ticket repoints at wherever the imported model's real mesh sits.
+- Three functions own the entire tint vocabulary and must keep working unchanged in *logic*, only in
+  node path: `_create_capsule_material_override()` (`arena.gd:173-176`) builds one
+  `StandardMaterial3D` and assigns it as `material_override`; `_update_capsule_tints()`
+  (`arena.gd:179-187`) writes `albedo_color` onto it every physics frame from
+  `_hero_tint()`/`_enemy_tint()`; `_authored_capsule_color()` (`arena.gd:219-222`) reads the *base*
+  colour off `capsule_mesh.mesh.surface_get_material(0)` — today exactly one surface.
+- The hero's entire state is already fields on `Arena`, not new state this ticket adds:
+  `_attack_elapsed`/`_attack_is_heavy`/`_combo_index` (`arena.gd:41-49`) for the attack chain,
+  `_dodge_elapsed` for dodge, `_hero_has_active_parry()`/`_parry_succeeded` (`arena.gd:793-797`) for
+  parry, `_hit_stun_remaining` for hit reaction, and horizontal speed against
+  `arena_move_speed`/`arena_sprint_speed` (`5.8`/`8.0`, `balance_table.gd:15-16`) for locomotion.
+- Displacement during dodge and attack is velocity the script assigns directly (`_update_attack()`,
+  `arena.gd:256-258`; `_update_dodge()`, `arena.gd:332-338`) — an imported clip's own root-motion
+  track must not also move the node, or the lunge/dodge distance doubles.
+- `HeroCapsule` is a `CharacterBody3D` with a `CollisionShape3D` on `Shape_hero` (capsule, radius
+  `0.75`, height `2.5`) and a `Mesh` child (`arena.tscn:89-99`); collision is untouched by this
+  ticket, only the visual child.
+- `tests/unit/test_arena.gd:52-103` and `:1040-1062` assert `material_override.albedo_color`
+  transitions for the hero capsule across every combat state — the concrete regression surface.
+
+### Acceptance criteria
+1. `HeroCapsule`'s `Mesh` node is replaced by an instanced rigged low-poly humanoid from the staged
+   pack, scaled to read at roughly the current capsule's silhouette; `HeroCapsule/CollisionShape3D`
+   and its `Shape_hero` collision are unchanged.
+2. An `AnimationPlayer` (or `AnimationTree`) under `HeroCapsule` plays a distinct clip for: idle, run,
+   sprint, light attack, heavy attack (smash), dodge, parry stance, hit reaction — selected every
+   physics frame purely from the existing state fields listed above. No new field on `Arena`, no new
+   tunable in `balance_table.gd`/`balance.tres`, no new phase in `_update_attack()`'s timeline.
+3. Every clip is scaled to fit its authored duration exactly — light attack's `startup+active+
+   recovery`, the three `arena_heavy_attack_*` fields, `arena_dodge_duration` — never the reverse. A
+   clip that runs long or short against its window is a defect, not a rounding choice.
+4. Root motion is disabled (import setting or ignored track) on every clip. Checkable: the hero's net
+   displacement across one full light attack and one full dodge, measured the way `test_arena.gd`'s
+   existing movement/attack tests already measure it, is unchanged from the pre-animation numbers
+   within a small tolerance.
+5. One light-attack clip, reused and scaled across all five chain steps, is sufficient — five
+   distinct clips are not required (see Non-goals).
+6. Every existing tint test in `test_arena.gd:52-103` and `:1040-1062` still passes, updated only for
+   the node path that now resolves to the model's mesh — never for tint *logic*. If the model has
+   more than one mesh surface, the override is applied to all of them so the whole body still
+   recolors as one, matching current single-surface behaviour.
+7. Any of the eight states above the staged pack has no usable clip for is named explicitly in the
+   commit message, with that state left on its current tint-only presentation — not invented, not
+   silently dropped.
+8. A new root `CREDITS.md` names the staged pack and its CC0 licence, one line.
+9. "Survives save and reload": N/A, and this line states why — no `GameSession`/`Hero` field is added
+   and no save key changes; confirmed the same way `test_arena_loads_native_graybox_without_mutating_profile`
+   already confirms it, by diffing `GameSession.to_dict()` before and after a run.
+10. Import gate exits `0` with zero warnings. GUT's Scripts/Tests/Asserts counts are at or above the
+    `14 / 179 / 179 / 10237` baseline (`docs/TASKS.md` § Commands; compare counts per `P2-28`'s
+    Findings, not the exit code).
+11. A `verifier` pass confirms `arena.tscn`'s changed node tree and any new
+    `[connection]`/`unique_name_in_owner` wiring resolves correctly and the scene opens clean in the
+    editor — `CLAUDE.md` boundary 2, mandatory because this ticket edits `arena.tscn`.
+
+### Files allowed to change
+`combat/arena/arena.gd`, `combat/arena/arena.tscn`, `combat/arena/models/hero/**` (new),
+`tests/unit/test_arena.gd`, `CREDITS.md` (new).
+
+### Non-goals
+The enemy capsule (`P2b-10`). Five distinct light-attack clips, one per chain step. Changing, moving
+or removing the `material_override` tint channel — preserved exactly, the channel's fate is
+`game-designer`'s call, flagged above. `arena_parry_active_window`'s value — re-asked after this
+lands, by playing it. Impact audio and hit particles (already deferred, `SYSTEMS.md` § "Impact
+feedback channels"). Permadeath or `resolve()`/`CombatResult` changes (`D-02`'s, not this ticket's).
+Controller input (`P2b-02`, on hold). A shared or top-level asset directory for `D-01` town reuse.
+
+---
+
+## P2b-10 — The enemy capsule becomes a real animated model           [BLOCKED]
+
+**Blocked on:** the same staged pack `P2b-09` needs, plus `P2b-09` landing first — proving the
+model-import and animation-driver pattern once on the hero de-risks doing it a second time on the
+enemy, the same sequencing `P2b-01c`→`P2b-01d` already used.
+
+### Objective
+The enemy's arena capsule is a real rigged low-poly humanoid that holds its stance, telegraphs a
+wind-up, swings, dodges, parries and staggers — instead of a solid-colour capsule that only ever
+changes tint. This is the higher-value half of the two model tickets: the enemy's telegraph is the
+single most load-bearing read in the fight (`0.55 s` wind-up, two-stage colour cue), so shipping it
+is not optional polish on top of the hero.
+
+### Existing architecture
+- `_enemy_capsule_mesh: MeshInstance3D = get_node("EnemyCapsule/Mesh")` (`arena.gd:39`) is the
+  node-path lookup this ticket repoints, mirroring `P2b-09`'s hero change.
+- `_enemy_tint()` (`arena.gd:200-216`) already reads five distinct states off `EnemyState`
+  (`arena.gd:24-30`: `MOVE / ATTACK / DODGE / PARRY / STAGGER`) plus `_enemy_attack_elapsed` for the
+  two-stage wind-up/telegraph split (`arena_enemy_attack_startup = 0.55 s`, telegraph flash the final
+  `arena_enemy_telegraph_flash = 0.2 s`, `balance_table.gd:62-64`). That is the exact state list the
+  animation driver reads — no new field.
+- `EnemyCapsule` mirrors `HeroCapsule`'s node shape: `CollisionShape3D` on `Shape_hero`, a `Mesh`
+  child (`arena.tscn:116-127`). Collision untouched.
+- Enemy attack and dodge horizontal movement is velocity the script assigns directly
+  (`_update_enemy_attack()`, `arena.gd:511-529`; `_update_enemy_dodge()`, `arena.gd:532-540`) — same
+  root-motion hazard as the hero.
+- `test_arena.gd`'s tint assertions (`:52-103`) cover the enemy capsule identically to the hero one;
+  `P2b-06`'s enemy state-machine tests (Retro record above) are the behavioural regression surface
+  this ticket must not touch.
+
+### Acceptance criteria
+1. `EnemyCapsule`'s `Mesh` node is replaced by an instanced rigged low-poly humanoid, matching
+   `P2b-09`'s scale convention; `EnemyCapsule/CollisionShape3D` and `Shape_hero` are unchanged.
+2. An `AnimationPlayer` (or `AnimationTree`) under `EnemyCapsule` plays a distinct clip for:
+   idle/move, wind-up-and-swing (spanning `arena_enemy_attack_startup + active + recovery`,
+   `0.55 / 0.10 / 0.45 s`), dodge, parry stance, stagger — selected every physics frame from
+   `EnemyState` and `_enemy_attack_elapsed` alone. No new field, no new tunable.
+3. Every clip fits its authored window exactly, same rule as `P2b-09` criterion 3 — the wind-up clip
+   in particular must not read as complete before `arena_enemy_telegraph_flash` starts, since the
+   two-stage colour cue and the pose must agree.
+4. Root motion disabled on every clip, checked the same way as `P2b-09` criterion 4, against the
+   enemy's approach/back-off/dodge distances.
+5. Existing tint tests (`test_arena.gd:52-103`, `:1040-1062`) still pass for the enemy capsule,
+   updated only for node path. Multi-surface override rule from `P2b-09` criterion 6 applies
+   identically.
+6. Any state above the pack has no usable clip for is named in the commit message and left
+   tint-only — same discipline as `P2b-09` criterion 7.
+7. `CREDITS.md` gets a second line only if the enemy uses a different pack or character than the
+   hero; otherwise unchanged.
+8. "Survives save and reload": N/A, same reasoning as `P2b-09` criterion 9.
+9. Import gate exit `0`, zero warnings; GUT counts at or above baseline, `P2b-06`'s enemy-behaviour
+   tests specifically still green (they assert the arithmetic, not the visuals, so a model swap
+   should not touch them).
+10. `verifier` pass mandatory, same boundary-2 reasoning as `P2b-09`.
+
+### Files allowed to change
+`combat/arena/arena.gd`, `combat/arena/arena.tscn`, `combat/arena/models/enemy/**` (new),
+`tests/unit/test_arena.gd`, `CREDITS.md` (only if criterion 7 fires).
+
+### Non-goals
+The hero capsule (`P2b-09`, lands first). A death/defeat animation — `DEFEAT_ENEMY_COLOR`'s
+flash-then-`queue_free()` is unchanged. The tint channel's fate, the parry-window re-ask, impact
+audio/particles, permadeath, controller input — identical to `P2b-09`'s Non-goals, not repeated per
+state here.
+
+---
+
 # Direction backlog — after the core loop
 
 Recorded 2026-08-11 from the user's direction. `GAME_SPEC.md` § Direction is the spec half; this
