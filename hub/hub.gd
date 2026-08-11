@@ -9,7 +9,6 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 ]
 
 @onready var _roster_list: ItemList = %RosterList
-@onready var _fodder_list: ItemList = %FodderList
 @onready var _target_option: OptionButton = %TargetOption
 @onready var _essence: Label = %Essence
 @onready var _stones: Label = %Stones
@@ -74,12 +73,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _refresh_roster() -> void:
 	_refresh_hero_list(_roster_list)
-	_refresh_hero_list(_fodder_list)
 	_refresh_hero_option(_target_option)
 
 
-## Both multi-select hero lists rebuild the same way: re-select by identity after the clear, so a
-## hero that left the roster drops out of the selection instead of the row under it taking its place.
+## Re-select by identity after the clear, so a hero that left the roster drops out of the selection
+## instead of the row under it taking its place.
 func _refresh_hero_list(list: ItemList) -> void:
 	var selected_heroes: Array[Hero] = []
 	for selected_index: int in list.get_selected_items():
@@ -364,8 +362,8 @@ func _on_confirm_dialog_confirmed() -> void:
 
 func _on_sacrifice_pressed() -> void:
 	var fodders: Array[Hero] = []
-	for selected_index: int in _fodder_list.get_selected_items():
-		var fodder: Hero = _fodder_list.get_item_metadata(selected_index) as Hero
+	for selected_index: int in _roster_list.get_selected_items():
+		var fodder: Hero = _roster_list.get_item_metadata(selected_index) as Hero
 		if fodder != null:
 			fodders.append(fodder)
 	var target: Hero = _target_option.get_selected_metadata() as Hero if _target_option.selected >= 0 else null

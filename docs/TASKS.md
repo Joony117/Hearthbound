@@ -906,68 +906,8 @@ it is a bug and it unblocks a shipped feature nobody can reach. `P2-30` third, a
 | P2b-03 | The capsules show what is happening — telegraph, hit flash, parry flash | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Director-written per rung 1, Codex-implemented, **no `verifier`** — no save key, no autoload signature, no `.tscn` edit and `resolve()` untouched, so it crosses none of `CLAUDE.md`'s four boundaries. Shipped with **no new state field and no new `BalanceTable` field**: every tint window is an already-authored duration, and the tint is a pure function of five fields `arena.gd` was already tracking. The body's one design call was refusing to drive the hit flash off hit-stop alone — `0.06 s` is under four frames, so the obvious reading would have re-shipped the invisible-hit complaint the ticket exists to close; the flash rides the following `arena_enemy_hit_stun` (`0.35 s`) instead. **Read its Findings before writing another arena test** — the delivered one calls `_physics_process(0.0)` directly, and the zero delta is load-bearing rather than cosmetic. Original row, for reference — Playtest feedback, 2026-08-10; merges "no enemy telegraph" and "hit effects" — one mechanism, see above. A `StandardMaterial3D` tint on each capsule driven by state `arena.gd` already tracks: enemy startup (`_enemy_attack_elapsed < arena_enemy_attack_startup`), `HitStopOutcome.HIT_HERO`, `.PARRY_HERO`, `.DEFEAT_ENEMY`. Telegraph is included despite the report deferring it, and is a separable criterion. **The materials must be `duplicate()`d per instance** — `arena.tscn`'s capsules are native primitives and a shared material writes back to disk for every consumer, the hazard `ARCHITECTURE.md` § "Reaching shared Resources" names by example (`P2-07c` hit it with `summon_weights`). *(Shipped as `material_override` instead, which is less code and touches the authored materials not at all.)* The report's "still needs tuning for combat weight" is recorded here and **not acted on**: `arena_light_attack_hit_stop` is `0.04 s` and may well be too short, but tuning weight against an invisible hit is tuning against a missing signal. Re-ask after this ships — **it now has.** |
 | P2b-04 | **[BLOCKED — design]** Dodge and parry cancel any player action instantly | Playtest feedback, 2026-08-10. Today `_start_dodge()` (`combat/arena/arena.gd:341-343`) refuses during light-attack startup *and* active, so the only cancel window is recovery, and `_start_parry()` is reachable only through the standstill branch below that same guard. Deleting those three lines is most of the change — but **`SYSTEMS.md` § "Enemy attack, dodge and hit reaction" ruled the current terms**, so this reverses a published ruling, and "most actions" names no boundary. `game-designer` must answer four things first: (1) does a cancel out of an *active* attack refund the hit or eat it; (2) is hit-stun cancellable — if yes, `arena_enemy_hit_stun = 0.35` and the knockback stop being a punish at all; (3) is hit-stop cancellable (it is the one window where input is currently ignored wholesale, `_physics_process` line 84); (4) does a cancel out of an attack still pay `arena_dodge_cooldown`, or is cancelling free. (2) and (3) are where "instantly cancel out of *most* actions" stops being a one-line change. |
 | P2b-05 | The arena returns to the hub when the fight ends | **Landed `2cbc0c1`.** Body and Findings in [`TASKS-DONE.md`](TASKS-DONE.md). **Read its Findings before trusting either gate on an arena change** — the defect it fixed and the one it caused were both invisible to the import gate *and* to GUT, and a scripted play-through found both. It also repaired a pre-existing bug the ticket never named: the Esc exit has always kept `_physics_process` ticking against an out-of-tree capsule, because `change_scene_to_file()` is deferred. Arena permadeath is still unwired and is now reachable in one sitting. |
-| P2-29 | **[TODO]** Sacrifice reads the roster selection, and the fodder list goes away | **Body below.** Playtest feedback, 2026-08-10 second pass. Closes two reported items: the unselectable fodder list and "no way to batch sacrifice" — the second is the first seen from its other end, since `P2-27` already shipped batching into a list that lays out at 0 px. Deletes `%FodderList` rather than giving it a minimum height; see the merge reasoning above. |
+| P2-29 | Sacrifice reads the roster selection, and the fodder list goes away | **Landed** in the commit below; body and Findings in [`TASKS-DONE.md`](TASKS-DONE.md). A **deletion ticket that stayed one** — 8 insertions, 15 deletions, three files, no new widget and no new state. `P2-27`'s batch loop and `%RosterList`'s `SELECT_MULTI` were both already shipped; the only thing standing between them was a list laying out at `280 × 0 px`. Boundary 2 (a `unique_name_in_owner` node deleted, invisible to the import gate) so the `verifier` pass was mandatory: **pass**, all nine criteria checked individually, no defect in the diff. **Read its Findings before debugging a `test_save_service.gd` failure** — the GUT command in `CLAUDE.md` does *not* redirect `%APPDATA%` the way `import_gate.ps1` does, so the suite runs against the live `user://save.json`, and a process killed mid-suite leaves that state dirty for whoever runs next. Also records the hazard this ticket creates and `P2-26` already absorbs: `%RosterList` now drives four actions, and Sacrifice caps its selection at nothing while Arena caps at one. Original row, for reference — Playtest feedback, 2026-08-10 second pass. Closes two reported items: the unselectable fodder list and "no way to batch sacrifice" — the second is the first seen from its other end. Deletes `%FodderList` rather than giving it a minimum height. |
 | P2-30 | **[TODO]** Filter the roster and the bag | **Body below.** Playtest feedback, 2026-08-10 second pass. `_refresh_inventory()` already filters by slot, but `_slot_filter` is only reachable by clicking a row in `%EquippedList` — a filter control disguised as a display. Gives it a real control and adds the rank filter both lists lack. Its load-bearing criterion is that filtering **drops hidden rows from the selection**, because Sacrifice is permanent. |
-
----
-
-## P2-29 — Sacrifice reads the roster selection, and the fodder list goes away   [TODO]
-
-### Objective
-
-Pick the heroes to sacrifice in the roster list you are already using, pick the target in the
-dropdown, press Sacrifice. The second hero list disappears.
-
-### Existing architecture
-
-- `%FodderList` (`hub/hub.tscn:154`) is an `ItemList` with `select_mode = 1` (`SELECT_MULTI`) and
-  **no `custom_minimum_size`, no `size_flags_vertical`**. `ItemList` does not grow to fit its items;
-  its combined minimum size is `(0, 0)`. `%RosterList` is the only child of `RosterPanel/VBox` with
-  `size_flags_vertical = 3`, so it absorbs the slack and the fodder list lays out at **280 × 0 px**
-  holding six heroes. Measured headless: `ROSTER size=(280, 300) items=6`,
-  `FODDER size=(280, 0) items=6`. `%LostCacheList` (`hub.tscn:145`) carries
-  `custom_minimum_size = Vector2(0, 100)` and is fine.
-- `_refresh_hero_list()` (`hub.gd:83`) rebuilds both lists identically and re-selects by identity, so
-  a hero that leaves the roster drops out of the selection instead of the row under it inheriting it.
-  That behavior is load-bearing and must survive.
-- `_on_sacrifice_pressed()` (`hub.gd:365`) reads fodder from `%FodderList` and target from
-  `%TargetOption`, dry-runs every refusal, then hands `_ask()` → `_do_sacrifice()` (`hub.gd:405`).
-- `%RosterList`'s multi-selection is already the operand for Expedition (`hub.gd:610`), Arena
-  (`hub.gd:664`) and Recover (`hub.gd:702`).
-- `_selected_hero()` (`hub.gd:296`) returns non-null only on an exactly-one selection; the equipped
-  panel and hero detail both key off it.
-- `tests/unit/test_sanctum.gd:20` and `:54` reach `%FodderList` by unique name.
-
-### Acceptance criteria
-
-- `%FodderList` is gone from `hub.tscn` and from every reference in `hub.gd`.
-- Sacrifice takes its fodder from `%RosterList`'s multi-selection. Target still comes from
-  `%TargetOption`.
-- Every existing refusal still fires, against the roster selection, with its current wording: nothing
-  selected, no target, a hero sacrificed into itself, fodder no longer in the roster, fodder still
-  equipped. Each refusal happens **before** the confirm dialog opens, as today.
-- Batch sacrifice — already shipped in `P2-27` — is reachable for the first time: selecting several
-  roster rows and pressing Sacrifice confirms and destroys all of them, with the existing
-  `%d heroes` dialog and status text.
-- Selecting several heroes leaves the equipped panel and hero detail blank, as they already do for a
-  multi-selection. No new behavior there.
-- Survives save and reload: reload the hub, and the roster, the target dropdown and sacrifice all
-  behave the same. No save key changes.
-- `test_sanctum.gd`'s two `%FodderList` lookups are updated, not deleted — the coverage they carry is
-  the Sanctum essence bonus, which is unrelated to which widget holds the selection.
-- Import gate green, GUT suite green, Scripts/Tests counts compared against the previous run.
-
-### Files allowed to change
-
-`hub/hub.tscn`, `hub/hub.gd`, `tests/unit/test_sanctum.gd`.
-
-### Non-goals
-
-`GameSession.sacrifice_hero()` and the essence arithmetic — untouched. Drag-and-drop. A new confirm
-flow (`P2-26`'s dialog is reused as-is). The filters (`P2-30`). Relayout of the rest of the roster
-panel, however tempting once a widget leaves it. Giving `%FodderList` a minimum height instead — that
-is the one-line fix this ticket deliberately declines, and reintroducing the list later needs a reason
-in writing.
 
 ---
 

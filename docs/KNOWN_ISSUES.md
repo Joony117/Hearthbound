@@ -123,6 +123,13 @@ yet. Godot owns these and they are committed like every other `.gd.uid` in the r
 appearing after a cold-cache gate run is expected, and should be committed rather than ignored.
 Never hand-edit one (`AGENTS.md`).
 
+### An engine run rewrites `project.godot`'s header comment
+Godot rewrites `project.godot` wholesale when it saves, and the header it writes back is its own
+boilerplate ("It's best edited using the editor UI...") — the pin comment this repo keeps on line 2
+(`Pinned to Godot 4.7.1 stable - see docs/DECISIONS.md.`) is discarded. It surfaces as an unexplained
+`M project.godot` in a tree nobody edited, and `git checkout -- project.godot` is the whole fix.
+Check `git status` before starting work; committing it silently drops a documented pin.
+
 ### A `-s` script compiles before the autoloads register — and hangs if it fails
 `--headless -s <script>` loads and compiles that script *before* `SceneRouter`/`SaveService`/
 `GameSession` exist as identifiers. Any dependency it names statically that references an autoload

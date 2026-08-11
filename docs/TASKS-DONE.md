@@ -5275,3 +5275,107 @@ and zero warnings; GUT **14 scripts / 154 tests / 154 passing**, 10,079 asserts.
 counts cross-checked against `grep -c '^func test_'` at `HEAD` (153 → 154, 14 files) — `gut_cmdln.gd`
 exits 0 and prints "All tests passed" when a script fails to parse, so the totals are the evidence,
 not the exit code (`P2-28` Findings).
+
+---
+
+## P2-29 — Sacrifice reads the roster selection, and the fodder list goes away   [DONE]
+
+### Objective
+
+Pick the heroes to sacrifice in the roster list you are already using, pick the target in the
+dropdown, press Sacrifice. The second hero list disappears.
+
+### Existing architecture
+
+- `%FodderList` (`hub/hub.tscn:154`) is an `ItemList` with `select_mode = 1` (`SELECT_MULTI`) and
+  **no `custom_minimum_size`, no `size_flags_vertical`**. `ItemList` does not grow to fit its items;
+  its combined minimum size is `(0, 0)`. `%RosterList` is the only child of `RosterPanel/VBox` with
+  `size_flags_vertical = 3`, so it absorbs the slack and the fodder list lays out at **280 × 0 px**
+  holding six heroes. Measured headless: `ROSTER size=(280, 300) items=6`,
+  `FODDER size=(280, 0) items=6`. `%LostCacheList` (`hub.tscn:145`) carries
+  `custom_minimum_size = Vector2(0, 100)` and is fine.
+- `_refresh_hero_list()` (`hub.gd:83`) rebuilds both lists identically and re-selects by identity, so
+  a hero that leaves the roster drops out of the selection instead of the row under it inheriting it.
+  That behavior is load-bearing and must survive.
+- `_on_sacrifice_pressed()` (`hub.gd:365`) reads fodder from `%FodderList` and target from
+  `%TargetOption`, dry-runs every refusal, then hands `_ask()` → `_do_sacrifice()` (`hub.gd:405`).
+- `%RosterList`'s multi-selection is already the operand for Expedition (`hub.gd:610`), Arena
+  (`hub.gd:664`) and Recover (`hub.gd:702`).
+- `_selected_hero()` (`hub.gd:296`) returns non-null only on an exactly-one selection; the equipped
+  panel and hero detail both key off it.
+- `tests/unit/test_sanctum.gd:20` and `:54` reach `%FodderList` by unique name.
+
+### Acceptance criteria
+
+- `%FodderList` is gone from `hub.tscn` and from every reference in `hub.gd`.
+- Sacrifice takes its fodder from `%RosterList`'s multi-selection. Target still comes from
+  `%TargetOption`.
+- Every existing refusal still fires, against the roster selection, with its current wording: nothing
+  selected, no target, a hero sacrificed into itself, fodder no longer in the roster, fodder still
+  equipped. Each refusal happens **before** the confirm dialog opens, as today.
+- Batch sacrifice — already shipped in `P2-27` — is reachable for the first time: selecting several
+  roster rows and pressing Sacrifice confirms and destroys all of them, with the existing
+  `%d heroes` dialog and status text.
+- Selecting several heroes leaves the equipped panel and hero detail blank, as they already do for a
+  multi-selection. No new behavior there.
+- Survives save and reload: reload the hub, and the roster, the target dropdown and sacrifice all
+  behave the same. No save key changes.
+- `test_sanctum.gd`'s two `%FodderList` lookups are updated, not deleted — the coverage they carry is
+  the Sanctum essence bonus, which is unrelated to which widget holds the selection.
+- Import gate green, GUT suite green, Scripts/Tests counts compared against the previous run.
+
+### Files allowed to change
+
+`hub/hub.tscn`, `hub/hub.gd`, `tests/unit/test_sanctum.gd`.
+
+### Non-goals
+
+`GameSession.sacrifice_hero()` and the essence arithmetic — untouched. Drag-and-drop. A new confirm
+flow (`P2-26`'s dialog is reused as-is). The filters (`P2-30`). Relayout of the rest of the roster
+panel, however tempting once a widget leaves it. Giving `%FodderList` a minimum height instead — that
+is the one-line fix this ticket deliberately declines, and reintroducing the list later needs a reason
+in writing.
+
+
+### Findings
+
+**A deletion ticket, and it stayed one.** 8 insertions, 15 deletions, three files. No new widget, no
+new state field, no new method — `%RosterList`'s `SELECT_MULTI` and `P2-27`'s batch loop were both
+already there, and the only reason batching had never been reachable is that `P2-27` shipped it into
+a list laying out at `280 × 0 px`. The ticket's declined one-line alternative (give `%FodderList` a
+`custom_minimum_size`) would have cost a widget forever to save six lines once.
+
+**`%RosterList` is now the operand for four actions** — Sacrifice, Expedition, Arena and Recover.
+`_on_enter_arena_pressed()` (`hub/hub.gd:667`) caps its selection at one; `_on_sacrifice_pressed()`
+caps nothing, by design, since batch sacrifice is the point. So a multi-selection assembled for an
+expedition is one misclick from a batch permadeath. **This is exactly the hazard `P2-26` was built
+for** and it is why that ticket was sequenced first: the confirm dialog names the heroes and the
+count before anything is destroyed. Recorded rather than ticketed — a second guard on top of the
+confirm is the "are you sure you're sure" shape, and the archive's blind-second-press failure
+(`P2-06a`) was an auto-selection nobody chose, not a selection shown back to the player.
+
+**`test_sanctum.gd` needed no reindexing**, and that is provable rather than lucky: `add_hero()`
+(`systems/game_session.gd:38`) appends, and both `%RosterList` and the deleted `%FodderList` were
+always built by iterating `GameSession.roster` in that same order, so index *n* resolved to the same
+hero in either widget. Both tests still assert the Sanctum-bonused essence amounts they were written
+for (`98`, and `379 × 3 = 879`), not a coincidental pass.
+
+**The GUT suite runs against the real `user://save.json`.** `import_gate.ps1` redirects `%APPDATA%`
+to a temp path for its duration; the GUT command in `CLAUDE.md` does not, and `test_save_service.gd`
+backs up and restores the live save's raw bytes around the whole suite. The implementer saw a
+`test_save_service.gd` failure in its baseline run that vanished afterwards; the verifier could not
+reproduce it in **either** configuration — redirected or not — across two independent runs. Nothing
+in this diff reaches that call path, so the structural conclusion holds: that test is state-dependent
+on a file a killed-mid-suite process leaves dirty, which is this repo's documented process-leak
+history arriving as a red gate with no visible cause. It is the reason "reap what you start" is a
+*checked* `Get-Process Godot*`, not an assumption.
+
+**Unreachable, recorded, not fixed:** `GameSession.sacrifice_hero()` (`systems/game_session.gd:205`)
+re-validates self-sacrifice, roster membership and equipped-ness as defense in depth, but never
+`roster.has(target)`. No click path reaches it — the UI sources `target` from a roster-backed
+`%TargetOption` that re-selects by identity — and `game_session.gd` was outside this ticket's file
+list. Both the verifier and its Codex reviewer thread found it independently.
+
+`_refresh_hero_list(list)` keeps its `list` parameter with exactly one caller left. Deliberate: it is
+the natural shape for a list rebuild, and inlining it would bury the identity-based re-select that
+the ticket calls load-bearing.
