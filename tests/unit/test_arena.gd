@@ -574,6 +574,10 @@ func test_arena_win_returns_surviving_hero_without_mutating_profile() -> void:
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena
 	add_child_autofree(arena)
+	var router: Callable = SceneRouter.go_to
+	assert_true(arena.scene_change_requested.is_connected(router))
+	arena.scene_change_requested.disconnect(router)
+	arena.scene_change_requested.connect(_capture_scene_request)
 	arena.combat_resolved.connect(_capture_combat_result)
 
 	var attack_event := InputEventAction.new()
@@ -593,6 +597,13 @@ func test_arena_win_returns_surviving_hero_without_mutating_profile() -> void:
 	assert_gt(_combat_result.maximum_hp[hero], 0.0)
 	assert_eq(_combat_result.hp_after[hero], _combat_result.maximum_hp[hero])
 	assert_eq(GameSession.to_dict(), profile_before)
+	assert_eq(_requested_scene, "")
+	var return_time_remaining: float = arena._result_return_remaining
+	assert_gt(return_time_remaining, 0.0)
+	arena._physics_process(return_time_remaining * 0.5)
+	assert_eq(_requested_scene, "")
+	arena._physics_process(return_time_remaining)
+	assert_eq(_requested_scene, SceneRouter.HUB)
 
 
 func test_arena_loss_returns_dead_hero_without_mutating_profile() -> void:
@@ -607,6 +618,10 @@ func test_arena_loss_returns_dead_hero_without_mutating_profile() -> void:
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena
 	add_child_autofree(arena)
+	var router: Callable = SceneRouter.go_to
+	assert_true(arena.scene_change_requested.is_connected(router))
+	arena.scene_change_requested.disconnect(router)
+	arena.scene_change_requested.connect(_capture_scene_request)
 	arena.combat_resolved.connect(_capture_combat_result)
 	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
 	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
@@ -634,6 +649,39 @@ func test_arena_loss_returns_dead_hero_without_mutating_profile() -> void:
 	assert_true(_combat_result.hp_after.has(hero))
 	assert_eq(_combat_result.hp_after[hero], 0.0)
 	assert_eq(GameSession.to_dict(), profile_before)
+	assert_eq(_requested_scene, "")
+	var return_time_remaining: float = arena._result_return_remaining
+	assert_gt(return_time_remaining, 0.0)
+	arena._physics_process(return_time_remaining * 0.5)
+	assert_eq(_requested_scene, "")
+	arena._physics_process(return_time_remaining)
+	assert_eq(_requested_scene, SceneRouter.HUB)
+
+
+func test_arena_cancel_during_result_countdown_requests_hub_once() -> void:
+	var hero := Hero.new("Countdown", 0)
+	hero.def_id = &"knight"
+	var wave: Wave = Wave.from_zone(preload("res://zones/defs/verdant_outskirts.tres"), 0)
+	SceneRouter.prepare_arena([hero], wave)
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var router: Callable = SceneRouter.go_to
+	assert_true(arena.scene_change_requested.is_connected(router))
+	arena.scene_change_requested.disconnect(router)
+	arena.scene_change_requested.connect(_capture_scene_request)
+	watch_signals(arena)
+
+	arena._finish_combat()
+	var cancel_event := InputEventAction.new()
+	cancel_event.action = &"ui_cancel"
+	cancel_event.pressed = true
+	arena._unhandled_input(cancel_event)
+	arena._physics_process(BALANCE.arena_result_return_delay)
+
+	assert_eq(_requested_scene, SceneRouter.HUB)
+	assert_signal_emit_count(arena, "scene_change_requested", 1)
+	assert_signal_emit_count(arena, "combat_resolved", 1)
 
 
 func _capture_scene_request(scene_path: String) -> void:

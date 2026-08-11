@@ -41,6 +41,7 @@ arena_enemy_attack_hit_stop = 0.06
 arena_enemy_knockback_speed = 6.0
 arena_enemy_hit_stun = 0.35
 arena_enemy_hits_to_kill_hero = 3
+arena_result_return_delay = 1.0
 arena_dodge_speed = 13.5
 arena_dodge_duration = 0.38
 arena_dodge_iframe_duration = 0.25

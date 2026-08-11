@@ -49,6 +49,8 @@ var _wave: Wave
 var _maximum_hp: float = 0.0
 var _hits_taken: int = 0
 var _combat_finished: bool = false
+var _result_return_remaining: float = 0.0
+var _scene_change_requested: bool = false
 
 
 func _ready() -> void:
@@ -87,6 +89,10 @@ func _physics_process(delta: float) -> void:
 	_update_capsule_tints()
 	if _combat_finished:
 		_stop_horizontal()
+		_result_return_remaining = maxf(0.0, _result_return_remaining - delta)
+		if _result_return_remaining <= 0.0:
+			_request_hub()
+			return
 		_hero_capsule.move_and_slide()
 		_camera_pivot.global_position = _hero_capsule.global_position + Vector3.UP
 		return
@@ -312,6 +318,7 @@ func _finish_combat() -> void:
 	if _hero == null or _combat_finished:
 		return
 	_combat_finished = true
+	_result_return_remaining = BALANCE.arena_result_return_delay
 	var team: Array[Hero] = [_hero]
 	var result: CombatResult = resolve(team, _wave)
 	SceneRouter.store_arena_result(result)
@@ -535,4 +542,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	get_viewport().set_input_as_handled()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_request_hub()
+
+
+## The only way out of the arena. Fires once, and stops physics before it does: the scene swap is
+## deferred, so `_physics_process` otherwise keeps ticking for a few frames against a `HeroCapsule`
+## already removed from the tree, and `move_and_slide()` errors out with no space to move in.
+func _request_hub() -> void:
+	if _scene_change_requested:
+		return
+	_scene_change_requested = true
+	set_physics_process(false)
 	scene_change_requested.emit(SceneRouter.HUB)

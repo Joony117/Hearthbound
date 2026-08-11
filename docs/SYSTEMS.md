@@ -923,6 +923,17 @@ the requested direction instead of backpedalling. Movement does not force the ca
 deceleration stops it in about `0.09 s`. Sprint stamina does not exist yet, so sprint is an input
 state rather than a resource cost.
 
+### Combat result return (`P2b-05`)
+
+| Tunable | Value |
+|---|---:|
+| `arena_result_return_delay` | `1.0 s` |
+
+After a victory or defeat resolves, the arena holds for this delay so the final capsule state can
+read before it returns to the hub through `SceneRouter`.
+
+> ⚠️ **PROVISIONAL** — the beat between the killing blow and the return has never been played · **Settled by:** a played build
+
 Combat captures and hides the cursor. Raw mouse motion orbits a third-person `SpringArm3D` camera
 directly: a `4.0 m` boom, `0.5 m` right shoulder offset and `0.25 m` collision sweep. Pitch is
 clamped to `35°` upward and `65°` downward. `Esc` releases the cursor and returns through
