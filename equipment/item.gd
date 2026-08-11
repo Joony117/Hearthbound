@@ -44,6 +44,21 @@ static func clamped_enhance_level(item: Item, balance: BalanceTable) -> int:
 	return clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
 
 
+## The fraction one item contributes to its primary stat (docs/SYSTEMS.md, Primary stat magnitude).
+## Hero.compute_final_stats feeds it into equip_pct for the eight non-crit slots and adds it flat for
+## necklace/ring; the hub tooltip displays it. One function, so a displayed magnitude cannot drift
+## from the one combat applies - the preview-disagrees-with-payout shape P2-07e and P2-12 both fix.
+static func compute_stat_magnitude(item: Item, definition: EquipmentDefinition, balance: BalanceTable) -> float:
+	var per_rank_table: Array[float] = (
+		balance.equip_pct_per_rank
+		if definition.primary_stat < EquipmentDefinition.PrimaryStat.CRIT_RATE
+		else balance.equip_crit_pct_per_rank
+	)
+	var rank_index: int = clampi(item.rank, 0, per_rank_table.size() - 1)
+	var enhance_multiplier: float = 1.0 + balance.enhance_pct_per_level * clamped_enhance_level(item, balance)
+	return per_rank_table[rank_index] * enhance_multiplier
+
+
 ## Applies the deterministic part of Damaged; the caller owns the independent random roll.
 static func apply_damaged(item: Item, balance: BalanceTable) -> void:
 	var enhance_level: int = clamped_enhance_level(item, balance)

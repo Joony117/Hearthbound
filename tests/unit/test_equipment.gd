@@ -109,6 +109,40 @@ func test_hub_equipment_slots_filter_inventory_and_refuse_empty_unequip() -> voi
 	assert_eq(status.text, "Select an equipment slot first.")
 
 
+## Nothing in this suite drives a real mouse hover, so the tooltip is pinned by its text rather than
+## by showing. The roster half asserts equality with the detail panel instead of a second format
+## string - that equality is the whole reason _hero_detail_text() was extracted.
+func test_hub_rows_carry_hover_detail() -> void:
+	var hero := Hero.new("Hover Hero", 1)
+	hero.def_id = &"knight"
+	var ring := Item.new(&"ring", 3)
+	ring.enhance_level = 1
+	GameSession.add_hero(hero)
+	GameSession.add_item(ring)
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
+	var hero_detail: Label = hub.get_node("%HeroDetail") as Label
+
+	roster_list.select(0)
+	roster_list.multi_selected.emit(0, true)
+	assert_eq(roster_list.get_item_tooltip(0), hero_detail.text)
+	assert_string_contains(roster_list.get_item_tooltip(0), "Resonance:")
+
+	var tooltip: String = inventory_list.get_item_tooltip(0)
+	assert_string_contains(tooltip, "Slot: Ring")
+	assert_string_contains(tooltip, "CRIT_DMG: +%.1f%%" % (Item.compute_stat_magnitude(ring, Item.definition_for(ring.def_id), BALANCE) * 100.0))
+	assert_string_contains(tooltip, "Enhance: +1 / %d" % Item.compute_enhance_cap(GameSession.building_levels[1], BALANCE))
+	assert_string_contains(tooltip, "Salvage: %d B parts" % Item.compute_salvage_yield(ring, GameSession.building_levels[1], BALANCE))
+
+	# The null-definition branch, without rendering one: an unresolvable def_id would push_error on
+	# every refresh, and GUT fails a test that leaves one unconsumed.
+	var degraded: String = hub.call("_inventory_tooltip_text", ring, null)
+	assert_string_contains(degraded, "Missing (ring)")
+	assert_string_contains(degraded, "Salvage: ")
+
+
 func test_salvage_removes_inventory_item_and_credits_only_its_rank() -> void:
 	var item := Item.new(&"ring", 3)
 	var balance := BalanceTable.new()

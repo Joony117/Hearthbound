@@ -143,6 +143,28 @@ Measured 2026-08-04 during `P2-04d`; the hung process had to be reaped with
 `tools/godot/Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows stdout.
 Always use `Godot_v4.7.1-stable_win64_console.exe` for headless and scripted runs.
 
+### `gut_cmdln.gd` exits 0 when a test script fails to *parse*
+
+A test file with a parse error is dropped from the run entirely and the run still reports success.
+Measured during `P2-28`, with `tests/unit/test_equipment.gd` unparseable:
+
+```
+Scripts              13
+Tests               120
+Passing Tests       120
+---- All tests passed! ----      (exit code 0)
+```
+
+The real totals that day were `Scripts 14 / Tests 153`. GUT prints `SCRIPT ERROR: Parse Error` and
+`Failed to load script ... with error "Parse error"` to stdout before the summary, but neither the
+summary nor the exit code reflects it — **a suite that silently got 33 tests smaller is
+indistinguishable from a suite that passed.**
+
+So a green GUT run is only evidence when its counts are checked: compare `Scripts` and `Tests`
+against the previous run, and treat any drop as a red. `tests/import_gate.ps1` is the backstop that
+actually catches this, since it greps for `SCRIPT ERROR` regardless of exit code — which is another
+reason BUILT is both gates and not either one.
+
 ### GUT lives under `tests/unit/`, not `tests/`
 `-gdir=res://tests` cannot be pointed at the repo root: the three `SceneTree` gate scripts
 (`save_roundtrip_check.gd`, `balance_table_check.gd`, `zone_definition_check.gd`) are not

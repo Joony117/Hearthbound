@@ -1,5 +1,7 @@
 extends GutTest
 
+const BALANCE: BalanceTable = preload("res://balance.tres")
+
 
 func before_each() -> void:
 	GameSession.from_dict({"roster": []})
@@ -19,6 +21,34 @@ func test_bad_def_id_reports_error_and_returns_null() -> void:
 
 	assert_push_error("Missing EquipmentDefinition for def_id")
 	assert_null(definition)
+
+
+func test_compute_stat_magnitude_uses_authored_non_crit_table_and_enhancement() -> void:
+	var boots := Item.new(&"boots", 2)
+	var definition: EquipmentDefinition = Item.definition_for(boots.def_id)
+
+	assert_almost_eq(Item.compute_stat_magnitude(boots, definition, BALANCE), BALANCE.equip_pct_per_rank[2], 0.0001)
+	boots.enhance_level = 3
+	assert_almost_eq(Item.compute_stat_magnitude(boots, definition, BALANCE), BALANCE.equip_pct_per_rank[2] * (1.0 + BALANCE.enhance_pct_per_level * 3.0), 0.0001)
+
+
+func test_compute_stat_magnitude_uses_authored_crit_table_and_enhancement() -> void:
+	var ring := Item.new(&"ring", 3)
+	var definition: EquipmentDefinition = Item.definition_for(ring.def_id)
+
+	assert_almost_eq(Item.compute_stat_magnitude(ring, definition, BALANCE), BALANCE.equip_crit_pct_per_rank[3], 0.0001)
+	ring.enhance_level = 4
+	assert_almost_eq(Item.compute_stat_magnitude(ring, definition, BALANCE), BALANCE.equip_crit_pct_per_rank[3] * (1.0 + BALANCE.enhance_pct_per_level * 4.0), 0.0001)
+
+
+## A save can carry any integer at all, and the magnitude is what a corrupt one would mint.
+func test_compute_stat_magnitude_clamps_an_out_of_range_enhance_level() -> void:
+	var boots := Item.new(&"boots", 2)
+	boots.enhance_level = 999
+	var definition: EquipmentDefinition = Item.definition_for(boots.def_id)
+
+	var capped: float = BALANCE.equip_pct_per_rank[2] * (1.0 + BALANCE.enhance_pct_per_level * BALANCE.forge_enhance_cap_max)
+	assert_almost_eq(Item.compute_stat_magnitude(boots, definition, BALANCE), capped, 0.0001)
 
 
 func test_inventory_round_trip_and_legacy_save() -> void:

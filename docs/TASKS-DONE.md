@@ -5074,3 +5074,105 @@ turns out to be false, say so rather than widening it silently.
 - Gates re-run by the director independently of the worker's claim: import gate exit `0`, GUT
   `149/149` (up from 148). The GUT run needs `APPDATA` pointed at a scratch directory
   (`KNOWN_ISSUES.md` § Environment) or it dies on `user://logs/` before the first test.
+
+---
+
+## P2-28 — Hover detail on roster and inventory rows                          [DONE]
+
+### Objective
+
+Hovering a roster row or an inventory row shows what that hero or item actually is, in a native
+tooltip, **without changing the selection**. Since `P2-27` both lists are multi-select, so clicking
+a row to inspect it arms a batch action — hover is the only read that costs nothing.
+
+### Existing architecture
+
+- `_refresh_hero_list()` (`hub/hub.gd:83`) fills both `%RosterList` and `%FodderList` with
+  `"[rank]  name — archetype"` and nothing else. `_refresh_hero_detail()` (`:226`) already builds the
+  full readout — level/XP, six final stats, resonance, traits — but only for `_selected_hero()`,
+  which returns `null` unless exactly one row is selected.
+- `_refresh_inventory()` (`:160`) shows `"rank name +N"`. A row does not say which slot it fills or
+  what it contributes; that is the reported complaint.
+- An item's magnitude is computed **inline** inside `Hero.compute_final_stats()`
+  (`heroes/hero.gd:100-119`): `equip_pct_per_rank[rank] * (1 + enhance_pct_per_level * clamped)`, or
+  `equip_crit_pct_per_rank` for the two crit slots. A tooltip that re-derives it is a second
+  implementation of a published number — the preview-disagrees-with-payout shape `P2-07e` and `P2-12`
+  both exist to prevent. Extract it once and call it from both.
+- `Item.compute_salvage_yield(item, forge_level, balance)` and `Item.compute_enhance_cap(forge_level,
+  balance)` are already pure, and their hub call sites already read the Forge level off
+  `GameSession.building_levels[1]`.
+- `ItemList.set_item_tooltip(index, text)` is native. `OptionButton` is not an `ItemList`, so
+  `%TargetOption`'s rows are out of scope by construction.
+
+### Acceptance criteria
+
+1. `Item.compute_stat_magnitude(item, definition, balance) -> float` exists as a pure `static func`
+   and returns the fraction the item contributes to `definition.primary_stat`, enhancement included
+   and clamped exactly as the inline version clamped it.
+2. `Hero.compute_final_stats()` calls it for both the non-crit and the crit branch instead of
+   computing the two products inline. `tests/unit/test_equipment.gd` and `test_traits.gd` pass
+   **with no expected value edited** — this is a refactor with identical outputs.
+3. Every roster and fodder row carries a tooltip with that hero's rank, level, six final stats,
+   resonance and traits — the *same text* `_refresh_hero_detail()` renders, produced by one shared
+   helper, not a second format string.
+4. Every inventory row carries a tooltip naming its slot, its primary stat and magnitude, its
+   enhance level against the current Forge cap, and its salvage yield in parts at the current Forge
+   level.
+5. An item whose `def_id` resolves to no `EquipmentDefinition` still gets a row and a tooltip saying
+   so.
+6. A hero with `def_id == Hero.NO_ARCHETYPE_DEF_ID`, or one whose `HeroDefinition` is missing, gets
+   the degraded text the detail panel already prints — not an empty tooltip.
+7. `tests/unit/test_item.gd` pins `compute_stat_magnitude` at `+0` and at a non-zero enhance level,
+   for one non-crit slot and one crit slot.
+8. Both gates green: import gate with zero errors and zero warnings, full GUT suite passing.
+
+### Files allowed to change
+
+- `equipment/item.gd`
+- `heroes/hero.gd`
+- `hub/hub.gd`
+- `tests/unit/test_item.gd`
+- `tests/unit/test_equipment.gd` *(widened during the ticket — see Findings)*
+
+### Non-goals
+
+- No tooltips on `%EquippedList`, `%LostCacheList` or any `OptionButton`. The row scoped roster and
+  inventory; equipped rows are the obvious next ask and become one line each now that the helper
+  exists.
+- No `.tscn` edit, no new `BalanceTable` field, no save key, no autoload signature — this crosses
+  **none** of `CLAUDE.md`'s four boundaries, so no `verifier` pass.
+- No retuning. If a test's expected value had to move to make criterion 2 pass, that would be a
+  defect in the extraction, not a balance change. None moved.
+
+### Findings
+
+- **`gut_cmdln.gd` exits `0` when a test script fails to parse.** Measured here, not theorised: a
+  bad edit left `tests/unit/test_equipment.gd` unparseable, and the run reported **`Scripts 13`,
+  `Tests 120`, `Passing Tests 120`, `---- All tests passed! ----`, exit code `0`** — with the
+  32-test file silently *absent* from the totals. A suite that gets smaller reads identically to a
+  suite that passes. **Compare the script and test counts against the previous run, never just the
+  exit code**; the import gate is the backstop that actually catches it, since it greps for
+  `SCRIPT ERROR` and the parse failure surfaces there. Filed in `KNOWN_ISSUES.md` § Environment.
+- **The allowed-file list was wrong again — the sixth time — and in the same direction.** It named
+  `tests/unit/test_item.gd` only, which can reach the pure `static func` but cannot reach criteria
+  3–6 at all: those are scene behaviour and live in `tests/unit/test_equipment.gd`, the file that
+  already drives `%InventoryList` and `%RosterList`. Written from the ticket's *subject* (an `Item`
+  function) rather than from a grep of where the behaviour is observable. The list was widened
+  rather than the criteria narrowed. `P2-14` drew this same conclusion and it did not stick.
+- **Test the degraded branch by calling the helper, not by rendering it.** An inventory row whose
+  `def_id` resolves to nothing `push_error`s on *every* refresh, and GUT fails a test that leaves
+  one unconsumed (`P2-23`), so rendering one would have meant counting refreshes. Passing `null`
+  straight into `hub.call("_inventory_tooltip_text", item, null)` pins the same branch with no error
+  to consume.
+- **The roster tooltip is asserted equal to `%HeroDetail`'s text, not to a format string.** That
+  equality is the entire reason `_hero_detail_text()` was extracted, so asserting it is what fails
+  if someone later re-forks the two. It also covers criterion 6 for free — the first draft of the
+  test used a `Hero` with no archetype and the equality still held; it was the *contains* assertion
+  that reddened, which is how the degraded branch got proved before the full one did.
+- `compute_stat_magnitude` deleted a duplicated clamp as well as duplicated arithmetic:
+  `Hero.compute_final_stats` had re-inlined `clampi(item.enhance_level, 0, forge_enhance_cap_max)`
+  while `Item.clamped_enhance_level()` had existed since `P2-12`. A test pins the clamp at
+  `enhance_level = 999`, which is what a corrupt save carries and what would otherwise mint stats.
+- Gates re-run by the director independently of the worker's claim: import gate exit `0` clean,
+  GUT **`153/153`**, 10,065 asserts (up from 151/10,056 — the worker's run, plus the clamp test and
+  the hub tooltip test added in review).

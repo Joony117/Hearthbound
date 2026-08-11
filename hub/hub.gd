@@ -92,6 +92,7 @@ func _refresh_hero_list(list: ItemList) -> void:
 		list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
 		var item_index: int = list.item_count - 1
 		list.set_item_metadata(item_index, hero)
+		list.set_item_tooltip(item_index, _hero_detail_text(hero))
 		if selected_heroes.has(hero):
 			list.select(item_index, false)
 
@@ -170,7 +171,36 @@ func _refresh_inventory() -> void:
 			_inventory_list.add_item("%s [Missing definition: %s]%s" % [item.rank_label(BALANCE), item.def_id, enhance_suffix])
 		else:
 			_inventory_list.add_item("%s %s%s" % [item.rank_label(BALANCE), definition.display_name, enhance_suffix])
-		_inventory_list.set_item_metadata(_inventory_list.item_count - 1, item)
+		var item_index: int = _inventory_list.item_count - 1
+		_inventory_list.set_item_metadata(item_index, item)
+		_inventory_list.set_item_tooltip(item_index, _inventory_tooltip_text(item, definition))
+
+
+func _inventory_tooltip_text(item: Item, definition: EquipmentDefinition) -> String:
+	var forge_level: int = GameSession.building_levels[1]
+	var enhance_level: int = Item.clamped_enhance_level(item, BALANCE)
+	var enhance_cap: int = Item.compute_enhance_cap(forge_level, BALANCE)
+	var salvage_yield: int = Item.compute_salvage_yield(item, forge_level, BALANCE)
+	if definition == null:
+		return "Definition: Missing (%s)\nEnhance: +%d / %d\nSalvage: %d %s parts" % [
+			item.def_id,
+			enhance_level,
+			enhance_cap,
+			salvage_yield,
+			item.rank_label(BALANCE),
+		]
+	var slot_name: String = (EquipmentDefinition.Slot.keys()[definition.slot] as String).capitalize()
+	var stat_name: String = EquipmentDefinition.PrimaryStat.keys()[definition.primary_stat] as String
+	var magnitude: float = Item.compute_stat_magnitude(item, definition, BALANCE) * 100.0
+	return "Slot: %s\n%s: +%.1f%%\nEnhance: +%d / %d\nSalvage: %d %s parts" % [
+		slot_name,
+		stat_name,
+		magnitude,
+		enhance_level,
+		enhance_cap,
+		salvage_yield,
+		item.rank_label(BALANCE),
+	]
 
 
 static func _sort_inventory_items(first: Item, second: Item) -> bool:
@@ -224,17 +254,16 @@ func _refresh_equipped() -> void:
 
 
 func _refresh_hero_detail() -> void:
-	_hero_detail.text = ""
 	var hero: Hero = _selected_hero()
-	if hero == null:
-		return
+	_hero_detail.text = "" if hero == null else _hero_detail_text(hero)
+
+
+func _hero_detail_text(hero: Hero) -> String:
 	if hero.def_id == Hero.NO_ARCHETYPE_DEF_ID:
-		_hero_detail.text = "Rank: %s\nArchetype: No archetype" % hero.rank_label(BALANCE)
-		return
+		return "Rank: %s\nArchetype: No archetype" % hero.rank_label(BALANCE)
 	var definition: HeroDefinition = Hero.definition_for(hero.def_id)
 	if definition == null:
-		_hero_detail.text = "Rank: %s\nArchetype: Missing archetype (%s)" % [hero.rank_label(BALANCE), hero.def_id]
-		return
+		return "Rank: %s\nArchetype: Missing archetype (%s)" % [hero.rank_label(BALANCE), hero.def_id]
 	var level: int = Hero.level_for(hero, BALANCE)
 	var stats: Dictionary[StringName, float] = Hero.compute_final_stats(
 		hero,
@@ -250,7 +279,7 @@ func _refresh_hero_detail() -> void:
 	# Keyed off the pool being empty, not off resonance: a definition with no authored pool would
 	# otherwise print "Traits: " with nothing after it.
 	var trait_text: String = "none" if traits.is_empty() else ", ".join(traits)
-	_hero_detail.text = "Rank: %s\n%s\nHP: %d\nATK: %d\nDEF: %d\nSPD: %d\nCRIT_RATE: %.1f%%\nCRIT_DMG: %.1f%%\nResonance: %d\nTraits: %s" % [
+	return "Rank: %s\n%s\nHP: %d\nATK: %d\nDEF: %d\nSPD: %d\nCRIT_RATE: %.1f%%\nCRIT_DMG: %.1f%%\nResonance: %d\nTraits: %s" % [
 		hero.rank_label(BALANCE),
 		level_text,
 		roundi(stats[Hero.STAT_HP]),
