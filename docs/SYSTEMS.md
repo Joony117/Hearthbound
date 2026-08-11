@@ -385,6 +385,238 @@ stat-only so the two systems don't duplicate each other's job.
 > **Settled by:** `P2-06c` shipping resonance traits end to end, then a played build with a hero
 > actually pushed to 6 dupes.
 
+### Fodder training (P2-13)
+
+Ruling on the five questions `docs/TASKS.md` filed this ticket `[BLOCKED]` on. Verified arithmetic
+throughout is Codex thread `019ff1bc-454a-7070-b180-baa1c7bde669` (read-only pass against real
+source: `heroes/hero.gd`, `systems/game_session.gd`, `combat/quick_resolve.gd`,
+`hub/expedition/expedition.gd`, this document).
+
+**0. The premise correction that resolves most of the rest.** The backlog row's framing —
+"survivors of background 'culling' expeditions gain XP and **rank up naturally**" — describes
+something the codebase cannot do. `hero.rank` changes at exactly one runtime call site,
+`rank_up_hero()` (`systems/game_session.gd:216-225`), gated on essence spent, itself sourced only
+from `sacrifice_hero()`. A repo-wide search for every write to a `Hero`'s `.rank` found the
+constructor, that one production mutation, and test fixtures — nothing else, and no expedition,
+XP, or leveling code path touches it. **"Rank up naturally" cannot happen. Training only ever
+raises `hero.level` toward the trainee's own current rank's cap** (`level_caps[hero.rank]`,
+already shipped, `Hero.level_for`, `heroes/hero.gd:35-40`). That single correction settles
+questions 1 and 3 almost by itself, and it is why the system below is narrower than the backlog
+row conceived it.
+
+**1. The spine conflict — resolved by the premise correction, not re-derived from scratch.**
+
+`Hero.compute_essence_yield` (`heroes/hero.gd:143-160`) reads only `fodder.rank` and
+`fodder.level` — never a stat, a trait, or `taught_traits` (new below). Since ranking up is
+exclusively sacrifice-gated and essence income reads nothing a leveling system could plausibly
+grant, **a leveling-only system cannot manufacture essence or rank out of nothing.** The published
+`~327`-pull (natural spread) and `~6,363`-pull (F-only) figures both describe the level-0 case
+explicitly, and stay exactly as printed — training touches neither, because neither number was
+ever about leveled fodder in the first place.
+
+What training *can* do is move a player from those numbers toward the already-published
+`~150`-pull optimistic ceiling, which the Sacrifice section already flags as assuming "all fodder
+happens to be max-level" and says outright to "treat as a ceiling, not a target" — this ruling is
+what makes that ceiling reachable by play rather than purely theoretical. Re-derived with training
+folded in: a natural-spread player who levels every piece of fodder to its rank cap before feeding
+it reaches `~165` pulls (`25,450 / (78.38 × 2) + 2.5`); an F-only player doing the same reaches
+`~3,181` pulls (`6,363 / 2`). **Both are still worse than the published `~150` ceiling** (which
+also assumes Sanctum +10%, not modeled here) — training moves a real player *toward* the ceiling,
+never past it, because the level term saturates at exactly `×2` the instant `level == level_cap`;
+there is no further gain past max level for any amount of extra training.
+
+**The throttle question 1 asked for already exists, unauthored: permadeath.** Priced end to end:
+training a squad of 5 fresh F fodder to level 10 before feeding it creates `50` essence over
+baseline (`5×20` capped vs `5×10` fresh) across the same `~33.6` turns the Hero leveling section
+already spends climbing a level-0 F team to its own cap. Spending those identical `~33.6` turns
+instead clearing Verdant for stones and feeding freshly-pulled F fodder immediately nets `33.6`
+essence from F-only pulls, or `~658` feeding the natural spread — both without ever risking the
+fodder already in hand. Once the `69.8%` first-attempt full-roster-wipe rate (Hero leveling,
+above) is priced in as an expected value rather than a best case, training a squad to cap is worse
+than break-even against simply feeding it immediately and spending the same turns pulling fresh
+stock: expected training payoff caps at `≤30.2` essence (even under the generous assumption a
+squad that survives its first run is safe forever) against an `83.6`-essence alternative that
+keeps the original fodder's baseline value *and* adds fresh pulls on top. A wiped squad's
+accumulated levels are gone with it — `kill_hero()` removes the hero from the roster before the
+XP credit one line later can meaningfully reward it (`hub/expedition/expedition.gd:65-74`).
+**No new throttle is needed; naive full-squad training is already a losing trade against immediate
+sacrifice, on essence terms alone.**
+
+**Why a player would ever take a losing-EV trade, stated so nobody re-derives it later.** The
+comparison above is deliberately unfavorable to training because it compares training against
+feeding *fresh, random* pulls — the one thing training doesn't do better. Training earns its keep
+on two things that comparison doesn't model: a **specific** dupe of a chase target (a leveled dupe
+sacrifices for `essence_base × 2 × 3` instead of `essence_base × 3` — training doubles exactly the
+resonance bonus a player is already committed to chasing, not a generic F pull) and the
+**instructor-taught trait** (below), a permanent reward essence can't buy at all. Training was
+never meant to out-earn immediate sacrifice on essence — the essence uplift is a side effect of a
+term the Sacrifice section already priced, not training's reason to exist.
+
+**2. The lethality paradox — the proposed resolution is rejected; nothing replaces it.**
+
+"Instructor rank gates the zone tier" was the backlog row's own guess. Tested against the real
+combat math rather than assumed: a squad of one S-rank instructor (hero_power ≈2,290) plus four
+fresh F trainees (hero_power ≈149 each, level-0) sums to team_power ≈2,886 in
+`Hero.compute_team_power` (`heroes/hero.gd:127-140`, a **sum**, not a per-hero check). Sent into
+Verdant trash at 70% RP, `r ≈ 0.20`, `r³ ≈ 0.008` — damage_fraction under 1% on either branch:
+trivial. Sent into Sundered trash or boss — the zone an S-rank instructor's *own* rank would
+unlock — `r` exceeds `1.0` (`r ≈ 2.8`–`4.8`) and both branches saturate at `1.0`: certain, instant,
+whole-squad death. **There is no zone tier where a strong instructor produces "meaningful risk"
+for its trainees** — because the sum either lets the instructor trivialize whatever the trainees
+could reach, or the trainees contribute too little to the sum for the instructor's own zone to be
+survivable regardless of how strong it is. Gating the zone by instructor rank reproduces the exact
+binary the "coin flip vs meat grinder" complaint was written against; it does not resolve it.
+
+It is also structurally the wrong shape regardless of the numbers: `quick_resolve`'s loss branch
+applies one `damage_fraction` to *every* fielded hero's own max HP in the same wave
+(`combat/quick_resolve.gd:34-46`) — a wave is won or lost by the whole team at once. There is no
+code path today where the strong live and the weak die within a single fight. "Only the strong
+survive" cannot mean per-hero triage inside one run; the combat seam has no per-hero mortality to
+triage with, and adding one is a combat-seam change (`CLAUDE.md` risky boundary 4 — both `resolve`
+implementations would have to agree), well past what this ruling can decide alone.
+
+**Ruling: the zone is picked by the trainees' own rank, the same way every other expedition's zone
+already is — no new gating rule.** An "instructor" is any roster hero of strictly higher rank than
+every trainee fielded alongside it — a compositional guard, not a lethality control, no new
+numeric threshold. Training runs whatever zone the trainees' own rank would ordinarily unlock
+(Verdant for F–C fodder in practice; C-rank fodder pushing toward Ashfall inherits the
+recommended-power imbalance "The three zones" (above) already flags PROVISIONAL — not a new
+problem this ruling introduces). The already-published, already-measured outcome table (Hero
+leveling, above — `69.8%` full-wipe / `30.2%` retreat / `0%` complete at level 0, improving to
+`53.1%`/`46.4%`/`0.5%` at cap) **is** the meat grinder; it needs no sharpening. What an instructor's
+presence buys is the same unauthored reduction in `r` any strong squadmate already gets the whole
+squad under `compute_team_power`'s sum — real, but proportional, with no new formula. "Only the
+strong survive" is true across many training runs, not within one: it is the trainee that keeps
+surviving its rank's own lethal odds, attempt after attempt, that reaches its cap and earns a
+trait — not a per-hero triage inside a single fight.
+
+**Rejected: instructor rank gates zone tier** — per the arithmetic above, every tested
+configuration reads as either trivial or certain death; no zone produced a middle.
+
+**3. Rank ceiling on natural growth — there isn't one, and none is needed.**
+
+Dissolved by §0: leveling never touches rank, so "a rank ceiling on natural growth" has nothing to
+cap. The only ceiling live during training is the one already shipped — `level_caps[hero.rank]`,
+the same clamp every hero's level is already bound by. No new value, no new field. Its interaction
+with question 1 is total: because training cannot cross a rank boundary under any configuration,
+it structurally cannot manufacture the one thing the sacrifice spine exists to price — a hero of a
+higher rank than what was pulled. Training's F–C scope (the backlog row's own framing) is exactly
+the band where a level cap alone leaves a hero furthest from combat relevance; training a hero all
+the way to B or A would still leave it capped at its own rank's ceiling, worth nothing the spine
+doesn't already price through the level-in-yield term.
+
+**4. The trainee survivability bonus — rejected outright, not reclassified as trait or modifier.**
+
+No new mechanic is needed, so the trait-vs-modifier choice the question poses doesn't arise.
+`compute_team_power`'s sum (§2, above) already gives a fielded instructor a proportional,
+unauthored effect on the whole squad's survival odds — the exact lever the question was reaching
+for. A second, independent bonus stacked on top double-counts that lever and pushes further toward
+the trivializing failure mode §2's arithmetic found (a modest S-instructor-plus-F-squad is already
+under 1% damage in Verdant) — undermining the tension "culling" is supposed to deliver, not
+protecting it.
+
+**Rejected: a temporary expedition modifier** (would have been a new `BalanceTable` field, e.g.
+`instructor_survivability_bonus: float`, read by `Expedition.resolve()`, no save key) — redundant
+with the existing sum-based lever.
+
+**Rejected: a permanent trait** — scope creep back into `P2-06c`'s territory exactly as the ticket
+brief warned, and self-contradictory besides: a bonus that outlives the training run it was meant
+to price is not "temporary."
+
+**5. Fodder opportunity cost — already forced by permadeath and turn scarcity; no new field.**
+
+A hero is in exactly one of three states at any time: available to sacrifice, committed to a
+training expedition this turn, or gone. Training and sacrifice already can't stack — a hero
+fielded on a training run is by definition not simultaneously fed to `sacrifice_hero()`, and if it
+dies mid-training it is gone from the roster before it can ever be sacrificed, its accumulated
+level (and the essence that level would have added) lost with it, not banked. That is the entire
+trade, and question 1's arithmetic already prices it: every turn spent training a hero already in
+hand is a turn not spent clearing for stones, not spent pulling, and not spent feeding that hero's
+baseline value immediately — carrying a real, measured `69.8%` chance (at level 0) of losing both
+the hero and every turn invested in it. **No cooldown, no lockout field, no new counter is needed
+on top of what permadeath and `GameSession.turns` (Turns, above) already enforce.**
+
+---
+
+**New content this ruling authors: the instructor-taught trait.**
+
+`§ Traits` reserved `instructor_trait_pool` (empty, per-archetype, on `HeroDefinition`)
+specifically for this ticket. Populate it the same shape resonance already used — three ordered
+`TraitDefinition`s per archetype, granted in array order — because a trainee is only ever eligible
+for training at F, D, or C rank (§3), a natural three-stage ladder with no invented threshold
+count.
+
+```
+grant condition: hero.level reaches balance.level_caps[hero.rank] (the hero's own current rank's
+                  cap) at the moment an expedition resolves, and a qualifying instructor
+                  (instructor.rank > hero.rank, no other requirement) was fielded on that
+                  expedition
+grant: hero.taught_traits.append(instructor_trait_pool[hero.rank][next unclaimed index].id)
+       (rank 0=F -> pool index 0, rank 1=D -> pool index 1, rank 2=C -> pool index 2;
+       an already-claimed stage is skipped, never re-granted)
+```
+
+Reuses `Hero.level_for`'s existing cap read and fires from the same XP-credit path
+`Expedition.resolve()` already calls on every outcome — no new counter, no new turn cost. A
+trainee that reaches C's cap and later ranks up past C (via ordinary sacrifice) keeps every grant
+earned along the way; nothing revokes them, the same "rank-up never punishes" reasoning
+`DECISIONS.md`'s 2026-08-01 entry already applies to level.
+
+`compute_final_stats` does **not** read `taught_traits` yet — `§ Traits §4` shipped the field spec
+only, deliberately unwired (`P2-06c`'s own Findings). Applying an instructor-taught trait in
+combat is real, new work this ticket owns: extend the existing resonance-trait loop
+(`heroes/hero.gd:114-120`) to also iterate the `TraitDefinition`s named by `hero.taught_traits`
+through the same two channels (percentage into `equip_pct`, flat add on the crit stats ahead of
+`equip_crit_rate_cap`) — not a second loop shape, the same one with a second source array.
+
+Magnitude budget: the same ceiling § Traits already verified for resonance — a full three-trait
+stack per archetype stays below what one A-rank-or-higher equipment slot alone contributes. The
+fifteen actual values are content-authoring work for the implementing ticket, following § Traits
+§3's per-archetype identity framing (Knight/Cleric lean DEF/HP, Rogue leans ATK/CRIT, etc.), not a
+fresh design axis this ruling needs to invent.
+
+**No new zone-gating code, no new survivability field, no idle/auto-resolve path.** "Background,"
+in the backlog row's own phrase, describes the fiction — fodder training happens alongside the
+player's main progression — not a request for automation. A training expedition is
+`Expedition.resolve()` on an ordinary player-selected team in an ordinary player-selected zone,
+called from the same hub flow every other expedition already uses. Reading "background" as "runs
+without a player click" would be a sixth missing system nobody asked for; ruled out explicitly so
+an implementer doesn't invent it. Likewise, the "instructor" is derived from squad composition —
+the fielded hero of strictly highest rank, if one exists above the rest — not a new UI picker; a
+follow-up may add a label if playtesting shows the implicit read is illegible, but that is UI
+polish, not this ruling's to spend a ticket on.
+
+**Tunables.**
+
+| Name | Value | Home | Save key? |
+|---|---|---|---|
+| `Hero.taught_traits` | `Array[StringName] = []` | `heroes/hero.gd` | **Yes — new.** Already fully specified (§ Traits §4, above); this ticket is what writes to it. Save-boundary change, mandatory `verifier` pass, real save/reload cycle. |
+| `instructor_trait_pool` content | 3 `TraitDefinition`s per archetype (15 total) | `HeroDefinition` → `heroes/defs/*.tres` | No — per-archetype definition content, same footing as `resonance_trait_pool`. |
+| Grant condition | `hero.level >= balance.level_caps[hero.rank]` at expedition resolution, qualifying instructor fielded | Orchestration inside `Expedition.resolve()` / `GameSession` — not a new field | No — reads existing fields (`level`, `rank`, `level_caps`) and writes only `taught_traits` above. |
+| Trait application | Extend `compute_final_stats`'s existing trait loop to also read `taught_traits` | `heroes/hero.gd:114-120` | No — same accumulator, no new field. |
+
+No new `BalanceTable` field. No new `ZoneDefinition` field. No new autoload, no new scene seam.
+
+> ⚠️ **PROVISIONAL** — everything above is arithmetically checked against the real yield,
+> level-cap, and combat formulas (Codex thread `019ff1bc-454a-7070-b180-baa1c7bde669`), but nobody
+> has trained a hero to a cap and watched a trait land. Whether "one trait every rank-cap, three
+> total by C" reads as a real reason to run training expeditions instead of just feeding fodder
+> immediately is a feel question, the same shape as every other PROVISIONAL marker in this
+> document. · **Settled by:** a played build with `taught_traits` wired end to end and at least one
+> hero walked to C's cap under a qualifying instructor.
+
+**Ticket shape: one ticket, not several.** Narrowed this far, `P2-13` is a single coherent slice —
+a save-boundary field already specified in full (§ Traits §4), fifteen `TraitDefinition` resources
+authored the same way resonance's fifteen already were, one grant check added to the existing
+XP-credit path, and one extension to the existing trait-application loop. No new autoload, no new
+zone rule, no new combat formula, no new UI seam. It needs the mandatory `verifier` pass
+`taught_traits` already requires (`CLAUDE.md` risky boundary 1) and nothing else does — comparable
+in size to `P2-06c` (content plus a reserved field) and `P2-06b` (the payoff wiring) landing
+together as one ticket instead of two, because training has no separate "does it apply in combat"
+step to split out the way resonance's did: this ruling names both the grant condition and the
+application loop extension in the same section, so there is nothing left for a second design pass
+to discover. `tech-lead` can write the ticket body directly from this section.
+
 ---
 
 ## Equipment — *Phase 2, Cores Phase 4*
