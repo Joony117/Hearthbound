@@ -4959,3 +4959,118 @@ green import gate is not evidence by itself; criteria 2/3/5 above exist so the v
 real win branch, a real loss branch and a real "GameSession untouched" check to run, not just a
 compiled scene. No save key changes, so boundary 1 is untouched.
 
+
+---
+
+## P2b-03 — The capsules show what is happening                               [DONE]
+
+### Objective
+
+The enemy capsule turns amber for the `0.55 s` it is winding up, so a swing can be read before it
+lands. A landed hit flashes the hero white, a successful parry flashes both capsules cyan, and a
+defeated enemy flashes white before it vanishes. Nothing about the fight is invisible any more.
+
+### Existing architecture
+
+- `combat/arena/arena.gd` already tracks every state this ticket renders, and **needs no new
+  field**: `_enemy_attack_elapsed` (`>= 0.0` and `< BALANCE.arena_enemy_attack_startup` is the
+  windup), `_hit_stop_outcome` + `_hit_stop_remaining`, `_hit_stun_remaining`, and
+  `_enemy_stagger_remaining`. The tint is a pure function of those five.
+- **Every window is an already-authored duration.** Telegraph is `arena_enemy_attack_startup`
+  (`0.55`), the hit flash is `arena_enemy_attack_hit_stop` (`0.06`) plus `arena_enemy_hit_stun`
+  (`0.35`), the parry flash is `arena_parry_hit_stop` (`0.08`) on the hero and
+  `arena_parry_enemy_stagger` (`0.6`) on the enemy, and the defeat flash is
+  `arena_light_attack_hit_stop` (`0.04`) — the enemy is `queue_free()`d at the end of that window,
+  so the vanish is the rest of the confirmation. No new `BalanceTable` field, and `balance.tres`
+  is not touched. **Do not drive the hit flash off hit-stop alone**: `0.06 s` is under four frames
+  and would ship the same invisible-hit complaint this ticket exists to close.
+- The capsule meshes are `HeroCapsule/Mesh` and `EnemyCapsule/Mesh` (`arena.tscn:97,125`), whose
+  materials are `[sub_resource]` blocks **shared by every instance of the scene**. Assign a
+  script-created `StandardMaterial3D` to each `MeshInstance3D.material_override` instead — that
+  leaves the authored materials untouched by construction, which is the cheap answer to the hazard
+  `ARCHITECTURE.md` § "Reaching shared Resources" names by example (`P2-07c` hit it with
+  `summon_weights`). `duplicate()`ing the scene material would also work and is more code.
+- `_physics_process` has **two** exit paths — the `_combat_finished` early return (line 79) and
+  the normal one. A tint update placed only on the second freezes the last frame's tint on the
+  capsule that is still standing.
+
+### Acceptance criteria
+
+1. Instantiating `arena.tscn` gives both `HeroCapsule/Mesh` and `EnemyCapsule/Mesh` a
+   `material_override` that is **not** the mesh's authored material, and the authored
+   `[sub_resource]` albedo colors are unchanged after a full combat. A GUT assertion on both
+   overrides existing is what pins the two node lookups — they are new script→scene dependencies
+   and nothing else catches a rename.
+2. While `_enemy_attack_elapsed` is inside the startup window, the enemy override reads amber
+   `Color(1.0, 0.72, 0.18)`. It clears when the active window opens — the tint *ending* is the cue
+   that the hit is now.
+3. `HitStopOutcome.HIT_HERO` puts white `Color(1.0, 1.0, 1.0)` on the hero for the hit-stop **and**
+   the following `arena_enemy_hit_stun`, then clears.
+4. `HitStopOutcome.PARRY_HERO` puts cyan `Color(0.35, 0.95, 1.0)` on the hero for the parry
+   hit-stop and on the enemy for `arena_parry_enemy_stagger`.
+5. `HitStopOutcome.DEFEAT_ENEMY` puts white on the enemy for its hit-stop, before the existing
+   `queue_free()`.
+6. With no state active, both overrides carry the capsule's authored base color — a cleared tint
+   is a restore, not a guess at what the colors were.
+7. No new `BalanceTable` field, no `balance.tres` edit, no new `arena.gd` state field, and the
+   four colors are `const` in `arena.gd`.
+8. Existing tests still pass; both gates green.
+
+### Files allowed to change
+
+`combat/arena/arena.gd`, `tests/unit/test_arena.gd`, `docs/TASKS.md`.
+
+`arena.tscn` is **not** on the list and must not need to be — the two meshes already exist and are
+reachable by path. The five preceding tickets each shipped a wrong allowed-file list; this one was
+written after grepping, and the grep says `arena.gd` is the only production file involved. If that
+turns out to be false, say so rather than widening it silently.
+
+### Non-goals
+
+- **No verifier pass and no `.tscn` edit.** No save key, no autoload signature, no `%UniqueName`,
+  no `[connection]`, and the combat seam's `resolve()` is untouched — this crosses none of
+  `CLAUDE.md`'s four boundaries. Criterion 1 covers the one new seam-shaped risk.
+- No tint for the parry *stance* (only a successful parry), no hero-death tint, no particles, no
+  animation, no shader, no `Tween`, no fade — an instant colour swap for a fixed window is the
+  whole mechanism.
+- **No retuning of `arena_light_attack_hit_stop` or any other feel value.** The playtest line
+  "still needs tuning for combat weight" is deliberately parked until this ships; tuning weight
+  against an invisible hit is tuning against a missing signal. Re-ask after.
+
+> ⚠️ **PROVISIONAL** — the four colours are graybox placeholders picked for contrast against the
+> hero's blue, the enemy's red and the `0.08/0.09/0.12` background, not for feel.
+> **Settled by:** a played build with this wired.
+
+### Findings
+
+- **Every tint window was already an authored duration**, so the ticket added no `BalanceTable`
+  field, touched no `balance.tres`, and added no `arena.gd` state field. The tint is a pure
+  function of five fields the script already tracked. That is why it needed no `game-designer`
+  pass despite being a feel ticket: four colours are presentation, not balance.
+- **The one design call was refusing to drive the hit flash off hit-stop alone.** The obvious
+  reading — flash for `arena_enemy_attack_hit_stop` — is `0.06 s`, under four frames at 60 Hz, and
+  would have re-shipped the invisible-hit complaint this ticket exists to close. It rides the
+  following `arena_enemy_hit_stun` (`0.35 s`) instead. The generalizable shape: **a window that
+  exists is not the same as a window that can be seen**, and both gates are blind to the
+  difference. Same family as the "reads real, measures nothing" entries this backlog has now hit
+  seven times, one layer up.
+- **`material_override` beat the `duplicate()` the row prescribed.** A script-created
+  `StandardMaterial3D` per capsule leaves `arena.tscn`'s `[sub_resource]` materials untouched by
+  construction rather than by discipline, and it is less code. `_authored_capsule_color()` reads
+  the base colour back off `mesh.surface_get_material(0)` each time the tint clears, so a cleared
+  tint is a restore rather than a fourth colour constant that could drift from the scene.
+- **`_update_capsule_tints()` is the first line of `_physics_process`, unconditionally.** That
+  covers both exit paths — including the `_combat_finished` early return the body flagged — by
+  construction, so no test was needed for the frozen-tint hazard. Cost: the tint is derived from
+  the *previous* frame's state and lags one physics frame (~16 ms). Recorded, not chased.
+- **Read this before writing another arena test.** The delivered test pokes private fields and
+  calls `arena._physics_process(0.0)` directly. The zero delta is load-bearing rather than
+  cosmetic: it keeps `_update_hit_stop()` inside its `_hit_stop_remaining > 0.0` early return, so
+  the poked states render without cascading into `_hits_taken`, knockback or `queue_free()`. A
+  non-zero delta there silently runs a different test than the one written.
+- The allowed-file list held — exactly `combat/arena/arena.gd` and `tests/unit/test_arena.gd`
+  changed, and `arena.tscn` was not needed. It was written after grepping for the node paths
+  rather than from memory, which is the correction the five wrong lists before it earned.
+- Gates re-run by the director independently of the worker's claim: import gate exit `0`, GUT
+  `149/149` (up from 148). The GUT run needs `APPDATA` pointed at a scratch directory
+  (`KNOWN_ISSUES.md` § Environment) or it dies on `user://logs/` before the first test.

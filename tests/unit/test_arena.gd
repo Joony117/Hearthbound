@@ -49,6 +49,60 @@ func test_arena_loads_native_graybox_without_mutating_profile() -> void:
 	assert_eq(GameSession.to_dict(), profile_before)
 
 
+func test_arena_capsule_overrides_render_combat_tints_without_mutating_authored_materials() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_mesh := arena.get_node("HeroCapsule/Mesh") as MeshInstance3D
+	var enemy_mesh := arena.get_node("EnemyCapsule/Mesh") as MeshInstance3D
+	var hero_authored_material := hero_mesh.mesh.surface_get_material(0) as StandardMaterial3D
+	var enemy_authored_material := enemy_mesh.mesh.surface_get_material(0) as StandardMaterial3D
+	var hero_base_color: Color = hero_authored_material.albedo_color
+	var enemy_base_color: Color = enemy_authored_material.albedo_color
+
+	assert_not_null(hero_mesh.material_override)
+	assert_not_null(enemy_mesh.material_override)
+	assert_ne(hero_mesh.material_override, hero_authored_material)
+	assert_ne(enemy_mesh.material_override, enemy_authored_material)
+
+	arena._enemy_attack_elapsed = 0.0
+	arena._physics_process(0.0)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, Arena.ENEMY_WINDUP_COLOR)
+	arena._enemy_attack_elapsed = BALANCE.arena_enemy_attack_startup
+	arena._physics_process(0.0)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, enemy_base_color)
+
+	arena._hit_stop_outcome = Arena.HitStopOutcome.HIT_HERO
+	arena._hit_stop_remaining = BALANCE.arena_enemy_attack_hit_stop
+	arena._physics_process(0.0)
+	assert_eq((hero_mesh.material_override as StandardMaterial3D).albedo_color, Arena.HIT_HERO_COLOR)
+	arena._hit_stop_outcome = Arena.HitStopOutcome.NONE
+	arena._hit_stun_remaining = BALANCE.arena_enemy_hit_stun
+	arena._physics_process(0.0)
+	assert_eq((hero_mesh.material_override as StandardMaterial3D).albedo_color, Arena.HIT_HERO_COLOR)
+
+	arena._hit_stop_outcome = Arena.HitStopOutcome.PARRY_HERO
+	arena._hit_stun_remaining = 0.0
+	arena._physics_process(0.0)
+	assert_eq((hero_mesh.material_override as StandardMaterial3D).albedo_color, Arena.PARRY_HERO_COLOR)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, Arena.PARRY_HERO_COLOR)
+	arena._hit_stop_outcome = Arena.HitStopOutcome.NONE
+	arena._enemy_stagger_remaining = BALANCE.arena_parry_enemy_stagger
+	arena._physics_process(0.0)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, Arena.PARRY_HERO_COLOR)
+
+	arena._enemy_stagger_remaining = 0.0
+	arena._hit_stop_outcome = Arena.HitStopOutcome.DEFEAT_ENEMY
+	arena._physics_process(0.0)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, Arena.DEFEAT_ENEMY_COLOR)
+	assert_eq(hero_authored_material.albedo_color, hero_base_color)
+	assert_eq(enemy_authored_material.albedo_color, enemy_base_color)
+	arena._hit_stop_outcome = Arena.HitStopOutcome.NONE
+	arena._physics_process(0.0)
+	assert_eq((hero_mesh.material_override as StandardMaterial3D).albedo_color, hero_base_color)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, enemy_base_color)
+
+
 func test_arena_movement_actions_use_physical_wasd_keys() -> void:
 	var expected_keys: Dictionary[StringName, Key] = {
 		&"move_left": KEY_A,

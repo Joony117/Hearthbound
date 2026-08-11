@@ -6,6 +6,10 @@ signal enemy_defeated
 signal combat_resolved(result: CombatResult)
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
+const ENEMY_WINDUP_COLOR: Color = Color(1.0, 0.72, 0.18)
+const HIT_HERO_COLOR: Color = Color(1.0, 1.0, 1.0)
+const PARRY_HERO_COLOR: Color = Color(0.35, 0.95, 1.0)
+const DEFEAT_ENEMY_COLOR: Color = Color(1.0, 1.0, 1.0)
 
 enum HitStopOutcome {
 	NONE,
@@ -20,6 +24,8 @@ enum HitStopOutcome {
 @onready var _attack_hitbox: Area3D = %AttackHitbox
 @onready var _enemy_capsule: CharacterBody3D = %EnemyCapsule
 @onready var _enemy_attack_hitbox: Area3D = %EnemyAttackHitbox
+@onready var _hero_capsule_mesh: MeshInstance3D = get_node("HeroCapsule/Mesh") as MeshInstance3D
+@onready var _enemy_capsule_mesh: MeshInstance3D = get_node("EnemyCapsule/Mesh") as MeshInstance3D
 
 var _attack_elapsed: float = -1.0
 var _attack_active: bool = false
@@ -47,6 +53,8 @@ var _combat_finished: bool = false
 
 func _ready() -> void:
 	scene_change_requested.connect(SceneRouter.go_to)
+	_create_capsule_material_override(_hero_capsule_mesh)
+	_create_capsule_material_override(_enemy_capsule_mesh)
 	_spring_arm.spring_length = BALANCE.arena_camera_spring_length
 	_spring_arm.add_excluded_object(_hero_capsule.get_rid())
 	_attack_hitbox.body_entered.connect(_on_attack_hitbox_body_entered)
@@ -76,6 +84,7 @@ func _exit_tree() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_update_capsule_tints()
 	if _combat_finished:
 		_stop_horizontal()
 		_hero_capsule.move_and_slide()
@@ -99,6 +108,47 @@ func _physics_process(delta: float) -> void:
 			_update_locomotion(delta)
 	_hero_capsule.move_and_slide()
 	_camera_pivot.global_position = _hero_capsule.global_position + Vector3.UP
+
+
+func _create_capsule_material_override(capsule_mesh: MeshInstance3D) -> void:
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.albedo_color = _authored_capsule_color(capsule_mesh)
+	capsule_mesh.material_override = material
+
+
+func _update_capsule_tints() -> void:
+	var hero_material: StandardMaterial3D = _hero_capsule_mesh.material_override as StandardMaterial3D
+	assert(hero_material != null)
+	hero_material.albedo_color = _hero_tint()
+	if not is_instance_valid(_enemy_capsule_mesh):
+		return
+	var enemy_material: StandardMaterial3D = _enemy_capsule_mesh.material_override as StandardMaterial3D
+	assert(enemy_material != null)
+	enemy_material.albedo_color = _enemy_tint()
+
+
+func _hero_tint() -> Color:
+	if _hit_stop_outcome == HitStopOutcome.HIT_HERO or _hit_stun_remaining > 0.0:
+		return HIT_HERO_COLOR
+	if _hit_stop_outcome == HitStopOutcome.PARRY_HERO:
+		return PARRY_HERO_COLOR
+	return _authored_capsule_color(_hero_capsule_mesh)
+
+
+func _enemy_tint() -> Color:
+	if _hit_stop_outcome == HitStopOutcome.DEFEAT_ENEMY:
+		return DEFEAT_ENEMY_COLOR
+	if _hit_stop_outcome == HitStopOutcome.PARRY_HERO or _enemy_stagger_remaining > 0.0:
+		return PARRY_HERO_COLOR
+	if _enemy_attack_elapsed >= 0.0 and _enemy_attack_elapsed < BALANCE.arena_enemy_attack_startup:
+		return ENEMY_WINDUP_COLOR
+	return _authored_capsule_color(_enemy_capsule_mesh)
+
+
+func _authored_capsule_color(capsule_mesh: MeshInstance3D) -> Color:
+	var authored_material: StandardMaterial3D = capsule_mesh.mesh.surface_get_material(0) as StandardMaterial3D
+	assert(authored_material != null)
+	return authored_material.albedo_color
 
 
 func _update_locomotion(delta: float) -> void:
