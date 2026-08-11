@@ -1330,7 +1330,7 @@ needs to re-read.
 | `P2b-01d` | One enemy attack and one dodge | `b4b8e7f` |
 | `P2b-01f` | Facing follows the camera, and a standstill press parries | `46e16c2` |
 | `P2b-01e` | Arena accepts the existing `Wave` and returns the existing `CombatResult` | `342c6d1` |
-| `P2b-03` | The capsules show what is happening — telegraph, hit flash, parry flash | `pending` |
+| `P2b-03` | The capsules show what is happening — telegraph, hit flash, parry flash | `1e842d6` |
 
 ---
 
