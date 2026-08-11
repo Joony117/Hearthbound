@@ -254,3 +254,21 @@ So a worker reporting this is reporting its own confinement, not a broken suite.
 found is the one `import_gate.ps1` already uses for itself: point `APPDATA` at a scratch directory
 for the duration. That also stops the run from overwriting the real `user://save.json`, which a
 plain GUT run does (see above), so it is worth doing in a director-run gate too.
+
+### `test_save_service.gd` has one flaky assert on the corrupt-save rename
+`test_non_dictionary_save_is_refused_without_resetting_game_session` failed once at line 114 —
+`assert_false(FileAccess.file_exists(SAVE_PATH))` — while every other assert in the same test
+passed, including the two that prove `save.corrupt.json` exists with the right bytes. So
+`DirAccess.rename_absolute()` returned `OK` and the destination was correct; only the *source* path
+briefly still reported as existing.
+
+Observed 2026-08-10, once in five consecutive full-suite runs, on the first run of the session
+immediately after two `import_gate.ps1` passes had just rewritten `.godot/`. Four later runs of the
+identical tree were 145/145, and the file passes 8/8 in isolation. This is a Windows rename
+visibility lag, not `SaveService` logic and not a test-ordering bug — the pair
+`test_sanctum.gd,test_save_service.gd` does not reproduce it.
+
+Practical effect: **a single red run on this one assert is not evidence of a regression.** Re-run
+before investigating. If it starts landing more than rarely, the fix is to have `load_game()` poll
+for the source's disappearance rather than to weaken the assert — the assert is testing the right
+thing.
