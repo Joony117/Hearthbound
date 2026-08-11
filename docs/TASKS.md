@@ -1391,6 +1391,18 @@ in this batch.
 3. **`P2b-07`'s screen shake is half-covered.** `test_arena.gd` proves the magnitude derivation, the
    toggle's effect and the `user://settings.cfg` disk round-trip. It does not press the pause menu's
    `CheckButton`, so the same dead-wire gap applies to the control itself.
+
+   **Corrected by the verifier pass (`c03d9a9`):** items 2 and 3 as written claim that dropping any
+   one of the new wires keeps every gate green. That holds for the five `hub.tscn` wires and is
+   **false** for `pause_menu.tscn`'s — breaking it turns 23 unrelated tests red on an arity error
+   against `_on_resume_pressed`, which is a misleading cross-file failure rather than a clean
+   assertion, so it is accidental coverage of the worst kind. The same pass found the batch's one
+   real defect behind that wire: `_ready()` assigned `button_pressed`, which emits `toggled`, which
+   wrote `user://settings.cfg` on **every hub load** — `PauseMenu` is a static child of `hub.tscn`.
+   Fixed with `set_pressed_no_signal()`. The lesson is the seam's, not the widget's: **an
+   `@onready` initializer that writes a control's value is a signal emission**, and this repo has
+   test discipline against stray `save.json` writes (`P2-29`) and none at all against
+   `settings.cfg` ones.
 4. **Everything except `arena_light_attack_startup` is unplayed.** The two `PROVISIONAL` markers say
    so and both name the same `Settled by`. The softest values are the enemy's `0.35` dodge and
    `0.25` parry — a five-hit chain lands clean about a sixth of the time, which may read as a fight
