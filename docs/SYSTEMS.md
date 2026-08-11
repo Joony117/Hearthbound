@@ -575,6 +575,130 @@ fifteen actual values are content-authoring work for the implementing ticket, fo
 §3's per-archetype identity framing (Knight/Cleric lean DEF/HP, Rogue leans ATK/CRIT, etc.), not a
 fresh design axis this ruling needs to invent.
 
+**The fifteen instructor-taught traits — authored here, `instructor_trait_pool`'s content.**
+Same shape as § Traits §3's resonance table: three ordered stages, granted in array order. Stage
+index is fixed by the grant rule above (`hero.rank` at the moment of grant), not by anything
+authored here — stage 0 is whatever a hero earns at F's level cap, stage 1 at D's, stage 2 at C's.
+Each stage moves exactly one stat, through the same two channels resonance already established:
+HP/ATK/DEF/SPD as a percentage into `equip_pct`, CRIT_RATE/CRIT_DMG as a flat point/decimal add
+ahead of `equip_crit_rate_cap`.
+
+| Archetype | Stage 0 (F cap) | Stage 1 (D cap) | Stage 2 (C cap) |
+|---|---|---|---|
+| Knight | Shield Drill — DEF +3% | Iron Discipline — HP +4% | Veteran's Bastion — DEF +5% |
+| Rogue | Quick Hands — ATK +3% | Feint — CRIT_RATE +1pp | Coup de Grace — CRIT_DMG +0.05 |
+| Ranger | Light Step — SPD +3% | Steady Aim — ATK +3% | Trueshot — CRIT_RATE +1pp |
+| Mage | Apprentice Rites — ATK +3% | Mana Burn — CRIT_DMG +0.04 | Spellweaving — ATK +5% |
+| Cleric | Novice Prayer — HP +3% | Ward — DEF +3% | Benediction — HP +5% |
+
+Same identity split § Traits §3 already used for resonance, held here too: Knight/Cleric lean
+DEF/HP, Rogue leans ATK/CRIT, Mage leans ATK/CRIT_DMG, Ranger splits SPD/ATK/CRIT_RATE — no new
+axis. Progressive within each archetype (smallest stage first) the same way resonance's own T1 is
+its archetype's smallest trait, for the reachability reason worked out below.
+
+**Content table, for the `.tres` authoring pass** (`id`, `display_name`, `stat` as
+`EquipmentDefinition.PrimaryStat` ordinal — `HP=0 ATK=1 DEF=2 SPD=3 CRIT_RATE=4 CRIT_DMG=5` — and
+`magnitude`, matching `TraitDefinition`'s four exported fields, § Traits §1):
+
+| Archetype | Stage | `id` | `display_name` | `stat` | `magnitude` |
+|---|---|---|---|---|---|
+| Knight | 0 | `knight_shield_drill` | Shield Drill | DEF (2) | 0.03 |
+| Knight | 1 | `knight_iron_discipline` | Iron Discipline | HP (0) | 0.04 |
+| Knight | 2 | `knight_veterans_bastion` | Veteran's Bastion | DEF (2) | 0.05 |
+| Rogue | 0 | `rogue_quick_hands` | Quick Hands | ATK (1) | 0.03 |
+| Rogue | 1 | `rogue_feint` | Feint | CRIT_RATE (4) | 0.01 |
+| Rogue | 2 | `rogue_coup_de_grace` | Coup de Grace | CRIT_DMG (5) | 0.05 |
+| Ranger | 0 | `ranger_light_step` | Light Step | SPD (3) | 0.03 |
+| Ranger | 1 | `ranger_steady_aim` | Steady Aim | ATK (1) | 0.03 |
+| Ranger | 2 | `ranger_trueshot` | Trueshot | CRIT_RATE (4) | 0.01 |
+| Mage | 0 | `mage_apprentice_rites` | Apprentice Rites | ATK (1) | 0.03 |
+| Mage | 1 | `mage_mana_burn` | Mana Burn | CRIT_DMG (5) | 0.04 |
+| Mage | 2 | `mage_spellweaving` | Spellweaving | ATK (1) | 0.05 |
+| Cleric | 0 | `cleric_novice_prayer` | Novice Prayer | HP (0) | 0.03 |
+| Cleric | 1 | `cleric_ward` | Ward | DEF (2) | 0.03 |
+| Cleric | 2 | `cleric_benediction` | Benediction | HP (0) | 0.05 |
+
+None of these fifteen `id`s collide with the fifteen resonance `id`s already authored in
+`heroes/defs/*.tres` (`knight_bulwark`/`knight_stalwart`/`knight_iron_wall` and the other four
+archetypes' equivalents) — checked by direct read of all five files, same `<archetype>_<name>`
+pattern.
+
+**Verified — the combined stack, resonance and instructor together (Codex thread
+`019ff22a-bb1a-75a3-affc-ec806bda59c9`, arithmetic against this section's own figures and
+§ Primary stat magnitude's published `equip_pct_per_rank` table: F 4.00% / D 5.40% / C 7.28% /
+B 9.84% / A 13.28% / S 17.92% / SS 24.20% / SSS 32.68%).** § Traits §3 checked resonance alone
+against a single A-rank-or-higher slot; nothing before this checked what a hero holding a *full*
+resonance stack **and** a full instructor stack at once does to the same accumulator, since
+`taught_traits` and the resonance derivation both feed `compute_final_stats`'s same `equip_pct`
+array (`heroes/hero.gd:99-122`) on the same hero.
+
+1. **Combined per-stat totals, against a single equipment slot.** Yes, the combined stack can
+   now outweigh a single equipment slot — something the resonance-only check never triggered —
+   but only up to a bounded rank, never SS or SSS:
+
+   | Archetype | Stat | Resonance + instructor | Outweighs a single slot through… | …stops at |
+   |---|---|---:|---|---|
+   | Knight | DEF | 12% + 8% = 20% | S (17.92%) | SS (24.20%) |
+   | Knight | HP | 5% + 4% = 9% | C (7.28%) | B (9.84%) |
+   | Rogue | ATK | 5% + 3% = 8% | C (7.28%) | B (9.84%) |
+   | Ranger | SPD | 4% + 3% = 7% | D (5.40%) | C (7.28%) |
+   | Ranger | ATK | 5% + 3% = 8% | C (7.28%) | B (9.84%) |
+   | Mage | ATK | 11% + 8% = 19% | S (17.92%) | SS (24.20%) |
+   | Cleric | HP | 11% + 8% = 19% | S (17.92%) | SS (24.20%) |
+   | Cleric | DEF | 4% + 3% = 7% | D (5.40%) | C (7.28%) |
+
+   Every archetype's *signature* stat (the one both its resonance and instructor pools both lean
+   into — Knight DEF, Mage ATK, Cleric HP) now beats a single S-rank slot, something no
+   resonance-only total did; every split/secondary stat (Knight HP, Rogue ATK, both Ranger stats,
+   Cleric DEF) stops at C or B. **Nothing reaches SSS (32.68%)** — the largest combined total,
+   19–20%, is `12.68`–`13.68` points short of it. The two-system stack is real power, sized to
+   read as "worth more than one piece of gear at mid rank," not "worth more than the best gear in
+   the game."
+
+2. **Worst-case CRIT_RATE, with the instructor trait folded in.** Rogue's `Feint` (+1pp) and
+   Ranger's `Trueshot` (+1pp) are the only instructor traits on the crit channel — added to the
+   already-published worst cases: Rogue `43.46%` (base 15% + max-enhanced SSS necklace 26.96pp +
+   resonance 1.5pp) `+ 1pp = 44.46%`, `30.54pp` of margin left under the `75%` cap. Ranger
+   `38.472%` (base 10% + max-enhanced SSS necklace 26.972pp + resonance 1.5pp) `+ 1pp = 39.472%`,
+   `35.528pp` remaining. Both instructor CRIT_RATE magnitudes were sized well under the resonance
+   figures they sit beside (`1pp` vs resonance's `1.5pp`) precisely so the combined worst case
+   spends only a sliver of a margin that was already `>30pp` — the clamp is nowhere near load-
+   bearing here, so this isn't relying on it.
+
+3. **Reachability — sacrifice can skip a hero past a stage it never earned, and does so for real.**
+   `rank_up_hero()` (`systems/game_session.gd:216-225`) increments `hero.rank` by exactly one on
+   payment of essence alone; nothing gates it on `hero.level` reaching the rank's own cap. A player
+   can chain three `rank_up_hero()` calls (F→D→C→B) back to back without ever fielding the hero on
+   an expedition at D or C. Since the grant condition above fires only "at the moment an expedition
+   resolves" while `hero.rank` equals the stage's own rank (0=F, 1=D, 2=C), skipping through a rank
+   without training at it skips that rank's grant **permanently** — once the hero is B or higher
+   there is no stage-3+ pool entry to retroactively claim it from, and rank-up never re-checks a
+   rank the hero has already left. Concretely: a hero trained once to F's cap (banking stage 0)
+   and then chain-sacrificed straight to B collects stage 0 and *only* stage 0 — stages 1 and 2
+   are gone for that hero, not deferred. All three stages are reachable on one hero only if the
+   player trains it through F, D, **and** C in turn, letting sacrifice carry it past C afterward if
+   it wants to; that was already true from §3's ranking discussion above, this just confirms
+   sacrifice doesn't offer a way around it.
+
+   This makes stage 0 the only instructor reward every trained hero can bank under *any* play
+   style, including the chain-sacrifice one — which is why it isn't sized as a token first rung:
+   each stage-0 magnitude (DEF/HP/ATK/SPD +3%) sits in the same weight class as its archetype's
+   own resonance T1 (Knight `+4%`, Ranger `+4%`, Mage/Cleric `+5%`) rather than materially smaller,
+   since both are "the cheapest rung of their own system" and a player who never trains past F
+   should still feel stage 0 land. No magnitude change follows from this finding — the values above
+   were already chosen with it in mind, not after the fact.
+
+**Rejected: giving Knight or Cleric a CRIT_RATE/CRIT_DMG-stat instructor trait** (e.g. to
+differentiate a stage from its resonance counterpart) — breaks the DEF/HP identity axis § Traits
+§3 already set for these two archetypes and adds nothing the arithmetic needed; Rogue, Ranger, and
+Mage already cover every crit-bearing archetype between them.
+
+**Rejected: sizing instructor stages larger than resonance's own tiers** (mirroring the "3-6 dupes
+is harder to earn than 3 level caps" asymmetry by making instructor traits the bigger reward) —
+would have pushed Knight DEF and Mage/Cleric's signature stats past SS (24.20%) once combined with
+resonance, undermining the "never outweighs the best gear in the game" ceiling § Traits set for
+resonance alone; kept both systems in the same weight class instead.
+
 **No new zone-gating code, no new survivability field, no idle/auto-resolve path.** "Background,"
 in the backlog row's own phrase, describes the fiction — fodder training happens alongside the
 player's main progression — not a request for automation. A training expedition is

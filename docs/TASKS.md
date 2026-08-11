@@ -889,7 +889,7 @@ it is a bug and it unblocks a shipped feature nobody can reach. `P2-30` third, a
 | P2-16 | Pulls cost Summon Stones, and a clear pays them | **Landed** in the commit below; body in `TASKS-DONE.md`. Ticket written by the director per rung 1 rather than routed to `tech-lead` as this row predicted — `SYSTEMS.md` § Summon Stones §5 had already settled every number, named every file, and specified the check-and-deduct guard shape, so no scoping judgment was left to route. The mandatory `verifier` pass returned **pass** on all 8 criteria. **Read its Findings before adding another currency:** the priced path is `summon_hero()`, but `add_hero()` survives with zero production callers and 17 test ones — an unpriced door into `roster` that no gate guards, the `P2-07c` `roll()`-default hazard in a new shape. Also records why a `300` default that is *also* a legitimate value (`0` stones, spent out) needs all three untrusted shapes checked separately rather than "a round trip", and why `300` arrived as three literals before consolidating to `GameSession.STARTING_STONES`. Original row, for reference — it is a **save-key change** (a new `GameSession` stone field, `CLAUDE.md` boundary 1, mandatory `verifier`) *plus* a new `BalanceTable` field, a new `ZoneDefinition` field across three `.tres`, a check-and-deduct guard on the summon path, and a hub scene-seam change (the button must read the balance and disable itself below cost). `SYSTEMS.md` § Summon Stones § 5 states where each number lives. Two traps already on the record apply: the fresh-save default is `300` and **not** "starts at 0" — an empty roster plus a priced pull means a zero balance is unplayable from boot, not merely slow — and `zones/defs/*.tres` edits redden `tests/zone_definition_check.gd`, which asserts zone fields by exact match (`P2-15`). |
 | P2-22 | Turn concept ruling — what advances the decay clock | **Landed** in the commit below. No body — this was a design gap inside `P2-04f`, and the ruling itself is `SYSTEMS.md` § Turns. **A turn is one resolved expedition**; `INVALID_TEAM` does not tick, a recovery run does, the deadline is evaluated at the attempt rather than frozen at death, and `GameSession.turns` is the counter. Director-written per rung 1: it authored **no new number** — all four turn-denominated numbers were already on the page — so what it owed was an arithmetic check that the clock is *missable*, which is the whole reason `reliquary_decay_turns_bonus` isn't the fifth "reads real, measures nothing" entry. Rejected wall-clock time (OS-settable, runs while closed, no idle income to justify it), hub actions (ages a cache for sorting your bag) and play sessions (nothing counts them, and never-quit is a free exploit). Also found `power_deficit_penalty` had **already been valued** while three rows here called it a gap. Opened `P2-23`; unblocked `P2-04f`. |
 | P2-23 | Turns exist, persist, and a lost cache records the one it died on | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Director-written and director-implemented per rung 1 (the account was at 2% Codex usage), with the mandatory `verifier` pass returning **pass-with-concerns** on all 8 criteria. `GameSession.turns` ticks once per resolved expedition **before** the wave loop, so a same-expedition death stamps `turn_lost` with the turn the run became and an immediate recovery reads `turns_elapsed == 0` rather than `-1`. `kill_hero()` took **no new argument** — `turns` is the autoload's own state, the distinction `P2-05f` drew. **Read its Findings before writing a test that drives an error branch** (GUT fails on an unconsumed `push_error`, and names the error instead of the assertion) and before appending a field to `LostCache.from_dict` (it returns early on a malformed `items` array, so `turn_lost` decodes above it). Its one `verifier` finding was the **fifth consecutive wrong allowed-file list**, and the first to err by naming a file that did not change rather than omitting one that did — write the list after the grep. Original row, for reference — Opened by `P2-22`, split out of `P2-04f` because it is a **two-key save-boundary change** (`GameSession.turns` and `LostCache.turn_lost`, `CLAUDE.md` boundary 1 — mandatory `verifier`, real disk cycle, not an in-memory `to_dict`/`from_dict` pair) and has nothing to do with the recovery mission it enables. Scope: the field, the tick on the three real outcomes, the stamp inside `kill_hero()`, and a hub readout so the number is observable — `P2-07b`'s reasoning, not `P2-04c`'s, since a clock nobody can see is not checkable by playing. **`turn_lost` is the field `P2-04e` refused to ship** for want of a counter, so this is the ticket that retires that precedent rather than repeating it. Two traps already on the record apply: `kill_hero()`'s **second caller is dynamic** (`tests/save_roundtrip_check.gd` via `.call()`, `P2-04e`), and the last four tickets' allowed-file lists each omitted a real call site (`P2-04g`, `P2-18`, `P2-20`). No recovery mission, no damage roll, no expiry sweep, no Reliquary — all `P2-04f`. |
-| P2-13 | Fodder training — an instructor hero trains F–C fodder; survivors of "culling" expeditions gain XP and earn instructor-taught traits | **Unblocked 2026-08-11 — `game-designer` ruled all five questions (`SYSTEMS.md` § "Fodder training (P2-13)"), and the ruling shrank the ticket instead of growing it. Ready for `tech-lead` to write the body; the ruling says so explicitly and rules it **one** ticket, not a split.** **Read §0 before anything else: the row's own premise was wrong.** "Rank up naturally" describes something the codebase cannot do — `hero.rank += 1` at `systems/game_session.gd:223` inside `rank_up_hero()` is the sole rank writer and its only caller is `hub/hub.gd:468`, the sacrifice path. Director-verified by grep, not taken on the subagent's word. Training raises `level` toward `level_caps[hero.rank]` and never crosses a rank boundary, and that one correction settles questions 1 and 3 outright. **Question 1's spine conflict evaporated rather than being re-derived away:** the published `~327`/`~6,363` figures both already describe level-0 fodder and stay exactly as printed, because `compute_essence_yield` reads only `rank` and `level` and the level term saturates at `×2`. Training moves a player *toward* the already-published `~150`-pull ceiling (re-derived at `~165`/`~3,181` with training folded in) and provably not past it. **The throttle the row demanded already exists unauthored: permadeath.** Naive full-squad training is EV-negative against immediate sacrifice once the measured `69.8%` first-run wipe rate is priced honestly — `≤30.2` expected essence against `83.6` — so no lockout field, no cooldown, no new counter. Three of the five questions were answered by *rejecting* new mechanics: (2) instructor-rank-gated zone tiers, tested against the real combat math and rejected because every configuration read as either <1% damage or certain full-wipe, and `quick_resolve` applies one `damage_fraction` to the whole team so per-hero triage does not exist to gate — that would be boundary 4; (3) nothing to cap; (4) the survivability bonus rejected outright, since `compute_team_power`'s sum already is that lever and a second one double-counts it. What the ticket actually builds: `Hero.taught_traits` (**the one new save key — boundary 1, mandatory `verifier`, real save/reload cycle**), 15 `TraitDefinition`s into the already-reserved `instructor_trait_pool`, one grant check on the existing XP-credit path in `Expedition.resolve()`, and one extension to the existing trait loop at `heroes/hero.gd:113-119` so `taught_traits` applies in combat at all. No new `BalanceTable` field, no `ZoneDefinition` field, no autoload, no scene seam, and **no idle/auto-resolve path** — "background" is fiction, not automation, and the ruling forecloses that reading explicitly. Original row, for reference — **All four missing systems have now landed or are ruled**, so the block is down to one thing: the `game-designer` ruling on the five questions below. `P2-04a`/`P2-04g` gave heroes a real `level` and `xp`; `P2-06c` shipped `instructor_trait_pool` (reserved and empty as intended, and this ticket still inherits `Hero.taught_traits`, which `P2-06c` deliberately deferred — `SYSTEMS.md` § Traits §4 specifies it in full); `P2-21` made the Training Hall buildable so `training_hall_xp_bonus` reads against something; and `P2-22` ruled the turn concept, with `P2-23` shipping the counter. **Do not read that as "nearly unblocked."** The dependency list was never the hard part — question 1 below is a conflict with the sacrifice spine's published `~327`-pull arithmetic, and it is now *more* pressing rather than less, since every system it would compete with is live. Four missing systems in one ticket was the "add an inventory system" shape this file exists to prevent; five unruled design questions is the same shape wearing a different coat. |
+| P2-13 | Fodder training — an instructor hero trains F–C fodder; survivors of "culling" expeditions gain XP and earn instructor-taught traits | **Unblocked 2026-08-11 — `game-designer` ruled all five questions (`SYSTEMS.md` § "Fodder training (P2-13)"), and the ruling shrank the ticket instead of growing it. Body below, director-written per rung 1 — the ruling left no scoping judgment to route (`P2-16`'s precedent) — and ruled **one** ticket, not a split.** The fifteen trait magnitudes the ruling deferred are a balance number and therefore `game-designer`'s, authored in `SYSTEMS.md` § Fodder training's instructor trait table; the ticket itself authors no number. **Read §0 before anything else: the row's own premise was wrong.** "Rank up naturally" describes something the codebase cannot do — `hero.rank += 1` at `systems/game_session.gd:223` inside `rank_up_hero()` is the sole rank writer and its only caller is `hub/hub.gd:468`, the sacrifice path. Director-verified by grep, not taken on the subagent's word. Training raises `level` toward `level_caps[hero.rank]` and never crosses a rank boundary, and that one correction settles questions 1 and 3 outright. **Question 1's spine conflict evaporated rather than being re-derived away:** the published `~327`/`~6,363` figures both already describe level-0 fodder and stay exactly as printed, because `compute_essence_yield` reads only `rank` and `level` and the level term saturates at `×2`. Training moves a player *toward* the already-published `~150`-pull ceiling (re-derived at `~165`/`~3,181` with training folded in) and provably not past it. **The throttle the row demanded already exists unauthored: permadeath.** Naive full-squad training is EV-negative against immediate sacrifice once the measured `69.8%` first-run wipe rate is priced honestly — `≤30.2` expected essence against `83.6` — so no lockout field, no cooldown, no new counter. Three of the five questions were answered by *rejecting* new mechanics: (2) instructor-rank-gated zone tiers, tested against the real combat math and rejected because every configuration read as either <1% damage or certain full-wipe, and `quick_resolve` applies one `damage_fraction` to the whole team so per-hero triage does not exist to gate — that would be boundary 4; (3) nothing to cap; (4) the survivability bonus rejected outright, since `compute_team_power`'s sum already is that lever and a second one double-counts it. What the ticket actually builds: `Hero.taught_traits` (**the one new save key — boundary 1, mandatory `verifier`, real save/reload cycle**), 15 `TraitDefinition`s into the already-reserved `instructor_trait_pool`, one grant check on the existing XP-credit path in `Expedition.resolve()`, and one extension to the existing trait loop at `heroes/hero.gd:113-119` so `taught_traits` applies in combat at all. No new `BalanceTable` field, no `ZoneDefinition` field, no autoload, no scene seam, and **no idle/auto-resolve path** — "background" is fiction, not automation, and the ruling forecloses that reading explicitly. Original row, for reference — **All four missing systems have now landed or are ruled**, so the block is down to one thing: the `game-designer` ruling on the five questions below. `P2-04a`/`P2-04g` gave heroes a real `level` and `xp`; `P2-06c` shipped `instructor_trait_pool` (reserved and empty as intended, and this ticket still inherits `Hero.taught_traits`, which `P2-06c` deliberately deferred — `SYSTEMS.md` § Traits §4 specifies it in full); `P2-21` made the Training Hall buildable so `training_hall_xp_bonus` reads against something; and `P2-22` ruled the turn concept, with `P2-23` shipping the counter. **Do not read that as "nearly unblocked."** The dependency list was never the hard part — question 1 below is a conflict with the sacrifice spine's published `~327`-pull arithmetic, and it is now *more* pressing rather than less, since every system it would compete with is live. Four missing systems in one ticket was the "add an inventory system" shape this file exists to prevent; five unruled design questions is the same shape wearing a different coat. |
 | P2-24 | The Reliquary is buildable, so its decay and damage bonuses can fire | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). **All five buildings are now buildable**, closing `P2-07a`'s three-buildings staging with no second design pass, exactly as it predicted. Director-written and director-implemented per rung 1; the mandatory `verifier` pass (boundary 2, scene seam) returned **pass-with-concerns** and its one substantive finding was in `docs/`, not the code — a two-sentence closeout in `SYSTEMS.md` where only the first sentence was struck, leaving the document refuting itself three lines apart. **No production logic changed:** `upgrade_building` and `_upgrade_building` were already index-generic and both consumers already read `building_levels[4]`, so this was the Label/Button/`[connection]` triple and nothing else. **Read its Findings before red-proofing a seam** — the first attempt replaced the `[connection]` line with junk, which made `hub.tscn` fail to parse, so all three tests failed on `Failed loading resource` rather than on the missing wire; break the seam, not the file. Also before writing another wiring test: `P2-21` proved the Training Hall's arithmetic with a direct `building_levels[2]` write, which stays green with the button absent. Original row, for reference — `P2-21`'s shape at index 4, and the last unbuildable building. `P2-04f` gave `reliquary_decay_turns_bonus` and `reliquary_damage_chance_reduction` real consumers, so index 4 being pinned at `0` is now the seventh "reads real, measures nothing" entry rather than a deferral. **No design pass** — `SYSTEMS.md` § Death and gear recovery's `RESOLVED by P2-04f` callout settled both `clampf` residues *specifically so this ticket would not need one*, and its closing "practical stake is zero today" paragraph is what this ticket invalidates. Crosses boundary 2 only (scene seam); no save key changes. |
 | P2b-01a | Enter and leave a capsule graybox arena | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Native primitives only, no combat or mutable arena state. The boundary-2 verifier first found the GUT check bypassed `_unhandled_input`; the fixed test drives the real handler and captures its typed `SceneRouter.HUB` request. A rendered integration harness then dispatched `ui_cancel` through Godot and completed hub → arena → hub with the full profile unchanged. |
 | P2b-01b | WASD movement + mouse aim | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Mechanically proved the first input slice; its fixed-camera instant-movement ruling was superseded by `P2b-01b-2` before attacks depended on it. |
@@ -1264,20 +1264,192 @@ mutation and the work share one restore point.
 
 ---
 
-<!-- Fresh-session handoff after P2-26: the playtest feedback of 2026-08-10 is filed as six rows
- (P2-25, P2-26, P2-27, P2-28, P2b-03, P2b-04) with the merge reasoning in "Playtest feedback" above
- — read that before re-splitting any of them, since three reported items collapsed into P2-25 and
- two into P2b-03 on purpose. P2-26, P2-25, P2-27, P2b-03 and P2-28 have all landed. The only one of
- the six left is P2b-04, and it is BLOCKED on a game-designer ruling. A second play pass on
- 2026-08-10 then refilled the queue with P2b-05, P2-29 and P2-30 — read "Playtest feedback —
- 2026-08-10, second pass" above before touching any of them, since two of the five reported items
- collapsed into one ticket and one was already shipped. Dispatch order is P2b-05, P2-29, P2-30.
- The other live candidates are the arena weight re-ask below and P2b-02 (controller input, a hard
- constraint that is not deferrable to Phase 5).
+## P2-13 — An instructor teaches a trait at the trainee's rank cap             [TODO]
 
- P2b-03 closed the "still needs tuning for combat weight" deferral it was carrying: the hit is now
- visible, so arena_light_attack_hit_stop (0.04 s) and the weight values around it can honestly be
- re-asked of a played build. That re-ask has no ticket yet and is the natural next arena question.
+Director-written per rung 1 rather than routed to `tech-lead` as the row predicted, and for the
+reason `P2-16` records: `SYSTEMS.md` § "Fodder training (P2-13)" already names the field, the grant
+condition, the pool shape, the application loop and every file, and rules it one ticket in so many
+words — *"`tech-lead` can write the ticket body directly from this section."* There was no scoping
+judgment left to route. The one thing the ruling deferred is the fifteen trait magnitudes, which are
+a balance number and therefore `game-designer`'s: they are authored in `SYSTEMS.md` § Fodder
+training's instructor trait table. **This ticket authors no number.**
+
+**Crosses `CLAUDE.md` boundary 1** (`Hero.taught_traits` is a new save key). The `verifier` pass is
+mandatory and needs a real save/reload cycle — a green import gate is not evidence.
+
+### Objective
+
+A hero that reaches its own rank's level cap on an expedition where a higher-ranked hero was
+fielded alongside it **permanently learns one trait**. The hub names it, it moves the hero's
+stats from then on, and it survives save and reload.
+
+### Existing architecture
+
+1. **The field is fully specified and does not exist.** `SYSTEMS.md` § Traits §4 writes
+   `taught_traits`'s type, both save legs and their defensive shapes; `P2-06c` deliberately shipped
+   without it so no save key would change for a field whose only possible value was `[]`. This
+   ticket is the write path that makes it real.
+2. **The pool exists and is empty.** `HeroDefinition.instructor_trait_pool`
+   (`heroes/hero_definition.gd:17`) is exported, authored as `[]` in all five
+   `heroes/defs/*.tres`, and reserved for this ticket. `resonance_trait_pool` beside it is the
+   authoring pattern — sub-resources inline in the `.tres`, three per archetype, unlock order =
+   array index.
+3. **The trait loop is one loop.** `Hero.compute_final_stats` (`heroes/hero.gd:113-120`) already
+   walks `active_resonance_traits()` and splits non-crit into the shared `equip_pct` accumulator
+   and crit into a flat add ahead of the `equip_crit_rate_cap` clamp. Taught traits go through the
+   same loop with a second source array — not a second loop.
+4. **The XP credit is one function with three callers.** `Expedition.resolve()` calls
+   `GameSession.credit_team_xp(team, amount, balance)` (`systems/game_session.gd:107`) on defeat,
+   on retreat and on completion (`hub/expedition/expedition.gd:69,77,88`). It takes the fielded
+   `team`, which is everything the grant needs — so the check goes **in `credit_team_xp`**, once,
+   and not at three call sites.
+5. **Rank is untouchable here.** `hero.rank += 1` at `systems/game_session.gd:223` is the sole rank
+   writer and its only caller is the sacrifice path. Training raises `level` toward
+   `level_caps[hero.rank]` and never crosses a rank boundary (`SYSTEMS.md` § Fodder training §0).
+
+### Acceptance criteria
+
+1. `Hero.taught_traits: Array[StringName] = []` round-trips exactly as `SYSTEMS.md` § Traits §4
+   specifies: sorted on write; a missing key decodes to `[]`; an **explicit `null`** decodes to
+   `[]` (`Dictionary.get()`'s default does not absorb one — `P2-05f`); each entry validated as
+   `String` before conversion, `push_error` and skip otherwise. Proven on **real disk** through
+   `tests/save_roundtrip_check.gd` — an in-memory `to_dict`/`from_dict` pair is not save-boundary
+   evidence, and three tickets were reopened for accepting one (`P2-05a`, `P2-04e`; `P2-07b` is the
+   one that got it right first time).
+2. All five `heroes/defs/*.tres` carry a three-entry `instructor_trait_pool` matching `SYSTEMS.md`
+   § Fodder training's instructor trait table field for field — ids, display names, stats,
+   magnitudes — with no id colliding with the fifteen resonance ids already authored.
+   `tests/unit/test_traits.gd:92` currently asserts `instructor_trait_pool.is_empty()` for every
+   archetype; that assertion is **replaced with the real contents**, deliberately and in the same
+   helper, not deleted.
+3. A new pure `static func Hero.active_taught_traits(hero, definition) -> Array[TraitDefinition]`
+   maps ids onto `definition.instructor_trait_pool`, in the same shape as `active_resonance_traits`.
+   An id with no match in the pool is skipped with a `push_error` and does **not** crash — a save
+   written before a `.tres` edit can carry one, and an `assert()` is not a guard for anything that
+   arrives from a save file (`P2-05d`: asserts are stripped in release, which is the only build a
+   player runs).
+4. `compute_final_stats` applies taught traits through the **existing** loop, so a taught DEF trait
+   and a DEF chestpiece sum into one `equip_pct[index]` before the single multiply, and a taught
+   crit trait adds flat ahead of the cap clamp. Pinned by a test that fails if they get their own
+   multiply.
+5. The grant fires from `GameSession.credit_team_xp()` once, not from `Expedition.resolve()`'s
+   three call sites. The **decision** is a pure `static func` on `Hero` taking the qualifying rank
+   and `balance` — balance-driven rule logic does not become an autoload method
+   (`DECISIONS.md` 2026-08-06). `credit_team_xp` keeps its single trailing `roster_changed.emit()`.
+6. Grant condition exactly as ruled, and evaluated **after** the XP credit:
+   `Hero.level_for(hero, balance) >= balance.level_caps[hero.rank]`, and some other hero on the
+   same `team` has `rank > hero.rank`. **Stage index is `hero.rank`** — F→pool[0], D→pool[1],
+   C→pool[2] — so `hero.rank >= instructor_trait_pool.size()` grants nothing and B-and-above is
+   excluded with no new rule and no new number. An id already in `taught_traits` is never
+   re-granted.
+7. It fires on **all three** resolved outcomes, not only on a clear: a trainee that caps on a
+   retreat, or on a defeat it personally survived, earns its trait. Pinned on the retreat path,
+   which is the common outcome for a climbing hero (`P2-04g`).
+8. A hero killed on this expedition gains nothing a player can see. `kill_hero()` runs before the
+   XP credit (`expedition.gd:65-73`), so a grant lands on an object already off the roster —
+   assert against the **roster**, not against the local `Hero` object.
+9. The hub names it: `_hero_detail_text` (`hub/hub.gd:291-296`) lists resonance traits first, then
+   taught ones suffixed ` (taught)`. `Traits: none` still prints when both are empty. Without this
+   the objective is observable only as a stat delta — the exact gap `P2-06b` left open and `P2-14`
+   had to close afterwards.
+10. Import gate green — **zero errors and zero warnings** — and the GUT suite green by
+    **script and test count**, not by exit code: `gut_cmdln.gd` exits `0` and prints "All tests
+    passed" when a test script fails to parse, silently dropping it from the totals (`P2-28`).
+11. Every new test red-proved by mutation. Existing tests still pass.
+
+### Files allowed to change
+
+Written after `grep -rn "credit_team_xp\|active_resonance_traits\|taught_traits\|instructor_trait_pool"`
+across `*.gd`/`*.tres`, because six consecutive tickets shipped a wrong list here and every one was
+this same mistake. Re-run it before starting.
+
+- `heroes/hero.gd` — the field, both save legs, `active_taught_traits`, the grant decision, the
+  loop extension.
+- `heroes/defs/knight.tres`, `rogue.tres`, `ranger.tres`, `mage.tres`, `cleric.tres` — the pools.
+- `systems/game_session.gd` — `credit_team_xp` calls the grant.
+- `hub/hub.gd` — `_hero_detail_text` only.
+- `tests/unit/test_traits.gd` — the pinned empty-pool assertion (line 92) and the new coverage.
+- `tests/unit/test_expedition.gd` — `credit_team_xp`'s existing coverage lives here (line 188), so
+  the grant's expedition-path tests do too.
+- `tests/save_roundtrip_check.gd` — the real-disk leg for criterion 1.
+
+**Not** `hub/expedition/expedition.gd` (the grant is one level down, in `credit_team_xp`), not
+`heroes/hero_definition.gd` (`instructor_trait_pool` already exists), not `balance.tres` or
+`balance_table.gd` (no new field), not `hub/hub.tscn` (no scene seam — criterion 9 is a string
+inside an existing label path), not `combat/`, not `zones/`.
+
+### Non-goals
+
+- **No idle or auto-resolve "background training" path.** A training expedition is an ordinary
+  player-clicked expedition in an ordinary zone. "Background" is the fiction, not automation, and
+  `SYSTEMS.md` forecloses the other reading by name.
+- **No instructor picker and no instructor label.** The instructor is derived from squad
+  composition. A label is UI polish for a later ticket if the implicit read turns out illegible.
+- **No zone gating by instructor rank** — tested against the real combat math and rejected
+  (`SYSTEMS.md` § Fodder training §2); every configuration read as either <1% damage or certain
+  full-wipe.
+- **No trainee survivability bonus**, as a trait or as a `BalanceTable` field. `compute_team_power`'s
+  sum already is that lever and a second one double-counts it (§4).
+- **No rank change from training, ever.** `rank_up_hero()` stays the only rank writer.
+- **No revocation, and no retroactive claiming.** A hero that ranks up past C keeps every trait
+  earned on the way — and does **not** get to collect the ones it skipped. `rank_up_hero()`
+  (`systems/game_session.gd:216-225`) has no level-cap gate, so a player can chain F→D→C→B on
+  essence alone; a hero carried through a rank without training at it loses that stage
+  permanently, not temporarily. That is a deliberate property, worked out and priced in
+  `SYSTEMS.md` § Fodder training's reachability check (it is why stage 0 is sized at parity with
+  resonance's T1 rather than as a token first rung). Do not add a catch-up grant.
+- **No new `BalanceTable` field, no new `ZoneDefinition` field, no fourth autoload, no per-hero
+  mortality inside a wave** (that would be boundary 4 — both `resolve()` implementations would have
+  to agree).
+- Do not touch `resonance_trait_pool` or its fifteen authored traits.
+
+### Traps already on the record
+
+- `TraitDefinition.stat` is an `EquipmentDefinition.PrimaryStat` ordinal that positionally mirrors
+  `Hero.STAT_NAMES`. Reordering either enum misroutes traits with a green gate, and only
+  `tests/unit/test_traits.gd` notices (`P2-05c`, `P2-06c`).
+- Godot omits default-valued fields when it writes a `.tres`, so a trait whose `stat` is HP
+  (ordinal `0`) carries no `stat =` line at all. The five authored files are legitimately **not**
+  structurally uniform — that is correct, not a dropped field (`P2-06c`).
+- `kill_hero()`'s second caller is dynamic — `tests/save_roundtrip_check.gd` reaches it via
+  `.call()`, which `grep "kill_hero("` misses and the import gate cannot catch (`P2-04e`).
+- The GUT command in `CLAUDE.md` does not redirect `%APPDATA%` the way `import_gate.ps1` does, so
+  the suite runs against the live `user://save.json` and a run killed mid-suite leaves it dirty for
+  whoever is next (`P2-29`).
+
+---
+
+<!-- Fresh-session handoff, 2026-08-11. Both 2026-08-10 playtest passes are fully shipped: P2-25,
+ P2-26, P2-27, P2-28, P2b-03, P2b-04, P2b-05, P2-29 and P2-30 have all landed. Read the two
+ "Playtest feedback" sections above before re-filing anything a play pass reports, since five of the
+ fourteen reported items collapsed into other tickets on purpose.
+
+ Exactly two rows are live, and only one is workable:
+
+ P2-13 (fodder training) is the next ticket and its body is above. Crosses boundary 1 — the new save
+ key Hero.taught_traits — so the verifier pass is mandatory and needs a real save/reload cycle, not
+ an in-memory to_dict/from_dict pair. It depends on one thing: game-designer's fifteen
+ instructor-trait magnitudes in SYSTEMS.md § Fodder training. The body cites that table and
+ deliberately authors no number of its own.
+
+ P2b-02 (controller input) is on HOLD by the user and is not a candidate. Do not schedule it, do not
+ route its design questions. GAME_SPEC.md:84 still calls controller support a hard constraint; that
+ contradiction is deliberate and the reasoning is on the row.
+
+ The arena is a combat-feel prototype by decision as of 2026-08-11, not a path the loop resolves
+ through (DECISIONS.md; GAME_SPEC.md § Combat model). Its CombatResult is display-only and
+ permadeath is deliberately unwired. Do not file a ticket to wire it — D-02 in the Direction backlog
+ is where player-controlled combat gets permadeath. P2b-05's "arena permadeath is still unwired and
+ now reachable in one sitting" reads as a gap and is not one.
+
+ The Direction backlog (D-01..D-04, above) is the user's post-core-loop direction: a walkable town,
+ controlled expeditions into an instanced open world, hopping into a sent expedition, and caravan
+ escorts. Nothing there is scheduled and nothing gets scaffolded for. What it asks of a ticket
+ written today is only that it not break three seams: one scene router, one CombatResult on the way
+ out, one permadeath writer.
+
+ The arena weight re-ask (arena_light_attack_hit_stop = 0.04 s and the values around it) still has no
+ ticket and is still the natural next arena question now that P2b-03 made the hit visible.
 
  Housekeeping the next director may want: P2-25, P2-26 and P2-27 are [DONE] with their bodies still
  inline above rather than moved to TASKS-DONE.md. Nothing depends on it, but this file is read
@@ -1291,13 +1463,10 @@ mutation and the work share one restore point.
  tests passed" when a test script fails to parse, with the whole file missing from the totals.
  Compare Scripts and Tests counts against the previous run; the exit code cannot see it.
 
- P2b-04 is BLOCKED on a game-designer ruling and is the only one of the six that is; do not dispatch
- it to an implementer on the strength of "it is three lines".
-
  Still-live debt from P2b-01e, unchanged: arena.gd's resolve(team, wave) ignores both declared
  parameters behind release-stripped asserts, and CombatResult.loot_seed stays 0 on the arena path.
- Both are inert only while the arena result is display-only; Phase 3's reconciliation
- (KNOWN_ISSUES.md § "Quick resolve and the arena will disagree") is what makes them live.
+ Both are inert while the arena result is display-only — which the 2026-08-11 decision makes a
+ lasting state rather than a Phase 3 countdown. They go live in D-02, not before.
 
  The 22 PROVISIONAL arena feel values have now been played once and were not contradicted — the
  verdict was "feels good for what it is". They are still unfelt *individually*; that is a weaker
@@ -1315,6 +1484,39 @@ session**. `P2-22` did not close that: a turn is an expedition, which is a unit 
 unit of *time*, so `~1,308` clears still converts to hours only by someone sitting down and
 clicking. `P2-16` has since wired the price in, so the honest remaining dependency is no longer a
 ticket at all — it is someone playing it.
+
+---
+
+# Direction backlog — after the core loop
+
+Recorded 2026-08-11 from the user's direction. `GAME_SPEC.md` § Direction is the spec half; this
+is the work half.
+
+**Nothing here is scheduled, and nothing here is scaffolded for in advance.** These are feature
+names, which is the shape this file exists to refuse — each one is worth several tickets and none
+can be written until the core loop is done and someone has said which slice comes first. They are
+here so that (a) the direction survives a `/clear`, and (b) a ticket that would quietly foreclose
+one gets caught while it is still a ticket.
+
+The core loop is unchanged and still comes first. The exit question above still governs.
+
+| # | Direction | What it actually is | What it needs before it can be a ticket |
+|---|---|---|---|
+| D-01 | **The town** | The hub becomes a walkable 3D place: move around it, talk to your own heroes and to NPCs, build it up, defend it against attack. | A ruling on who the player embodies in town (summoner or a controlled hero — `GAME_SPEC.md` leaves it open), and what happens to `hub.tscn`'s existing Control-based panels. They do not disappear; a town is a *second* way to reach them, not a replacement, or every shipped hub feature gets rebuilt. Building levels (`P2-07b`) already persist, so "build it up" has state to bind to — what does not exist is anything that renders a building. |
+| D-02 | **Controlled expeditions** | Walk out of the town gate into an instanced open-world map with objectives, and play the run instead of resolving it. Sent expeditions stay math and are not replaced. | The largest of the four by a wide margin. Needs: what an objective is, how a run ends, whether the instance is authored or generated (`GAME_SPEC.md` § Scope boundaries excludes procedural generation from the draft, deliberately), and how a played run reports through `CombatResult` without upstream branching on which path produced it. This is the ticket that turns arena permadeath back on. |
+| D-03 | **Hopping into a sent expedition** | Take direct control of one hero mid-run to raise its chance of success. | Depends on D-02 — there is no played run to hop into before it. The hard question is what the math path does with the intervention: an expedition currently resolves every wave inside one synchronous `Expedition.resolve()` call, so "mid-run" is not a moment that exists yet. |
+| D-04 | **Caravans** | Escort a cargo wagon to another town to trade resources. Send heroes and let the NPCs handle it, or ride along with a controlled hero and defend it. | A **simulated event, not background arithmetic** — that is the user's framing and the whole point of the feature, so a version that resolves as a dice roll is not a smaller D-04, it is a different feature. Needs a second town to exist (D-01 shape), a resource-trading rule, and D-02's played-run machinery for the ride-along half. |
+
+**Arena permadeath is not on this list, and that is deliberate.** It was unfiled work as of
+`P2b-05`; it is now a **decision** (`DECISIONS.md` 2026-08-11, and `GAME_SPEC.md` § Combat model).
+The arena is a combat-feel prototype: real `Wave` in, real `CombatResult` out, result display-only,
+`Expedition` still the sole permadeath writer. Do not file a ticket to wire it. **D-02 is where
+player-controlled combat gets permadeath**, because that is the first path where a death is the
+consequence of a run the player chose to walk into rather than of a practice bout.
+
+**The three seams that keep this cheap** are in `GAME_SPEC.md` § Direction and are the only thing
+these rows ask of code today: one scene router, one `CombatResult` on the way out, one permadeath
+writer. A ticket that breaks one of those is expensive here even though nothing above is scheduled.
 
 ---
 

@@ -7,6 +7,52 @@ Newest first.
 
 ---
 
+## 2026-08-11: The arena is a combat-feel prototype; permadeath is not wired to it
+
+User ruling, and it reverses a published line in `GAME_SPEC.md`. That document's Combat model
+section said "Permadeath applies identically in both paths" from the first commit. It no longer
+does.
+
+**The arena is where combat feel gets prototyped, not a path the core loop resolves through.**
+It keeps the seam it already has — a real `Wave` in, a real `CombatResult` out — and that result
+stays **display-only** for the foreseeable future. `Expedition.resolve()` remains the sole
+permadeath consumer (rule 8, unchanged and now load-bearing for a second reason).
+
+**Why this is an ADR and not a `KNOWN_ISSUES.md` line.** Arena permadeath was unfiled, not
+decided. `P2b-05`'s Findings recorded it as "still unwired and now reachable in one sitting",
+which reads as a gap somebody should close; the next reader would have closed it. It is not a
+gap. Writing it down as a decision is what stops the wiring from happening by default.
+
+**What changes in the code: nothing.** `hub.gd`'s `_show_pending_arena_result()` already only
+prints, `arena.gd` already never calls `kill_hero()`, and no ticket was open against either.
+The one edit this ruling actually earns is the defeat string, which said a hero *fell* — the
+lie was cheaper to fix than to leave (`hub/hub.gd:741`).
+
+**Permadeath in player-controlled combat is deferred, not cancelled.** It lands with controlled
+expeditions (`GAME_SPEC.md` § Direction), where a death is the consequence of a run the player
+chose to walk into rather than the outcome of a practice bout entered from a hub button. Nothing
+about that later wiring is designed here.
+
+**Rejected: wire permadeath to the arena now, matching quick resolve.** It is the consistent
+answer and the wrong one at this stage. Every arena number is `PROVISIONAL` and unplayed —
+`arena_enemy_hits_to_kill_hero = 3` most of all, since nobody has died in the arena — so the
+first thing permadeath would price is a feel value nobody has validated. Tuning combat weight is
+a loop you want to run dozens of times per sitting; permanent loss per attempt makes that loop
+cost a hero, and the tuning stops happening.
+
+**Rejected: strip the arena's `CombatResult` down to a feel harness with no seam.** Tempting on
+laziness grounds — the result is display-only, so the type buys nothing today. Refused because
+the seam is the one structural decision `DECISIONS.md` 2026-08-01 made before the vertical slice
+existed, and a controlled expedition is a third `resolve()`-shaped consumer of it. The arena is
+the only live proof that a second implementation can satisfy the shape at all.
+
+**Consequence for `KNOWN_ISSUES.md` § "Quick resolve and the arena will disagree".** Divergence
+between the two paths is no longer a defect to size — the arena resolves nothing, so there is no
+outcome to disagree about. That entry is amended rather than closed: it comes back the moment a
+played path resolves a real run.
+
+---
+
 ## 2026-08-06: The 2026-08-01 rejection of rank-up/salvage logic on `GameSession` is reaffirmed, not reversed — three shipped methods are debt
 
 `godot-architect` ruling on a conflict `tech-lead` flagged while scoping `P2-06a`: the 2026-08-01

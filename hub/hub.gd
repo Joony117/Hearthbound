@@ -738,7 +738,9 @@ func _show_pending_arena_result() -> void:
 		]
 		return
 	assert(result.dead_heroes.size() == 1)
-	_status.text = "Arena defeat: %s fell." % result.dead_heroes[0].hero_name
+	# The arena is a feel prototype and its CombatResult is display-only, so a "dead" hero here is
+	# still on the roster - Expedition is the sole permadeath writer (docs/DECISIONS.md 2026-08-11).
+	_status.text = "Arena defeat: %s went down. Practice only, nothing lost." % result.dead_heroes[0].hero_name
 
 
 func _on_recover_pressed() -> void:

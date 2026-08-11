@@ -98,10 +98,60 @@ and nothing upstream can tell them apart.
 - **Quick resolve** — statistical. The "skip" button for farming zones you've already
   cleared.
 - **Action arena** — real-time 3D. The player takes direct control of one party member
-  (WASD + mouse aim, attack, dodge); AI runs the other four. Permadeath applies identically
-  in both paths.
+  (WASD + mouse aim, attack, dodge); AI runs the other four.
 
-The arena is the selling point. Quick resolve is what makes grinding tolerable.
+**The arena is a combat-feel prototype, not a path the core loop resolves through**
+(decided 2026-08-11, `DECISIONS.md`). It is where attack timing, dodge, parry, hit reaction
+and weight get tuned by hand. It takes a real `Wave` in and returns a real `CombatResult`
+out — and that result is **display-only**. Permadeath is deliberately **not** wired to it:
+`Expedition` remains the sole permadeath consumer (`ARCHITECTURE.md` r8), and a hero that
+loses in the arena loses nothing. Player-controlled combat gets permadeath when controlled
+expeditions exist (Direction, below), because that is the first path where losing a hero is
+a decision the player made about a run rather than an outcome of a practice bout.
+
+Quick resolve is what makes grinding tolerable, and today it is the only path that resolves
+anything.
+
+---
+
+## Direction — where this goes after the core loop
+
+Recorded 2026-08-11. **None of this is the draft, none of it is next, and none of it gets
+built toward speculatively** — no scaffolding, no interfaces with one implementation, no
+"we'll need this later" fields. It is written down because it changes what "the hub" and
+"an expedition" eventually mean, and because a boundary dissolved now is expensive to
+restore. Each row becomes a ticket through `tech-lead` when its turn comes; the backlog rows
+live in `TASKS.md` § Direction backlog.
+
+The game becomes open-ish world. The hub stops being a menu and becomes a place you leave.
+
+- **The town.** The hub is walkable. You move around it, talk to your own heroes and to
+  NPCs, build it up, and eventually defend it against attack. Who the player embodies in
+  town — the summoner or a controlled hero — is **open**; either way the summoner still
+  never fights, so Player fantasy above holds unchanged.
+- **Two kinds of expedition.** *Sent* expeditions stay math (`combat/quick_resolve.gd`) —
+  that path is not being replaced, and it is what makes a large roster playable.
+  *Controlled* expeditions walk out of the town gate into an instanced open-world map with
+  objectives, and are played rather than resolved.
+- **Hopping into a sent expedition.** Take direct control of one hero mid-run to raise its
+  chance of success. The math path stays the default and the fallback; this is an
+  intervention, not a replacement.
+- **Caravans.** Escort a cargo wagon to another town to trade resources. Send heroes and let
+  the NPCs handle it, or ride along with a controlled hero and defend the cargo. A
+  **simulated event**, not background arithmetic — the distinction is the point of the
+  feature.
+
+**What this asks of the code today: nothing built, three seams kept honest.**
+
+1. **`SceneRouter` stays the only thing that changes the main scene** (`ARCHITECTURE.md`
+   r5). Town, world map and instance are more destinations, not a second routing mechanism
+   that grows next to it.
+2. **A played run reports through `CombatResult`** (`ARCHITECTURE.md` § The combat seam).
+   Whatever produces an outcome — quick resolve, arena, a controlled expedition later —
+   hands back that one type, and the systems upstream keep consuming only it. The moment
+   something upstream branches on *which* path produced a result, the seam is gone.
+3. **Permadeath keeps exactly one writer** (`ARCHITECTURE.md` r8). Every path above can
+   eventually kill a hero. None of them gets its own kill call.
 
 ---
 
@@ -112,3 +162,8 @@ Explicitly **not** in the rough draft, and not to be invented by an implementer:
 story/campaign, dialogue, town NPCs, crafting trees, gear set bonuses, hero injuries or
 morale, pity system, achievements, difficulty settings, procedural dungeon generation,
 day/night, weather, mounts, pets, guilds.
+
+**Excluded from the draft is not the same as excluded forever.** Hard constraints above is the
+never list; this one is a *now* list. Direction above already names town NPCs as eventual, and
+"not to be invented by an implementer" is what both readings have in common — a feature arrives
+as a ticket, never as something that appeared while someone was building an adjacent thing.

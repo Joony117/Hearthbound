@@ -72,7 +72,13 @@ the fix is a `DECISIONS.md` ADR for a softening mechanic, not a quiet SYSTEMS.md
 A statistical resolver and a real-time arena will not produce the same outcomes for the same
 team and wave. Some divergence is acceptable — the quick path is a convenience. How much is
 acceptable is unknown until both exist.
-**Revisit in:** Phase 3.
+
+**Deferred 2026-08-11, not closed** (`DECISIONS.md`, arena-as-feel-prototype). The arena resolves
+nothing: its `CombatResult` is display-only and permadeath is deliberately unwired, so there is
+currently no outcome for the two paths to disagree *about*. Sizing the divergence now would be
+measuring a number nothing reads.
+**Revisit in:** the first ticket that lets a played run resolve a real expedition — controlled
+expeditions (`GAME_SPEC.md` § Direction), not Phase 3 by date.
 
 ### Controller support is a hard constraint but unimplemented
 `GAME_SPEC.md` requires gamepad as a first-class input path for the arena. Nothing in Phase 1
