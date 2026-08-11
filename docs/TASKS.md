@@ -1273,13 +1273,25 @@ mutation and the work share one restore point.
  than picking a row — the exit question below ("is spending a hero's life a decision you actually
  feel?") is what should answer it, and answering it is someone playing the game, not a ticket.
 
+ Then a large arena and hub batch shipped with no ticket at all (fe1a74b, five retro IDs P2b-06/07/08
+ and P2-31/32). Read the "Retro record" section below before anything else in the arena: it is the
+ only place saying what that batch left unproved, and two of the three items are gates that were
+ owed and never run — the mandatory boundary-2 verifier pass for three .tscn seam changes, and any
+ test at all pressing the seven new controls. Neither is visible from the code.
+
  The live candidates, none of them written:
 
- The arena weight re-ask (arena_light_attack_hit_stop = 0.04 s and the values around it) — no
- ticket, and the natural next arena question now that P2b-03 made the hit visible.
+ The next play pass, and it is now the only thing that can move anything. Three passes have run; the
+ third (2026-08-11) settled arena_light_attack_startup at 0.10 s, the arena's first played value.
+ Everything the batch above added is unplayed, the two PROVISIONAL markers name the same Settled by,
+ and the shipped systems no pass has ever met still include training, traits, buildings and recovery.
 
- A third play pass. Two have refilled this queue with fourteen items between them; the shipped
- systems it has never met include training, traits, buildings and recovery.
+ The arena weight re-ask (arena_light_attack_hit_stop = 0.04 s and the values around it) — still no
+ ticket. P2b-03 made the hit visible and P2b-07 now shakes the camera off that same number, so the
+ re-ask has grown a second consumer rather than being answered.
+
+ The boundary-2 verifier pass the batch skipped. This is the cheapest of the three and the only one
+ that does not need a person playing.
 
  P2b-02 (controller input) is on HOLD by the user and is not a candidate. Do not schedule it, do not
  route its design questions. GAME_SPEC.md:84 still calls controller support a hard constraint; that
@@ -1296,9 +1308,6 @@ mutation and the work share one restore point.
  escorts. Nothing there is scheduled and nothing gets scaffolded for. What it asks of a ticket
  written today is only that it not break three seams: one scene router, one CombatResult on the way
  out, one permadeath writer.
-
- The arena weight re-ask (arena_light_attack_hit_stop = 0.04 s and the values around it) still has no
- ticket and is still the natural next arena question now that P2b-03 made the hit visible.
 
  Housekeeping the next director may want: P2-25, P2-26 and P2-27 are [DONE] with their bodies still
  inline above rather than moved to TASKS-DONE.md. Nothing depends on it, but this file is read
@@ -1333,6 +1342,69 @@ session**. `P2-22` did not close that: a turn is an expedition, which is a unit 
 unit of *time*, so `~1,308` clears still converts to hours only by someone sitting down and
 clicking. `P2-16` has since wired the price in, so the honest remaining dependency is no longer a
 ticket at all — it is someone playing it.
+
+---
+
+## Retro record — the 2026-08-11 arena and hub batch
+
+**Five things shipped in one commit with no ticket written first.** This section is the record of
+that, not a reconstruction of five contracts after the fact: acceptance criteria authored for code
+that already exists prove nothing and read as though a gate was passed that never ran. What a later
+reader needs is which ruling governs each piece, and what the batch is known *not* to have proved.
+
+The design half was **not** skipped. `SYSTEMS.md` gained three fully-reasoned sections — rejected
+alternatives, arithmetic constraints, `PROVISIONAL` markers with a `Settled by` on each — which is
+more than several properly-ticketed changes in the archive carry. What was skipped is `TASKS.md`:
+no scope, no allowed-file list, no acceptance criteria, and therefore **no point at which a boundary
+check was owed to anyone**. That is the whole cost, and it is itemized under "What the batch did not
+prove" below.
+
+Both gates were run before the commit and are green: import gate exit `0`, GUT `14 scripts / 179
+tests`, `10237` asserts. Ten new arena tests cover the mechanics, including the enemy's
+dodge-i-frame whiff, the smash's guard break, the back-attack arc and the two kill-arithmetic lines.
+The first full GUT run failed one `test_save_service` assert and the second passed — leftover live
+`user://save.json` state from an earlier run, which is `P2-29`'s documented hazard and not a defect
+in this batch.
+
+| # | What shipped | Ruling |
+|---|---|---|
+| `P2b-06` | **The light attack chains five hits, and the enemy fights back.** `arena_light_attack_combo_length = 5` with a buffered link point and a `0.25 s` combo window; damage `20 / 23 / 26 / 29 / 32`; `arena_enemy_max_hp = 120.0`, sized so a clean five-hit chain kills and a four-hit chain does not. The enemy gets one state machine (`MOVE / ATTACK / DODGE / PARRY / STAGGER`), a `1.6–2.4 m` hold band, and rolled dodge (`0.35`) and parry (`0.25`) with their own cooldowns. | `SYSTEMS.md` § Five-hit chain, enemy HP and enemy defence |
+| `P2b-07` | **Impact shakes the camera, and the player can switch it off.** Shake amplitude and length derive from the hit-stop already authored per contact type rather than from a second table, so the four contacts stay ordered without anyone maintaining that ordering twice. The toggle lives in a `ConfigFile` at `user://settings.cfg` (`systems/settings.gd`, static, **not** an autoload) and in the pause menu — a display preference deliberately kept out of `GameSession.to_dict()`, which is boundary 1. | `SYSTEMS.md` § Impact feedback channels |
+| `P2b-08` | **A smash finishes the chain, and the parry window is visible.** RMB `heavy_attack`, run through the *same* attack timeline as the light rather than a second state machine; super armor across its startup and active window (removes the interruption, never the damage); guard break against the enemy parry; `1.5×` back attacks in the enemy's rear 180°; a `0.2 s` pre-hit telegraph flash and a dim-cyan tint on the hero's open parry window. `arena_light_attack_startup` moves `0.12 → 0.10 s` — **the first played value in the arena**, settling the tension the section above it flagged. | `SYSTEMS.md` § Smash, super armor and the parry cue |
+| `P2-31` | **The hub's two lists filter and select in bulk.** An `Exact rank` checkbox beside each rank filter (the filters were minimum-rank only), an archetype filter on the roster, `Select All` on roster and inventory, and `Unequip All` on the equipped column. Six new widgets, six handlers, no new state and no save key. | None — UI mechanics, no balance number. |
+| `P2-32` | **Heroes have surnames.** `Summon.NAMES` splits into `FIRST_NAMES` and `SURNAMES`, rolled independently: `24 × 24` combinations, so two identical names read as coincidence rather than as a bug. | None. |
+
+### What the batch did not prove
+
+1. **A `verifier` pass was owed and never ran.** Three `.tscn` files changed — six new
+   `unique_name_in_owner` nodes and six new `[connection]` lines in `hub.tscn`, one of each in
+   `pause_menu.tscn` — which is `CLAUDE.md` boundary 2, where a `verifier` is mandatory. Nothing
+   about the batch being green substitutes for it; boundary 2 exists precisely because the import
+   gate compiles a scene whose wiring is wrong.
+2. **Nothing tests the seven new controls.** Grepping `tests/` for `SelectAllRoster`,
+   `SelectAllInventory`, `UnequipAll`, `RosterExactRank`, `RosterTypeFilter`,
+   `InventoryExactRank` and `ScreenShake` returns **zero hits**. The `%UniqueName` half is covered
+   by accident — `hub.gd` resolves all six `@onready`, and several tests instantiate `hub.tscn`, so
+   a deleted node reddens the suite. The `[connection]` half is not covered at all: drop any one of
+   the six wires and every gate stays green while the button does nothing. That is `P2-05g`'s
+   unpressed Convert button, six times over.
+3. **`P2b-07`'s screen shake is half-covered.** `test_arena.gd` proves the magnitude derivation, the
+   toggle's effect and the `user://settings.cfg` disk round-trip. It does not press the pause menu's
+   `CheckButton`, so the same dead-wire gap applies to the control itself.
+4. **Everything except `arena_light_attack_startup` is unplayed.** The two `PROVISIONAL` markers say
+   so and both name the same `Settled by`. The softest values are the enemy's `0.35` dodge and
+   `0.25` parry — a five-hit chain lands clean about a sixth of the time, which may read as a fight
+   or as a slot machine — and `arena_heavy_attack_startup = 0.30 s`, whose whole job is to read as
+   commitment rather than as sluggishness.
+5. **`resolve()` and `CombatResult` are untouched**, so boundary 4 is not crossed and the arena's
+   display-only status (`DECISIONS.md` 2026-08-11) is unchanged. `P2b-01e`'s standing debt — the
+   two ignored `resolve()` parameters and the `loot_seed` of `0` — is also unchanged. Both still go
+   live in `D-02`, not before.
+
+**The rule this earns:** a design ruling in `SYSTEMS.md` is not a substitute for a row here, because
+the two documents answer different questions. The ruling says what the numbers should be; the ticket
+says which boundary the change crosses and therefore who has to look at it. This batch had an
+excellent answer to the first and no answer at all to the second.
 
 ---
 
@@ -1443,6 +1515,16 @@ needs to re-read.
 | `P2b-01f` | Facing follows the camera, and a standstill press parries | `46e16c2` |
 | `P2b-01e` | Arena accepts the existing `Wave` and returns the existing `CombatResult` | `342c6d1` |
 | `P2b-03` | The capsules show what is happening — telegraph, hit flash, parry flash | `1e842d6` |
+| `P2b-06` | The light attack chains five hits, and the enemy fights back | `fe1a74b` |
+| `P2b-07` | Impact shakes the camera, and the player can switch it off | `fe1a74b` |
+| `P2b-08` | A smash finishes the chain, and the parry window is visible | `fe1a74b` |
+| `P2-31` | The hub's two lists filter exactly and select in bulk | `fe1a74b` |
+| `P2-32` | Heroes have surnames | `fe1a74b` |
+
+The last five share one commit and have no bodies — they shipped before any ticket existed. The
+record of what they are and what they left unproved is the **Retro record** section above, not this
+table. Seven earlier landed tickets (`P2-13`, `P2-25` through `P2-30`, `P2b-04`, `P2b-05`) are still
+missing rows here; nothing depends on it, but the table is not currently a complete index.
 
 ---
 
