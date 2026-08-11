@@ -21,12 +21,44 @@ extends Resource
 @export var arena_camera_spring_length: float = 4.0
 @export var arena_camera_pitch_up_degrees: float = 35.0
 @export var arena_camera_pitch_down_degrees: float = 65.0
-@export var arena_light_attack_startup: float = 0.12
+@export var arena_light_attack_startup: float = 0.10
 @export var arena_light_attack_active: float = 0.10
 @export var arena_light_attack_recovery: float = 0.22
 @export var arena_light_attack_displacement: float = 2.0
 @export var arena_light_attack_reach: float = 1.5
 @export var arena_light_attack_hit_stop: float = 0.04
+@export var arena_light_attack_combo_length: int = 5
+@export var arena_light_attack_combo_window: float = 0.25
+@export var arena_light_attack_damage: float = 20.0
+@export var arena_light_attack_combo_damage_step: float = 0.15
+@export var arena_heavy_attack_startup: float = 0.30
+@export var arena_heavy_attack_active: float = 0.12
+@export var arena_heavy_attack_recovery: float = 0.50
+@export var arena_heavy_attack_displacement: float = 3.0
+@export var arena_heavy_attack_hit_stop: float = 0.09
+@export var arena_heavy_attack_damage: float = 45.0
+@export var arena_back_attack_damage_multiplier: float = 1.5
+@export var arena_enemy_telegraph_flash: float = 0.2
+@export var arena_enemy_max_hp: float = 120.0
+@export var arena_enemy_hit_flinch_stop: float = 0.05
+@export var arena_enemy_move_speed: float = 4.2
+@export var arena_enemy_preferred_range: float = 2.4
+@export var arena_enemy_backoff_range: float = 1.6
+@export var arena_enemy_dodge_chance: float = 0.35
+@export var arena_enemy_dodge_speed: float = 11.0
+@export var arena_enemy_dodge_duration: float = 0.32
+@export var arena_enemy_dodge_iframe_duration: float = 0.22
+@export var arena_enemy_dodge_cooldown: float = 1.2
+@export var arena_enemy_parry_chance: float = 0.25
+@export var arena_enemy_parry_active_window: float = 0.2
+@export var arena_enemy_parry_cooldown: float = 1.6
+@export var arena_enemy_parry_damage_reduction: float = 0.6
+## Screen shake is derived from the hit-stop already authored for each contact type rather than
+## from its own per-outcome table: hit-stop length is the project's existing encoding of hit weight
+## (0.04 light, 0.05 flinch, 0.06 enemy hit, 0.08 parry), so scaling off it keeps the two channels
+## from drifting apart. Metres of camera offset, and seconds of shake, per second of hit-stop.
+@export var arena_screen_shake_magnitude_scale: float = 1.6
+@export var arena_screen_shake_duration_scale: float = 3.0
 @export var arena_enemy_attack_startup: float = 0.55
 @export var arena_enemy_attack_active: float = 0.10
 @export var arena_enemy_attack_recovery: float = 0.45

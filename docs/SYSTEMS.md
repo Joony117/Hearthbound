@@ -1825,6 +1825,261 @@ enemy capsule's HP — it has none.
 > hero (once this reaches a real permadeath consumer, which this slice explicitly does not) reads
 > as a decision anyone felt or as an inevitability nobody could have avoided.
 
+### Five-hit chain, enemy HP and enemy defence
+
+The arena's first slices deliberately shipped one attack against one passive capsule with no HP
+anywhere (`P2b-01c`, `P2b-01d`). Both halves of that now have the other side.
+
+**Player chain.** Light attack chains up to `arena_light_attack_combo_length = 5`. A press landing
+while an attack is running is *buffered* and fires at the link point (the end of that attack's
+recovery) rather than being dropped, so the chain does not demand frame-perfect input — this is the
+`0.15–0.25 s` input buffer already carried forward above, spent here. After recovery ends with no
+buffered press, `arena_light_attack_combo_window = 0.25 s` keeps the chain open; letting it lapse,
+taking a hit, or dodging resets to hit 1.
+
+**Damage.** Hit `i` (0-based) deals
+`arena_light_attack_damage * (1 + arena_light_attack_combo_damage_step * i)`. At `20.0` base and
+`0.15` per step that is `20 / 23 / 26 / 29 / 32`, summing to `130` across five hits and `98` across
+four.
+
+**Enemy HP.** `arena_enemy_max_hp = 120.0`, chosen against that sequence rather than picked round:
+`98 < 120 ≤ 130` is the only band where a clean five-hit chain kills and a four-hit chain does not.
+Change either the base damage or the step and this number is no longer correct — the constraint is
+the arithmetic, not the value. Non-lethal hits get `arena_enemy_hit_flinch_stop = 0.05 s` of
+hit-stop plus the existing white tint, sitting between the light (`0.04 s`) and enemy-attack
+(`0.06 s`) bands already authored.
+
+**Enemy states.** One state machine — `MOVE / ATTACK / DODGE / PARRY / STAGGER` — not three
+overlapping flags. The enemy commits to its own swing: a dodge or parry can only start from `MOVE`.
+
+| Tunable | Value | Note |
+|---|---:|---|
+| `arena_enemy_move_speed` | `4.2 m/s` | Below the player's `5.8` walk, well below the `8.0` sprint — disengaging stays possible. |
+| `arena_enemy_preferred_range` | `2.4 m` | Closes to here; inside `arena_enemy_attack_trigger_range` (`3.0 m`), so it swings before arriving. |
+| `arena_enemy_backoff_range` | `1.6 m` | Backs off below this. The `1.6–2.4 m` band is where it holds. |
+| `arena_enemy_dodge_chance` | `0.35` | Rolled once, when the player's swing goes active and the enemy is inside `reach + displacement = 3.5 m`. |
+| `arena_enemy_dodge_speed` | `11.0 m/s` | Below the player's `13.5` dodge. |
+| `arena_enemy_dodge_duration` | `0.32 s` | |
+| `arena_enemy_dodge_iframe_duration` | `0.22 s` | Shorter than the player's `0.25 s`. |
+| `arena_enemy_dodge_cooldown` | `1.2 s` | Long, so consecutive chain hits cannot all be dodged. |
+| `arena_enemy_parry_chance` | `0.25` | Rolled before dodge; parry wins the tie. |
+| `arena_enemy_parry_active_window` | `0.2 s` | |
+| `arena_enemy_parry_cooldown` | `1.6 s` | |
+| `arena_enemy_parry_damage_reduction` | `0.6` | Fraction of the hit removed. |
+
+**The enemy's parry is not the player's parry, and that asymmetry is the design.** A player parry
+hit-stops, staggers the enemy for `0.6 s` and opens a counter. An enemy parry does exactly one
+thing: scale that hit's damage by `1 - 0.6`. No hit-stun, no knockback, no combo reset, no cooldown
+charged to the player, no interruption of the chain. Enemy defence costs the player damage, never
+tempo — the enemy is an obstacle to read, not a source of punishes. A dodged hit whiffs outright
+for that swing rather than getting a second chance once the i-frames lapse.
+
+> ⚠️ **PROVISIONAL** — every number above is unplayed. The two probabilities are the softest: a
+> `0.35` dodge and `0.25` parry rolled per swing mean a five-hit chain lands clean only about a
+> sixth of the time, which may read as a fight or as a slot machine. · **Settled by:** playing it,
+> and specifically checking whether losing a chain to a roll the player could not have read feels
+> different from losing it to a mistake.
+
+### Impact feedback channels — what the arena still has none of
+
+An external hit-feel reference was audited against this section on 2026-08-11. Almost all of it —
+the three attack phases, hit-stop durations, target stagger, animation cancelling, tight
+anticipation — is already authored above with a source and a rejected-alternatives trail, and the
+reference adds nothing to those. It is recorded here only for the three channels the arena
+genuinely has **none** of, plus one live tension.
+
+`P2b-01c` through `P2b-04` built the arena's impact feedback entirely out of *timing* — hit-stop,
+knockback, hit-stun, stagger — plus one *tint* channel (the capsule albedo overrides in
+`combat/arena/arena.gd`). Three of the reference's channels are absent from the codebase outright,
+confirmed by grep: no `AudioStreamPlayer` anywhere in the project, no particle system, no camera
+shake.
+
+| Missing channel | Reference spec | Ruling |
+|---|---|---|
+| **Camera shake on impact** | Impulse with decay, scaled by hit weight. **Must be user-toggleable.** | **Taken — shipped.** No assets needed, and it is the only channel that converts a localized freeze into something the whole frame registers. Specified below. Toggle is not optional: motion sensitivity is an accessibility floor, not a preference. |
+| **Impact audio** | Multi-layered crunch/slice at contact. The reference's own claim is that audio carries more weight than visuals, and that weak audio flattens good animation. | **Defer — needs assets, not code.** The project has no audio bus, no sound files, and no asset pipeline for them. This is the single largest remaining feel gap and is worth a ticket, but not one an implementer can close. |
+| **Directional hit particles** | Short burst along the hit vector. | **Defer.** Two graybox capsules give the eye nothing to follow yet. Revisit when the arena has real geometry. |
+
+**Camera shake — derived, not tabled.** Shake takes no per-outcome table of its own. Both its
+amplitude and its length come from the hit-stop already authored for that contact, because hit-stop
+length *is* this project's existing encoding of hit weight (`0.04 s` light, `0.05 s` flinch,
+`0.06 s` enemy hit, `0.08 s` parry). Two scale factors, and the four contact types stay ordered
+without anyone maintaining that ordering twice:
+
+| Tunable | Value | Meaning |
+|---|---:|---|
+| `arena_screen_shake_magnitude_scale` | `1.6` | Metres of camera-pivot offset per second of hit-stop. A parry (`0.08 s`) shakes `0.128 m`, a flinch (`0.05 s`) shakes `0.080 m`. |
+| `arena_screen_shake_duration_scale` | `3.0` | Seconds of shake per second of hit-stop — a parry shakes for `0.24 s`, roughly three times its own freeze. |
+
+Amplitude falls off linearly with the remaining time, so the shake settles rather than cutting out,
+and the offset is applied in camera space on the pivot — never on `CameraPivot.rotation`, which is
+the player's mouse look and must not be written to. Shake runs *during* hit-stop rather than being
+frozen by it: the freeze is the thing it is decorating.
+
+**Where the toggle lives.** A `ConfigFile` at `user://settings.cfg` (`systems/settings.gd`), not
+`GameSession.to_dict()`. Screen shake is a display preference, not game state, and the save
+round-trip is this repo's first-listed risky boundary (`CLAUDE.md`) — routing a preference through
+it buys a mandatory verifier pass for nothing. `ConfigFile` is stdlib, needs no autoload, and so
+does not touch the three-autoload cap. The checkbox is in the pause menu, which is reachable from
+the hub and not from inside the arena, so the arena reads the value once on entry.
+
+**The one live tension: anticipation length.** The reference targets `0.05–0.10 s` of wind-up for
+fast-paced light attacks. This project authored `arena_light_attack_startup = 0.12 s` above, from
+the *Vindictus* ranges, with reasoning already on the page. `0.12` is outside the reference band by
+`20 ms` — one to two frames at 60 FPS. **Not changed here.** Both numbers are unplayed, the
+existing one has a cited source and this one does not, and re-tuning a published provisional value
+against a second unplayed reference trades one guess for another. It is flagged so the next play
+pass tests it deliberately rather than rediscovering it.
+
+**Not recorded because it is already above:** the three-phase attack anatomy (`P2b-01c`
+timeline), hit-stop bands (`0.03–0.05 s` light / `0.08–0.12 s` heavy), input buffering
+(`0.15–0.25 s`), target stagger and knockback (`P2b-01d`), animation cancelling (`P2b-04`, which
+opens cancels wider than the reference does), and the white flash on contact (the existing
+`HIT_HERO_COLOR` / `DEFEAT_ENEMY_COLOR` overrides). The reference's `2–3 frame` flash duration
+(`0.03–0.05 s`) is the one usable number inside that group, and it matches the light hit-stop band
+the arena already uses to time those tints.
+
+> ⚠️ **PROVISIONAL** — the two shake scale factors are arithmetic against the existing hit-stop
+> bands, not felt values; nobody has seen the camera move. `1.6` in particular is a guess at how
+> much offset reads as impact rather than as a bug. · **Settled by:** playing the arena with the
+> toggle on and off, which is also the pass that settles the `0.12 s` vs `0.10 s` anticipation
+> question above.
+
+### Smash, super armor and the parry cue
+
+Played on 2026-08-11. The play pass the section above asked for happened, and it settled the open
+anticipation question and opened three new mechanics. A second external reference — a Pearl Abyss
+(*Black Desert Online* / *Crimson Desert*) combat-architecture analysis — was audited on the same
+day; what it contributed is marked below, and what it did not is at the end.
+
+**Anticipation, settled.** `arena_light_attack_startup` is now `0.10 s`, down from `0.12 s`. The
+tension flagged above ("the reference targets `0.05–0.10 s`, this project authored `0.12`, both
+unplayed") is resolved the way it said it would be: by playing it. The designer's read after the
+play pass was that the wind-up is still long, which is the reference band's own claim, so the value
+moves to the top of that band rather than into it. No longer provisional — this is a played value,
+the first one in this section.
+
+Nothing else in the light attack's timeline moves. Active (`0.10 s`) and recovery (`0.22 s`) were
+not what read as slow.
+
+#### The smash (right mouse button)
+
+`heavy_attack` is bound to RMB in `project.godot`, alongside `attack` on LMB. It runs through the
+same attack state as the light — same `_attack_elapsed` timeline, same three phases, same cancel
+rules, same hitbox — reading heavy values where they differ. It is not a second state machine.
+
+| Tunable | Value | Against the light |
+|---|---:|---|
+| `arena_heavy_attack_startup` | `0.30 s` | `3×` the light's `0.10 s`. The commitment *is* the mechanic — see super armor below. |
+| `arena_heavy_attack_active` | `0.12 s` | Slightly wider than `0.10 s`. |
+| `arena_heavy_attack_recovery` | `0.50 s` | More than double the light's `0.22 s`. A whiffed smash is punishable. |
+| `arena_heavy_attack_displacement` | `3.0 m` | Against `2.0 m`. Reach is deliberately *not* a separate field: the lunge is what extends the smash's range, so both attacks keep one `arena_light_attack_reach` hitbox and no shape is resized at runtime. |
+| `arena_heavy_attack_hit_stop` | `0.09 s` | The Heavy/Smash band (`0.08–0.12 s`) carried forward since `P2b-01c`, finally spent. Screen shake derives from hit-stop, so the smash also shakes hardest without a second number saying so. |
+| `arena_heavy_attack_damage` | `45.0` | Against `20.0`. Scales on the chain step with the same `arena_light_attack_combo_damage_step` — one step field, both attacks. |
+
+**The smash is a chain finisher, and the arithmetic is the constraint.** It occupies the next chain
+step like any other hit (capped at the last one), then ends the chain: after a smash there is no
+combo window and no buffered follow-up, and the next press starts at step 1. Against
+`arena_enemy_max_hp = 120`:
+
+- three lights + smash = `20 + 23 + 26` + `45 × 1.45` = `69 + 65.25` = **`134.25` — kills**
+- two lights + smash = `20 + 23` + `45 × 1.30` = `43 + 58.5` = **`101.5` — does not**
+
+So the smash finishes a chain of three, and cannot shortcut one of two. Five lights (`130`) still
+kill on their own — the smash's advantage is not raw damage per second but *fewer swings*: each
+swing rolls the enemy's dodge and parry once, so a four-hit kill eats two fewer rolls than a
+five-hit one. Change any of the four numbers in that arithmetic and the ticket that changes them
+owns re-deriving it; `tests/unit/test_arena.gd` asserts both lines.
+
+**Buffering.** A smash pressed during a light lands at that light's link point, exactly like a
+buffered light — that is the `0.15–0.25 s` input buffer already carried forward, now covering both
+buttons. A light pressed during a smash is dropped rather than queued, because the chain is over
+by the time the smash's recovery ends.
+
+#### Super armor — the arena's first protection state
+
+The reference's defensive triad is Invincibility / Super Armor / Forward Guard. The arena already
+has the first (dodge i-frames). It takes the second and skips the third.
+
+**During the smash's startup and active window, an enemy hit no longer cancels the swing.** The hit
+still lands and still counts against `arena_enemy_hits_to_kill_hero` — super armor removes the
+interruption, never the damage, which is the reference's own definition and the reason it is a
+trade rather than a defence. The smash's recovery is unarmored.
+
+That is what the `0.30 s` startup is for. Against an enemy wind-up of `0.55 s`, committing to a
+smash inside the enemy's telegraph is a real decision with a real price: one of the hero's three
+hits, for a guaranteed `65`-damage finisher.
+
+**Forward Guard is not taken.** It needs a facing-cone check, a guard meter, and a break state, and
+the arena's parry already occupies the "read the swing and answer it" slot. Two overlapping block
+mechanics before either has been felt is how the arena stops being readable.
+
+**Guard break.** A smash ignores `arena_enemy_parry_damage_reduction` outright. The reference's
+argument for an absolute counter is that without one, protected states are strictly dominant; here
+the smaller version of that problem is that the enemy's parry roll is invisible until after the
+swing lands, so a chain can lose `60%` of its damage to something the player could not have read.
+The smash is the answer to a parrying enemy. It is *not* an answer to a dodging one — enemy
+i-frames still whiff it completely.
+
+#### Back attacks
+
+`arena_back_attack_damage_multiplier = 1.5` applies when the hero is in the enemy's rear 180°,
+measured by position against the enemy's facing at the moment of contact — not by swing angle.
+
+The enemy turns at `720°/s` and tracks the hero constantly, so this only pays out where its facing
+is *locked*: mid-swing (facing commits when the active window opens), while staggered by a parry,
+or in the instant after the hero dodges through it. It is a reward for the three positions the
+arena already produces, not a new mechanic asking to be set up.
+
+The reference's value is `+120%`; `1.5×` is deliberately below it. This is a single-target graybox
+where the enemy is nearly always facing the hero, so the multiplier's job is to make dodging
+*through* better than dodging *away* — not to make positioning the whole fight.
+
+#### The parry window, made visible
+
+Two tints, no HUD. Both reuse the capsule albedo channel that already carries every other combat
+state, so this adds no scene nodes and no overlay.
+
+| Tint | When | Reads as |
+|---|---|---|
+| `ENEMY_TELEGRAPH_COLOR` (`1.0, 0.95, 0.65`) | The final `arena_enemy_telegraph_flash = 0.2 s` of the enemy's wind-up, replacing the orange | "the hit lands in 0.2 s" |
+| `PARRY_WINDOW_COLOR` (`0.14, 0.42, 0.55`) | The hero's `arena_parry_active_window` while it is open | "your window is open right now" |
+
+**Why `0.2 s`, and why that is not the same as the parry window.** The flash is a *reaction* cue,
+not a "press now" cue — the reference puts it exactly `200 ms` before the active frame for that
+reason, which is roughly human reaction latency. A player who reacts to the flash presses at about
+the active frame, and the parry window (`0.18 s`, opening instantly on press) then covers the hit.
+Pressing *instantly* on the flash is the failure case: that window closes `20 ms` before the swing
+connects. The cue rewards reacting, not anticipating, and the two numbers are set against each
+other on purpose.
+
+The enemy's remaining `0.35 s` of wind-up keeps the existing orange, so the telegraph now has the
+reference's two-stage shape — posture first, flash second — instead of one flat colour for
+`0.55 s`.
+
+The hero's window tint is a dim cyan and a successful parry is the existing bright cyan
+(`PARRY_HERO_COLOR`), so a correct read reads as the dim colour snapping bright. Super armor gets
+no tint of its own: the smash simply continuing through a hit is its own tell, and a fourth colour
+on the hero before any of these have been felt is one too many.
+
+> ⚠️ **PROVISIONAL** — the six smash numbers, `1.5×` back attacks and the `0.2 s` flash are all
+> first-playable. The softest is `arena_heavy_attack_startup = 0.30 s`: it is set to be *readable
+> as a commitment* against a `0.55 s` enemy wind-up, and whether that reads as weighty or as
+> sluggish is exactly the thing that just moved the light attack's own startup down. ·
+> **Settled by:** playing a fight that uses the smash as a finisher, and specifically checking
+> whether trading a hit under super armor feels earned or feels like a mistake the game let you
+> make.
+
+**From the reference, not taken:** degraded use-on-cooldown skills (the arena has no cooldown-gated
+skills to degrade), the CC point cap and immunity buffer (no CC system — the arena has hit-stun and
+stagger, and neither stacks), directional input-combination skills (`W+F`, `S+E` — that is a
+skill-bar replacement, and the arena has no skills), grapples, momentum transfer into attack
+startup (attacks already stop locomotion by design, `P2b-01c`), and vector-aligned camera shake
+(the existing shake is random-offset; aligning it to the strike vector is a real upgrade and a
+small one, but it changes a channel that has never been seen at all). **Already in the arena and
+credited to the earlier reference, not this one:** hit-stop, input buffering, recovery-frame
+truncation and animation cancels, target stagger, three-phase attack anatomy.
+
 ---
 
 ## Expeditions — *Phase 2*

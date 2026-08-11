@@ -3,10 +3,16 @@ extends RefCounted
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const ARCHETYPE_DEF_IDS: PackedStringArray = ["knight", "rogue", "ranger", "mage", "cleric"]
-const NAMES: PackedStringArray = [
+const FIRST_NAMES: PackedStringArray = [
 	"Aldric", "Brenna", "Cassius", "Dara", "Edric", "Fenna", "Gorath", "Hilde",
 	"Ivo", "Jorunn", "Kestrel", "Lyra", "Morgen", "Nils", "Orla", "Perrin",
 	"Quill", "Rowan", "Sable", "Tamsin", "Ulric", "Vesna", "Wren", "Yorick",
+]
+const SURNAMES: PackedStringArray = [
+	"Ashdown", "Brackwater", "Coldmere", "Dunhollow", "Emberfell", "Fairwind",
+	"Greymantle", "Hallowick", "Ironmoor", "Jarlsbane", "Kestrelmark", "Lowthorn",
+	"Marrowvale", "Northgate", "Oakenshield", "Pinecroft", "Quarryhelm", "Ravensworth",
+	"Stormhaven", "Thornbury", "Underhill", "Valebrook", "Westmarch", "Yarrowgild",
 ]
 
 
@@ -20,9 +26,18 @@ static func roll(circle_level: int = 0) -> Hero:
 	var def_id: StringName = StringName(ARCHETYPE_DEF_IDS[randi() % ARCHETYPE_DEF_IDS.size()])
 	var definition: HeroDefinition = definition_for(def_id)
 	assert(definition != null, "Every authored summon archetype must resolve to a HeroDefinition.")
-	var hero := Hero.new(NAMES[randi() % NAMES.size()], rank)
+	var hero := Hero.new(random_name(), rank)
 	hero.def_id = def_id
 	return hero
+
+
+## First and last name rolled independently, so 24 x 24 combinations carry the roster far enough
+## past the collision point that two identical names read as a coincidence rather than a bug.
+static func random_name() -> String:
+	return "%s %s" % [
+		FIRST_NAMES[randi() % FIRST_NAMES.size()],
+		SURNAMES[randi() % SURNAMES.size()],
+	]
 
 
 static func weights_for_circle_level(circle_level: int, base_weights: Array[int]) -> Array[int]:

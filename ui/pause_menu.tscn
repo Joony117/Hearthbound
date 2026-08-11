@@ -38,9 +38,15 @@ horizontal_alignment = 1
 layout_mode = 2
 text = "Resume"
 
+[node name="ScreenShake" type="CheckButton" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Screen shake"
+
 [node name="ToMenu" type="Button" parent="VBox"]
 layout_mode = 2
 text = "Return to Menu"
 
 [connection signal="pressed" from="VBox/Resume" to="." method="_on_resume_pressed"]
+[connection signal="toggled" from="VBox/ScreenShake" to="." method="_on_screen_shake_toggled"]
 [connection signal="pressed" from="VBox/ToMenu" to="." method="_on_menu_pressed"]

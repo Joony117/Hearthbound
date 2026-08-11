@@ -7,15 +7,26 @@ signal combat_resolved(result: CombatResult)
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const ENEMY_WINDUP_COLOR: Color = Color(1.0, 0.72, 0.18)
+const ENEMY_TELEGRAPH_COLOR: Color = Color(1.0, 0.95, 0.65)
 const HIT_HERO_COLOR: Color = Color(1.0, 1.0, 1.0)
 const PARRY_HERO_COLOR: Color = Color(0.35, 0.95, 1.0)
+const PARRY_WINDOW_COLOR: Color = Color(0.14, 0.42, 0.55)
 const DEFEAT_ENEMY_COLOR: Color = Color(1.0, 1.0, 1.0)
 
 enum HitStopOutcome {
 	NONE,
+	FLINCH_ENEMY,
 	DEFEAT_ENEMY,
 	HIT_HERO,
 	PARRY_HERO,
+}
+
+enum EnemyState {
+	MOVE,
+	ATTACK,
+	DODGE,
+	PARRY,
+	STAGGER,
 }
 
 @onready var _camera_pivot: Node3D = %CameraPivot
@@ -31,6 +42,11 @@ var _attack_elapsed: float = -1.0
 var _attack_active: bool = false
 var _attack_hit: bool = false
 var _attack_direction: Vector3 = Vector3.FORWARD
+var _attack_is_heavy: bool = false
+var _combo_index: int = 0
+var _combo_buffered: bool = false
+var _heavy_buffered: bool = false
+var _combo_window_remaining: float = 0.0
 var _dodge_elapsed: float = -1.0
 var _dodge_cooldown_remaining: float = 0.0
 var _parry_elapsed: float = -1.0
@@ -38,12 +54,23 @@ var _parry_succeeded: bool = false
 var _parry_cooldown_remaining: float = 0.0
 var _hit_stun_remaining: float = 0.0
 var _hit_stop_remaining: float = 0.0
+var _shake_remaining: float = 0.0
+var _shake_duration: float = 0.0
+var _shake_magnitude: float = 0.0
+var _shake_enabled: bool = true
 var _hit_stop_outcome: int = HitStopOutcome.NONE
 var _enemy_attack_elapsed: float = -1.0
 var _enemy_attack_active: bool = false
 var _enemy_attack_hit: bool = false
 var _enemy_attack_cooldown_remaining: float = 0.0
 var _enemy_stagger_remaining: float = 0.0
+var _enemy_state: EnemyState = EnemyState.MOVE
+var _enemy_hp: float = 0.0
+var _enemy_dodge_elapsed: float = -1.0
+var _enemy_dodge_direction: Vector3 = Vector3.ZERO
+var _enemy_dodge_cooldown_remaining: float = 0.0
+var _enemy_parry_elapsed: float = -1.0
+var _enemy_parry_cooldown_remaining: float = 0.0
 var _hero: Hero
 var _wave: Wave
 var _maximum_hp: float = 0.0
@@ -61,6 +88,10 @@ func _ready() -> void:
 	_spring_arm.add_excluded_object(_hero_capsule.get_rid())
 	_attack_hitbox.body_entered.connect(_on_attack_hitbox_body_entered)
 	_enemy_attack_hitbox.body_entered.connect(_on_enemy_attack_hitbox_body_entered)
+	_enemy_hp = BALANCE.arena_enemy_max_hp
+	# Read once on entry rather than per hit: the toggle lives in the hub's pause menu, which is not
+	# reachable from inside the arena, so it cannot change while a fight is running.
+	_shake_enabled = Settings.screen_shake_enabled()
 	var entering_team: Array[Hero] = SceneRouter.arena_team.duplicate()
 	var entering_wave: Wave = SceneRouter.arena_wave
 	SceneRouter.clear_arena_payload()
@@ -94,7 +125,7 @@ func _physics_process(delta: float) -> void:
 			_request_hub()
 			return
 		_hero_capsule.move_and_slide()
-		_camera_pivot.global_position = _hero_capsule.global_position + Vector3.UP
+		_update_camera_pivot(delta)
 		return
 	if _hit_stop_remaining > 0.0:
 		_update_hit_stop(delta)
@@ -102,6 +133,7 @@ func _physics_process(delta: float) -> void:
 		_update_enemy(delta)
 		_update_dodge_cooldown(delta)
 		_update_parry_cooldown(delta)
+		_update_combo_window(delta)
 		if _hit_stun_remaining > 0.0:
 			_update_hit_stun(delta)
 		elif _dodge_elapsed >= 0.0:
@@ -113,7 +145,29 @@ func _physics_process(delta: float) -> void:
 		else:
 			_update_locomotion(delta)
 	_hero_capsule.move_and_slide()
-	_camera_pivot.global_position = _hero_capsule.global_position + Vector3.UP
+	_update_camera_pivot(delta)
+
+
+## Camera shake is the one impact channel that leaves the capsules alone, so it runs during hit-stop
+## rather than being frozen by it - the freeze is what it is decorating.
+func _update_camera_pivot(delta: float) -> void:
+	var pivot_position: Vector3 = _hero_capsule.global_position + Vector3.UP
+	if _shake_remaining > 0.0:
+		_shake_remaining = maxf(0.0, _shake_remaining - delta)
+		var amplitude: float = _shake_magnitude * _shake_remaining / _shake_duration
+		var offset := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * amplitude
+		pivot_position += _camera_pivot.global_basis * offset
+	_camera_pivot.global_position = pivot_position
+
+
+## Driven by the contact's own hit-stop, which is already the authored measure of how heavy that
+## contact is - a parry shakes harder than a flinch without a second table saying so.
+func _start_screen_shake(hit_stop: float) -> void:
+	if not _shake_enabled:
+		return
+	_shake_duration = hit_stop * BALANCE.arena_screen_shake_duration_scale
+	_shake_remaining = _shake_duration
+	_shake_magnitude = hit_stop * BALANCE.arena_screen_shake_magnitude_scale
 
 
 func _create_capsule_material_override(capsule_mesh: MeshInstance3D) -> void:
@@ -138,15 +192,26 @@ func _hero_tint() -> Color:
 		return HIT_HERO_COLOR
 	if _hit_stop_outcome == HitStopOutcome.PARRY_HERO:
 		return PARRY_HERO_COLOR
+	if _hero_has_active_parry():
+		return PARRY_WINDOW_COLOR
 	return _authored_capsule_color(_hero_capsule_mesh)
 
 
 func _enemy_tint() -> Color:
-	if _hit_stop_outcome == HitStopOutcome.DEFEAT_ENEMY:
+	if (
+		_hit_stop_outcome == HitStopOutcome.FLINCH_ENEMY
+		or _hit_stop_outcome == HitStopOutcome.DEFEAT_ENEMY
+	):
 		return DEFEAT_ENEMY_COLOR
-	if _hit_stop_outcome == HitStopOutcome.PARRY_HERO or _enemy_stagger_remaining > 0.0:
+	if (
+		_hit_stop_outcome == HitStopOutcome.PARRY_HERO
+		or _enemy_state == EnemyState.PARRY
+		or _enemy_stagger_remaining > 0.0
+	):
 		return PARRY_HERO_COLOR
 	if _enemy_attack_elapsed >= 0.0 and _enemy_attack_elapsed < BALANCE.arena_enemy_attack_startup:
+		if _enemy_attack_elapsed >= BALANCE.arena_enemy_attack_startup - BALANCE.arena_enemy_telegraph_flash:
+			return ENEMY_TELEGRAPH_COLOR
 		return ENEMY_WINDUP_COLOR
 	return _authored_capsule_color(_enemy_capsule_mesh)
 
@@ -173,10 +238,11 @@ func _update_locomotion(delta: float) -> void:
 
 func _update_attack(delta: float) -> void:
 	_attack_elapsed += delta
-	var active_end: float = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
-	var recovery_end: float = active_end + BALANCE.arena_light_attack_recovery
+	var active: float = _attack_active_window()
+	var active_end: float = _attack_startup() + active
+	var recovery_end: float = active_end + _attack_recovery()
 
-	if _attack_elapsed < BALANCE.arena_light_attack_startup:
+	if _attack_elapsed < _attack_startup():
 		_turn_hero(delta)
 		_stop_horizontal()
 		return
@@ -185,8 +251,9 @@ func _update_attack(delta: float) -> void:
 		if not _attack_active:
 			_attack_active = true
 			_attack_direction = -_hero_capsule.global_basis.z.normalized()
+			_try_start_enemy_reaction()
 			_attack_hitbox.monitoring = true
-		var attack_speed: float = BALANCE.arena_light_attack_displacement / BALANCE.arena_light_attack_active
+		var attack_speed: float = _attack_displacement() / active
 		_hero_capsule.velocity.x = _attack_direction.x * attack_speed
 		_hero_capsule.velocity.z = _attack_direction.z * attack_speed
 		return
@@ -195,8 +262,64 @@ func _update_attack(delta: float) -> void:
 		_attack_active = false
 		_attack_hitbox.monitoring = false
 	_stop_horizontal()
-	if _attack_elapsed >= recovery_end:
-		_attack_elapsed = -1.0
+	if _attack_elapsed < recovery_end:
+		return
+	# A smash consumes no buffer and takes no follow-up: it *is* the end of the chain, so its link
+	# point returns to neutral rather than opening one.
+	if not _attack_is_heavy:
+		if _heavy_buffered:
+			_begin_combo_attack(_next_chain_index(), true)
+			return
+		if _combo_buffered and _combo_index + 1 < BALANCE.arena_light_attack_combo_length:
+			_begin_combo_attack(_combo_index + 1, false)
+			return
+	_attack_elapsed = -1.0
+	_combo_buffered = false
+	_heavy_buffered = false
+	if _attack_is_heavy or _combo_index + 1 >= BALANCE.arena_light_attack_combo_length:
+		_reset_combo_chain()
+	else:
+		_combo_window_remaining = BALANCE.arena_light_attack_combo_window
+
+
+func _attack_startup() -> float:
+	return BALANCE.arena_heavy_attack_startup if _attack_is_heavy else BALANCE.arena_light_attack_startup
+
+
+func _attack_active_window() -> float:
+	return BALANCE.arena_heavy_attack_active if _attack_is_heavy else BALANCE.arena_light_attack_active
+
+
+func _attack_recovery() -> float:
+	return BALANCE.arena_heavy_attack_recovery if _attack_is_heavy else BALANCE.arena_light_attack_recovery
+
+
+func _attack_displacement() -> float:
+	return BALANCE.arena_heavy_attack_displacement if _attack_is_heavy else BALANCE.arena_light_attack_displacement
+
+
+## The smash occupies a chain step like any other hit, capped at the last one - a smash off a full
+## five-hit chain still scales, it just cannot invent a sixth step.
+func _next_chain_index() -> int:
+	return mini(_combo_index + 1, BALANCE.arena_light_attack_combo_length - 1)
+
+
+## Super armor, the one protection state the arena has: the smash trades a hit for its swing. The
+## hit still counts against the hero, it just stops cancelling the attack.
+func _hero_has_super_armor() -> bool:
+	return (
+		_attack_is_heavy
+		and _attack_elapsed >= 0.0
+		and _attack_elapsed < _attack_startup() + _attack_active_window()
+	)
+
+
+func _update_combo_window(delta: float) -> void:
+	if _attack_elapsed >= 0.0 or _combo_window_remaining <= 0.0:
+		return
+	_combo_window_remaining = maxf(0.0, _combo_window_remaining - delta)
+	if _combo_window_remaining <= 0.0:
+		_reset_combo_chain()
 
 
 func _update_dodge(delta: float) -> void:
@@ -255,9 +378,14 @@ func _update_hit_stop(delta: float) -> void:
 		_finish_combat()
 	elif _hit_stop_outcome == HitStopOutcome.HIT_HERO:
 		_hits_taken += 1
-		_cancel_player_action_for_hit()
+		var armored: bool = _hero_has_super_armor()
+		if not armored:
+			_cancel_player_action_for_hit()
 		if _hits_taken >= BALANCE.arena_enemy_hits_to_kill_hero:
 			_finish_combat()
+			_hit_stop_outcome = HitStopOutcome.NONE
+			return
+		if armored:
 			_hit_stop_outcome = HitStopOutcome.NONE
 			return
 		var knockback_direction: Vector3 = _hero_capsule.global_position - _enemy_capsule.global_position
@@ -272,6 +400,7 @@ func _update_hit_stop(delta: float) -> void:
 		_enemy_attack_active = false
 		_enemy_attack_hitbox.monitoring = false
 		_enemy_stagger_remaining = BALANCE.arena_parry_enemy_stagger
+		_enemy_state = EnemyState.STAGGER
 	_hit_stop_outcome = HitStopOutcome.NONE
 
 
@@ -328,25 +457,58 @@ func _finish_combat() -> void:
 func _update_enemy(delta: float) -> void:
 	if not is_instance_valid(_enemy_capsule):
 		return
-	if _enemy_stagger_remaining > 0.0:
-		_enemy_stagger_remaining = maxf(0.0, _enemy_stagger_remaining - delta)
-		if _enemy_stagger_remaining <= 0.0:
-			_enemy_attack_cooldown_remaining = BALANCE.arena_enemy_attack_cooldown
-		return
-	if _enemy_attack_elapsed < 0.0:
-		_turn_enemy(delta)
-		_enemy_attack_cooldown_remaining = maxf(0.0, _enemy_attack_cooldown_remaining - delta)
-		var offset: Vector3 = _hero_capsule.global_position - _enemy_capsule.global_position
-		offset.y = 0.0
-		if (
-			_enemy_attack_cooldown_remaining <= 0.0
-			and offset.length() <= BALANCE.arena_enemy_attack_trigger_range
-		):
-			_enemy_attack_elapsed = 0.0
-			_enemy_attack_active = false
-			_enemy_attack_hit = false
-		return
+	if _enemy_state != EnemyState.DODGE:
+		_enemy_dodge_cooldown_remaining = maxf(0.0, _enemy_dodge_cooldown_remaining - delta)
+	if _enemy_state != EnemyState.PARRY:
+		_enemy_parry_cooldown_remaining = maxf(0.0, _enemy_parry_cooldown_remaining - delta)
+	_enemy_attack_cooldown_remaining = maxf(0.0, _enemy_attack_cooldown_remaining - delta)
 
+	match _enemy_state:
+		EnemyState.ATTACK:
+			_update_enemy_attack(delta)
+		EnemyState.DODGE:
+			_update_enemy_dodge(delta)
+		EnemyState.PARRY:
+			_update_enemy_parry(delta)
+		EnemyState.STAGGER:
+			_update_enemy_stagger(delta)
+		EnemyState.MOVE:
+			_update_enemy_movement(delta)
+	_enemy_capsule.move_and_slide()
+
+
+func _update_enemy_movement(delta: float) -> void:
+	_turn_enemy(delta)
+	var offset: Vector3 = _hero_capsule.global_position - _enemy_capsule.global_position
+	offset.y = 0.0
+	var distance: float = offset.length()
+	if (
+		_enemy_attack_cooldown_remaining <= 0.0
+		and distance <= BALANCE.arena_enemy_attack_trigger_range
+	):
+		_start_enemy_attack()
+		return
+	if distance == 0.0:
+		_stop_enemy_horizontal()
+		return
+	var move_direction: Vector3 = offset / distance
+	if distance > BALANCE.arena_enemy_preferred_range:
+		_set_enemy_horizontal_velocity(move_direction * BALANCE.arena_enemy_move_speed)
+	elif distance < BALANCE.arena_enemy_backoff_range:
+		_set_enemy_horizontal_velocity(-move_direction * BALANCE.arena_enemy_move_speed)
+	else:
+		_stop_enemy_horizontal()
+
+
+func _start_enemy_attack() -> void:
+	_enemy_state = EnemyState.ATTACK
+	_enemy_attack_elapsed = 0.0
+	_enemy_attack_active = false
+	_enemy_attack_hit = false
+	_stop_enemy_horizontal()
+
+
+func _update_enemy_attack(delta: float) -> void:
 	_enemy_attack_elapsed += delta
 	var active_end: float = BALANCE.arena_enemy_attack_startup + BALANCE.arena_enemy_attack_active
 	var recovery_end: float = active_end + BALANCE.arena_enemy_attack_recovery
@@ -364,13 +526,103 @@ func _update_enemy(delta: float) -> void:
 	if _enemy_attack_elapsed >= recovery_end:
 		_enemy_attack_elapsed = -1.0
 		_enemy_attack_cooldown_remaining = BALANCE.arena_enemy_attack_cooldown
+		_enemy_state = EnemyState.MOVE
 
 
-func _start_attack() -> void:
+func _update_enemy_dodge(delta: float) -> void:
+	_enemy_dodge_elapsed += delta
+	if _enemy_dodge_elapsed >= BALANCE.arena_enemy_dodge_duration:
+		_enemy_dodge_elapsed = -1.0
+		_enemy_dodge_cooldown_remaining = BALANCE.arena_enemy_dodge_cooldown
+		_enemy_state = EnemyState.MOVE
+		_stop_enemy_horizontal()
+		return
+	_set_enemy_horizontal_velocity(_enemy_dodge_direction * BALANCE.arena_enemy_dodge_speed)
+
+
+func _update_enemy_parry(delta: float) -> void:
+	_enemy_parry_elapsed += delta
+	_stop_enemy_horizontal()
+	if _enemy_parry_elapsed >= BALANCE.arena_enemy_parry_active_window:
+		_enemy_parry_elapsed = -1.0
+		_enemy_parry_cooldown_remaining = BALANCE.arena_enemy_parry_cooldown
+		_enemy_state = EnemyState.MOVE
+
+
+func _update_enemy_stagger(delta: float) -> void:
+	_stop_enemy_horizontal()
+	_enemy_stagger_remaining = maxf(0.0, _enemy_stagger_remaining - delta)
+	if _enemy_stagger_remaining <= 0.0:
+		_enemy_attack_cooldown_remaining = BALANCE.arena_enemy_attack_cooldown
+		_enemy_state = EnemyState.MOVE
+
+
+func _try_start_enemy_reaction() -> void:
+	if _enemy_state != EnemyState.MOVE:
+		return
+	var offset: Vector3 = _hero_capsule.global_position - _enemy_capsule.global_position
+	offset.y = 0.0
+	var danger_range: float = BALANCE.arena_light_attack_reach + _attack_displacement()
+	if offset.length() > danger_range:
+		return
 	if (
-		_combat_finished
-		or _attack_elapsed >= 0.0
-		or _dodge_elapsed >= 0.0
+		_enemy_parry_cooldown_remaining <= 0.0
+		and randf() < BALANCE.arena_enemy_parry_chance
+	):
+		_enemy_state = EnemyState.PARRY
+		_enemy_parry_elapsed = 0.0
+		_stop_enemy_horizontal()
+		return
+	if (
+		_enemy_dodge_cooldown_remaining <= 0.0
+		and randf() < BALANCE.arena_enemy_dodge_chance
+	):
+		var away_direction: Vector3 = -offset.normalized()
+		if away_direction == Vector3.ZERO:
+			away_direction = _enemy_capsule.global_basis.x.normalized()
+		_enemy_state = EnemyState.DODGE
+		_enemy_dodge_elapsed = 0.0
+		_enemy_dodge_direction = away_direction
+		_set_enemy_horizontal_velocity(_enemy_dodge_direction * BALANCE.arena_enemy_dodge_speed)
+
+
+func _enemy_has_iframes() -> bool:
+	return (
+		_enemy_state == EnemyState.DODGE
+		and _enemy_dodge_elapsed >= 0.0
+		and _enemy_dodge_elapsed < BALANCE.arena_enemy_dodge_iframe_duration
+	)
+
+
+func _enemy_has_active_parry() -> bool:
+	return (
+		_enemy_state == EnemyState.PARRY
+		and _enemy_parry_elapsed >= 0.0
+		and _enemy_parry_elapsed < BALANCE.arena_enemy_parry_active_window
+	)
+
+
+func _set_enemy_horizontal_velocity(horizontal_velocity: Vector3) -> void:
+	_enemy_capsule.velocity.x = horizontal_velocity.x
+	_enemy_capsule.velocity.z = horizontal_velocity.z
+
+
+func _stop_enemy_horizontal() -> void:
+	_enemy_capsule.velocity.x = 0.0
+	_enemy_capsule.velocity.z = 0.0
+
+
+func _start_attack(is_heavy: bool) -> void:
+	if _combat_finished or _enemy_hp <= 0.0:
+		return
+	if _attack_elapsed >= 0.0:
+		if is_heavy:
+			_heavy_buffered = true
+		elif _combo_index + 1 < BALANCE.arena_light_attack_combo_length:
+			_combo_buffered = true
+		return
+	if (
+		_dodge_elapsed >= 0.0
 		or (_parry_elapsed >= 0.0 and not _parry_succeeded)
 		or _hit_stun_remaining > 0.0
 		or _hit_stop_remaining > 0.0
@@ -380,10 +632,30 @@ func _start_attack() -> void:
 		_parry_elapsed = -1.0
 		_parry_succeeded = false
 		_parry_cooldown_remaining = BALANCE.arena_parry_cooldown
+	if _combo_window_remaining > 0.0:
+		_begin_combo_attack(_next_chain_index(), is_heavy)
+	else:
+		_begin_combo_attack(0, is_heavy)
+
+
+func _begin_combo_attack(combo_index: int, is_heavy: bool) -> void:
+	assert(combo_index >= 0 and combo_index < BALANCE.arena_light_attack_combo_length)
+	_combo_index = combo_index
+	_attack_is_heavy = is_heavy
+	_combo_buffered = false
+	_heavy_buffered = false
+	_combo_window_remaining = 0.0
 	_attack_elapsed = 0.0
 	_attack_active = false
 	_attack_hit = false
 	_stop_horizontal()
+
+
+func _reset_combo_chain() -> void:
+	_combo_index = 0
+	_combo_buffered = false
+	_heavy_buffered = false
+	_combo_window_remaining = 0.0
 
 
 func _start_dodge() -> void:
@@ -407,6 +679,7 @@ func _start_dodge() -> void:
 		_attack_active = false
 		_attack_hitbox.monitoring = false
 	var dodge_direction: Vector3 = _camera_relative_direction(input_direction)
+	_reset_combo_chain()
 	_dodge_elapsed = 0.0
 	_hero_capsule.velocity.x = dodge_direction.x * BALANCE.arena_dodge_speed
 	_hero_capsule.velocity.z = dodge_direction.z * BALANCE.arena_dodge_speed
@@ -431,6 +704,7 @@ func _cancel_player_action_for_hit() -> void:
 	_attack_elapsed = -1.0
 	_attack_active = false
 	_attack_hitbox.monitoring = false
+	_reset_combo_chain()
 
 
 func _turn_hero(delta: float) -> void:
@@ -465,9 +739,30 @@ func _on_attack_hitbox_body_entered(body: Node3D) -> void:
 	if body != _enemy_capsule or not _attack_active or _attack_hit or _hit_stop_remaining > 0.0:
 		return
 	_attack_hit = true
-	_hit_stop_remaining = BALANCE.arena_light_attack_hit_stop
-	_hit_stop_outcome = HitStopOutcome.DEFEAT_ENEMY
 	_attack_hitbox.set_deferred("monitoring", false)
+	if _enemy_has_iframes():
+		return
+	var base_damage: float = BALANCE.arena_heavy_attack_damage if _attack_is_heavy else BALANCE.arena_light_attack_damage
+	var damage: float = base_damage * (
+		1.0 + BALANCE.arena_light_attack_combo_damage_step * float(_combo_index)
+	)
+	# Rear 180° of the enemy, by position rather than by swing angle - the enemy turns at 720°/s, so
+	# this only pays out where its facing is locked: mid-swing, staggered, or dodged through.
+	if (_hero_capsule.global_position - _enemy_capsule.global_position).dot(-_enemy_capsule.global_basis.z) < 0.0:
+		damage *= BALANCE.arena_back_attack_damage_multiplier
+	# The smash breaks the guard outright. Without one absolute counter, an enemy parry roll the
+	# player cannot see coming is a pure tax on the chain.
+	if _enemy_has_active_parry() and not _attack_is_heavy:
+		damage *= 1.0 - BALANCE.arena_enemy_parry_damage_reduction
+	_enemy_hp -= damage
+	if _enemy_hp <= 0.0:
+		_reset_combo_chain()
+		_hit_stop_remaining = BALANCE.arena_heavy_attack_hit_stop if _attack_is_heavy else BALANCE.arena_light_attack_hit_stop
+		_hit_stop_outcome = HitStopOutcome.DEFEAT_ENEMY
+	else:
+		_hit_stop_remaining = BALANCE.arena_heavy_attack_hit_stop if _attack_is_heavy else BALANCE.arena_enemy_hit_flinch_stop
+		_hit_stop_outcome = HitStopOutcome.FLINCH_ENEMY
+	_start_screen_shake(_hit_stop_remaining)
 
 
 func _on_enemy_attack_hitbox_body_entered(body: Node3D) -> void:
@@ -487,6 +782,7 @@ func _on_enemy_attack_hitbox_body_entered(body: Node3D) -> void:
 	else:
 		_hit_stop_remaining = BALANCE.arena_enemy_attack_hit_stop
 		_hit_stop_outcome = HitStopOutcome.HIT_HERO
+	_start_screen_shake(_hit_stop_remaining)
 	_enemy_attack_hitbox.set_deferred("monitoring", false)
 
 
@@ -529,7 +825,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed(&"attack"):
 		get_viewport().set_input_as_handled()
-		_start_attack()
+		_start_attack(false)
+		return
+	if event.is_action_pressed(&"heavy_attack"):
+		get_viewport().set_input_as_handled()
+		_start_attack(true)
 		return
 	if event.is_action_pressed(&"dodge"):
 		get_viewport().set_input_as_handled()

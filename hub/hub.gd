@@ -10,6 +10,8 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 
 @onready var _roster_list: ItemList = %RosterList
 @onready var _roster_rank_filter: OptionButton = %RosterRankFilter
+@onready var _roster_exact_rank: CheckBox = %RosterExactRank
+@onready var _roster_type_filter: OptionButton = %RosterTypeFilter
 @onready var _target_option: OptionButton = %TargetOption
 @onready var _essence: Label = %Essence
 @onready var _stones: Label = %Stones
@@ -18,6 +20,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _summon_button: Button = %Summon
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _inventory_rank_filter: OptionButton = %InventoryRankFilter
+@onready var _inventory_exact_rank: CheckBox = %InventoryExactRank
 @onready var _inventory_slot_filter: OptionButton = %InventorySlotFilter
 @onready var _parts: Label = %Parts
 @onready var _circle_level: Label = %CircleLevel
@@ -39,6 +42,8 @@ var _pending_action: Callable
 var _slot_filter: int = -1
 var _roster_min_rank: int = -1
 var _inventory_min_rank: int = -1
+# -1 is an OptionButton index sentinel, so it cannot collide with Hero.NO_ARCHETYPE_DEF_ID (&"").
+var _roster_archetype_filter_index: int = -1
 
 
 func _ready() -> void:
@@ -55,6 +60,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	_populate_rank_filter(_roster_rank_filter)
 	_populate_rank_filter(_inventory_rank_filter)
+	_populate_archetype_filter()
 	_populate_slot_filter()
 	_refresh_roster()
 	_refresh_essence()
@@ -94,7 +100,11 @@ func _refresh_hero_list(list: ItemList) -> void:
 			selected_heroes.append(selected_hero)
 	list.clear()
 	for hero: Hero in GameSession.roster:
-		if hero.rank < _roster_min_rank:
+		if _roster_min_rank != -1 and (
+			hero.rank != _roster_min_rank if _roster_exact_rank.button_pressed else hero.rank < _roster_min_rank
+		):
+			continue
+		if _roster_archetype_filter_index != -1 and hero.def_id != StringName(Summon.ARCHETYPE_DEF_IDS[_roster_archetype_filter_index]):
 			continue
 		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
 		list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
@@ -172,7 +182,9 @@ func _refresh_inventory() -> void:
 	items.sort_custom(_sort_inventory_items)
 	for item: Item in items:
 		var definition: EquipmentDefinition = Item.definition_for(item.def_id)
-		if item.rank < _inventory_min_rank:
+		if _inventory_min_rank != -1 and (
+			item.rank != _inventory_min_rank if _inventory_exact_rank.button_pressed else item.rank < _inventory_min_rank
+		):
 			continue
 		if _slot_filter != -1 and (definition == null or definition.slot != _slot_filter):
 			continue
@@ -342,6 +354,16 @@ func _populate_rank_filter(option: OptionButton) -> void:
 		option.set_item_metadata(option.item_count - 1, rank_index)
 
 
+func _populate_archetype_filter() -> void:
+	_roster_type_filter.clear()
+	_roster_type_filter.add_item("Any type")
+	_roster_type_filter.set_item_metadata(0, -1)
+	for archetype_index: int in Summon.ARCHETYPE_DEF_IDS.size():
+		var def_id: StringName = StringName(Summon.ARCHETYPE_DEF_IDS[archetype_index])
+		_roster_type_filter.add_item(Summon.archetype_label_for(def_id))
+		_roster_type_filter.set_item_metadata(_roster_type_filter.item_count - 1, archetype_index)
+
+
 func _populate_slot_filter() -> void:
 	_inventory_slot_filter.clear()
 	_inventory_slot_filter.add_item("All slots")
@@ -478,8 +500,29 @@ func _on_roster_list_multi_selected(_index: int, _selected: bool) -> void:
 	_refresh_hero_detail()
 
 
+func _on_select_all_roster_pressed() -> void:
+	for item_index: int in _roster_list.item_count:
+		_roster_list.select(item_index, false)
+	_refresh_equipped()
+	_refresh_hero_detail()
+	_status.text = "Selected %d heroes." % _roster_list.item_count
+
+
 func _on_roster_rank_filter_item_selected(index: int) -> void:
 	_roster_min_rank = _roster_rank_filter.get_item_metadata(index) as int
+	_refresh_roster()
+	_refresh_equipped()
+	_refresh_hero_detail()
+
+
+func _on_roster_exact_rank_toggled(_toggled_on: bool) -> void:
+	_refresh_roster()
+	_refresh_equipped()
+	_refresh_hero_detail()
+
+
+func _on_roster_type_filter_item_selected(index: int) -> void:
+	_roster_archetype_filter_index = _roster_type_filter.get_item_metadata(index) as int
 	_refresh_roster()
 	_refresh_equipped()
 	_refresh_hero_detail()
@@ -490,9 +533,19 @@ func _on_inventory_rank_filter_item_selected(index: int) -> void:
 	_refresh_inventory()
 
 
+func _on_inventory_exact_rank_toggled(_toggled_on: bool) -> void:
+	_refresh_inventory()
+
+
 func _on_inventory_slot_filter_item_selected(index: int) -> void:
 	_slot_filter = _inventory_slot_filter.get_item_metadata(index) as int
 	_refresh_inventory()
+
+
+func _on_select_all_inventory_pressed() -> void:
+	for item_index: int in _inventory_list.item_count:
+		_inventory_list.select(item_index, false)
+	_status.text = "Selected %d items." % _inventory_list.item_count
 
 
 func _on_equip_pressed() -> void:
@@ -649,6 +702,22 @@ func _on_unequip_pressed() -> void:
 		_status.text = "Unequipped item from %s." % hero.hero_name
 	else:
 		_status.text = "Unequipped %s %s from %s." % [item.rank_label(BALANCE), definition.display_name, hero.hero_name]
+
+
+func _on_unequip_all_pressed() -> void:
+	var hero: Hero = _selected_hero()
+	if hero == null:
+		_status.text = "Select exactly one hero first."
+		return
+	var occupied_slots: Array[int] = []
+	for slot: int in hero.equipped.keys():
+		occupied_slots.append(slot)
+	if occupied_slots.is_empty():
+		_status.text = "%s has nothing equipped." % hero.hero_name
+		return
+	for slot: int in occupied_slots:
+		GameSession.unequip_item(hero, slot)
+	_status.text = "Unequipped %d items from %s." % [occupied_slots.size(), hero.hero_name]
 
 
 func _on_expedition_pressed() -> void:

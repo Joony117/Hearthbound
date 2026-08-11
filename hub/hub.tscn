@@ -120,11 +120,25 @@ text = "ROSTER"
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="RosterExactRank" type="CheckBox" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Exact rank"
+
+[node name="RosterTypeFilter" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="RosterList" type="ItemList" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 select_mode = 1
+
+[node name="SelectAllRoster" type="Button" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Select All"
 
 [node name="Essence" type="Label" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
@@ -259,6 +273,11 @@ text = "INVENTORY"
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="InventoryExactRank" type="CheckBox" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Exact rank"
+
 [node name="InventorySlotFilter" type="OptionButton" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -268,6 +287,11 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 select_mode = 1
+
+[node name="SelectAllInventory" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Select All"
 
 [node name="Equip" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
 layout_mode = 2
@@ -312,6 +336,11 @@ select_mode = 0
 [node name="Unequip" type="Button" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
 layout_mode = 2
 text = "Unequip"
+
+[node name="UnequipAll" type="Button" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Unequip All"
 
 [node name="HeroDetail" type="Label" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
 unique_name_in_owner = true
@@ -374,6 +403,9 @@ unique_name_in_owner = true
 [connection signal="confirmed" from="UI/ConfirmDialog" to="." method="_on_confirm_dialog_confirmed"]
 [connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
 [connection signal="item_selected" from="UI/Root/RosterPanel/VBox/RosterRankFilter" to="." method="_on_roster_rank_filter_item_selected"]
+[connection signal="toggled" from="UI/Root/RosterPanel/VBox/RosterExactRank" to="." method="_on_roster_exact_rank_toggled"]
+[connection signal="item_selected" from="UI/Root/RosterPanel/VBox/RosterTypeFilter" to="." method="_on_roster_type_filter_item_selected"]
+[connection signal="pressed" from="UI/Root/RosterPanel/VBox/SelectAllRoster" to="." method="_on_select_all_roster_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/Recover" to="." method="_on_recover_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice" to="." method="_on_sacrifice_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/RankUp" to="." method="_on_rank_up_pressed"]
@@ -382,8 +414,11 @@ unique_name_in_owner = true
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Enhance" to="." method="_on_enhance_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Convert" to="." method="_on_convert_pressed"]
 [connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Inventory/InventoryRankFilter" to="." method="_on_inventory_rank_filter_item_selected"]
+[connection signal="toggled" from="UI/Root/EquipmentPanel/Columns/Inventory/InventoryExactRank" to="." method="_on_inventory_exact_rank_toggled"]
 [connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Inventory/InventorySlotFilter" to="." method="_on_inventory_slot_filter_item_selected"]
+[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/SelectAllInventory" to="." method="_on_select_all_inventory_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
+[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/UnequipAll" to="." method="_on_unequip_all_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeCircle" to="." method="_on_upgrade_circle_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeForge" to="." method="_on_upgrade_forge_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeTrainingHall" to="." method="_on_upgrade_training_hall_pressed"]

@@ -14,7 +14,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back", &"sprint", &"attack", &"dodge"]:
+	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back", &"sprint", &"attack", &"heavy_attack", &"dodge"]:
 		Input.action_release(action)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	SceneRouter.reset_arena_transition_state()
@@ -129,7 +129,7 @@ func test_arena_attack_uses_left_mouse_and_authored_timeline() -> void:
 	var mouse_event := events[0] as InputEventMouseButton
 	assert_not_null(mouse_event)
 	assert_eq(mouse_event.button_index, MOUSE_BUTTON_LEFT)
-	assert_eq(BALANCE.arena_light_attack_startup, 0.12)
+	assert_eq(BALANCE.arena_light_attack_startup, 0.10)
 	assert_eq(BALANCE.arena_light_attack_active, 0.10)
 	assert_eq(BALANCE.arena_light_attack_recovery, 0.22)
 	assert_eq(BALANCE.arena_light_attack_displacement, 2.0)
@@ -207,6 +207,7 @@ func test_arena_attack_hitbox_defeats_target_once_after_hit_stop() -> void:
 	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
 	var attack_hitbox := arena.get_node("HeroCapsule/AttackHitbox") as Area3D
 	assert_true(attack_hitbox.body_entered.is_connected(Callable(arena, "_on_attack_hitbox_body_entered")))
+	_make_enemy_die_to_one_clean_hit(arena)
 	watch_signals(arena)
 
 	var attack_event := InputEventAction.new()
@@ -676,6 +677,7 @@ func test_arena_win_returns_surviving_hero_without_mutating_profile() -> void:
 	arena.scene_change_requested.disconnect(router)
 	arena.scene_change_requested.connect(_capture_scene_request)
 	arena.combat_resolved.connect(_capture_combat_result)
+	_make_enemy_die_to_one_clean_hit(arena)
 
 	var attack_event := InputEventAction.new()
 	attack_event.action = &"attack"
@@ -779,6 +781,292 @@ func test_arena_cancel_during_result_countdown_requests_hub_once() -> void:
 	assert_eq(_requested_scene, SceneRouter.HUB)
 	assert_signal_emit_count(arena, "scene_change_requested", 1)
 	assert_signal_emit_count(arena, "combat_resolved", 1)
+
+
+## The enemy's dodge and parry rolls are probabilistic, and its HP pool now takes a full five-hit
+## chain to drain. Both would make any test that just wants "one swing kills it" flaky, so tests
+## about the defeat path pin the pool to a single hit and hold the two reactions on cooldown. It
+## does not touch the shared BALANCE resource, which would leak into every later test.
+func _make_enemy_die_to_one_clean_hit(arena: Arena) -> void:
+	arena._enemy_hp = 1.0
+	arena._enemy_dodge_cooldown_remaining = 999.0
+	arena._enemy_parry_cooldown_remaining = 999.0
+
+
+func test_combo_index_scales_hit_damage_and_five_hits_drain_the_pool() -> void:
+	var arena: Arena = _instantiate_arena()
+	var expected_hp: float = BALANCE.arena_enemy_max_hp
+	for combo_index: int in BALANCE.arena_light_attack_combo_length:
+		arena._enemy_hp = expected_hp
+		arena._combo_index = combo_index
+		arena._attack_active = true
+		arena._attack_hit = false
+		# Each landed hit leaves a flinch hit-stop behind, and the hitbox refuses to register a
+		# second hit while one is running. Clearing it is what makes five hits land in one call
+		# stack instead of only the first.
+		arena._hit_stop_remaining = 0.0
+		expected_hp -= BALANCE.arena_light_attack_damage * (
+			1.0 + BALANCE.arena_light_attack_combo_damage_step * float(combo_index)
+		)
+		arena._on_attack_hitbox_body_entered(arena.get_node("EnemyCapsule") as CharacterBody3D)
+		assert_almost_eq(arena._enemy_hp, expected_hp, 0.001)
+	# Escalating damage means the pool must survive four hits and die to the fifth, or the combo
+	# length and the HP pool have drifted apart.
+	assert_lt(expected_hp, 0.0)
+
+
+func test_enemy_dodge_iframes_whiff_the_hit_and_parry_only_scales_damage() -> void:
+	var arena: Arena = _instantiate_arena()
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+
+	arena._enemy_state = Arena.EnemyState.DODGE
+	arena._enemy_dodge_elapsed = 0.0
+	arena._attack_active = true
+	arena._attack_hit = false
+	arena._on_attack_hitbox_body_entered(enemy_capsule)
+	assert_eq(arena._enemy_hp, BALANCE.arena_enemy_max_hp)
+	assert_eq(arena._hit_stop_remaining, 0.0)
+
+	# A parry costs the enemy damage and nothing else: no hit-stun, no combo reset, no cooldown
+	# charged to the player. That asymmetry is the design, not an oversight.
+	arena._enemy_state = Arena.EnemyState.PARRY
+	arena._enemy_parry_elapsed = 0.0
+	arena._combo_index = 2
+	arena._attack_active = true
+	arena._attack_hit = false
+	arena._hit_stop_remaining = 0.0
+	arena._on_attack_hitbox_body_entered(enemy_capsule)
+	var full_damage: float = BALANCE.arena_light_attack_damage * (
+		1.0 + BALANCE.arena_light_attack_combo_damage_step * 2.0
+	)
+	var expected_hp: float = BALANCE.arena_enemy_max_hp - full_damage * (
+		1.0 - BALANCE.arena_enemy_parry_damage_reduction
+	)
+	assert_almost_eq(arena._enemy_hp, expected_hp, 0.001)
+	assert_eq(arena._hit_stun_remaining, 0.0)
+	assert_eq(arena._combo_index, 2)
+	assert_eq(arena._dodge_cooldown_remaining, 0.0)
+	assert_eq(arena._parry_cooldown_remaining, 0.0)
+
+
+func test_screen_shake_scales_off_hit_stop_and_the_toggle_switches_it_off() -> void:
+	var arena: Arena = _instantiate_arena()
+	arena._shake_enabled = true
+	arena._start_screen_shake(BALANCE.arena_parry_hit_stop)
+	var parry_magnitude: float = arena._shake_magnitude
+	assert_almost_eq(
+		parry_magnitude,
+		BALANCE.arena_parry_hit_stop * BALANCE.arena_screen_shake_magnitude_scale,
+		0.0001,
+	)
+	assert_gt(arena._shake_remaining, 0.0)
+
+	# A heavier contact must shake harder, which is the whole reason it scales off hit-stop.
+	arena._start_screen_shake(BALANCE.arena_enemy_hit_flinch_stop)
+	assert_lt(arena._shake_magnitude, parry_magnitude)
+
+	# Decay runs off the pivot update, and must land exactly on zero rather than drifting.
+	arena._shake_remaining = 0.0
+	arena._shake_enabled = false
+	arena._start_screen_shake(BALANCE.arena_parry_hit_stop)
+	assert_eq(arena._shake_remaining, 0.0)
+
+
+func test_screen_shake_setting_round_trips_through_disk() -> void:
+	var restore: bool = Settings.screen_shake_enabled()
+	Settings.set_screen_shake_enabled(false)
+	Settings._config = null
+	assert_false(Settings.screen_shake_enabled())
+	Settings.set_screen_shake_enabled(true)
+	Settings._config = null
+	assert_true(Settings.screen_shake_enabled())
+	Settings.set_screen_shake_enabled(restore)
+
+
+func test_heavy_attack_uses_right_mouse_and_finishes_a_three_hit_chain() -> void:
+	assert_true(InputMap.has_action(&"heavy_attack"))
+	var events: Array[InputEvent] = InputMap.action_get_events(&"heavy_attack")
+	assert_eq(events.size(), 1)
+	var mouse_event := events[0] as InputEventMouseButton
+	assert_not_null(mouse_event)
+	assert_eq(mouse_event.button_index, MOUSE_BUTTON_RIGHT)
+	assert_eq(BALANCE.arena_heavy_attack_startup, 0.30)
+	assert_eq(BALANCE.arena_heavy_attack_active, 0.12)
+	assert_eq(BALANCE.arena_heavy_attack_recovery, 0.50)
+	assert_eq(BALANCE.arena_heavy_attack_displacement, 3.0)
+	assert_eq(BALANCE.arena_heavy_attack_hit_stop, 0.09)
+	assert_eq(BALANCE.arena_heavy_attack_damage, 45.0)
+
+	# The whole point of the smash is that it closes a chain the lights cannot close alone. Three
+	# lights plus a smash must kill; two lights plus a smash must not. Retune any of the four
+	# numbers involved and this is what catches it.
+	var step: float = BALANCE.arena_light_attack_combo_damage_step
+	var light: float = BALANCE.arena_light_attack_damage
+	var chain_of_three: float = light * (1.0 + step * 0.0) + light * (1.0 + step) + light * (1.0 + step * 2.0)
+	var chain_of_two: float = light * (1.0 + step * 0.0) + light * (1.0 + step)
+	assert_gt(
+		chain_of_three + BALANCE.arena_heavy_attack_damage * (1.0 + step * 3.0),
+		BALANCE.arena_enemy_max_hp,
+	)
+	assert_lt(
+		chain_of_two + BALANCE.arena_heavy_attack_damage * (1.0 + step * 2.0),
+		BALANCE.arena_enemy_max_hp,
+	)
+
+
+func test_buffered_smash_takes_the_next_chain_step_and_ends_the_chain() -> void:
+	var arena: Arena = _instantiate_arena()
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	var heavy_event := InputEventAction.new()
+	heavy_event.action = &"heavy_attack"
+	heavy_event.pressed = true
+
+	arena._unhandled_input(attack_event)
+	assert_false(arena._attack_is_heavy)
+	arena._unhandled_input(heavy_event)
+	assert_true(arena._heavy_buffered)
+	assert_eq(arena._combo_index, 0)
+
+	arena._physics_process(
+		BALANCE.arena_light_attack_startup
+		+ BALANCE.arena_light_attack_active
+		+ BALANCE.arena_light_attack_recovery
+		+ 0.001
+	)
+	assert_true(arena._attack_is_heavy)
+	assert_eq(arena._combo_index, 1)
+	assert_false(arena._heavy_buffered)
+
+	# A smash consumes no buffer and opens no combo window - it returns to neutral at step 0.
+	arena._unhandled_input(attack_event)
+	arena._physics_process(
+		BALANCE.arena_heavy_attack_startup
+		+ BALANCE.arena_heavy_attack_active
+		+ BALANCE.arena_heavy_attack_recovery
+		+ 0.001
+	)
+	assert_eq(arena._attack_elapsed, -1.0)
+	assert_eq(arena._combo_index, 0)
+	assert_eq(arena._combo_window_remaining, 0.0)
+
+
+func test_smash_breaks_the_enemy_parry_that_only_scales_a_light() -> void:
+	var arena: Arena = _instantiate_arena()
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	arena._enemy_state = Arena.EnemyState.PARRY
+	arena._enemy_parry_elapsed = 0.0
+	arena._attack_is_heavy = true
+	arena._combo_index = 3
+	arena._attack_active = true
+	arena._attack_hit = false
+
+	arena._on_attack_hitbox_body_entered(enemy_capsule)
+
+	var expected_damage: float = BALANCE.arena_heavy_attack_damage * (
+		1.0 + BALANCE.arena_light_attack_combo_damage_step * 3.0
+	)
+	assert_almost_eq(arena._enemy_hp, BALANCE.arena_enemy_max_hp - expected_damage, 0.001)
+	assert_almost_eq(arena._hit_stop_remaining, BALANCE.arena_heavy_attack_hit_stop, 0.001)
+
+	# The enemy's i-frames still beat it: guard break is not dodge break.
+	arena._enemy_hp = BALANCE.arena_enemy_max_hp
+	arena._enemy_state = Arena.EnemyState.DODGE
+	arena._enemy_dodge_elapsed = 0.0
+	arena._hit_stop_remaining = 0.0
+	arena._attack_active = true
+	arena._attack_hit = false
+	arena._on_attack_hitbox_body_entered(enemy_capsule)
+	assert_eq(arena._enemy_hp, BALANCE.arena_enemy_max_hp)
+
+
+func test_back_attack_multiplies_damage_only_from_behind() -> void:
+	var arena: Arena = _instantiate_arena()
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	assert_almost_eq(enemy_capsule.rotation.y, PI, 0.001)
+
+	arena._attack_active = true
+	arena._attack_hit = false
+	arena._on_attack_hitbox_body_entered(enemy_capsule)
+	assert_almost_eq(
+		arena._enemy_hp,
+		BALANCE.arena_enemy_max_hp - BALANCE.arena_light_attack_damage,
+		0.001,
+	)
+
+	enemy_capsule.rotation.y = 0.0
+	arena._enemy_hp = BALANCE.arena_enemy_max_hp
+	arena._hit_stop_remaining = 0.0
+	arena._attack_active = true
+	arena._attack_hit = false
+	arena._on_attack_hitbox_body_entered(enemy_capsule)
+	assert_almost_eq(
+		arena._enemy_hp,
+		BALANCE.arena_enemy_max_hp
+		- BALANCE.arena_light_attack_damage * BALANCE.arena_back_attack_damage_multiplier,
+		0.001,
+	)
+
+
+func test_super_armor_keeps_the_smash_swinging_but_still_counts_the_hit() -> void:
+	var arena: Arena = _instantiate_arena()
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var heavy_event := InputEventAction.new()
+	heavy_event.action = &"heavy_attack"
+	heavy_event.pressed = true
+
+	arena._unhandled_input(heavy_event)
+	arena._physics_process(BALANCE.arena_heavy_attack_startup * 0.5)
+	assert_true(arena._hero_has_super_armor())
+	arena._enemy_attack_active = true
+	arena._on_enemy_attack_hitbox_body_entered(hero_capsule)
+	arena._physics_process(BALANCE.arena_enemy_attack_hit_stop)
+
+	assert_eq(arena._hits_taken, 1)
+	assert_true(arena._attack_is_heavy)
+	assert_gt(arena._attack_elapsed, 0.0)
+	assert_eq(arena._hit_stun_remaining, 0.0)
+	assert_almost_eq(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), 0.0, 0.001)
+
+	# Armor covers startup and the active window, and nothing else - the smash's recovery is as
+	# exposed as any other.
+	arena._attack_elapsed = (
+		BALANCE.arena_heavy_attack_startup + BALANCE.arena_heavy_attack_active + 0.01
+	)
+	assert_false(arena._hero_has_super_armor())
+
+
+func test_parry_window_and_enemy_telegraph_tint_the_capsules() -> void:
+	var arena: Arena = _instantiate_arena()
+	var hero_mesh := arena.get_node("HeroCapsule/Mesh") as MeshInstance3D
+	var enemy_mesh := arena.get_node("EnemyCapsule/Mesh") as MeshInstance3D
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+
+	arena._unhandled_input(dodge_event)
+	arena._physics_process(0.0)
+	assert_eq((hero_mesh.material_override as StandardMaterial3D).albedo_color, Arena.PARRY_WINDOW_COLOR)
+	arena._parry_elapsed = BALANCE.arena_parry_startup + BALANCE.arena_parry_active_window
+	arena._physics_process(0.0)
+	assert_ne((hero_mesh.material_override as StandardMaterial3D).albedo_color, Arena.PARRY_WINDOW_COLOR)
+
+	arena._enemy_attack_elapsed = (
+		BALANCE.arena_enemy_attack_startup - BALANCE.arena_enemy_telegraph_flash - 0.01
+	)
+	arena._physics_process(0.0)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, Arena.ENEMY_WINDUP_COLOR)
+	arena._enemy_attack_elapsed = BALANCE.arena_enemy_attack_startup - 0.01
+	arena._physics_process(0.0)
+	assert_eq((enemy_mesh.material_override as StandardMaterial3D).albedo_color, Arena.ENEMY_TELEGRAPH_COLOR)
+
+
+func _instantiate_arena() -> Arena:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	return arena
 
 
 func _capture_scene_request(scene_path: String) -> void:
