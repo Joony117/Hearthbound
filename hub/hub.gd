@@ -9,7 +9,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 ]
 
 @onready var _roster_list: ItemList = %RosterList
-@onready var _fodder_option: OptionButton = %FodderOption
+@onready var _fodder_list: ItemList = %FodderList
 @onready var _target_option: OptionButton = %TargetOption
 @onready var _essence: Label = %Essence
 @onready var _stones: Label = %Stones
@@ -73,22 +73,27 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _refresh_roster() -> void:
+	_refresh_hero_list(_roster_list)
+	_refresh_hero_list(_fodder_list)
+	_refresh_hero_option(_target_option)
+
+
+## Both multi-select hero lists rebuild the same way: re-select by identity after the clear, so a
+## hero that left the roster drops out of the selection instead of the row under it taking its place.
+func _refresh_hero_list(list: ItemList) -> void:
 	var selected_heroes: Array[Hero] = []
-	for selected_index: int in _roster_list.get_selected_items():
-		var selected_hero: Hero = _roster_list.get_item_metadata(selected_index) as Hero
+	for selected_index: int in list.get_selected_items():
+		var selected_hero: Hero = list.get_item_metadata(selected_index) as Hero
 		if selected_hero != null:
 			selected_heroes.append(selected_hero)
-
-	_roster_list.clear()
+	list.clear()
 	for hero: Hero in GameSession.roster:
 		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
-		_roster_list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
-		var item_index: int = _roster_list.item_count - 1
-		_roster_list.set_item_metadata(item_index, hero)
+		list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
+		var item_index: int = list.item_count - 1
+		list.set_item_metadata(item_index, hero)
 		if selected_heroes.has(hero):
-			_roster_list.select(item_index, false)
-	_refresh_hero_option(_fodder_option)
-	_refresh_hero_option(_target_option)
+			list.select(item_index, false)
 
 
 func _refresh_hero_option(option: OptionButton) -> void:
@@ -98,8 +103,8 @@ func _refresh_hero_option(option: OptionButton) -> void:
 		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
 		option.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
 		option.set_item_metadata(option.item_count - 1, hero)
-	# add_item() auto-selects index 0 on a cleared button. Re-selecting by identity after the
-	# loop is what stops a sacrificed hero's slot silently retargeting whoever took its place.
+	# Only TargetOption auto-selects index 0 on a cleared button. Re-selecting by identity after
+	# the loop is what stops a sacrificed hero's target silently retargeting whoever took its place.
 	option.select(GameSession.roster.find(selected_hero))
 
 
@@ -329,41 +334,60 @@ func _on_confirm_dialog_confirmed() -> void:
 
 
 func _on_sacrifice_pressed() -> void:
-	var fodder: Hero = _fodder_option.get_selected_metadata() as Hero if _fodder_option.selected >= 0 else null
+	var fodders: Array[Hero] = []
+	for selected_index: int in _fodder_list.get_selected_items():
+		var fodder: Hero = _fodder_list.get_item_metadata(selected_index) as Hero
+		if fodder != null:
+			fodders.append(fodder)
 	var target: Hero = _target_option.get_selected_metadata() as Hero if _target_option.selected >= 0 else null
-	if fodder == null or target == null:
+	if fodders.is_empty() or target == null:
 		_status.text = "Select both a fodder hero and a target hero."
 		return
-	if fodder == target:
-		_status.text = "A hero cannot be sacrificed into itself."
-		return
-	if not GameSession.roster.has(fodder):
-		_status.text = "Cannot sacrifice: fodder is no longer in the roster."
-		return
-	if not fodder.equipped.is_empty():
-		_status.text = "Unequip the fodder hero before sacrificing it."
-		return
 	var sanctum_level: int = clampi(GameSession.building_levels[3], 0, BALANCE.summoning_circle_level_cap)
-	var essence_yield: int = Hero.compute_essence_yield(fodder, target, BALANCE, sanctum_level)
+	var essence_yield: int = 0
+	var fodder_names: PackedStringArray = []
+	for fodder: Hero in fodders:
+		if fodder == target:
+			_status.text = "A hero cannot be sacrificed into itself."
+			return
+		if not GameSession.roster.has(fodder):
+			_status.text = "Cannot sacrifice: %s is no longer in the roster." % fodder.hero_name
+			return
+		if not fodder.equipped.is_empty():
+			_status.text = "Unequip %s before sacrificing it." % fodder.hero_name
+			return
+		essence_yield += Hero.compute_essence_yield(fodder, target, BALANCE, sanctum_level)
+		fodder_names.append("[%s] %s" % [fodder.rank_label(BALANCE), fodder.hero_name])
+	var fodder_text: String = ", ".join(fodder_names)
+	var destruction_text: String = fodders[0].hero_name if fodders.size() == 1 else "%d heroes" % fodders.size()
 	_ask(
-		"Sacrifice [%s] %s into [%s] %s for %d essence?\n\n%s is destroyed permanently." % [
-			fodder.rank_label(BALANCE),
-			fodder.hero_name,
+		"Sacrifice %s into [%s] %s for %d essence?\n\n%s %s destroyed permanently." % [
+			fodder_text,
 			target.rank_label(BALANCE),
 			target.hero_name,
 			essence_yield,
-			fodder.hero_name,
+			destruction_text,
+			"is" if fodders.size() == 1 else "are",
 		],
-		_do_sacrifice.bind(fodder, target, essence_yield),
+		_do_sacrifice.bind(fodders, target),
 	)
 
 
-func _do_sacrifice(fodder: Hero, target: Hero, essence_yield: int) -> void:
-	var fodder_name: String = fodder.hero_name
-	if GameSession.sacrifice_hero(fodder, target, BALANCE):
-		_status.text = "Sacrificed %s for %d essence." % [fodder_name, essence_yield]
+func _do_sacrifice(fodders: Array[Hero], target: Hero) -> void:
+	var sanctum_level: int = clampi(GameSession.building_levels[3], 0, BALANCE.summoning_circle_level_cap)
+	var sacrificed_count: int = 0
+	var credited_essence: int = 0
+	for fodder: Hero in fodders:
+		var essence_yield: int = Hero.compute_essence_yield(fodder, target, BALANCE, sanctum_level)
+		if GameSession.sacrifice_hero(fodder, target, BALANCE):
+			sacrificed_count += 1
+			credited_essence += essence_yield
+	if fodders.size() == 1 and sacrificed_count == 1:
+		_status.text = "Sacrificed %s for %d essence." % [fodders[0].hero_name, credited_essence]
+	elif sacrificed_count == fodders.size():
+		_status.text = "Sacrificed %d heroes for %d essence." % [sacrificed_count, credited_essence]
 	else:
-		_status.text = "Cannot sacrifice the selected hero."
+		_status.text = "Sacrificed %d of %d heroes for %d essence." % [sacrificed_count, fodders.size(), credited_essence]
 
 
 func _on_rank_up_pressed() -> void:
@@ -416,28 +440,44 @@ func _on_equip_pressed() -> void:
 
 func _on_salvage_pressed() -> void:
 	var selected: PackedInt32Array = _inventory_list.get_selected_items()
-	if selected.size() != 1:
-		_status.text = "Select exactly one inventory item."
+	if selected.size() < 1:
+		_status.text = "Select at least one inventory item."
 		return
-	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
-	assert(item != null)
-	var rank_label: String = item.rank_label(BALANCE)
-	var forge_level: int = clampi(GameSession.building_levels[1], 0, BALANCE.summoning_circle_level_cap)
-	var salvage_yield: int = roundi((3 + clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max)) * (1.0 + BALANCE.forge_salvage_yield_bonus * forge_level))
-	var definition: EquipmentDefinition = Item.definition_for(item.def_id)
-	var item_name: String = definition.display_name if definition != null else str(item.def_id)
-	var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
+	var items: Array[Item] = []
+	var parts_by_rank: Array[int] = []
+	parts_by_rank.resize(BALANCE.rank_names.size())
+	for selected_index: int in selected:
+		var item: Item = _inventory_list.get_item_metadata(selected_index) as Item
+		if item == null:
+			continue
+		items.append(item)
+		var rank_index: int = clampi(item.rank, 0, parts_by_rank.size() - 1)
+		parts_by_rank[rank_index] += Item.compute_salvage_yield(item, GameSession.building_levels[1], BALANCE)
+	var parts_text: PackedStringArray = []
+	for rank_index: int in parts_by_rank.size():
+		if parts_by_rank[rank_index] > 0:
+			parts_text.append("%d %s parts" % [parts_by_rank[rank_index], BALANCE.rank_names[rank_index]])
+	assert(not items.is_empty())
 	_ask(
-		"Salvage %s %s%s into %d %s parts?\n\nThe item is destroyed." % [
-			rank_label, item_name, enhance_suffix, salvage_yield, rank_label,
-		],
-		_do_salvage.bind(item, rank_label, salvage_yield),
+		"Salvage %d %s into %s?\n\n%s %s destroyed." % [
+			items.size(), "item" if items.size() == 1 else "items", ", ".join(parts_text),
+			"The item" if items.size() == 1 else "The items", "is" if items.size() == 1 else "are",
+		], _do_salvage.bind(items, parts_by_rank),
 	)
 
 
-func _do_salvage(item: Item, rank_label: String, salvage_yield: int) -> void:
-	GameSession.salvage_item(item, BALANCE)
-	_status.text = "Salvaged %s item into %d %s parts." % [rank_label, salvage_yield, rank_label]
+func _do_salvage(items: Array[Item], parts_by_rank: Array[int]) -> void:
+	for item: Item in items:
+		GameSession.salvage_item(item, BALANCE)
+	var parts_text: PackedStringArray = []
+	for rank_index: int in parts_by_rank.size():
+		if parts_by_rank[rank_index] > 0:
+			parts_text.append("%d %s parts" % [parts_by_rank[rank_index], BALANCE.rank_names[rank_index]])
+	if items.size() == 1:
+		var rank_index: int = clampi(items[0].rank, 0, BALANCE.rank_names.size() - 1)
+		_status.text = "Salvaged %s item into %s." % [BALANCE.rank_names[rank_index], parts_text[0]]
+	else:
+		_status.text = "Salvaged %d items into %s." % [items.size(), ", ".join(parts_text)]
 
 
 func _on_enhance_pressed() -> void:

@@ -852,7 +852,7 @@ destroys something unrecoverable, and the report named expeditions and sacrifice
 | P2b-02 | Controller input path for the arena | Hard constraint, not deferrable to Phase 5 |
 | P2-26 | Destructive hub actions ask before they fire | **Body below.** Playtest feedback, 2026-08-10. First of the six because it is the only one that prevents *permanent* loss. Guards Expedition, Sacrifice, Salvage and Recover behind one shared `ConfirmationDialog`; the dialog text doubles as the "what is being sacrificed, to whom" indication the report asked for separately. Crosses `CLAUDE.md` boundary 2 (scene seam) only — no save key, no autoload signature. **Four test files press these buttons directly** (`test_expedition.gd`, `test_sanctum.gd`, `test_buildings.gd`, `test_recovery.gd`) and all four are in the allowed list; the archive's five consecutive wrong allowed-file lists were all this mistake. |
 | P2-25 | Each hero has ten equipment slots, and picking one filters the bag | **Body below.** Playtest feedback, 2026-08-10; closes three reported items (dedicated slot UI, sort by rank/type, a tab per type) — see the merge reasoning above. `_refresh_equipped()` (`hub/hub.gd:176`) iterates `hero.equipped`, which only holds *filled* slots, so an empty slot is invisible and there is nowhere to click to say "show me boots". Render all ten `EquipmentDefinition.Slot` entries always, empty ones included; selecting one filters `_refresh_inventory()` to items whose definition matches that slot, ordered rank-descending then `+enhance` descending. **The `Slot` ordinal positionally mirrors `Hero.STAT_NAMES`** — `P2-05c`/`P2-06c` both warn that reordering either enum misroutes gear with a green gate, so this ticket displays the ordinal and must not renumber it. No save key changes; scene seam only. Body written by the director per rung 1 rather than routed to `tech-lead` — the open questions were UI mechanics (how the filter is cleared, where a missing-definition item goes, how ties order), none of which needs a balance number. |
-| P2-27 | Sacrifice and salvage in batches | Playtest feedback, 2026-08-10. Sequenced **after** `P2-25`: batching a flat unordered list is batching the complaint. Fodder is currently a single `OptionButton` (`%FodderOption`) and `%InventoryList` is `select_mode = 0`; both become multi-select, and the payout is summed once rather than per-press. **Read `P2-06a`'s Findings first** — `add_item()` auto-selects index 0 on a cleared button, which is how a blind second press once killed the wrong hero permanently; a batch path multiplies that failure by the batch size. Inherits `P2-26`'s confirm text, which is what makes a 12-item press safe. `GameSession.sacrifice_hero`/`salvage_item` stay one-at-a-time — the loop belongs in `hub.gd`, not in a new autoload method (`DECISIONS.md` 2026-08-06). |
+| P2-27 | Sacrifice and salvage in batches | **Body below.** Playtest feedback, 2026-08-10. Sequenced **after** `P2-25`: batching a flat unordered list is batching the complaint. Fodder is currently a single `OptionButton` (`%FodderOption`) and `%InventoryList` is `select_mode = 0`; both become multi-select, and the payout is summed once rather than per-press. **Read `P2-06a`'s Findings first** — `add_item()` auto-selects index 0 on a cleared button, which is how a blind second press once killed the wrong hero permanently; a batch path multiplies that failure by the batch size. Inherits `P2-26`'s confirm text, which is what makes a 12-item press safe. `GameSession.sacrifice_hero`/`salvage_item` stay one-at-a-time — the loop belongs in `hub.gd`, not in a new autoload method (`DECISIONS.md` 2026-08-06). |
 | P2-28 | Hover detail on roster and inventory rows | Playtest feedback, 2026-08-10, and the *residue* of "clearer indications" once `P2-26`'s confirm text and `P2-25`'s slot layout have taken the load-bearing half. `ItemList.set_item_tooltip()` is native and one line per `add_item()` call, so this is small. Trails everything; blocks nothing. |
 | P2b-03 | The capsules show what is happening — telegraph, hit flash, parry flash | Playtest feedback, 2026-08-10; merges "no enemy telegraph" and "hit effects" — one mechanism, see above. A `StandardMaterial3D` tint on each capsule driven by state `arena.gd` already tracks: enemy startup (`_enemy_attack_elapsed < arena_enemy_attack_startup`), `HitStopOutcome.HIT_HERO`, `.PARRY_HERO`, `.DEFEAT_ENEMY`. Telegraph is included despite the report deferring it, and is a separable criterion. **The materials must be `duplicate()`d per instance** — `arena.tscn`'s capsules are native primitives and a shared material writes back to disk for every consumer, the hazard `ARCHITECTURE.md` § "Reaching shared Resources" names by example (`P2-07c` hit it with `summon_weights`). The report's "still needs tuning for combat weight" is recorded here and **not acted on**: `arena_light_attack_hit_stop` is `0.04 s` and may well be too short, but tuning weight against an invisible hit is tuning against a missing signal. Re-ask after this ships. |
 | P2b-04 | **[BLOCKED — design]** Dodge and parry cancel any player action instantly | Playtest feedback, 2026-08-10. Today `_start_dodge()` (`combat/arena/arena.gd:341-343`) refuses during light-attack startup *and* active, so the only cancel window is recovery, and `_start_parry()` is reachable only through the standstill branch below that same guard. Deleting those three lines is most of the change — but **`SYSTEMS.md` § "Enemy attack, dodge and hit reaction" ruled the current terms**, so this reverses a published ruling, and "most actions" names no boundary. `game-designer` must answer four things first: (1) does a cancel out of an *active* attack refund the hit or eat it; (2) is hit-stun cancellable — if yes, `arena_enemy_hit_stun = 0.35` and the knockback stop being a punish at all; (3) is hit-stop cancellable (it is the one window where input is currently ignored wholesale, `_physics_process` line 84); (4) does a cancel out of an attack still pay `arena_dodge_cooldown`, or is cancelling free. (2) and (3) are where "instantly cancel out of *most* actions" stops being a one-line change. |
@@ -1057,12 +1057,170 @@ auto-selects a row.
 
 ---
 
+## P2-27 — Sacrifice and salvage in batches                                   [DONE]
+
+### Objective
+
+Pick several fodder heroes, or several inventory items, and spend them in one press. The dialog
+names the whole batch and the summed payout; twelve items cost one confirm instead of twelve.
+
+### Existing architecture
+
+- **Fodder is a single `OptionButton`** (`%FodderOption`, `hub.tscn:154`), filled by
+  `_refresh_hero_option()` (`hub/hub.gd:94`) which also fills `%TargetOption`. An `OptionButton`
+  cannot express a multi-selection at all, so this is a control swap, not a flag.
+- `%InventoryList` is `select_mode = 0` (`SELECT_SINGLE`, `hub.tscn:262`) and has no
+  `[connection]`. Three handlers read it — `_on_equip_pressed()` (`:398`), `_on_salvage_pressed()`
+  (`:417`), `_on_enhance_pressed()` (`:443`) — and all three already guard on
+  `selected.size() != 1`, so widening the mode does not silently change what equip or enhance do.
+- `P2-26` shipped `_ask(prompt, action)` (`:318`) storing a `Callable`; each handler validates,
+  summarises, then `_ask(...)`. The dialog is `exclusive`, so no second action can queue.
+- `GameSession.sacrifice_hero()` (`:205`) and `salvage_item()` (`:142`) each emit
+  `roster_changed`, which is connected to eleven `_refresh_*` functions **and** to
+  `SaveService.save` (`game_session.gd:35`). Every one of those `_refresh_*` calls `clear()` on
+  its list first.
+- `_on_salvage_pressed()` re-derives the salvage formula inline (`hub/hub.gd:426`) although
+  `Item.compute_salvage_yield()` exists — `P2-12` extracted it precisely so there would be one
+  site.
+
+### Acceptance criteria
+
+1. `%FodderOption` becomes `%FodderList`, an `ItemList` with `select_mode = 1` (`SELECT_MULTI` —
+   check the ordinal against the engine, not against this sentence; `SELECT_TOGGLE` is `2`, and
+   `%RosterList` at `hub.tscn:123` is the working precedent),
+   listing the roster in order with the same `[rank]  name — archetype` text and `Hero` metadata
+   `_refresh_hero_option()` writes today. `%TargetOption` stays an `OptionButton` — sacrifice is
+   many-into-one.
+2. The fodder selection survives a refresh by identity, the way `_refresh_roster()` (`:75`)
+   already does it. A hero that has left the roster is simply not re-selected, which is how a
+   completed batch clears its own selection. **`P2-06a`'s auto-select trap does not carry over** —
+   `ItemList.add_item()` does not select index 0 the way `OptionButton.add_item()` does — and the
+   comment at `hub/hub.gd:101` documents a hazard that now applies only to `%TargetOption`. Say so
+   rather than deleting it silently.
+3. `%InventoryList` becomes `select_mode = 1`. `_on_equip_pressed()` and `_on_enhance_pressed()`
+   keep their existing single-selection guard **and their existing message** — batching those is
+   a non-goal, and their guard is what makes widening the mode safe.
+4. Sacrifice validation runs before the dialog. The two batch-independent messages are verbatim:
+   an empty fodder selection or no target gives `Select both a fodder hero and a target hero.`,
+   and the target appearing among the fodder gives `A hero cannot be sacrificed into itself.` The
+   two per-hero refusals **name the offending hero** rather than staying verbatim — with twelve
+   selected, `Unequip the fodder hero before sacrificing it.` is unactionable. No test asserts
+   either string.
+5. One dialog for the whole batch, naming every fodder hero, the target, and the **summed**
+   essence. Confirming calls `GameSession.sacrifice_hero()` once per fodder. Cancelling kills
+   nobody.
+6. **The summed preview provably equals the payout**, and it is checkable rather than hoped for:
+   `Hero.compute_essence_yield()` (`heroes/hero.gd:150`) reads `fodder`, `target.def_id`, the
+   balance and the Sanctum level, none of which an earlier sacrifice in the same batch changes —
+   `sacrifice_hero()` bumps `target.resonance`, which that formula does not read. A test pins it
+   with a batch of three dupes of the target.
+7. Salvage takes `selected.size() < 1` → `Select at least one inventory item.`, one dialog naming
+   the item count and the parts total, and one `GameSession.salvage_item()` call per selected item
+   on confirm.
+8. The salvage preview calls `Item.compute_salvage_yield()` instead of re-deriving it inline. One
+   arithmetic site (`P2-12`); a batch that previews `12` and pays `11` is `P2-07e`'s
+   preview-disagrees-with-payout failure at batch scale.
+9. **A batch of exactly one produces byte-identical status text to today's** for both actions —
+   `Sacrificed Fodder for 98 essence.` and `Salvaged B item into 4 B parts.` A batch of two or
+   more reads `Sacrificed 4 heroes for 312 essence.` and `Salvaged 5 items into 3 C parts, 12 B
+   parts.` The salvage total is **per rank**, not one number: `GameSession.parts` is rank-indexed
+   and a single sum would name a quantity that lands in no bucket. Ranks list in `parts` index
+   order, which is ascending — the order the array is walked in, so no sort is needed.
+10. A `sacrifice_hero()` returning `false` mid-batch does not abort the rest, and the status
+    reports what actually happened — `Sacrificed 3 of 4 heroes for 240 essence.`, carrying the
+    essence actually credited rather than the preview sum.
+11. **Snapshot the `Hero`/`Item` references before the first call, not inside the loop.** Each
+    call emits `roster_changed`, which `clear()`s and rebuilds both lists, so reading metadata off
+    a list index on iteration 2 reads a list that no longer holds what iteration 1 saw. This is
+    the one way this ticket can destroy the wrong thing.
+12. No batch method on `GameSession` — the loop lives in `hub.gd` (`DECISIONS.md` 2026-08-06).
+    `sacrifice_hero()` and `salvage_item()` keep their signatures and stay one-at-a-time.
+13. Existing tests pass. `test_sanctum.gd` and `test_buildings.gd` change only where the control
+    swap and the `select_mode` force it. Two new tests: a three-fodder batch (one dialog, summed
+    essence, nothing dies before the confirm) and a two-rank batch salvage.
+14. No save key changes, no autoload signature changes. The node type change and the two
+    `select_mode` changes cross the scene seam (`CLAUDE.md` boundary 2), so a `verifier` pass is
+    mandatory. Neither list needs a `[connection]` — both handlers read `get_selected_items()` at
+    press time — so `P2-14`/`P2-25`'s "`select()` does not emit" rule bites nothing here, and a
+    test may drive selection with `select()`/`select(i, false)` directly.
+
+### Files allowed to change
+
+`hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_sanctum.gd`, `tests/unit/test_buildings.gd`,
+`tests/unit/test_equipment.gd`, `docs/TASKS.md`.
+
+`test_equipment.gd` is listed because it drives `%InventoryList` (`:75`) and the `select_mode`
+change is exactly the kind of thing that alters its behaviour. If it needs no edit, say so — five
+consecutive tickets in the archive shipped a wrong allowed-file list, the last by naming a file
+that did not change.
+
+### Non-goals
+
+Batch equip, enhance, convert, rank up or building upgrade. A `GameSession.sacrifice_heroes()` or
+any other batch method on the autoload. Suppressing the N `roster_changed` emits — and therefore
+the N `SaveService.save()` disk writes — a batch of N produces: chatty but correct, and a
+deferred-emit mechanism is a larger change than the batch it would optimise. Tooltips (`P2-28`).
+Any change to what a single sacrifice or salvage does. Preserving the inventory selection across a
+refresh: it is lost today (`P2-25`), losing it after a batch is fail-closed, and a blind second
+press hits the empty-selection refusal.
+
+### Findings
+
+**Shipped in the commit below.** Director-written body, Codex-implemented (`gpt-5.6-terra`, medium),
+mandatory boundary-2 `verifier` pass returned **pass-with-concerns** with one finding that mattered.
+
+**The ticket shipped a wrong enum ordinal, and every gate stayed green on it.** Criterion 1 said
+`select_mode = 2 (SELECT_MULTI)`. `SELECT_MULTI` is `1`; `2` is `SELECT_TOGGLE`. The implementer
+followed the number as written, both gates passed, 148 tests passed, and the batch feature worked —
+because `get_selected_items()` behaves identically under both modes when driven programmatically,
+which is the only way any test in this suite touches a list. The difference is a *mouse* difference:
+`SELECT_TOGGLE` toggles a row on a plain click, `SELECT_MULTI` needs Ctrl. So the hub would have
+shipped with `%RosterList` on one interaction idiom and the two new lists on another, in the same
+panel, described by the ticket as identical. Corrected to `1`.
+
+Three things generalize:
+
+- **`select_mode` is a scene-seam value the test suite cannot see.** Criterion 14 explicitly
+  sanctioned driving selection with `select()`/`select(i, false)` — correct for what it was
+  guarding against (`P2-14`'s "`select()` does not emit"), and it is exactly what routes around the
+  click-handling path `select_mode` governs. A test written that way can never fail on a wrong
+  ordinal. The engine is the authority: `ClassDB.class_get_integer_constant_list("ItemList", true)`
+  answers it in one headless call. **The eighth "reads real, measures nothing" entry** — the value
+  was authored, plausible and load-bearing, and measured a different thing than its label claimed.
+- **A named constant in a ticket is not a check on the numeral beside it.** Writing
+  `2 (SELECT_MULTI)` reads as belt-and-braces and is worth nothing: nothing reconciles the two
+  halves. `%RosterList` at `hub.tscn:123` had carried the right answer since P1 and neither the
+  ticket nor the implementation looked at it.
+- **`SELECT_TOGGLE` may genuinely be the better mode for a batch workflow** — plain-clicking twelve
+  items beats Ctrl-clicking twelve. It was rejected here for consistency, not on merit: switching
+  the whole hub to it is a UX change across three lists and belongs in its own ticket. Re-ask after
+  a played build.
+
+Two `verifier` `LOW`s were accepted rather than fixed. `salvage_item()` returns `void` and no-ops
+silently on an item already gone, so `_do_salvage()` reports the full previewed total where
+`_do_sacrifice()` counts real successes (criterion 10) — unreachable through the UI, since the
+snapshot is taken before the exclusive dialog opens and nothing else can mutate `inventory` in that
+window. And the per-rank salvage total lists ascending by rank index because that is the order the
+array is walked; criterion 9's example had it descending, so **the criterion is what changed.**
+
+One process note worth carrying: the `verifier` ran `git checkout -- hub/hub.gd` to undo a mutation
+and **discarded the entire uncommitted implementation**, which was never staged. It reconstructed
+the file from the diff it had already read and proved the restore by blob hash, and the director
+re-verified the tree independently before continuing. Nothing was lost. The rule it earns:
+**a red-proof that mutates an uncommitted tree has no safe undo** — stage the work first, or the
+mutation and the work share one restore point.
+
+---
+
 <!-- Fresh-session handoff after P2-26: the playtest feedback of 2026-08-10 is filed as six rows
  (P2-25, P2-26, P2-27, P2-28, P2b-03, P2b-04) with the merge reasoning in "Playtest feedback" above
  — read that before re-splitting any of them, since three reported items collapsed into P2-25 and
- two into P2b-03 on purpose. P2-26 and P2-25 have both landed. Next by the stated sequencing is
- P2-27 (batch sacrifice/salvage), which was deliberately queued behind P2-25 and now has the
- slot-filtered, rank-ordered inventory it was waiting for.
+ two into P2b-03 on purpose. P2-26, P2-25 and P2-27 have all landed. What remains of the six is
+ P2-28 (hover detail, small, blocks nothing), P2b-03 (capsule telegraph/hit flash) and P2b-04.
+
+ Before writing another ticket that names a Godot enum ordinal, read P2-27's Findings: it shipped
+ select_mode = 2 labelled SELECT_MULTI, which is SELECT_TOGGLE, and both gates plus 148 tests stayed
+ green because no test in this suite drives a real mouse click through any list.
 
  P2b-04 is BLOCKED on a game-designer ruling and is the only one of the six that is; do not dispatch
  it to an implementer on the strength of "it is three lines".

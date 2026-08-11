@@ -151,9 +151,10 @@ select_mode = 0
 layout_mode = 2
 text = "Recover Selected Cache"
 
-[node name="FodderOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
+[node name="FodderList" type="ItemList" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
+select_mode = 1
 
 [node name="TargetOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
@@ -259,7 +260,7 @@ text = "INVENTORY"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-select_mode = 0
+select_mode = 1
 
 [node name="Equip" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
 layout_mode = 2

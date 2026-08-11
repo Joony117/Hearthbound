@@ -102,6 +102,36 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	assert_eq(GameSession.parts[3], parts_before)
 
 
+func test_batch_salvage_credits_each_rank_after_confirm() -> void:
+	var rank_b_item := Item.new(&"ring", 3)
+	var rank_c_item := Item.new(&"boots", 2)
+	GameSession.add_item(rank_b_item)
+	GameSession.add_item(rank_c_item)
+	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
+	var hub: Node3D = hub_scene.instantiate() as Node3D
+	add_child_autofree(hub)
+	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
+	var salvage_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Inventory/Salvage") as Button
+	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
+	var status: Label = hub.get_node("%Status") as Label
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+
+	for item_index: int in inventory_list.item_count:
+		inventory_list.select(item_index, false)
+	salvage_button.pressed.emit()
+
+	assert_eq(GameSession.inventory.size(), 2)
+	assert_string_contains(confirm_dialog.dialog_text, "2 items")
+	assert_string_contains(confirm_dialog.dialog_text, "3 B parts")
+	assert_string_contains(confirm_dialog.dialog_text, "3 C parts")
+	confirm_dialog.confirmed.emit()
+
+	assert_true(GameSession.inventory.is_empty())
+	assert_eq(GameSession.parts[3] - parts_before[3], 3)
+	assert_eq(GameSession.parts[2] - parts_before[2], 3)
+	assert_eq(status.text, "Salvaged 2 items into 3 C parts, 3 B parts.")
+
+
 func test_training_hall_upgrade_updates_hub() -> void:
 	GameSession.parts[0] = 20
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
