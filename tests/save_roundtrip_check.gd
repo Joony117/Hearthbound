@@ -75,7 +75,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, turn counter, lost-cache turn_lost, recovery and expiry, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, taught traits, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, turn counter, lost-cache turn_lost, recovery and expiry, save version %d, and byte-identical restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -98,6 +98,9 @@ func _run() -> int:
 	var round_trip_code: int = _check_new_format_round_trip()
 	if round_trip_code != 0:
 		return round_trip_code
+	var taught_traits_code: int = _check_taught_traits_round_trip()
+	if taught_traits_code != 0:
+		return taught_traits_code
 	var sacrifice_code: int = _check_sacrifice_round_trip()
 	if sacrifice_code != 0:
 		return sacrifice_code
@@ -123,6 +126,32 @@ func _run() -> int:
 	if roster_wipe_code != 0:
 		return roster_wipe_code
 	return _check_recovery_round_trip()
+
+
+func _check_taught_traits_round_trip() -> int:
+	var previous_state: Dictionary = _game_session.call("to_dict") as Dictionary
+	var hero: Hero = Hero.new("Taught Trait Hero", 0)
+	hero.def_id = &"knight"
+	hero.taught_traits = [&"knight_shield_drill", &"knight_iron_discipline"]
+	_game_session.call("add_hero", hero)
+	_save_service.call("save")
+
+	_roster().clear()
+	if not _save_service.call("load_game"):
+		return _fail("taught traits disk reload", "load_game() == true", "load_game() == false")
+	var reloaded_hero: Hero = _find_hero("Taught Trait Hero", 0)
+	if reloaded_hero == null:
+		return _fail("taught traits hero after disk reload", "Taught Trait Hero:0", _roster_summary())
+	var expected_traits: Array[StringName] = [&"knight_iron_discipline", &"knight_shield_drill"]
+	if reloaded_hero.taught_traits != expected_traits:
+		return _fail("taught traits after disk reload", str(expected_traits), str(reloaded_hero.taught_traits))
+	var saved_hero: Dictionary = reloaded_hero.to_dict()
+	var saved_traits: Array = saved_hero.get("taught_traits", []) as Array
+	if saved_traits != ["knight_iron_discipline", "knight_shield_drill"]:
+		return _fail("taught traits stable save order", "[knight_iron_discipline, knight_shield_drill]", str(saved_traits))
+	_game_session.call("from_dict", previous_state)
+	_save_service.call("save")
+	return 0
 
 
 func _check_legacy_save() -> int:

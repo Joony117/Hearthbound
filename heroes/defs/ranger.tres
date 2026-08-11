@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
 [ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
@@ -24,6 +24,27 @@ display_name = "Deadeye"
 stat = 4
 magnitude = 0.015
 
+[sub_resource type="Resource" id="TraitDefinition_light_step"]
+script = ExtResource("2_trait")
+id = &"ranger_light_step"
+display_name = "Light Step"
+stat = 3
+magnitude = 0.03
+
+[sub_resource type="Resource" id="TraitDefinition_steady_aim"]
+script = ExtResource("2_trait")
+id = &"ranger_steady_aim"
+display_name = "Steady Aim"
+stat = 1
+magnitude = 0.03
+
+[sub_resource type="Resource" id="TraitDefinition_trueshot"]
+script = ExtResource("2_trait")
+id = &"ranger_trueshot"
+display_name = "Trueshot"
+stat = 4
+magnitude = 0.01
+
 [resource]
 script = ExtResource("1")
 display_name = "Ranger"
@@ -39,3 +60,4 @@ spd_growth = 1.4
 crit_rate = 0.1
 crit_dmg = 1.6
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_quickdraw"), SubResource("TraitDefinition_marksman"), SubResource("TraitDefinition_deadeye")])
+instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_light_step"), SubResource("TraitDefinition_steady_aim"), SubResource("TraitDefinition_trueshot")])

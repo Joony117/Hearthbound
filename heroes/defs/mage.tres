@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
 [ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
@@ -24,6 +24,27 @@ display_name = "Archmage"
 stat = 1
 magnitude = 0.06
 
+[sub_resource type="Resource" id="TraitDefinition_apprentice_rites"]
+script = ExtResource("2_trait")
+id = &"mage_apprentice_rites"
+display_name = "Apprentice Rites"
+stat = 1
+magnitude = 0.03
+
+[sub_resource type="Resource" id="TraitDefinition_mana_burn"]
+script = ExtResource("2_trait")
+id = &"mage_mana_burn"
+display_name = "Mana Burn"
+stat = 5
+magnitude = 0.04
+
+[sub_resource type="Resource" id="TraitDefinition_spellweaving"]
+script = ExtResource("2_trait")
+id = &"mage_spellweaving"
+display_name = "Spellweaving"
+stat = 1
+magnitude = 0.05
+
 [resource]
 script = ExtResource("1")
 display_name = "Mage"
@@ -39,3 +60,4 @@ spd_growth = 1.2
 crit_rate = 0.08
 crit_dmg = 1.65
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_arcane_focus"), SubResource("TraitDefinition_overload"), SubResource("TraitDefinition_archmage")])
+instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_apprentice_rites"), SubResource("TraitDefinition_mana_burn"), SubResource("TraitDefinition_spellweaving")])

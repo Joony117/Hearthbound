@@ -291,6 +291,8 @@ func _hero_detail_text(hero: Hero) -> String:
 	var traits: PackedStringArray = []
 	for trait_definition: TraitDefinition in Hero.active_resonance_traits(hero, definition, BALANCE):
 		traits.append(trait_definition.display_name)
+	for trait_definition: TraitDefinition in Hero.active_taught_traits(hero, definition):
+		traits.append("%s (taught)" % trait_definition.display_name)
 	# Keyed off the pool being empty, not off resonance: a definition with no authored pool would
 	# otherwise print "Traits: " with nothing after it.
 	var trait_text: String = "none" if traits.is_empty() else ", ".join(traits)

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
 [ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
@@ -22,6 +22,25 @@ id = &"cleric_guardian_light"
 display_name = "Guardian Light"
 magnitude = 0.06
 
+[sub_resource type="Resource" id="TraitDefinition_novice_prayer"]
+script = ExtResource("2_trait")
+id = &"cleric_novice_prayer"
+display_name = "Novice Prayer"
+magnitude = 0.03
+
+[sub_resource type="Resource" id="TraitDefinition_ward"]
+script = ExtResource("2_trait")
+id = &"cleric_ward"
+display_name = "Ward"
+stat = 2
+magnitude = 0.03
+
+[sub_resource type="Resource" id="TraitDefinition_benediction"]
+script = ExtResource("2_trait")
+id = &"cleric_benediction"
+display_name = "Benediction"
+magnitude = 0.05
+
 [resource]
 script = ExtResource("1")
 display_name = "Cleric"
@@ -37,3 +56,4 @@ spd_growth = 1.1
 crit_rate = 0.05
 crit_dmg = 1.5
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_devotion"), SubResource("TraitDefinition_sanctuary"), SubResource("TraitDefinition_guardian_light")])
+instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_novice_prayer"), SubResource("TraitDefinition_ward"), SubResource("TraitDefinition_benediction")])

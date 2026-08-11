@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
 [ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
@@ -24,6 +24,27 @@ display_name = "Executioner"
 stat = 5
 magnitude = 0.08
 
+[sub_resource type="Resource" id="TraitDefinition_quick_hands"]
+script = ExtResource("2_trait")
+id = &"rogue_quick_hands"
+display_name = "Quick Hands"
+stat = 1
+magnitude = 0.03
+
+[sub_resource type="Resource" id="TraitDefinition_feint"]
+script = ExtResource("2_trait")
+id = &"rogue_feint"
+display_name = "Feint"
+stat = 4
+magnitude = 0.01
+
+[sub_resource type="Resource" id="TraitDefinition_coup_de_grace"]
+script = ExtResource("2_trait")
+id = &"rogue_coup_de_grace"
+display_name = "Coup de Grace"
+stat = 5
+magnitude = 0.05
+
 [resource]
 script = ExtResource("1")
 display_name = "Rogue"
@@ -39,3 +60,4 @@ spd_growth = 1.6
 crit_rate = 0.15
 crit_dmg = 1.8
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_opening_strike"), SubResource("TraitDefinition_killer_instinct"), SubResource("TraitDefinition_executioner")])
+instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_quick_hands"), SubResource("TraitDefinition_feint"), SubResource("TraitDefinition_coup_de_grace")])

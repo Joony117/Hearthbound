@@ -63,6 +63,32 @@ func test_retreated_expedition_credits_no_stones() -> void:
 	assert_eq(GameSession.turns, 1)
 
 
+func test_retreated_expedition_teaches_a_trait_after_xp_reaches_the_cap() -> void:
+	var trainee: Hero = _add_knight("Trainee")
+	trainee.level = 9
+	trainee.xp = 88
+	var instructor: Hero = Hero.new("Instructor", 1)
+	instructor.def_id = &"rogue"
+	GameSession.add_hero(instructor)
+	var team: Array[Hero] = [trainee, instructor]
+	var r: float = 0.9
+	var trainee_definition: HeroDefinition = Hero.definition_for(trainee.def_id)
+	var instructor_definition: HeroDefinition = Hero.definition_for(instructor.def_id)
+	var definitions: Array[HeroDefinition] = [trainee_definition, instructor_definition]
+	var levels: Array[int] = [trainee.level, instructor.level]
+	var hero_power: float = Hero.compute_team_power(team, definitions, levels, BALANCE)
+	var recommended_power: int = int(hero_power * r / (float(team.size()) / 5.0 * 0.5))
+	var zone: ZoneDefinition = _make_zone(recommended_power, 0.5, 3)
+	_seed_for_rolls_above(r, 3)
+
+	var outcome: StringName = Expedition.new().resolve(team, zone)
+
+	assert_eq(outcome, Expedition.OUTCOME_RETREATED)
+	assert_eq(trainee.level, BALANCE.level_caps[trainee.rank])
+	assert_eq(trainee.xp, 0)
+	assert_eq(trainee.taught_traits, [&"knight_shield_drill"])
+
+
 func test_defeated_expedition_credits_no_stones() -> void:
 	var hero: Hero = _add_knight()
 	var team: Array[Hero] = [hero]
@@ -196,6 +222,65 @@ func test_credit_team_xp_grants_every_hero_and_emits_once() -> void:
 	assert_eq(first.xp, 7)
 	assert_eq(second.xp, 7)
 	assert_signal_emit_count(GameSession, "roster_changed", 1)
+
+
+func test_credit_team_xp_grants_the_capped_trainees_stage_trait() -> void:
+	var trainee: Hero = _add_knight("Trainee")
+	trainee.level = BALANCE.level_caps[trainee.rank]
+	var instructor: Hero = Hero.new("Instructor", 1)
+	instructor.def_id = &"rogue"
+	GameSession.add_hero(instructor)
+
+	GameSession.credit_team_xp([trainee, instructor], 0, BALANCE)
+
+	assert_eq(trainee.taught_traits, [&"knight_shield_drill"])
+
+
+func test_credit_team_xp_grants_survivor_after_another_fielded_hero_dies() -> void:
+	var trainee: Hero = _add_knight("Surviving Trainee")
+	trainee.level = BALANCE.level_caps[trainee.rank]
+	var instructor: Hero = Hero.new("Instructor", 1)
+	instructor.def_id = &"rogue"
+	GameSession.add_hero(instructor)
+	var doomed: Hero = _add_knight("Doomed")
+	GameSession.kill_hero(doomed, &"test_zone", BALANCE)
+
+	GameSession.credit_team_xp([trainee, instructor, doomed], 0, BALANCE)
+
+	assert_eq(trainee.taught_traits, [&"knight_shield_drill"])
+	assert_false(GameSession.roster.has(doomed))
+	assert_true(doomed.taught_traits.is_empty())
+
+
+func test_credit_team_xp_does_not_grant_to_a_removed_hero_or_exhausted_rank() -> void:
+	var removed: Hero = _add_knight("Removed")
+	removed.level = BALANCE.level_caps[removed.rank]
+	var instructor: Hero = Hero.new("Instructor", 4)
+	instructor.def_id = &"rogue"
+	GameSession.add_hero(instructor)
+	GameSession.kill_hero(removed, &"test_zone", BALANCE)
+	var exhausted: Hero = Hero.new("Exhausted", 3)
+	exhausted.def_id = &"knight"
+	exhausted.level = BALANCE.level_caps[exhausted.rank]
+	GameSession.add_hero(exhausted)
+
+	GameSession.credit_team_xp([removed, instructor, exhausted], 0, BALANCE)
+
+	assert_true(removed.taught_traits.is_empty())
+	assert_true(exhausted.taught_traits.is_empty())
+
+
+func test_credit_team_xp_never_regrants_a_claimed_stage() -> void:
+	var trainee: Hero = _add_knight("Claimed")
+	trainee.level = BALANCE.level_caps[trainee.rank]
+	trainee.taught_traits = [&"knight_shield_drill"]
+	var instructor: Hero = Hero.new("Instructor", 1)
+	instructor.def_id = &"rogue"
+	GameSession.add_hero(instructor)
+
+	GameSession.credit_team_xp([trainee, instructor], 0, BALANCE)
+
+	assert_eq(trainee.taught_traits, [&"knight_shield_drill"])
 
 
 func test_five_hero_expedition_completes_and_records_zone_clear() -> void:

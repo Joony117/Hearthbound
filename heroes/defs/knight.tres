@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
 [ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
@@ -23,6 +23,26 @@ display_name = "Iron Wall"
 stat = 2
 magnitude = 0.08
 
+[sub_resource type="Resource" id="TraitDefinition_shield_drill"]
+script = ExtResource("2_trait")
+id = &"knight_shield_drill"
+display_name = "Shield Drill"
+stat = 2
+magnitude = 0.03
+
+[sub_resource type="Resource" id="TraitDefinition_iron_discipline"]
+script = ExtResource("2_trait")
+id = &"knight_iron_discipline"
+display_name = "Iron Discipline"
+magnitude = 0.04
+
+[sub_resource type="Resource" id="TraitDefinition_veterans_bastion"]
+script = ExtResource("2_trait")
+id = &"knight_veterans_bastion"
+display_name = "Veteran's Bastion"
+stat = 2
+magnitude = 0.05
+
 [resource]
 script = ExtResource("1")
 display_name = "Knight"
@@ -38,3 +58,4 @@ spd_growth = 1.0
 crit_rate = 0.05
 crit_dmg = 1.5
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_bulwark"), SubResource("TraitDefinition_stalwart"), SubResource("TraitDefinition_iron_wall")])
+instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_shield_drill"), SubResource("TraitDefinition_iron_discipline"), SubResource("TraitDefinition_veterans_bastion")])

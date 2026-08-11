@@ -20,6 +20,7 @@ var level: int = 0
 var xp: int = 0
 var def_id: StringName
 var resonance: int = 0
+var taught_traits: Array[StringName] = []
 var equipped: Dictionary[int, Item] = {}
 
 
@@ -111,7 +112,9 @@ static func compute_final_stats(
 			else:
 				final_stats[STAT_CRIT_DMG] += crit_pct
 	# SYSTEMS.md § Traits: non-crit traits join gear's additive accumulator; crit traits add flat.
-	for trait_definition: TraitDefinition in active_resonance_traits(hero, definition, balance):
+	var traits: Array[TraitDefinition] = active_resonance_traits(hero, definition, balance)
+	traits.append_array(active_taught_traits(hero, definition))
+	for trait_definition: TraitDefinition in traits:
 		if trait_definition.stat < EquipmentDefinition.PrimaryStat.CRIT_RATE:
 			equip_pct[trait_definition.stat] += trait_definition.magnitude
 		elif trait_definition.stat == EquipmentDefinition.PrimaryStat.CRIT_RATE:
@@ -177,7 +180,54 @@ static func active_resonance_traits(hero: Hero, definition: HeroDefinition, bala
 	return definition.resonance_trait_pool.slice(0, mini(unlocked_count, definition.resonance_trait_pool.size()))
 
 
+static func active_taught_traits(hero: Hero, definition: HeroDefinition) -> Array[TraitDefinition]:
+	assert(hero != null)
+	if definition == null:
+		push_error("Cannot get taught traits for hero '%s' without a HeroDefinition." % hero.hero_name)
+		return []
+	var active_traits: Array[TraitDefinition] = []
+	for trait_id: StringName in hero.taught_traits:
+		var matched_trait: TraitDefinition = null
+		for trait_definition: TraitDefinition in definition.instructor_trait_pool:
+			if trait_definition.id == trait_id:
+				matched_trait = trait_definition
+				break
+		if matched_trait == null:
+			push_error("Unknown taught trait '%s' for hero '%s'." % [trait_id, hero.hero_name])
+			continue
+		active_traits.append(matched_trait)
+	return active_traits
+
+
+static func grant_instructor_trait(
+	hero: Hero,
+	definition: HeroDefinition,
+	highest_team_rank: int,
+	balance: BalanceTable,
+) -> void:
+	assert(hero != null)
+	assert(balance != null)
+	if definition == null:
+		push_error("Cannot grant taught trait to hero '%s' without a HeroDefinition." % hero.hero_name)
+		return
+	var rank_index: int = clampi(hero.rank, 0, balance.level_caps.size() - 1)
+	if Hero.level_for(hero, balance) < balance.level_caps[rank_index]:
+		return
+	if highest_team_rank <= hero.rank:
+		return
+	if rank_index >= definition.instructor_trait_pool.size():
+		return
+	var trait_id: StringName = definition.instructor_trait_pool[rank_index].id
+	if trait_id in hero.taught_traits:
+		return
+	hero.taught_traits.append(trait_id)
+
+
 func to_dict() -> Dictionary:
+	var taught_trait_ids: Array[String] = []
+	for trait_id: StringName in taught_traits:
+		taught_trait_ids.append(str(trait_id))
+	taught_trait_ids.sort()
 	var equipped_slots: Array[int] = []
 	for slot: int in equipped:
 		equipped_slots.append(slot)
@@ -192,6 +242,7 @@ func to_dict() -> Dictionary:
 		"xp": xp,
 		"def_id": str(def_id),
 		"resonance": resonance,
+		"taught_traits": taught_trait_ids,
 		"equipped": equipped_entries,
 	}
 
@@ -201,6 +252,24 @@ static func from_dict(data: Dictionary) -> Hero:
 	hero.level = maxi(Item.int_field(data, "level", 0, "hero"), 0)
 	hero.xp = maxi(Item.int_field(data, "xp", 0, "hero"), 0)
 	hero.resonance = maxi(Item.int_field(data, "resonance", 0, "hero"), 0)
+	# Dictionary.get() does not replace an explicit null from a hand-edited or corrupt save.
+	# Save-file fields remain Variant until their types are validated.
+	var raw_taught_traits: Variant = data.get("taught_traits")
+	if raw_taught_traits != null:
+		if not raw_taught_traits is Array:
+			push_error("Invalid hero taught_traits: expected Array, got %s." % type_string(typeof(raw_taught_traits)))
+		else:
+			for raw_trait_id: Variant in raw_taught_traits as Array:
+				if not raw_trait_id is String:
+					push_error("Invalid taught trait ID: expected String, got %s." % type_string(typeof(raw_trait_id)))
+					continue
+				var trait_id := StringName(raw_trait_id as String)
+				# to_dict() cannot write a duplicate, so one here is a hand-edited or corrupt save.
+				# Keeping it would apply the magnitude twice in compute_final_stats, silently.
+				if trait_id in hero.taught_traits:
+					push_error("Duplicate taught trait '%s'; keeping one." % trait_id)
+					continue
+				hero.taught_traits.append(trait_id)
 	if not data.has("def_id"):
 		# Phase 1 saves predate archetypes; empty preserves that fact for later assignment.
 		hero.def_id = NO_ARCHETYPE_DEF_ID

@@ -105,8 +105,15 @@ func credit_stones(amount: int) -> void:
 
 
 func credit_team_xp(team: Array[Hero], amount: int, balance: BalanceTable) -> void:
+	var highest_team_rank: int = team[0].rank if not team.is_empty() else 0
+	for hero: Hero in team:
+		highest_team_rank = maxi(highest_team_rank, hero.rank)
 	for hero: Hero in team:
 		Hero.grant_xp(hero, amount, balance)
+		if not roster.has(hero):
+			continue
+		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
+		Hero.grant_instructor_trait(hero, definition, highest_team_rank, balance)
 	roster_changed.emit()
 
 
