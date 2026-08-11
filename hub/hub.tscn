@@ -116,6 +116,10 @@ theme_override_constants/separation = 8
 layout_mode = 2
 text = "ROSTER"
 
+[node name="RosterRankFilter" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="RosterList" type="ItemList" parent="UI/Root/RosterPanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -251,6 +255,14 @@ size_flags_horizontal = 3
 layout_mode = 2
 text = "INVENTORY"
 
+[node name="InventoryRankFilter" type="OptionButton" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="InventorySlotFilter" type="OptionButton" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="InventoryList" type="ItemList" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -361,6 +373,7 @@ unique_name_in_owner = true
 
 [connection signal="confirmed" from="UI/ConfirmDialog" to="." method="_on_confirm_dialog_confirmed"]
 [connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
+[connection signal="item_selected" from="UI/Root/RosterPanel/VBox/RosterRankFilter" to="." method="_on_roster_rank_filter_item_selected"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/Recover" to="." method="_on_recover_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice" to="." method="_on_sacrifice_pressed"]
 [connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/RankUp" to="." method="_on_rank_up_pressed"]
@@ -368,7 +381,8 @@ unique_name_in_owner = true
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Salvage" to="." method="_on_salvage_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Enhance" to="." method="_on_enhance_pressed"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Convert" to="." method="_on_convert_pressed"]
-[connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Equipped/EquippedList" to="." method="_on_equipped_list_item_selected"]
+[connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Inventory/InventoryRankFilter" to="." method="_on_inventory_rank_filter_item_selected"]
+[connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Inventory/InventorySlotFilter" to="." method="_on_inventory_slot_filter_item_selected"]
 [connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeCircle" to="." method="_on_upgrade_circle_pressed"]
 [connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeForge" to="." method="_on_upgrade_forge_pressed"]

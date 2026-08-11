@@ -132,6 +132,47 @@ func test_batch_salvage_credits_each_rank_after_confirm() -> void:
 	assert_eq(status.text, "Salvaged 2 items into 3 C parts, 3 B parts.")
 
 
+## Same criterion as the sacrifice case, on the other irreversible action: salvage cannot destroy a
+## row the filter has taken off the screen.
+func test_rank_filter_drops_a_hidden_item_before_salvage_can_destroy_it() -> void:
+	var rank_b_item := Item.new(&"ring", 3)
+	var rank_c_item := Item.new(&"boots", 2)
+	GameSession.add_item(rank_b_item)
+	GameSession.add_item(rank_c_item)
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
+	var rank_filter: OptionButton = hub.get_node("%InventoryRankFilter") as OptionButton
+	var salvage_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Inventory/Salvage") as Button
+	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
+	var status: Label = hub.get_node("%Status") as Label
+	var parts_before: Array[int] = GameSession.parts.duplicate()
+
+	for item_index: int in inventory_list.item_count:
+		inventory_list.select(item_index, false)
+	rank_filter.select(4)
+	rank_filter.item_selected.emit(4)
+
+	# The bag drops its whole selection on a rebuild — it has no identity re-select, unlike the
+	# roster. Blunter than the roster's behaviour and safe in the same direction: the hidden item
+	# cannot be reached, and salvage refuses until the player picks again from what it can see.
+	assert_eq(inventory_list.item_count, 1)
+	assert_eq(inventory_list.get_selected_items(), PackedInt32Array())
+	assert_eq(inventory_list.get_item_metadata(0), rank_b_item)
+	salvage_button.pressed.emit()
+	assert_eq(status.text, "Select at least one inventory item.")
+
+	inventory_list.select(0)
+	salvage_button.pressed.emit()
+	assert_string_contains(confirm_dialog.dialog_text, "3 B parts")
+	assert_false(confirm_dialog.dialog_text.contains("C parts"))
+	confirm_dialog.confirmed.emit()
+
+	assert_eq(GameSession.inventory, [rank_c_item] as Array[Item], "A hidden item is not a selected item.")
+	assert_eq(GameSession.parts[2], parts_before[2])
+	assert_eq(GameSession.parts[3] - parts_before[3], 3)
+
+
 func test_training_hall_upgrade_updates_hub() -> void:
 	GameSession.parts[0] = 20
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene

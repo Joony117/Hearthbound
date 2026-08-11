@@ -74,3 +74,41 @@ func test_batch_sacrifice_waits_for_confirm_and_sums_three_dupes() -> void:
 	assert_eq(GameSession.roster.size(), 1)
 	assert_eq(GameSession.essence - essence_before, 879)
 	assert_eq(status.text, "Sacrificed 3 heroes for 879 essence.")
+
+
+## The one that matters: a hero the rank filter hides must leave the selection, because the press
+## that follows is permanent.
+func test_rank_filter_drops_a_hidden_fodder_before_sacrifice_can_kill_it() -> void:
+	var target := Hero.new("Target", 0)
+	var low_fodder := Hero.new("Low", 1)
+	var high_fodder := Hero.new("High", 3)
+	for hero: Hero in [target, low_fodder, high_fodder]:
+		hero.def_id = &"mage"
+		GameSession.add_hero(hero)
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var rank_filter: OptionButton = hub.get_node("%RosterRankFilter") as OptionButton
+	var target_option: OptionButton = hub.get_node("%TargetOption") as OptionButton
+	var sacrifice_button: Button = hub.get_node("UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice") as Button
+	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
+
+	roster_list.select(1, false)
+	roster_list.select(2, false)
+	# Minimum rank B. Low is now invisible, and so is Target — but TargetOption is not a filtered
+	# view, so the sacrifice still has somewhere to go.
+	rank_filter.select(4)
+	rank_filter.item_selected.emit(4)
+	target_option.select(0)
+
+	assert_eq(roster_list.item_count, 1)
+	assert_eq(roster_list.get_selected_items(), PackedInt32Array([0]))
+	assert_eq(roster_list.get_item_metadata(0), high_fodder)
+
+	sacrifice_button.pressed.emit()
+	assert_string_contains(confirm_dialog.dialog_text, "High")
+	assert_false(confirm_dialog.dialog_text.contains("Low"))
+	confirm_dialog.confirmed.emit()
+
+	assert_true(GameSession.roster.has(low_fodder), "A hidden hero is not a selected hero.")
+	assert_false(GameSession.roster.has(high_fodder))

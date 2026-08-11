@@ -907,61 +907,7 @@ it is a bug and it unblocks a shipped feature nobody can reach. `P2-30` third, a
 | P2b-04 | **[BLOCKED — design]** Dodge and parry cancel any player action instantly | Playtest feedback, 2026-08-10. Today `_start_dodge()` (`combat/arena/arena.gd:341-343`) refuses during light-attack startup *and* active, so the only cancel window is recovery, and `_start_parry()` is reachable only through the standstill branch below that same guard. Deleting those three lines is most of the change — but **`SYSTEMS.md` § "Enemy attack, dodge and hit reaction" ruled the current terms**, so this reverses a published ruling, and "most actions" names no boundary. `game-designer` must answer four things first: (1) does a cancel out of an *active* attack refund the hit or eat it; (2) is hit-stun cancellable — if yes, `arena_enemy_hit_stun = 0.35` and the knockback stop being a punish at all; (3) is hit-stop cancellable (it is the one window where input is currently ignored wholesale, `_physics_process` line 84); (4) does a cancel out of an attack still pay `arena_dodge_cooldown`, or is cancelling free. (2) and (3) are where "instantly cancel out of *most* actions" stops being a one-line change. |
 | P2b-05 | The arena returns to the hub when the fight ends | **Landed `2cbc0c1`.** Body and Findings in [`TASKS-DONE.md`](TASKS-DONE.md). **Read its Findings before trusting either gate on an arena change** — the defect it fixed and the one it caused were both invisible to the import gate *and* to GUT, and a scripted play-through found both. It also repaired a pre-existing bug the ticket never named: the Esc exit has always kept `_physics_process` ticking against an out-of-tree capsule, because `change_scene_to_file()` is deferred. Arena permadeath is still unwired and is now reachable in one sitting. |
 | P2-29 | Sacrifice reads the roster selection, and the fodder list goes away | **Landed** in the commit below; body and Findings in [`TASKS-DONE.md`](TASKS-DONE.md). A **deletion ticket that stayed one** — 8 insertions, 15 deletions, three files, no new widget and no new state. `P2-27`'s batch loop and `%RosterList`'s `SELECT_MULTI` were both already shipped; the only thing standing between them was a list laying out at `280 × 0 px`. Boundary 2 (a `unique_name_in_owner` node deleted, invisible to the import gate) so the `verifier` pass was mandatory: **pass**, all nine criteria checked individually, no defect in the diff. **Read its Findings before debugging a `test_save_service.gd` failure** — the GUT command in `CLAUDE.md` does *not* redirect `%APPDATA%` the way `import_gate.ps1` does, so the suite runs against the live `user://save.json`, and a process killed mid-suite leaves that state dirty for whoever runs next. Also records the hazard this ticket creates and `P2-26` already absorbs: `%RosterList` now drives four actions, and Sacrifice caps its selection at nothing while Arena caps at one. Original row, for reference — Playtest feedback, 2026-08-10 second pass. Closes two reported items: the unselectable fodder list and "no way to batch sacrifice" — the second is the first seen from its other end. Deletes `%FodderList` rather than giving it a minimum height. |
-| P2-30 | **[TODO]** Filter the roster and the bag | **Body below.** Playtest feedback, 2026-08-10 second pass. `_refresh_inventory()` already filters by slot, but `_slot_filter` is only reachable by clicking a row in `%EquippedList` — a filter control disguised as a display. Gives it a real control and adds the rank filter both lists lack. Its load-bearing criterion is that filtering **drops hidden rows from the selection**, because Sacrifice is permanent. |
-
----
-
-## P2-30 — Filter the roster and the bag                                        [TODO]
-
-### Objective
-
-Narrow the roster by rank and the bag by rank and slot, from controls that look like filters.
-
-### Existing architecture
-
-- `_refresh_inventory()` (`hub.gd:161`) already sorts rank-desc, then enhance-desc, then `def_id`
-  (`_sort_inventory_items`, `hub.gd:206`), and already skips items whose slot does not match
-  `_slot_filter`. The sort half of the reported complaint is therefore already done.
-- `_slot_filter` (`hub.gd:37`) is settable only from `_on_equipped_list_item_selected()`
-  (`hub.gd:446`), which reads a slot index out of `%EquippedList`'s row metadata — including a
-  synthetic `All slots` row at index 0 whose metadata is `-1` (`hub.gd:237-238`). `_refresh_equipped()`
-  re-selects `_slot_filter + 1` on every rebuild (`hub.gd:253`). The filter is real; it is wearing an
-  equipment display's clothes.
-- `_refresh_hero_list()` (`hub.gd:83`) has no filter of any kind.
-- `BALANCE.rank_names` is the rank vocabulary; `Hero.rank_label()` and `Item.rank_label()` render it.
-  `EquipmentDefinition.Slot` is the slot enum, ten entries.
-- Both lists re-select by identity across a rebuild.
-
-### Acceptance criteria
-
-- A minimum-rank `OptionButton` above the roster list. Picking a rank hides every hero below it.
-  Default is `Any`.
-- A minimum-rank `OptionButton` above the inventory list, same shape, default `Any`.
-- A slot `OptionButton` for the bag that sets `_slot_filter` directly, with an `All slots` entry.
-  Rank and slot compose: both set means both applied.
-- `%EquippedList` selection no longer drives `_slot_filter`. It stays a display and the target of
-  Unequip, and it no longer needs its synthetic `All slots` row.
-- **A row hidden by a filter is not selected.** Filtering drops it from the selection rather than
-  leaving an invisible row selected. This is the criterion that matters: Sacrifice is permanent
-  (`ARCHITECTURE.md` r8) and Salvage is not recoverable, and both read a selection they no longer
-  fully show.
-- Filters are view state: not written to the save, reset to `Any` / `All slots` when the hub loads.
-- With a filter active, Sacrifice, Salvage, Equip, Expedition, Arena and Recover all act on exactly
-  the visible rows the player selected, and nothing else.
-- Survives save and reload — no save key changes; the roster and bag come back identical and the
-  filters come back at their defaults.
-- Import gate green, GUT suite green, Scripts/Tests counts compared against the previous run.
-
-### Files allowed to change
-
-`hub/hub.tscn`, `hub/hub.gd`, `tests/unit/` as needed.
-
-### Non-goals
-
-Text search. Filtering by archetype, trait, stat, or equipped-ness. Sorting controls — the bag is
-already rank-desc and nobody asked for a second order. Persisting filter state across a reload.
-Touching `GameSession` or any save key. A tab bar: an `OptionButton` is the smaller thing that
-answers the same complaint, and `P2-25` already ruled that the per-type tab *is* the slot filter.
+| P2-30 | Filter the roster and the bag | **Landed** in the commit below; body and Findings in [`TASKS-DONE.md`](TASKS-DONE.md). Boundary 2 (three new `%UniqueName` nodes, a deleted `[connection]`, every `%EquippedList` row index shifted by one) so the `verifier` pass was mandatory: **pass-with-concerns**, no defect in the diff, one real coverage gap. **Read its Findings before writing another list filter** — the criterion "a hidden row is not selected" is not defended by any guard in `hub.gd`; it holds only because filtering removes the row before any handler reads `get_selected_items()`, so a future handler that stores an index instead of reading a live selection breaks it with both gates green. The ticket's own Existing architecture section was **wrong** and the tests caught it: only the roster re-selects by identity, the bag drops its entire selection on any rebuild. Both are safe, by different mechanisms, and the divergence is now pinned by an assertion. The shipped coverage proved the criterion for Expedition alone; Sacrifice and Salvage — the two irreversible actions it exists for — were added by the director afterwards, the sacrifice one red-proved by mutation. Original row, for reference — Playtest feedback, 2026-08-10 second pass. `_refresh_inventory()` already filters by slot, but `_slot_filter` is only reachable by clicking a row in `%EquippedList` — a filter control disguised as a display. Gives it a real control and adds the rank filter both lists lack. |
 
 ---
 

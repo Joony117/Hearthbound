@@ -9,6 +9,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 ]
 
 @onready var _roster_list: ItemList = %RosterList
+@onready var _roster_rank_filter: OptionButton = %RosterRankFilter
 @onready var _target_option: OptionButton = %TargetOption
 @onready var _essence: Label = %Essence
 @onready var _stones: Label = %Stones
@@ -16,6 +17,8 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _lost_cache_list: ItemList = %LostCacheList
 @onready var _summon_button: Button = %Summon
 @onready var _inventory_list: ItemList = %InventoryList
+@onready var _inventory_rank_filter: OptionButton = %InventoryRankFilter
+@onready var _inventory_slot_filter: OptionButton = %InventorySlotFilter
 @onready var _parts: Label = %Parts
 @onready var _circle_level: Label = %CircleLevel
 @onready var _forge_level: Label = %ForgeLevel
@@ -34,6 +37,8 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 # second action can be queued while one is pending.
 var _pending_action: Callable
 var _slot_filter: int = -1
+var _roster_min_rank: int = -1
+var _inventory_min_rank: int = -1
 
 
 func _ready() -> void:
@@ -48,6 +53,9 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_equipped)
 	GameSession.roster_changed.connect(_refresh_hero_detail)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
+	_populate_rank_filter(_roster_rank_filter)
+	_populate_rank_filter(_inventory_rank_filter)
+	_populate_slot_filter()
 	_refresh_roster()
 	_refresh_essence()
 	_refresh_stones()
@@ -86,6 +94,8 @@ func _refresh_hero_list(list: ItemList) -> void:
 			selected_heroes.append(selected_hero)
 	list.clear()
 	for hero: Hero in GameSession.roster:
+		if hero.rank < _roster_min_rank:
+			continue
 		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
 		list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
 		var item_index: int = list.item_count - 1
@@ -162,6 +172,8 @@ func _refresh_inventory() -> void:
 	items.sort_custom(_sort_inventory_items)
 	for item: Item in items:
 		var definition: EquipmentDefinition = Item.definition_for(item.def_id)
+		if item.rank < _inventory_min_rank:
+			continue
 		if _slot_filter != -1 and (definition == null or definition.slot != _slot_filter):
 			continue
 		var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
@@ -228,18 +240,22 @@ func _refresh_buildings() -> void:
 
 
 func _refresh_equipped() -> void:
+	var selected_slot: int = -1
+	var selected: PackedInt32Array = _equipped_list.get_selected_items()
+	if selected.size() == 1:
+		selected_slot = _equipped_list.get_item_metadata(selected[0]) as int
 	_equipped_list.clear()
 	var hero: Hero = _selected_hero()
 	if hero == null:
 		return
-	_equipped_list.add_item("All slots")
-	_equipped_list.set_item_metadata(0, -1)
 	for slot: int in EquipmentDefinition.Slot.size():
 		var slot_name: String = (EquipmentDefinition.Slot.keys()[slot] as String).capitalize()
 		var item: Item = hero.equipped.get(slot) as Item
 		if item == null:
 			_equipped_list.add_item("%s — (empty)" % slot_name)
 			_equipped_list.set_item_metadata(_equipped_list.item_count - 1, slot)
+			if slot == selected_slot:
+				_equipped_list.select(_equipped_list.item_count - 1)
 			continue
 		var definition: EquipmentDefinition = Item.definition_for(item.def_id)
 		var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
@@ -248,7 +264,8 @@ func _refresh_equipped() -> void:
 		else:
 			_equipped_list.add_item("%s %s %s%s" % [slot_name, item.rank_label(BALANCE), definition.display_name, enhance_suffix])
 		_equipped_list.set_item_metadata(_equipped_list.item_count - 1, slot)
-	_equipped_list.select(_slot_filter + 1)
+		if slot == selected_slot:
+			_equipped_list.select(_equipped_list.item_count - 1)
 
 
 func _refresh_hero_detail() -> void:
@@ -312,6 +329,24 @@ func _populate_convert_ranks() -> void:
 	for rank_index: int in GameSession.parts.size() - 1:
 		_convert_rank_option.add_item("%s -> %s" % [BALANCE.rank_names[rank_index], BALANCE.rank_names[rank_index + 1]])
 		_convert_rank_option.set_item_metadata(_convert_rank_option.item_count - 1, rank_index)
+
+
+func _populate_rank_filter(option: OptionButton) -> void:
+	option.clear()
+	option.add_item("Any")
+	option.set_item_metadata(0, -1)
+	for rank_index: int in BALANCE.rank_names.size():
+		option.add_item(BALANCE.rank_names[rank_index])
+		option.set_item_metadata(option.item_count - 1, rank_index)
+
+
+func _populate_slot_filter() -> void:
+	_inventory_slot_filter.clear()
+	_inventory_slot_filter.add_item("All slots")
+	_inventory_slot_filter.set_item_metadata(0, -1)
+	for slot: int in EquipmentDefinition.Slot.size():
+		_inventory_slot_filter.add_item((EquipmentDefinition.Slot.keys()[slot] as String).capitalize())
+		_inventory_slot_filter.set_item_metadata(_inventory_slot_filter.item_count - 1, slot)
 
 
 func _refresh_zone_unlocks() -> void:
@@ -441,8 +476,20 @@ func _on_roster_list_multi_selected(_index: int, _selected: bool) -> void:
 	_refresh_hero_detail()
 
 
-func _on_equipped_list_item_selected(index: int) -> void:
-	_slot_filter = _equipped_list.get_item_metadata(index) as int
+func _on_roster_rank_filter_item_selected(index: int) -> void:
+	_roster_min_rank = _roster_rank_filter.get_item_metadata(index) as int
+	_refresh_roster()
+	_refresh_equipped()
+	_refresh_hero_detail()
+
+
+func _on_inventory_rank_filter_item_selected(index: int) -> void:
+	_inventory_min_rank = _inventory_rank_filter.get_item_metadata(index) as int
+	_refresh_inventory()
+
+
+func _on_inventory_slot_filter_item_selected(index: int) -> void:
+	_slot_filter = _inventory_slot_filter.get_item_metadata(index) as int
 	_refresh_inventory()
 
 
@@ -590,9 +637,6 @@ func _on_unequip_pressed() -> void:
 		_status.text = "Select exactly one equipped item."
 		return
 	var slot: int = _equipped_list.get_item_metadata(selected[0]) as int
-	if slot == -1:
-		_status.text = "Select an equipment slot first."
-		return
 	var item: Item = hero.equipped.get(slot) as Item
 	if item == null:
 		_status.text = "That slot is empty."

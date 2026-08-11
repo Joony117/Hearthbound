@@ -5379,3 +5379,106 @@ list. Both the verifier and its Codex reviewer thread found it independently.
 `_refresh_hero_list(list)` keeps its `list` parameter with exactly one caller left. Deliberate: it is
 the natural shape for a list rebuild, and inlining it would bury the identity-based re-select that
 the ticket calls load-bearing.
+
+---
+
+## P2-30 — Filter the roster and the bag                                        [DONE]
+
+### Objective
+
+Narrow the roster by rank and the bag by rank and slot, from controls that look like filters.
+
+### Existing architecture
+
+- `_refresh_inventory()` (`hub.gd:161`) already sorts rank-desc, then enhance-desc, then `def_id`
+  (`_sort_inventory_items`, `hub.gd:206`), and already skips items whose slot does not match
+  `_slot_filter`. The sort half of the reported complaint is therefore already done.
+- `_slot_filter` (`hub.gd:37`) is settable only from `_on_equipped_list_item_selected()`
+  (`hub.gd:446`), which reads a slot index out of `%EquippedList`'s row metadata — including a
+  synthetic `All slots` row at index 0 whose metadata is `-1` (`hub.gd:237-238`). `_refresh_equipped()`
+  re-selects `_slot_filter + 1` on every rebuild (`hub.gd:253`). The filter is real; it is wearing an
+  equipment display's clothes.
+- `_refresh_hero_list()` (`hub.gd:83`) has no filter of any kind.
+- `BALANCE.rank_names` is the rank vocabulary; `Hero.rank_label()` and `Item.rank_label()` render it.
+  `EquipmentDefinition.Slot` is the slot enum, ten entries.
+- ~~Both lists re-select by identity across a rebuild.~~ **Wrong, corrected during implementation.**
+  Only `_refresh_hero_list()` re-selects by identity (`hub.gd:81`). `_refresh_inventory()` clears and
+  never re-selects, so *any* rebuild — a filter change, or any `roster_changed` — drops the bag's
+  entire selection, not just the hidden rows. Safe in the same direction (Salvage refuses rather than
+  destroying something invisible) and pre-existing, so it was left alone; see Findings.
+
+### Acceptance criteria
+
+- A minimum-rank `OptionButton` above the roster list. Picking a rank hides every hero below it.
+  Default is `Any`.
+- A minimum-rank `OptionButton` above the inventory list, same shape, default `Any`.
+- A slot `OptionButton` for the bag that sets `_slot_filter` directly, with an `All slots` entry.
+  Rank and slot compose: both set means both applied.
+- `%EquippedList` selection no longer drives `_slot_filter`. It stays a display and the target of
+  Unequip, and it no longer needs its synthetic `All slots` row.
+- **A row hidden by a filter is not selected.** Filtering drops it from the selection rather than
+  leaving an invisible row selected. This is the criterion that matters: Sacrifice is permanent
+  (`ARCHITECTURE.md` r8) and Salvage is not recoverable, and both read a selection they no longer
+  fully show.
+- Filters are view state: not written to the save, reset to `Any` / `All slots` when the hub loads.
+- With a filter active, Sacrifice, Salvage, Equip, Expedition, Arena and Recover all act on exactly
+  the visible rows the player selected, and nothing else.
+- Survives save and reload — no save key changes; the roster and bag come back identical and the
+  filters come back at their defaults.
+- Import gate green, GUT suite green, Scripts/Tests counts compared against the previous run.
+
+### Files allowed to change
+
+`hub/hub.tscn`, `hub/hub.gd`, `tests/unit/` as needed.
+
+### Non-goals
+
+Text search. Filtering by archetype, trait, stat, or equipped-ness. Sorting controls — the bag is
+already rank-desc and nobody asked for a second order. Persisting filter state across a reload.
+Touching `GameSession` or any save key. A tab bar: an `OptionButton` is the smaller thing that
+answers the same complaint, and `P2-25` already ruled that the per-type tab *is* the slot filter.
+
+### Findings
+
+**The Existing architecture section got a fact wrong, and the test that caught it is the one worth
+keeping.** "Both lists re-select by identity across a rebuild" is true of `_refresh_hero_list()` and
+false of `_refresh_inventory()`, which clears and never re-selects. So the two lists answer this
+ticket's load-bearing criterion by *different mechanisms*: the roster drops exactly the hidden rows
+and keeps the rest, the bag drops everything. Both are safe — a hidden row is unreachable either way,
+and Salvage refuses with "Select at least one inventory item." — but only one of them is what the
+ticket described. Left as-is rather than fixed: identity re-select on the bag is a UX nicety no
+criterion asks for, and it would be a second behaviour change hiding inside a filter ticket. The
+divergence is now pinned by an assertion in `test_buildings.gd`, so a future edit that "fixes" it
+fails loudly instead of quietly.
+
+**The load-bearing criterion is structural, not defended by the code.** Nothing in `hub.gd` guards
+"a hidden row is not selected" — it holds because filtering physically removes the row before any
+handler reads `get_selected_items()`. All eight consumers were traced (Sacrifice, Salvage, Equip,
+Expedition, Arena, Recover, Rank Up, Unequip); none caches an index across a refresh. That is a
+property of how the lists are rebuilt, and any future handler that reads a *stored* index instead of
+a live selection breaks it with both gates green. The `verifier` returned pass-with-concerns on
+exactly this: the coverage shipped with the implementation proved it for Expedition alone. Sacrifice
+and Salvage — the two irreversible actions the criterion exists for — were added afterwards
+(`test_sanctum.gd`, `test_buildings.gd`) and the sacrifice one red-proved by mutation
+(`hero.rank < _roster_min_rank` → `false`: 2 failures, restored).
+
+**`%EquippedList` row `i` now means slot `i`**, not slot `i-1`. Removing the synthetic `All slots`
+row shifted every index, and a repo-wide grep found no stale consumer — but this is the change here
+that the import gate is blindest to. `_on_unequip_pressed()`'s `slot == -1` refusal went with the
+row that produced it.
+
+**`_refresh_equipped()` carries a slot selection across a hero switch** — highlight slot 5 on one
+hero, click another, and slot 5 comes up highlighted. Pre-existing and unchanged in kind: the old
+`_equipped_list.select(_slot_filter + 1)` did the same thing through a different persistent variable.
+Recorded, not fixed.
+
+**Not verified by execution:** no rendered play-through. Five of the eight consumers (Sacrifice,
+Salvage, Equip, Arena, Recover) are verified against a filtered selection by headless test and code
+trace, not by a mouse. `P2b-05` is the standing reminder that this repo has shipped defects both
+gates were blind to.
+
+Gates, run by the director independently of both subagents: import gate exit 0, zero
+`SCRIPT ERROR`/`ERROR:`/`WARNING` lines. GUT **Scripts 14 / Tests 158 / Passing 158**, against a
+pre-change baseline of 14 / 154 — delta is exactly the four new tests, no script dropped.
+
+---

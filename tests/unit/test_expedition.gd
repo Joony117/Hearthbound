@@ -645,6 +645,34 @@ func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
 	assert_eq(hero_detail.text, "", "Two heroes selected leaves no stale numbers.")
 
 
+func test_hub_roster_rank_filter_hides_selection_and_expedition_refuses_it() -> void:
+	var low_rank_hero: Hero = _add_knight("Low Rank")
+	low_rank_hero.rank = 1
+	var high_rank_hero: Hero = _add_knight("High Rank")
+	high_rank_hero.rank = 3
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var rank_filter: OptionButton = hub.get_node("%RosterRankFilter") as OptionButton
+	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
+	var status: Label = hub.get_node("%Status") as Label
+
+	roster_list.select(0)
+	rank_filter.select(4)
+	rank_filter.item_selected.emit(4)
+	assert_eq(roster_list.item_count, 1)
+	assert_eq(roster_list.get_item_metadata(0), high_rank_hero)
+	assert_eq(roster_list.get_selected_items(), PackedInt32Array())
+	expedition_button.pressed.emit()
+	assert_eq(status.text, "Select a hero first.")
+
+	rank_filter.select(0)
+	rank_filter.item_selected.emit(0)
+	assert_eq(roster_list.item_count, 2)
+	assert_eq(roster_list.get_item_metadata(0), low_rank_hero)
+	assert_eq(roster_list.get_item_metadata(1), high_rank_hero)
+
+
 func _add_knight(hero_name: String = "Knight") -> Hero:
 	var hero := Hero.new(hero_name, 0)
 	hero.def_id = &"knight"
