@@ -841,6 +841,8 @@ tickets.** Two of the five are not new work, and saying why is the point of this
 it is a bug and it unblocks a shipped feature nobody can reach. `P2-30` third, and it depends on
 `P2-29` only in that both edit the same panel.
 
+`P2b-05` has landed. `P2-29` is next and needs no ruling — the measurement is in its body.
+
 | # | Objective | Notes |
 |---|---|---|
 | P2-01a | `HeroDefinition` Resource + 5 archetypes authored | Body in `TASKS-DONE.md`. Unblocked P2-02. |
@@ -903,70 +905,9 @@ it is a bug and it unblocks a shipped feature nobody can reach. `P2-30` third, a
 | P2-28 | Hover detail on roster and inventory rows | **Landed `9f31cec`.** Body in [`TASKS-DONE.md`](TASKS-DONE.md); body in [`TASKS-DONE.md`](TASKS-DONE.md). Closes the last unblocked item of the six from the 2026-08-10 playtest. Director-written per rung 1, Codex-implemented, **no `verifier`** — no save key, no autoload signature, no `.tscn` edit, so it crosses none of `CLAUDE.md`'s four boundaries. It also *removed* duplication rather than adding a display path: the per-item magnitude `Hero.compute_final_stats` computed inline (twice) is now `Item.compute_stat_magnitude()`, so the number a tooltip shows and the number combat applies cannot diverge, and `Item.clamped_enhance_level()` — which had existed unused there since `P2-12` — is what does the clamping. **Read its Findings before trusting a green GUT run**: `gut_cmdln.gd` exits `0` and prints "All tests passed" when a test script fails to *parse*, silently dropping it from the totals — measured here at `Scripts 13 / Tests 120` against the real `14 / 153`. Compare counts, not exit codes. Also the **sixth** wrong allowed-file list, and the same direction every time: it named `test_item.gd` because the ticket's subject was an `Item` function, when criteria 3–6 are scene behaviour that only `test_equipment.gd` can reach. Original row, for reference — Playtest feedback, 2026-08-10, and the *residue* of "clearer indications" once `P2-26`'s confirm text and `P2-25`'s slot layout have taken the load-bearing half. `ItemList.set_item_tooltip()` is native and one line per `add_item()` call, so this is small. Trails everything; blocks nothing. |
 | P2b-03 | The capsules show what is happening — telegraph, hit flash, parry flash | **Landed** in the commit below; body in [`TASKS-DONE.md`](TASKS-DONE.md). Director-written per rung 1, Codex-implemented, **no `verifier`** — no save key, no autoload signature, no `.tscn` edit and `resolve()` untouched, so it crosses none of `CLAUDE.md`'s four boundaries. Shipped with **no new state field and no new `BalanceTable` field**: every tint window is an already-authored duration, and the tint is a pure function of five fields `arena.gd` was already tracking. The body's one design call was refusing to drive the hit flash off hit-stop alone — `0.06 s` is under four frames, so the obvious reading would have re-shipped the invisible-hit complaint the ticket exists to close; the flash rides the following `arena_enemy_hit_stun` (`0.35 s`) instead. **Read its Findings before writing another arena test** — the delivered one calls `_physics_process(0.0)` directly, and the zero delta is load-bearing rather than cosmetic. Original row, for reference — Playtest feedback, 2026-08-10; merges "no enemy telegraph" and "hit effects" — one mechanism, see above. A `StandardMaterial3D` tint on each capsule driven by state `arena.gd` already tracks: enemy startup (`_enemy_attack_elapsed < arena_enemy_attack_startup`), `HitStopOutcome.HIT_HERO`, `.PARRY_HERO`, `.DEFEAT_ENEMY`. Telegraph is included despite the report deferring it, and is a separable criterion. **The materials must be `duplicate()`d per instance** — `arena.tscn`'s capsules are native primitives and a shared material writes back to disk for every consumer, the hazard `ARCHITECTURE.md` § "Reaching shared Resources" names by example (`P2-07c` hit it with `summon_weights`). *(Shipped as `material_override` instead, which is less code and touches the authored materials not at all.)* The report's "still needs tuning for combat weight" is recorded here and **not acted on**: `arena_light_attack_hit_stop` is `0.04 s` and may well be too short, but tuning weight against an invisible hit is tuning against a missing signal. Re-ask after this ships — **it now has.** |
 | P2b-04 | **[BLOCKED — design]** Dodge and parry cancel any player action instantly | Playtest feedback, 2026-08-10. Today `_start_dodge()` (`combat/arena/arena.gd:341-343`) refuses during light-attack startup *and* active, so the only cancel window is recovery, and `_start_parry()` is reachable only through the standstill branch below that same guard. Deleting those three lines is most of the change — but **`SYSTEMS.md` § "Enemy attack, dodge and hit reaction" ruled the current terms**, so this reverses a published ruling, and "most actions" names no boundary. `game-designer` must answer four things first: (1) does a cancel out of an *active* attack refund the hit or eat it; (2) is hit-stun cancellable — if yes, `arena_enemy_hit_stun = 0.35` and the knockback stop being a punish at all; (3) is hit-stop cancellable (it is the one window where input is currently ignored wholesale, `_physics_process` line 84); (4) does a cancel out of an attack still pay `arena_dodge_cooldown`, or is cancelling free. (2) and (3) are where "instantly cancel out of *most* actions" stops being a one-line change. |
-| P2b-05 | **[TODO]** The arena returns to the hub when the fight ends | **Body below.** Playtest feedback, 2026-08-10 second pass. The one unplayable defect on the list: `_finish_combat()` freezes the arena and nothing ever leaves it. The return path already exists end to end — `SceneRouter.store_arena_result()` → `hub.gd:66` — and is reachable today only by pressing Esc. Authors exactly one new number (`arena_result_return_delay`), PROVISIONAL. |
+| P2b-05 | The arena returns to the hub when the fight ends | **Landed `2cbc0c1`.** Body and Findings in [`TASKS-DONE.md`](TASKS-DONE.md). **Read its Findings before trusting either gate on an arena change** — the defect it fixed and the one it caused were both invisible to the import gate *and* to GUT, and a scripted play-through found both. It also repaired a pre-existing bug the ticket never named: the Esc exit has always kept `_physics_process` ticking against an out-of-tree capsule, because `change_scene_to_file()` is deferred. Arena permadeath is still unwired and is now reachable in one sitting. |
 | P2-29 | **[TODO]** Sacrifice reads the roster selection, and the fodder list goes away | **Body below.** Playtest feedback, 2026-08-10 second pass. Closes two reported items: the unselectable fodder list and "no way to batch sacrifice" — the second is the first seen from its other end, since `P2-27` already shipped batching into a list that lays out at 0 px. Deletes `%FodderList` rather than giving it a minimum height; see the merge reasoning above. |
 | P2-30 | **[TODO]** Filter the roster and the bag | **Body below.** Playtest feedback, 2026-08-10 second pass. `_refresh_inventory()` already filters by slot, but `_slot_filter` is only reachable by clicking a row in `%EquippedList` — a filter control disguised as a display. Gives it a real control and adds the rank filter both lists lack. Its load-bearing criterion is that filtering **drops hidden rows from the selection**, because Sacrifice is permanent. |
-
----
-
-## P2b-05 — The arena returns to the hub when the fight ends                    [TODO]
-
-### Objective
-
-When the enemy dies — or the hero does — the arena hands its result back and returns to the hub on
-its own. Today the fight ends and the player is stuck standing in an empty room until they press Esc.
-
-### Existing architecture
-
-- `_finish_combat()` (`combat/arena/arena.gd:311`) sets `_combat_finished = true`, calls `resolve()`,
-  `SceneRouter.store_arena_result()`, and emits `combat_resolved`. It is called from two places, both
-  inside `_update_hit_stop()`: enemy defeat (`arena.gd:246-249`) and hero death (`arena.gd:253-254`).
-  **Both already run after the hit-stop has elapsed**, so the killing blow has finished playing by the
-  time the flag is set.
-- `_physics_process()` (`arena.gd:88-92`) returns early while `_combat_finished`, zeroing horizontal
-  velocity every frame. Nothing clears the flag and nothing changes scene. Locomotion, attack, dodge,
-  parry *and* `_turn_hero()` all sit behind that return — which is why the capsule stops following the
-  camera. The camera pivot keeps orbiting, because `_unhandled_input` (`arena.gd:512`) is not gated.
-- The arena's only sanctioned scene change is `scene_change_requested` → `SceneRouter.go_to`, connected
-  in `_ready` (`arena.gd:55`). `ARCHITECTURE.md` r5: nothing else calls `change_scene_to_file()`.
-  Esc already emits it (`arena.gd:534-538`).
-- `hub.gd:66` calls `_show_pending_arena_result()` on `_ready`, and `SceneRouter.take_arena_result()`
-  clears the payload. The victory and defeat status lines already exist (`hub.gd:686-699`).
-- `_exit_tree()` (`arena.gd:82`) restores `Input.mouse_mode`.
-- `tests/unit/test_arena.gd` instances the arena directly and listens on `enemy_defeated` and
-  `combat_resolved` (lines 229, 577, 610). It does **not** go through `SceneRouter`.
-
-### Acceptance criteria
-
-- Killing the enemy returns to the hub with no further input. The hub status line reads
-  `Arena victory: <name> survived with <n>/<n> HP.` — the existing text, unchanged.
-- Taking `arena_enemy_hits_to_kill_hero` hits returns to the hub the same way, showing the existing
-  `Arena defeat: <name> fell.`
-- There is a visible beat between the killing blow and the scene change, long enough to see the enemy
-  capsule vanish. It reads from one new `BalanceTable` field, `arena_result_return_delay` — **not** a
-  literal in `arena.gd`, which is where every other feel value in this scene lives. Author it at
-  `1.0` and mark it `PROVISIONAL` in `SYSTEMS.md` (unfelt; settled by a played build).
-- The return goes out as `scene_change_requested`, the signal that already exists. A test must be able
-  to intercept it instead of being navigated out from under.
-- Pressing Esc during the beat exits once, not twice: no double scene change, no second stored result.
-- Pressing Esc mid-fight still works exactly as it does today.
-- `Input.mouse_mode` is `MOUSE_MODE_VISIBLE` in the hub after an automatic return, not just after Esc.
-- Existing tests still pass, including the three `test_arena.gd` sites above.
-- Import gate green — zero errors, zero warnings — and the GUT suite green. Compare the Scripts and
-  Tests counts against the previous run; `gut_cmdln.gd` exits 0 with a script that failed to parse
-  (`P2-28` Findings).
-
-### Files allowed to change
-
-`combat/arena/arena.gd`, `balance_table.gd`, `balance.tres`, `tests/unit/test_arena.gd`,
-`docs/SYSTEMS.md`.
-
-### Non-goals
-
-Wiring arena death to `GameSession.kill_hero()` — the arena's `CombatResult.dead_heroes` is still
-display-only and permadeath has exactly one legal call site (`ARCHITECTURE.md` r8). Loot from the
-arena. A victory screen, a results panel, or any new UI node. A second wave. Touching
-`quick_resolve.gd`, or the `resolve(team, wave)` parameter debt carried from `P2b-01e`.
 
 ---
 

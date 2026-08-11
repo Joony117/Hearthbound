@@ -5176,3 +5176,102 @@ a row to inspect it arms a batch action — hover is the only read that costs no
 - Gates re-run by the director independently of the worker's claim: import gate exit `0` clean,
   GUT **`153/153`**, 10,065 asserts (up from 151/10,056 — the worker's run, plus the clamp test and
   the hub tooltip test added in review).
+
+---
+
+## P2b-05 — The arena returns to the hub when the fight ends                    [DONE]
+
+### Objective
+
+When the enemy dies — or the hero does — the arena hands its result back and returns to the hub on
+its own. Today the fight ends and the player is stuck standing in an empty room until they press Esc.
+
+### Existing architecture
+
+- `_finish_combat()` (`combat/arena/arena.gd:311`) sets `_combat_finished = true`, calls `resolve()`,
+  `SceneRouter.store_arena_result()`, and emits `combat_resolved`. It is called from two places, both
+  inside `_update_hit_stop()`: enemy defeat (`arena.gd:246-249`) and hero death (`arena.gd:253-254`).
+  **Both already run after the hit-stop has elapsed**, so the killing blow has finished playing by the
+  time the flag is set.
+- `_physics_process()` (`arena.gd:88-92`) returns early while `_combat_finished`, zeroing horizontal
+  velocity every frame. Nothing clears the flag and nothing changes scene. Locomotion, attack, dodge,
+  parry *and* `_turn_hero()` all sit behind that return — which is why the capsule stops following the
+  camera. The camera pivot keeps orbiting, because `_unhandled_input` (`arena.gd:512`) is not gated.
+- The arena's only sanctioned scene change is `scene_change_requested` → `SceneRouter.go_to`, connected
+  in `_ready` (`arena.gd:55`). `ARCHITECTURE.md` r5: nothing else calls `change_scene_to_file()`.
+  Esc already emits it (`arena.gd:534-538`).
+- `hub.gd:66` calls `_show_pending_arena_result()` on `_ready`, and `SceneRouter.take_arena_result()`
+  clears the payload. The victory and defeat status lines already exist (`hub.gd:686-699`).
+- `_exit_tree()` (`arena.gd:82`) restores `Input.mouse_mode`.
+- `tests/unit/test_arena.gd` instances the arena directly and listens on `enemy_defeated` and
+  `combat_resolved` (lines 229, 577, 610). It does **not** go through `SceneRouter`.
+
+### Acceptance criteria
+
+- Killing the enemy returns to the hub with no further input. The hub status line reads
+  `Arena victory: <name> survived with <n>/<n> HP.` — the existing text, unchanged.
+- Taking `arena_enemy_hits_to_kill_hero` hits returns to the hub the same way, showing the existing
+  `Arena defeat: <name> fell.`
+- There is a visible beat between the killing blow and the scene change, long enough to see the enemy
+  capsule vanish. It reads from one new `BalanceTable` field, `arena_result_return_delay` — **not** a
+  literal in `arena.gd`, which is where every other feel value in this scene lives. Author it at
+  `1.0` and mark it `PROVISIONAL` in `SYSTEMS.md` (unfelt; settled by a played build).
+- The return goes out as `scene_change_requested`, the signal that already exists. A test must be able
+  to intercept it instead of being navigated out from under.
+- Pressing Esc during the beat exits once, not twice: no double scene change, no second stored result.
+- Pressing Esc mid-fight still works exactly as it does today.
+- `Input.mouse_mode` is `MOUSE_MODE_VISIBLE` in the hub after an automatic return, not just after Esc.
+- Existing tests still pass, including the three `test_arena.gd` sites above.
+- Import gate green — zero errors, zero warnings — and the GUT suite green. Compare the Scripts and
+  Tests counts against the previous run; `gut_cmdln.gd` exits 0 with a script that failed to parse
+  (`P2-28` Findings).
+
+### Files allowed to change
+
+`combat/arena/arena.gd`, `balance_table.gd`, `balance.tres`, `tests/unit/test_arena.gd`,
+`docs/SYSTEMS.md`.
+
+### Non-goals
+
+Wiring arena death to `GameSession.kill_hero()` — the arena's `CombatResult.dead_heroes` is still
+display-only and permadeath has exactly one legal call site (`ARCHITECTURE.md` r8). Loot from the
+arena. A victory screen, a results panel, or any new UI node. A second wave. Touching
+`quick_resolve.gd`, or the `resolve(team, wave)` parameter debt carried from `P2b-01e`.
+
+### Findings
+
+**The gates could not see the defect this ticket shipped, and could not see the one it caused.**
+Neither could have. The import gate does not play the game and the GUT suite never triggers a real
+scene change — its arena tests intercept `scene_change_requested` precisely so it does not. What
+found both was a scripted play-through: hub → select hero → arena → land the attack → wait → assert
+the hub is back, with its status line read out. It lives at `.agent-results/p2b05_return_check.gd`
+(gitignored) and is the shape worth reaching for again.
+
+The caused defect: `change_scene_to_file()` is **deferred**, so between the emit and the actual
+free, `_physics_process` keeps ticking against a `HeroCapsule` already removed from the tree. Six
+runtime errors per exit — `!is_inside_tree()` on `get_global_transform`, and `body->get_space()` is
+null out of `move_and_slide()`. Exit code stayed `0` throughout; the play-through printed them.
+
+**The Esc path has always had this.** The fix is therefore not a guard on the new exit but a single
+`_request_hub()` that both exits route through, calling `set_physics_process(false)` before it
+emits. That is the smaller diff *and* the one that repairs the older bug — guarding only the new
+path would have left the reported symptom fixed and its sibling still printing.
+
+**`_finish_combat()` runs after the hit-stop has already elapsed** (both call sites are inside
+`_update_hit_stop`), so the killing blow has finished playing before the countdown starts. That is
+what makes a frame-counted delay in the `_combat_finished` branch sufficient — there is nothing to
+interleave with. The countdown deliberately uses no `Timer` and no `await`: the GUT tests hold the
+arena as a plain child and free it at test end, and a pending coroutine on a freed instance is an
+error the ticket would have introduced on its way to fixing one.
+
+**Still not wired: arena permadeath.** `CombatResult.dead_heroes` is populated and displayed, and
+nothing calls `GameSession.kill_hero()` on the arena path. A hero can lose the arena and walk it
+off. Left alone on purpose (`ARCHITECTURE.md` r8 gives permadeath one legal call site, and this
+ticket owns none of it), but the defeat return now makes the gap reachable in one sitting rather
+than only in theory.
+
+Gates re-run by the director independently of the worker's claim: import gate exit `0`, zero errors
+and zero warnings; GUT **14 scripts / 154 tests / 154 passing**, 10,079 asserts. Script and test
+counts cross-checked against `grep -c '^func test_'` at `HEAD` (153 → 154, 14 files) — `gut_cmdln.gd`
+exits 0 and prints "All tests passed" when a script fails to parse, so the totals are the evidence,
+not the exit code (`P2-28` Findings).
