@@ -395,9 +395,6 @@ func _start_dodge() -> void:
 		or _hit_stop_remaining > 0.0
 	):
 		return
-	var attack_recovery_start: float = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
-	if _attack_elapsed >= 0.0 and _attack_elapsed < attack_recovery_start:
-		return
 	var input_direction: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	if input_direction == Vector2.ZERO:
 		if _parry_cooldown_remaining <= 0.0:

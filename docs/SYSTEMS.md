@@ -963,7 +963,7 @@ instead of snapping around a target mid-swing.
 | Heavy/Smash hit-stop | `0.09 s` (`0.08–0.12 s` range) | A later Smash slice, not a reason to make the first light attack heavier. |
 | Input buffer | `0.15–0.25 s` before a transition/cancel gate | Queue Normal, Smash or Dodge once action states exist; execute at the earliest permitted frame. |
 | Dodge burst | `13.5 m/s` decaying across `0.38 s` | `P2b-01d`; starts i-frames immediately and has `0.25 s` active invulnerability. |
-| Recovery dodge cancel | End-recovery only, primarily after a Smash | `P2b-01d`; no cancel during an active hit and no chained dodge until separately authored. |
+| Dodge/parry cancel | ~~End-recovery only, primarily after a Smash~~ **Superseded by `P2b-04`:** startup, active and recovery, all three | `P2b-01d`; opened to the whole attack timeline by `P2b-04` — an active-window cancel forfeits any hit not already registered, no chained dodge. |
 
 #### First light attack timeline (`P2b-01c`)
 
@@ -1118,10 +1118,14 @@ and a number on screen is a weaker "you got hit" signal than a shove and a stun.
   start. Rejected: no cooldown — immediate re-dodge turns dodge into a near-permanent i-frame
   toggle (the 0.53 s finding above assumes this floor exists; without it there is no "decision" at
   all, which is the opposite of the Phase 2 exit question).
-- **Cancels light-attack recovery:** confirmed, not tightened. The already-fixed rule ("end-
+- **Cancels light-attack recovery:** ~~confirmed, not tightened. The already-fixed rule ("end-
   recovery only, primarily after a Smash; no cancel during an active hit and no chained dodge")
   applies as written — dodge may start once the light attack's own state reaches its recovery
-  window, and the `0.15 s` dodge cooldown already forecloses chaining a second dodge.
+  window, and the `0.15 s` dodge cooldown already forecloses chaining a second dodge.~~
+  **Superseded by `P2b-04`:** dodge (and parry, through the same gate) may now cancel a light
+  attack at any point in its timeline — startup, active or recovery — see "Dodge/parry cancel
+  opens to attack startup and active" below. The `0.15 s` dodge cooldown still forecloses chaining
+  a second dodge.
 - **Neutral dodge (no movement input held):** ~~a backstep — dodge direction is the camera-relative
   input direction if one is held (reusing the existing `_camera_relative_direction` helper used
   for locomotion and attack facing), otherwise directly away from the capsule's current facing.~~
@@ -1206,9 +1210,13 @@ subsection above, not restated here. A player wanting pure backward evasion now 
 presses `dodge`: an ordinary directional dodge aimed away from the camera, not a special case.
 
 Availability gate: the same base guard `_start_dodge` already uses today (not already dodging,
-parrying, hit-stunned, or in hit-stop) plus the same attack-recovery-only cancel rule
+parrying, hit-stunned, or in hit-stop) plus ~~the same attack-recovery-only cancel rule
 (`P2b-01d`'s "Cancels light-attack recovery") — parry can interrupt the player's own attack
-recovery on the same terms dodge already does, since it is dispatched from the same button.
+recovery on the same terms dodge already does, since it is dispatched from the same button.~~
+**Superseded by `P2b-04`:** the same cancel rule dodge now uses, covering the whole attack
+timeline rather than recovery alone — since parry shares dodge's entry gate, every term ruled for
+dodge below lands on parry automatically, including that an active-window cancel forfeits the
+pending hit rather than resolving it first.
 
 | Tunable | Value | Rationale |
 |---|---:|---|
@@ -1266,6 +1274,79 @@ special penalty beyond having already spent `arena_parry_whiff_recovery` locked 
 > real cost or an unnoticed footnote, and whether the `0.6 s` enemy stagger gives enough room for
 > the counter to land before the enemy recovers control — none of which can be checked at a desk
 > the way the dodge-cycle arithmetic in `P2b-01d` could.
+
+### Dodge/parry cancel opens to attack startup and active (`P2b-04`)
+
+Playtest feedback asked that dodge and parry "instantly cancel out of most actions." "Most
+actions" names no boundary, and `P2b-01d`'s recovery-only cancel window (confirmed above, not
+loosened, until now) was a published ruling — this section reverses it and answers the four
+questions the row required before any code changed. Nothing here touches hit-stun or hit-stop as
+*cancellable states*; both stay locked exactly as already published, for the reasons below.
+
+**1. A cancel out of an active attack eats the pending hit; it does not refund it.** The moment
+`_start_dodge()`/`_start_parry()` fires while `_attack_elapsed` is inside the active window,
+`_attack_hitbox.monitoring` is set `false` in that same frame — the branch that already exists at
+`arena.gd:408-411` for the recovery case, unconditional on `_attack_elapsed >= 0.0`, needs no new
+logic to cover active too. Any hit not already registered through
+`_on_attack_hitbox_body_entered` before the cancel is simply lost; there is no retroactive
+credit. Rejected: refund the hit on cancel — that would make cancelling strictly dominant over
+committing (free defensive window *and* guaranteed damage), which erases the exact commitment the
+active window exists to represent. Cancelling out of startup is unaffected by this question: no
+hitbox is monitoring yet, so there is nothing to eat or refund.
+
+**2. Hit-stun stays non-cancellable.** This is a confirmation, not a reversal — the existing text
+already states `arena_enemy_hit_stun` "locks player input (movement, attack, dodge)," and that
+holds. Hit-stun is not a player action; it is the enemy's entire reward for landing a hit, and
+`arena_enemy_knockback_speed`'s own decay is already faster (`~0.09 s`) than the stun that outlasts
+it (`0.35 s`) specifically so the stun is the real punish, not the shove. Making it cancellable
+would mean every enemy swing that lands — after a `0.55 s` telegraph — costs the player nothing
+beyond one tick toward `arena_enemy_hits_to_kill_hero`; the enemy's only attack becomes a pure
+HP-counter with no positional or tempo cost, which is a different and weaker enemy than the one
+`P2b-01d`/`P2b-01e` priced. `P2b-04`'s "most actions" is read narrowly on purpose: the player's own
+committed actions (attack) becoming interruptible by the player's own defensive actions
+(dodge/parry) is what the playtest note is about; a state the enemy imposes on the player is not
+a "player action" in that sense. Rejected: cancellable hit-stun — priced above and rejected on
+that price, not on principle.
+
+**3. Hit-stop stays non-cancellable — no code change, and that is deliberately the cheap answer.**
+Every hit-stop duration in this arena is under five frames at 60 fps
+(`arena_light_attack_hit_stop = 0.04 s`, `arena_enemy_attack_hit_stop = 0.06 s`,
+`arena_parry_hit_stop = 0.08 s`): a player cannot see the freeze and react inside it, so "input is
+accepted but the freeze eats the frames anyway" and "input is refused outright" are the same
+experience from the controller. Per the row's own instruction, rule the cheaper one: leave
+`_start_dodge`'s existing `_hit_stop_remaining > 0.0` refusal exactly as it is. This also matches
+the per-frame priority chain's own framing (`arena.gd:99-114`) — hit-stop freezing everything
+first, before dodge/parry/attack/locomotion are even considered — as a universal freeze-frame
+convention rather than a state any action-game reference expects the player to fight through.
+
+**4. A cancel still pays `arena_dodge_cooldown` — cancelling is not free.** This is not a new
+charge; it is how the cooldown already works. `arena_dodge_cooldown` is applied when the dodge
+*burst ends* (`_update_dodge`, `arena.gd:202-206`), not when it starts, so it already fires
+identically whatever state the dodge interrupted — ordinary locomotion, attack recovery, or now
+attack startup/active. Exempting a cancel from it would need a new special-cased branch that
+tracks *why* a dodge started, which is exactly the kind of unwritten boundary the row calls out
+("most actions" is not a specification) — and it would make cancelling strictly better than a
+clean dodge, when the two are meant to be the same action entered from a different door. This
+follows the `_start_attack()` precedent already published rather than breaking from it: a
+parry-cancel-into-attack still pays `arena_parry_cooldown` (`arena.gd:379-382`); a dodge/parry-
+cancel-into-out-of-attack pays `arena_dodge_cooldown` the same way.
+
+**Net change to `_start_dodge()`'s guard.** The two lines that refuse a cancel while
+`_attack_elapsed` is inside `arena_light_attack_startup + arena_light_attack_active`
+(`arena.gd:398-400`) are removed; the existing hit-stun/hit-stop/combat-finished/already-
+dodging/already-parrying guard above them (`arena.gd:390-397`) is untouched, since none of those
+five are in scope here. No new `BalanceTable` field: every number this section reasons about was
+already authored.
+
+> ⚠️ **PROVISIONAL** — this is an unplayed reversal of a term that was itself published from
+> arithmetic, not play. Whether an instant startup/active cancel reads as responsive rather than
+> as making the light attack's commitment feel hollow — and whether losing the pending hit on an
+> active-window cancel reads as a fair trade rather than a punish for pressing the "right" button
+> a frame too early — is exactly the Phase 2 exit question (is spending a hero's life a decision
+> you actually feel) one level down: is committing to a swing a decision you actually feel, once
+> backing out of it is one button away. · **Settled by:** playing it against the existing enemy
+> swing (`0.55/0.10/0.45 s`) and dodge cycle (`0.38 s` burst + `0.15 s` cooldown) already on the
+> page.
 
 ### Hero HP and the death rule (`P2b-01e`)
 

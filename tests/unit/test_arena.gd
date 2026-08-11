@@ -357,6 +357,103 @@ func test_dodge_cooldown_does_not_gate_parry() -> void:
 	assert_eq(arena._parry_elapsed, 0.0)
 
 
+func test_dodge_cancels_light_attack_startup() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+
+	arena._unhandled_input(attack_event)
+	arena._physics_process(BALANCE.arena_light_attack_startup * 0.5)
+	assert_gt(arena._attack_elapsed, 0.0)
+
+	Input.action_press(&"move_back")
+	arena._unhandled_input(dodge_event)
+
+	assert_eq(arena._attack_elapsed, -1.0)
+	assert_eq(arena._dodge_elapsed, 0.0)
+	assert_almost_eq(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), BALANCE.arena_dodge_speed, 0.001)
+
+
+## The cancel drops `monitoring` in the same frame, so a hit that had not already registered is
+## lost outright — `SYSTEMS.md` ruling 1. The enemy assertion is what measures that: asserting the
+## flag alone would still pass if the overlap had already been credited.
+func test_dodge_during_active_attack_eats_the_pending_hit() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	var attack_hitbox := arena.get_node("HeroCapsule/AttackHitbox") as Area3D
+	watch_signals(arena)
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+
+	arena._unhandled_input(attack_event)
+	arena._physics_process(BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active * 0.5)
+	assert_true(attack_hitbox.monitoring)
+
+	Input.action_press(&"move_back")
+	arena._unhandled_input(dodge_event)
+
+	assert_false(attack_hitbox.monitoring)
+	assert_eq(arena._attack_elapsed, -1.0)
+	await wait_physics_frames(35)
+	assert_signal_emit_count(arena, "enemy_defeated", 0)
+	assert_true(is_instance_valid(enemy_capsule))
+
+
+func test_standstill_dodge_press_parries_out_of_attack_startup() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+
+	arena._unhandled_input(attack_event)
+	arena._physics_process(BALANCE.arena_light_attack_startup * 0.5)
+	arena._unhandled_input(dodge_event)
+
+	assert_eq(arena._parry_elapsed, 0.0)
+	assert_eq(arena._attack_elapsed, -1.0)
+
+
+## Ruling 4 — the cooldown is charged when the burst ends, so a cancel pays exactly what a clean
+## dodge pays. No branch implements this; deleting the guard must not have bought a free dodge.
+func test_cancel_started_dodge_pays_the_same_cooldown() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+
+	arena._unhandled_input(attack_event)
+	arena._physics_process(BALANCE.arena_light_attack_startup * 0.5)
+	Input.action_press(&"move_back")
+	arena._unhandled_input(dodge_event)
+	arena._physics_process(BALANCE.arena_dodge_duration)
+
+	assert_eq(arena._dodge_elapsed, -1.0)
+	assert_almost_eq(arena._dodge_cooldown_remaining, BALANCE.arena_dodge_cooldown, 0.001)
+
+
 func test_arena_movement_uses_authored_kinematics_and_normalizes_diagonal() -> void:
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena

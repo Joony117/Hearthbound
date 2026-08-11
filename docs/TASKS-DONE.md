@@ -5482,3 +5482,121 @@ Gates, run by the director independently of both subagents: import gate exit 0, 
 pre-change baseline of 14 / 154 — delta is exactly the four new tests, no script dropped.
 
 ---
+
+
+---
+
+## P2b-04 — Dodge and parry cancel the light attack outright                    [DONE]
+
+### Objective
+
+A dodge or parry press during a light attack's **startup or active** frames cancels it and starts
+the dodge/parry, instead of being refused. Today the only cancel window is attack *recovery*.
+
+### Existing architecture
+
+`_start_dodge()` (`combat/arena/arena.gd:389-415`) refuses in two separate places, and only the
+second one is in scope:
+
+- **Lines 390-397 — out of scope, unchanged.** `_combat_finished`, an in-progress dodge, an
+  in-progress parry, `_hit_stun_remaining > 0.0`, `_hit_stop_remaining > 0.0`. `SYSTEMS.md`
+  § "Dodge/parry cancel opens to attack startup and active" answers 2 and 3 explicitly: hit-stun
+  and hit-stop both stay locked, and hit-stop is left alone as the deliberately *cheap* answer
+  because every hit-stop in this arena is under five frames.
+- **Lines 398-400 — the whole change.** `attack_recovery_start` = startup + active, and a return
+  when `_attack_elapsed` is inside it. Delete these three lines.
+
+The teardown the cancel needs **already exists and already covers the new case**: lines 408-411
+clear `_attack_elapsed`, `_attack_active` and `_attack_hitbox.monitoring` on *any*
+`_attack_elapsed >= 0.0`, and `_start_parry()` (419-422) does the same. That is what makes ruling 1
+(a cancel eats the pending hit, no refund) true with no new logic — dropping `monitoring` in the
+same frame is what loses it.
+
+Parry is not a separate button. A dodge press with a zero movement vector and no parry cooldown
+becomes a parry (lines 401-405), *below* the guard being deleted — so today a standstill press
+during attack startup is swallowed, and after the deletion it parries. That is the intent, not a
+side effect.
+
+Ruling 4 (a cancel still pays `arena_dodge_cooldown`) needs **no code**: the cooldown is applied
+when the dodge burst *ends* (`_update_dodge`, lines 202-206), so it already fires identically
+whatever the dodge interrupted. Pinning it is a test, not a branch.
+
+### Acceptance criteria
+
+1. `arena.gd:398-400` are gone; lines 390-397 are byte-identical to before. No new
+   `BalanceTable` field, no `.tres` edit, no `.tscn` edit, no new state field.
+2. A `dodge` press with a movement direction held, issued while `_attack_elapsed` is inside
+   **startup**, starts the dodge: hero speed is `arena_dodge_speed` and `_attack_elapsed` is `-1.0`.
+3. The same press issued while `_attack_elapsed` is inside the **active** window starts the dodge
+   *and* `_attack_hitbox.monitoring` is `false` in that same frame — the pending hit is eaten.
+   Drive the enemy into reach and assert it is **not** defeated, so the criterion measures the
+   dropped hit rather than just a boolean.
+4. A **standstill** `dodge` press during attack startup parries (`_parry_elapsed == 0.0`) and
+   clears the attack.
+5. A cancel-started dodge pays the cooldown: after `arena_dodge_duration`,
+   `_dodge_cooldown_remaining == arena_dodge_cooldown`, identical to a clean dodge.
+6. Existing arena tests stay green unmodified — in particular
+   `test_arena_attack_captures_camera_facing_after_startup_and_ignores_reentry_during_recovery`,
+   which pins that an *attack* press during recovery is still refused. This ticket loosens dodge,
+   not attack re-entry.
+7. BUILT green (import gate, zero warnings) and the full GUT suite green. **Compare script/test
+   counts against the previous run, not the exit code** — `gut_cmdln.gd` exits `0` and prints
+   "All tests passed" when a test script fails to parse (`P2-28` Findings).
+
+### Files allowed to change
+
+- `combat/arena/arena.gd`
+- `tests/unit/test_arena.gd`
+
+That is the complete list — verified by grep, not predicted. `_start_dodge` has no caller outside
+`arena.gd`, and `arena_dodge_cooldown` is read in `arena.gd` and asserted in `test_arena.gd` only.
+Seven consecutive tickets shipped a wrong list; this one was written after the grep.
+
+### Non-goals
+
+- **Hit-stun and hit-stop stay non-cancellable.** Both are ruled, both are confirmations rather
+  than reversals, and both are named in criterion 1's "lines 390-397 unchanged".
+- **Attack re-entry during recovery stays refused** (criterion 6). Only dodge/parry loosen.
+- **No input buffer.** Deferred by `P2b-01d` as cross-cutting across Normal/Smash/Dodge; authoring
+  it for this ticket alone is a worse inconsistency than having none.
+- No retune of the enemy swing timings, no multi-hit combos, no controller path (`P2b-02`, on hold).
+
+### Boundary
+
+Crosses **none** of `CLAUDE.md`'s four: no save key, no autoload signature, no scene seam, and
+`resolve()` untouched. No mandatory `verifier` — same shape as `P2b-03`.
+
+### Findings
+
+**Three of the four design questions were confirmations, and that is what made this a deletion
+ticket.** The row predicted "(2) and (3) are where this stops being a one-line change" — it did
+not. `game-designer` locked hit-stun (it is the enemy's only reward for a `0.55 s` telegraph) and
+locked hit-stop as the explicitly *cheap* answer (every hit-stop here is under five frames, so
+cancellable and not are indistinguishable from the controller). Ruling 4 needed no code at all:
+`arena_dodge_cooldown` is charged when the burst *ends* (`_update_dodge`), so it already fired
+identically whatever the dodge interrupted. Net shipped code: **three deleted lines**, no new
+field, no new branch. Route the ruling before sizing the ticket, not after.
+
+**Ruling 1 was already implemented by accident.** The teardown that makes a cancel eat the pending
+hit — clearing `_attack_elapsed`/`_attack_active` and dropping `_attack_hitbox.monitoring` — sits
+at `arena.gd:405-408` and was written for the *recovery* case, unconditional on
+`_attack_elapsed >= 0.0`. It covered startup and active the moment the guard above it went away.
+The refund-vs-eat question therefore had no implementation cost either way, which is worth knowing
+before treating "does it refund" as a scoping risk.
+
+**The red-proof is the only reason criterion 3 is trustworthy.** Restoring the three lines fails
+exactly the four new tests (158 passing — the pre-ticket baseline — against 162), and the assertion
+that actually breaks is `enemy_defeated` emit count `1` instead of `0`: with the cancel refused,
+the attack runs to completion and kills the enemy. Asserting `monitoring == false` alone would have
+been a flag check; asserting the enemy *survives* is what measures the dropped hit.
+
+**Driving `_physics_process(delta)` directly is what makes the eaten-hit test deterministic.**
+Setting `monitoring = true` inside a direct call means no engine physics step has resolved the
+`Area3D` overlap yet, so the cancel provably lands before any contact could be credited. Doing it
+with `wait_physics_frames` instead races the overlap and the test would pass or fail on timing.
+This is the same shape as `P2b-03`'s finding that its zero delta was load-bearing rather than
+cosmetic — arena tests want the frame boundary chosen, not inherited.
+
+**Test count, per criterion 7:** `Scripts 14 / Tests 162`, up from `14 / 158`, with four tests
+added — the script count holding at 14 is what rules out `P2-28`'s silent-parse-failure trap,
+where `gut_cmdln.gd` exits `0` and prints "All tests passed" having dropped a whole file.
