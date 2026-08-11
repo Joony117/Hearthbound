@@ -14,6 +14,11 @@ export/
 # Agent working files (logs + artifacts, per WORKER-CONTRACT.md)
 .agent-results/
 
+# Panther relay scratch — the agent prompts in panther/ are committed, the churn is not
+panther/in.md
+panther/out.md
+panther/review.md
+
 # Editor / OS noise
 *.tmp
 .DS_Store

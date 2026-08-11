@@ -14,6 +14,13 @@ cheapest-sufficient-path routing, the Codex tiers, `~/.claude/WORKER-CONTRACT.md
 only what the global file says each repo must supply: the risky boundary and what BUILT means,
 plus the doc-ownership table. It removes nothing.
 
+**Panther relay.** Chapman's Panther AI (LibreChat, unlimited Sonnet 4.6 and GPT-5.2) is available
+as a manual worker and displaces most rung-2 Codex dispatch. `panther/README.md` has the loop; the
+rule that makes it worth doing is that **source file contents never enter the director's context**
+— the director writes a brief naming files, the user carries the files, and only the returned edit
+blocks come back. Panther has no shell and no engine, so `BUILT` and `VERIFIED` stay with the
+director; a Panther reply claiming either is fabricated and gets rejected whole.
+
 ## BUILT
 
 ```bash
