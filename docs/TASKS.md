@@ -1598,6 +1598,132 @@ are `P2b-12` below, not re-openable here.
 
 ---
 
+## P2b-12 — The parry is gettable and a dodge actually escapes   [BLOCKED]
+
+**Opened 2026-08-12 from the user's played build.** Blocked on `game-designer`'s ruling, in flight
+as of this writing; the body below cannot be written until it lands, because the acceptance criteria
+have to name numbers that do not exist yet. This is the `P2-03e` → `P2-03f` and `P2-05b` → `P2-05c`
+shape the backlog already uses twice: the ruling is not an implementer contract, and an implementer
+contract cannot be honest before it.
+
+The user's report, verbatim: *"either the parry window is non intuitive or the parry window is too
+small, its very to hard to get a parry off. and after dodge, the enemy is able to still reach the
+player and hit while the distance looks like its enough to avoid the attack."*
+
+**What the director measured before routing it**, so the ruling did not have to re-derive it and so
+no later ticket re-finds it as a bug:
+
+- **`EnemyAttackHitbox`'s box spans capsule-local `z ∈ [-2.35, -0.75]`, half-width `0.75`.** The
+  `Area3D` sits at `z = -0.75` and `_ready()` then offsets the `CollisionShape3D` by another
+  `-arena_enemy_attack_reach * 0.5`. With both capsules at `CapsuleShape3D` radius `0.75`, contact
+  reaches **3.10 m centre-to-centre** with a **±1.5 m lateral corridor**. `size.x`/`size.y` are
+  inherited from the shared graybox `Shape_attack` and **no tunable governs either**.
+- **There is no spacing margin.** `arena_enemy_preferred_range = 2.4` against a 3.10 m connect
+  distance: at its own preferred range the enemy already has the hero 0.7 m inside the box.
+- **A lateral dodge provably cannot escape.** `_update_enemy_attack()` calls `_turn_enemy()` for the
+  whole `0.55 s` startup at `720°/s`. Clearing the corridor from 2.4 m needs 32° of arc; the enemy
+  re-closes 32° in `0.044 s` against a `0.38 s` dodge. Only a radial dodge does anything, while the
+  hero visibly travels ≈ 2.57 m. That is the reported symptom exactly.
+- **`P2b-10`'s deferred note is probably the larger cause.** The enemy's `Sword_Regular_A` dominant
+  arm motion peaks at `0.4 s`; the hitbox goes live at `0.55 s`. The visible sword finishes its arc
+  and an invisible box registers ~`0.15 s` later.
+- **Capsule radius `0.75` predates the real models.** Authored for a graybox in `P2b-01a`, never
+  revisited in `P2b-09`/`P2b-10`. A humanoid is nothing like 1.5 m wide, so the hero can look clear
+  of the sword and still be hit.
+- **The parry's "non intuitive" half is most likely the trigger, not the number.** `P2b-01f` binds
+  parry to a press of `dodge` while `Input.get_vector(...)` is *exactly* `Vector2.ZERO`. In a live
+  fight the player is nearly always holding a movement key, so reaching the parry branch means fully
+  releasing WASD **and then** pressing dodge inside a `0.18 s` window.
+
+Sequence this **before** `P2b-13`. It is mostly balance numbers over a settled animation layer,
+whereas `P2b-13` rebuilds that layer — doing `P2b-13` first means re-timing everything twice.
+
+---
+
+## P2b-13 — Animation transitions blend instead of cutting   [TODO]
+
+**Opened 2026-08-12 from the user's direction:** *"try to use the AnimationTree and let godot handle
+the animation transitions."*
+
+### Read this before scoping the work
+
+The stated goal is that Godot, not `arena.gd`, owns the transitions. There are two ways to get that
+and they are three orders of magnitude apart in cost, so **the implementer's first job is to check
+whether the cheap one is sufficient and report before building the expensive one.**
+
+`_play_animation()` currently calls `animation_player.play(animation_name, -1.0, custom_speed)`. The
+`-1.0` means "use the default blend time", and `AnimationPlayer.playback_default_blend_time` **has
+never been set on either player, so it is `0` and every transition in the arena is a hard cut.**
+Setting that one property is the entire difference between a cut and a crossfade, it is native
+Godot handling the blend, and it costs two lines and no `.tscn` change.
+
+An `AnimationTree` buys something genuinely more than that — per-transition blend times, transition
+conditions, and `xfade_time` authored per edge rather than one global number — but it is a rewrite
+of both animation updaters and it collides with two things this arena already does:
+
+- **Libraries are bound at runtime.** `_bind_animation_libraries()` loads `UAL1_Standard.glb` /
+  `UAL2_Standard.glb` and calls `add_animation_library()` in `_ready()`. An `AnimationNodeStateMachine`
+  authored in the `.tscn` references `ual1/Idle` and friends by name at load time, when they do not
+  exist yet. Either the state machine is built in code after the bind (no `.tscn` change, but then
+  "Godot handles it" buys only the blending, since the graph is still authored in GDScript), or the
+  libraries get baked into the `.tscn` and the runtime bind is deleted — which is **boundary 2 and a
+  mandatory `verifier` pass**. Say which one you are doing rather than discovering it halfway.
+- **Every attack clip is time-scaled to an authored phase.** `custom_speed` is computed per call as
+  `animation.length / target_duration` against `BalanceTable` durations. `AnimationNodeAnimation` has
+  no equivalent; this becomes `AnimationNodeTimeScale` nodes whose scale is written each frame through
+  `tree.set("parameters/.../scale", …)`. That is strictly more moving parts than the current line, and
+  the phase timings must come out numerically identical — `P2b-10` and `P2b-11` both shipped tests
+  that assert real keyframe positions against the authored windows, and those tests stay green.
+
+**Report the cheap result first.** If `playback_default_blend_time` alone reads right in a played
+build, that is the answer and this ticket closes there; the user asked to *try* the AnimationTree,
+not to land it regardless of what the trial shows.
+
+### Existing architecture
+- `_update_hero_animation()` and `_update_enemy_animation()` (`combat/arena/arena.gd`) map game state
+  to a clip name plus a target duration. Hero states: `Hit_Chest`, `Roll`, `Sword_Block`,
+  `Sword_Regular_A`/`_Rec` (smash), `Sword_Regular_A`/`B`/`C` + `_Rec` (chain), `Sprint`, `Jog_Fwd`,
+  `Idle`. Enemy states: `Hit_Chest`, `Sword_Regular_A`/`_Rec`, `Roll`, `Sword_Block`, `Jog_Fwd`,
+  `Idle`.
+- `_play_animation()` dedups on `assigned_animation` — **not** `current_animation`. `P2b-11` made that
+  deliberate: `pause()` clears the latter and retains the former with its playback position, and it is
+  what makes a hit-stop resume rather than restart. Any replacement must preserve the freeze, which
+  `tests/unit/test_arena.gd` asserts by advancing time across a hit-stop.
+- `AnimationTree` has its own freeze story (`active = false`, or manual `advance()`), which is cleaner
+  than the current pause pair — but it is a *different* mechanism and the existing test must still pass.
+- Bone `root` carries zero tracks in both packs. **Do not add root motion.** Script velocity remains
+  the sole attack/dodge displacement authority.
+- The run stays `Jog_Fwd` in every movement direction on purpose (`SYSTEMS.md`, `P2b-01f`: the hero
+  faces camera-forward while strafing and backpedalling). Directional locomotion is a design ruling,
+  not an animation-graph decision, and is out of scope here.
+
+### Acceptance criteria
+1. Transitions between arena animation states crossfade rather than cut, on **both** capsules by the
+   same mechanism — a fix on one capsule only is a rejected diff, same rule as `P2b-11` criterion 2.
+2. The `P2b-11` hit-stop freeze still holds: playback position is unchanged across a hit-stop and
+   resumes from the same frame. The existing test proves it and must not be weakened to suit a new
+   mechanism.
+3. Attack clip phase timings are numerically unchanged — the `P2b-10`/`P2b-11` keyframe-position
+   assertions stay green untouched.
+4. The implementer states in its return which of the two routes it took and why, and if it took the
+   `AnimationTree` route, whether the `.tscn` changed. A `.tscn` change is boundary 2 and makes a
+   `verifier` pass mandatory.
+5. Import gate exit `0`, zero warnings; GUT at or above `14 / 190 / 190 / 10324`.
+6. "Survives save and reload": N/A — presentation only, no state, no save key.
+
+### Files allowed to change
+`combat/arena/arena.gd`, `tests/unit/test_arena.gd`, and — only on the `AnimationTree` route, only
+with the boundary-2 call made explicitly — `combat/arena/arena.tscn`.
+
+### Non-goals
+Root motion. Directional locomotion clips. New animation packs or a pack swap — note
+`SuperHero_Male`'s capital `H` is load-bearing in three `get_node()` calls (`P2b-10`). Impact audio,
+particles, a death animation. Any change to `resolve()`, `CombatResult`, permadeath or `GameSession`
+— the arena stays display-only (`DECISIONS.md` 2026-08-11). Any combat *timing* change: that is
+`P2b-12`, which lands first.
+
+---
+
 # Direction backlog — after the core loop
 
 Recorded 2026-08-11 from the user's direction. `GAME_SPEC.md` § Direction is the spec half; this
@@ -1712,7 +1838,7 @@ needs to re-read.
 | `P2-32` | Heroes have surnames | `fe1a74b` |
 | `P2b-09` | The hero capsule becomes a real animated model | `9757058` |
 | `P2b-10` | The enemy capsule becomes a real animated model | `f013e95` |
-| `P2b-11` | The arena's animation shows what the logic says is happening | `_pending_` |
+| `P2b-11` | The arena's animation shows what the logic says is happening | `52232fb` |
 
 The last five share one commit and have no bodies — they shipped before any ticket existed. The
 record of what they are and what they left unproved is the **Retro record** section above, not this
