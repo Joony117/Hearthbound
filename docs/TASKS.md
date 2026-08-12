@@ -1598,17 +1598,77 @@ are `P2b-12` below, not re-openable here.
 
 ---
 
-## P2b-12 — The parry is gettable and a dodge actually escapes   [BLOCKED]
+## P2b-12 — The parry is gettable and a dodge actually escapes   [TODO]
 
-**Opened 2026-08-12 from the user's played build.** Blocked on `game-designer`'s ruling, in flight
-as of this writing; the body below cannot be written until it lands, because the acceptance criteria
-have to name numbers that do not exist yet. This is the `P2-03e` → `P2-03f` and `P2-05b` → `P2-05c`
-shape the backlog already uses twice: the ruling is not an implementer contract, and an implementer
-contract cannot be honest before it.
+**Opened 2026-08-12 from the user's played build. Unblocked** — `game-designer`'s ruling landed in
+`SYSTEMS.md` § "The played build settles the parry window and the enemy's facing lock (`P2b-12`)",
+and every number below comes from it. Read that section before starting; this ticket does not restate
+its reasoning, only its outputs.
 
 The user's report, verbatim: *"either the parry window is non intuitive or the parry window is too
 small, its very to hard to get a parry off. and after dodge, the enemy is able to still reach the
 player and hit while the distance looks like its enough to avoid the attack."*
+
+### Objective
+A parry is winnable on a real read, and a sideways dodge actually leaves the swing's path instead of
+being erased by the enemy re-aiming.
+
+### Existing architecture
+- `_update_enemy_attack()` (`combat/arena/arena.gd:698`) calls `_turn_enemy(delta)` for the whole
+  `arena_enemy_attack_startup` window, then locks facing when the active window opens.
+- `_start_enemy_attack()` already calls `_stop_enemy_horizontal()`, so the enemy never translates
+  during its own attack — only rotates. That is what makes this a pure rotation-timing change with no
+  position math to reconcile.
+- `_hero_has_active_parry()` reads `arena_parry_startup` (`0.0`) and `arena_parry_active_window`.
+- `arena_parry_active_window` is `balance_table.gd:79`; `arena_enemy_turn_speed_degrees` is line 68
+  and `arena_enemy_attack_startup` line 62 — the new field belongs with the enemy-attack block.
+- `BalanceTable` fields are read through the `BALANCE` preload. A `.tres` value and a `.gd` default
+  must be authored together or the `.tres` silently wins for existing saves of the resource.
+
+### Acceptance criteria
+1. `arena_parry_active_window` is `0.30` (was `0.18`), in **both** `balance_table.gd` and
+   `balance.tres`.
+2. A new tunable `arena_enemy_attack_facing_lock` exists, defaulting to `0.36`, authored in both
+   files, and `_update_enemy_attack()` stops calling `_turn_enemy()` once
+   `_enemy_attack_elapsed >= arena_enemy_attack_facing_lock` rather than at
+   `arena_enemy_attack_startup`. The enemy still turns freely in every other state.
+3. A test proves the lock: advance an enemy attack past `arena_enemy_attack_facing_lock`, move the
+   hero laterally, and assert the enemy's `rotation.y` is unchanged — and that it *does* still track
+   before the lock. Assert the behaviour, not the constant.
+4. A test proves the parry window's new width at the seam that matters: a parry pressed at a time that
+   failed under `0.18` and succeeds under `0.30` registers `PARRY_HERO`. Drive it through
+   `_hero_has_active_parry()`/the hitbox path, not by restating the tunable.
+5. `arena_parry_whiff_recovery` stays `0.35`. The ruling reviewed and deliberately held it; changing
+   it here is a rejected diff.
+6. `arena_enemy_attack_reach`, `arena_enemy_preferred_range`, `arena_enemy_turn_speed_degrees` and the
+   capsule radius are **unchanged**. The ruling rejected each by name as an alternative to the facing
+   lock.
+7. Import gate exit `0`, zero warnings; GUT at or above `14 / 190 / 190 / 10324`. `P2b-06`'s
+   enemy-behaviour and `P2b-08`'s super-armor tests must stay green — if the facing lock reddens one,
+   that is a real finding about a test asserting the old tracking, so report it rather than adjusting
+   the number to suit.
+8. "Survives save and reload": N/A — arena is display-only, no state, no save key.
+
+### Files allowed to change
+`balance_table.gd`, `balance.tres`, `combat/arena/arena.gd`, `tests/unit/test_arena.gd`.
+
+### Non-goals
+The capsule radius (`PROVISIONAL` in the ruling — its blast radius is locomotion and camera collision
+project-wide, so it is its own ticket if the director measures the mesh and it turns out to matter).
+The clip/phase misalignment — the ruling sets the target at `t ≈ 0.55 s` alignment but routes the fix
+to `P2b-13`, so the animation layer is re-timed once rather than twice. Any change to
+`arena_enemy_attack_startup`: the ruling rejected shortening it by name, since `P2b-01d`'s dodge
+fairness arithmetic and `P2b-01e`'s timeline check both rest on `0.55 s`. Impact audio, particles, a
+death animation. Any change to `resolve()`, `CombatResult`, permadeath or `GameSession`.
+
+### What the ruling left open, for whoever plays it next
+Diagonal dodges are **not** guaranteed by `0.36 s` — a `45°` dodge delivers `1.36 m` of lateral
+clearance against a `1.5 m` corridor. The ruling declined to trade pure-lateral margin for it, on the
+grounds that a diagonal also gains real distance along the now-fixed forward axis that its single-axis
+arithmetic did not credit. Worth checking deliberately in the next played build.
+
+<details>
+<summary>Director's pre-routing measurements (kept — the ruling builds on these)</summary>
 
 **What the director measured before routing it**, so the ruling did not have to re-derive it and so
 no later ticket re-finds it as a bug:
@@ -1641,7 +1701,11 @@ no later ticket re-finds it as a bug:
   to be sized for the *combined* act — release movement, then press — not for the press alone.
   `arena_parry_whiff_recovery` (`0.35 s`) may have to move with it: `P2b-01f` set it equal to
   `arena_enemy_hit_stun` on purpose so that guessing wrong costs about what eating the hit costs, and
-  a wider window against an unchanged whiff cost shifts that trade.
+  a wider window against an unchanged whiff cost shifts that trade. *(The ruling reviewed this and
+  held whiff recovery at `0.35 s` — the cost-parity is between two fixed numbers the window does not
+  touch, and the release-first trigger is the anti-spam brake. See criterion 5.)*
+
+</details>
 
 Sequence this **before** `P2b-13`. It is mostly balance numbers over a settled animation layer,
 whereas `P2b-13` rebuilds that layer — doing `P2b-13` first means re-timing everything twice.

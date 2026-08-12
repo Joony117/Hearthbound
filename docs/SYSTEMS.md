@@ -1457,6 +1457,14 @@ could be out-run by circling would not test the dodge at all. Rejected: instant 
 facing sampled once at telegraph start (lets the player trivially sidestep out of a locked cone,
 which tests movement more than it tests dodge — not what this ticket owns).
 
+> **2026-08-12 played-build note.** Tracking for the *entire* `0.55 s` startup, not just avoiding a
+> frozen-at-`t=0` cone, turned out to be its own failure in the opposite direction: it makes lateral
+> and diagonal dodges provably unable to escape the box regardless of skill, not merely difficult.
+> "The played build settles the parry window and the enemy's facing lock" below adds a facing lock
+> *partway* through startup — later than the rejected `t=0` freeze, so the original concern (trivial
+> sidestep) still doesn't apply, but early enough that a well-timed lateral dodge has real geometry to
+> work with. The rejection above stands on its own terms; it is not being reversed, only bracketed.
+
 **Landed hit on the player.** No arena-local HP, no on-screen readout — a physical hit-reaction:
 `arena_enemy_attack_hit_stop` freezes both capsules on contact (same pattern as the player's own
 light attack landing), then a `arena_enemy_knockback_speed` impulse fires away from the enemy and
@@ -1565,6 +1573,13 @@ This **removes the neutral-input backstep** `P2b-01d` gave dodge — struck and 
 subsection above, not restated here. A player wanting pure backward evasion now holds `S` and
 presses `dodge`: an ordinary directional dodge aimed away from the camera, not a special case.
 
+**Played-build confirmation (2026-08-12).** The user played this exact trigger and confirmed it
+directly: *"i actually like the fully release WASD and then press dodge."* It stays exactly as
+authored — no separate bind, and the hold-to-guard rejection below stays closed. The `0.18 s` window
+that shipped alongside it did not survive the same played build; see "The played build settles the
+parry window and the enemy's facing lock" further down for the number that replaces it and why the
+window, not the trigger, was the actual defect.
+
 Availability gate: the same base guard `_start_dodge` already uses today (not already dodging,
 parrying, hit-stunned, or in hit-stop) plus ~~the same attack-recovery-only cancel rule
 (`P2b-01d`'s "Cancels light-attack recovery") — parry can interrupt the player's own attack
@@ -1577,8 +1592,8 @@ pending hit rather than resolving it first.
 | Tunable | Value | Rationale |
 |---|---:|---|
 | `arena_parry_startup` | `0.0 s` | No windup — the active window opens the instant the stance is entered, matching the dodge i-frame precedent (`P2b-01d`): a defensive window's value is entirely in timing against an already-telegraphed swing, not in adding its own tell. |
-| `arena_parry_active_window` | `0.18 s` | Tighter than dodge's `0.25 s` i-frame window — parry's payoff (stagger + counter, below) is stronger than dodge's (avoidance only), so the read it demands is stricter. |
-| `arena_parry_whiff_recovery` | `0.35 s` | Movement, attack, and dodge are locked for this long after an active window closes with nothing parried. Set equal to `arena_enemy_hit_stun` on purpose: guessing wrong costs about what actually eating the hit costs, so parry is not a strictly-safer default over standing still and reading the telegraph. |
+| `arena_parry_active_window` | ~~`0.18 s`~~ **`0.30 s`** | ~~Tighter than dodge's `0.25 s` i-frame window — parry's payoff (stagger + counter, below) is stronger than dodge's (avoidance only), so the read it demands is stricter.~~ **Superseded by "The played build settles the parry window and the enemy's facing lock" below.** Wider than dodge's own window now, on purpose: the trigger costs a full movement release before the press can even start, a combined act the bare dodge press never pays, so the number has to be sized for that combined act. |
+| `arena_parry_whiff_recovery` | `0.35 s` (reviewed, held — see below) | Movement, attack, and dodge are locked for this long after an active window closes with nothing parried. Set equal to `arena_enemy_hit_stun` on purpose: guessing wrong costs about what actually eating the hit costs, so parry is not a strictly-safer default over standing still and reading the telegraph. |
 | `arena_parry_success_recovery` | `0.10 s` | Short recovery after a stopped hit; cancellable early into an attack (below) rather than a fixed lockout. |
 | `arena_parry_cooldown` | `0.15 s` | Own `BalanceTable` field, numerically matched to `arena_dodge_cooldown` at first-playable but tracked independently since parry and dodge are different actions sharing only a button. Applies after a successful parry's recovery (or its counter-attack) completes; the `0.35 s` whiff recovery already serves as that path's effective cooldown, so nothing stacks on top of it. |
 | `arena_parry_hit_stop` | `0.08 s` | Contact freeze on a successful parry, distinct from `arena_light_attack_hit_stop` (`0.04 s`) and `arena_enemy_attack_hit_stop` (`0.06 s`) — pulled from the already-authored Heavy/Smash hit-stop band (`0.08–0.12 s`) rather than a new range, so a correct parry reads as a bigger moment than an ordinary exchange. |
@@ -1621,15 +1636,15 @@ special penalty beyond having already spent `arena_parry_whiff_recovery` locked 
   HP model). Parry's entire payoff has to be physical (negated reaction + stagger), which is what
   is ruled above.
 
-> ⚠️ **PROVISIONAL** — every value in the table above is a first-playable guess with no arithmetic
-> precedent the way `P2b-01d`'s dodge-window numbers had (that section could check interval overlap
-> against a fixed enemy attack cycle; this section has no equivalent check, since parry timing
-> hasn't been played against that cycle at all yet). · **Settled by:** playing the reworked build
-> against the existing `0.55 s`-startup enemy attack and checking whether `0.18 s` reads as a fair
-> "you earned that" window or a hair-trigger coin flip, whether `0.35 s` whiff recovery feels like a
-> real cost or an unnoticed footnote, and whether the `0.6 s` enemy stagger gives enough room for
-> the counter to land before the enemy recovers control — none of which can be checked at a desk
-> the way the dodge-cycle arithmetic in `P2b-01d` could.
+> ⚠️ **PROVISIONAL, `arena_parry_active_window` settled by play, the rest still open** — the played
+> build answered exactly the question this marker asked about the window: `0.18 s` read as a
+> hair-trigger coin flip, not "you earned that." That value now has an arithmetic precedent (below,
+> matching `P2b-01d`'s own overlap method) and is no longer a bare guess. `0.35 s` whiff recovery and
+> `0.6 s` enemy stagger remain unplayed at the new window — see "The played build settles the parry
+> window and the enemy's facing lock" below for why whiff recovery was reviewed and held rather than
+> retuned blind. · **Settled by:** playing the `0.30 s` window and checking whether `0.35 s` whiff
+> recovery still reads as a real cost now that the window itself is more forgiving, and whether
+> `0.6 s` enemy stagger gives enough room for the counter to land before the enemy recovers control.
 
 ### Dodge/parry cancel opens to attack startup and active (`P2b-04`)
 
@@ -1703,6 +1718,177 @@ already authored.
 > backing out of it is one button away. · **Settled by:** playing it against the existing enemy
 > swing (`0.55/0.10/0.45 s`) and dodge cycle (`0.38 s` burst + `0.15 s` cooldown) already on the
 > page.
+
+### The played build settles the parry window and the enemy's facing lock (`P2b-12`)
+
+**Opened 2026-08-12 from the user's played build**, the first real play of `P2b-09`/`P2b-10`/`P2b-11`'s
+animated arena, verbatim: *"in gameplay, either the parry window is non intuitive or the parry window
+is too small, its very to hard to get a parry off. and after dodge, the enemy is able to still reach
+the player and hit while the distance looks like its enough to avoid the attack."* This is the exact
+question "The parry stance"'s own `PROVISIONAL` marker named as its settling condition, and the harder
+half — the dodge complaint — reopens a `P2b-01d` rejection. Nothing here touches `resolve()`,
+`CombatResult`, or permadeath; the arena stays display-only (`DECISIONS.md`, 2026-08-11).
+
+**The trigger is not part of this ruling — see the played-build confirmation note under "Trigger, and
+the dodge conflict" above.** The user played `P2b-01f`'s shared-button, exactly-zero-input trigger and
+kept it on purpose. Everything below is sized around that trigger being real, not around removing it.
+
+#### Parry window: `0.18 s → 0.30 s`
+
+The window was too small, and the arithmetic explains why by the same overlap method `P2b-01d` used
+for dodge (Codex-verified, thread `019ff769-a39f-75e0-8900-5697f34dc61c`): treating the enemy's hit-
+active window as `t ∈ [0.55, 0.65]` (from `arena_enemy_attack_startup = 0.55 s` and
+`arena_enemy_attack_active = 0.10 s`), a parry active window `W` opening instantly at press time `p`
+gives a "full coverage of the enemy's active window" press interval of width `W − 0.10`. Dodge's own
+`0.25 s` i-frame window gives `0.15 s` of full-coverage press slack — the number "The parry stance"'s
+Rationale column called "fair." At the old `0.18 s`, parry's equivalent slack was `0.08 s`, roughly
+half of dodge's, **before** accounting for the fact that reaching the parry branch at all costs a full
+WASD release the dodge branch never pays. Two guesses stacked on top of each other, not one.
+
+`W = 0.25 s` (exactly `arena_dodge_iframe_duration`) reproduces dodge's own `0.15 s` full-coverage
+slack precisely — the floor a bare press-and-time-it action would need, verified rather than assumed.
+Landing there is not enough on its own: the parry branch is not a bare press. `arena_parry_active_window`
+is set to **`0.30 s`** — the `0.25 s` parity floor plus a `0.05 s` pad for the release-then-press
+combined act, giving `0.20 s` of full-coverage slack, `33%` more forgiving than dodge's own already-
+verified-fair number. The floor is arithmetic; the pad is a design guess sized to the extra step, not
+measured against it — there is no clock on "time to release WASD and hit space" in this project to
+verify against.
+
+**`arena_parry_whiff_recovery` reviewed, held at `0.35 s`.** A wider active window raises how often a
+well-timed press *lands* inside it; it does not change what a *miss* costs, and "guessing wrong costs
+about what actually eating the hit costs" (`P2b-01f`'s own reasoning for setting it equal to
+`arena_enemy_hit_stun`) is a per-attempt equivalence between two fixed numbers, `0.35 s` vs `0.35 s`,
+neither of which the window touches. What a wider window *does* raise is how often the branch gets
+attempted casually rather than read — and the trigger the user just confirmed they like is already the
+brake on that: every attempt costs abandoning movement entirely against an enemy that is closing
+distance, which is a real tempo cost independent of whether the attempt then succeeds. That existing,
+now user-validated cost is judged sufficient here. **Rejected: raising whiff recovery alongside the
+window "to be safe."** Retuning a number with no evidence it needs to move, on the same play pass that
+already flagged the number that does, is exactly the "reads real, measures nothing" failure this
+backlog keeps naming. If a played build shows parry turning spammy despite the release-first cost,
+`arena_parry_whiff_recovery` (or `arena_parry_cooldown`) is the next lever — not shrinking the window
+back down, which would reintroduce the reported defect.
+
+> ⚠️ **PROVISIONAL** — the `0.25 s` floor has the same arithmetic pedigree dodge's own window does; the
+> `0.05 s` pad on top of it does not, and neither does holding whiff recovery unchanged. · **Settled
+> by:** playing `0.30 s` against the confirmed trigger and checking whether it reads as earned rather
+> than a coin flip, and specifically checking whether parry gets attempted more casually now that it
+> succeeds more often — if so, the fix is `arena_parry_whiff_recovery`/`arena_parry_cooldown`, per
+> above, not the window.
+
+#### The enemy's facing locks partway through startup, not at it
+
+**Why a lateral or diagonal dodge currently cannot escape, confirmed.** `EnemyAttackHitbox` spans
+capsule-local `z ∈ [-2.35, -0.75]`, half-width `0.75`; with both capsules at `CapsuleShape3D` radius
+`0.75`, contact reaches `3.10 m` centre-to-centre with a `±1.5 m` lateral corridor around the enemy's
+forward axis. `_update_enemy_attack()` calls `_turn_enemy()` (`720°/s`,
+`arena_enemy_turn_speed_degrees`) for the *entire* `0.55 s` startup, locking facing only once the
+active window opens — so any lateral displacement the player earns during startup is erased by
+re-aiming before it can matter. `_start_enemy_attack()` already calls `_stop_enemy_horizontal()`
+(`arena.gd:695`): the enemy does not translate during its own attack, only turns, which is what makes
+the fix a pure rotation-timing change with no position math to reconcile.
+
+**Fix: lock facing at `arena_enemy_attack_facing_lock = 0.36 s`** (new field), `65%` through the
+`0.55 s` startup, rather than at its end. Codex-verified (same thread as above), using the real dodge
+speed profile — `v(t) = 13.5 × (1 − t / 0.38)`, `d(t) = 13.5t − 13.5t² / 0.76` — not a linear
+approximation:
+
+- The knife-edge minimum is `T_lock = 0.415 s`: a hero exactly on-axis at that instant, dodging pure
+  lateral starting immediately, clears the `1.5 m` corridor with *zero* margin exactly as `t = 0.55 s`
+  arrives (`d(0.135) = 1.5 m`). Starting the dodge any earlier than the lock does not help — pre-lock
+  displacement is erased by continued tracking, and the deceleration profile is front-loaded
+  (`d''(t) = −35.53 m/s² < 0`), so a dodge already spent by the time of lock has less post-lock travel
+  left than one starting fresh at the lock. `0.415 s` is therefore not a value to ship; it is the
+  boundary past which no lock time works at all.
+- `T_lock = 0.36 s` leaves `τ' = 0.19 s` of locked corridor before contact, `d(0.19) = 1.924 m` —
+  `28%` of spare displacement over the `1.5 m` requirement for a **pure lateral** dodge. This is
+  deliberately not knife-edge, matching the margin philosophy `P2b-01d`'s own dodge-window numbers
+  already used (`0.15 s` of full-coverage slack, not the bare minimum overlap).
+- **Diagonal dodges are not separately guaranteed by this number.** A `45°` lateral/backward dodge
+  only delivers `sin(45°) × 1.924 = 1.36 m` of lateral clearance at `T_lock = 0.36 s` — short of `1.5 m`.
+  Guaranteeing a `45°` diagonal too would need `T_lock ≤ 0.32 s`, trading margin on the pure-lateral
+  case for coverage on the diagonal one. This ruling does not make that trade: pure lateral is the
+  strongest form of the user's complaint ("the distance looks like enough"), a diagonal dodge also
+  gains real distance along the (now-fixed) forward axis that this single-axis arithmetic doesn't
+  credit it for, and proving the multi-axis case exactly is the "needs to be felt, not calculated"
+  kind of question this project keeps flagging rather than fabricating a number for. Left open below.
+- Range-independence confirmed: the `1.5 m` corridor requirement does not change with how far the
+  hero is when the dodge starts (`2.4 m` preferred range or `3.0 m` trigger range) — only the arc angle
+  the enemy would have had to close does, and that stopped mattering the moment tracking locks.
+- A useful coincidence, not engineered: `T_lock = 0.36 s` falls *before* `t = 0.40 s`, where dodge's
+  own already-taught "full coverage" press window begins (`P2b-01d`, "Why `0.55 s` startup is fair").
+  A player already using the timing discipline this project asks them to learn for straight avoidance
+  gets a guaranteed-locked corridor to reposition into, by construction, without a second read to learn.
+
+**What stays unchanged, and why.** `arena_enemy_attack_reach` (`1.6 m`), `arena_enemy_preferred_range`
+(`2.4 m`), and the `±1.5 m` lateral corridor (ungoverned by any tunable — inherited from the shared
+graybox `Shape_attack`) are not touched here. The "no spacing margin" finding (`0.7 m` inside the box's
+front face at the enemy's own preferred range) is real, but it was never the mechanism the escape
+depends on — the facing lock restores lateral/diagonal escape through the corridor's *width*, not
+through opening distance at range, so shrinking reach or widening preferred range would change the
+enemy's whole approach behaviour to fix a problem the rotation fix already closes. **Rejected: reducing
+`arena_enemy_attack_reach` or increasing `arena_enemy_preferred_range` instead of locking facing** — the
+smaller, more contained change wins, and retuning either would need its own re-derivation of the "no
+spacing margin" framing this section leans on rather than reopening. **Rejected: reducing
+`arena_enemy_turn_speed_degrees` instead of adding a lock cutoff** — a slower turn still eventually
+re-aims, so it trades a hard, provable guarantee (facing frozen, corridor fixed) for a softer one that
+would need its own overlap arithmetic to verify, and `720°/s` is load-bearing elsewhere (the enemy's
+general MOVE-state tracking, "always facing the player... regardless of circling") that this section has
+no reason to touch.
+
+**Capsule radius vs. the real mesh — flagged, not changed.** `0.75 m` radius (`1.5 m` diameter) was
+authored for a graybox capsule in `P2b-01a` and never revisited when `P2b-09`/`P2b-10` landed real
+humanoid meshes; a humanoid is visibly narrower, so the hero can look clear of the sword and still
+register contact even after the fix above. Left out of this ruling on purpose: it is a locomotion- and
+camera-collision-radius change, not an attack-hitbox change, so its blast radius is the whole capsule,
+not one attack. That is a larger, separately-scoped change than "smallest set of changes that fixes the
+two reported problems" covers here.
+
+> ⚠️ **PROVISIONAL** — `arena_enemy_attack_facing_lock = 0.36 s` is Codex-verified against the real
+> dodge deceleration curve for the pure-lateral case, which is more arithmetic backing than most of
+> this document's PROVISIONAL numbers carry, but it has never been played. Diagonal-dodge coverage is
+> explicitly not guaranteed by it (above). · **Settled by:** playing the corridor-escape lock against
+> lateral *and* diagonal dodge attempts and checking whether the diagonal case needs its own lock time,
+> a wider corridor, or reads as "good enough" because of the extra distance gained along the fixed
+> forward axis that this arithmetic didn't credit.
+>
+> ⚠️ **PROVISIONAL** — capsule radius `0.75 m` vs. the real mesh silhouette. · **Settled by:** measuring
+> the imported mesh's actual width (director can do this) and deciding whether a capsule shrink is
+> warranted — and if so, scoping it as its own ticket, since it touches locomotion and camera collision
+> project-wide, not just this attack.
+
+#### Clip/phase alignment: real, likely the largest single contributor, and not this ticket's fix
+
+`P2b-10`'s verifier pass already found it: the enemy's `Sword_Regular_A` dominant arm motion peaks at
+`0.4 s`; `EnemyAttackHitbox` only goes live at `0.55 s`. The visible sword completes its arc, and
+roughly `0.15 s` later — after the blade has already settled — an invisible box registers the hit. Of
+the three contributors this ruling found (spacing, facing tracking, clip timing), this is plausibly the
+largest: it is the one that makes an already-successful escape *look* successful and then isn't, which
+matches "the distance looks like its enough" more precisely than either geometry finding does on its
+own.
+
+**Ruling: the target is alignment to `t ≈ 0.55 s`, not moving `0.55 s` to meet the animation.** Startup
+`= 0.55 s` carries `P2b-01d`'s whole dodge-fairness arithmetic (the `0.40–0.55 s` full-coverage press
+window, the `4.5×`-the-player's-own-startup readability argument, the non-integer-multiple dodge-cycle
+spam-proofing) and `P2b-01e`'s timeline check (`1.76 s` landed-hit interval, `~4.07 s` worst-case time
+to death). Moving startup to chase the animation's accidental `0.4 s` peak would reprice all of that for
+a fix that belongs one layer down. **Rejected: shortening `arena_enemy_attack_startup` to `~0.4 s`** —
+correct symptom, wrong layer, and the layer it's wrong for has more verified arithmetic resting on it
+than any other number in this document.
+
+**Not fixed here — routed to `P2b-13`.** `P2b-13` already rebuilds the animation layer onto an
+`AnimationTree`; retiming the current one-shot clip now and again once `P2b-13` lands is re-timing the
+same thing twice, which is exactly the ordering `docs/TASKS.md` already calls out for these two
+tickets. This section's contribution is the *target*, not the mechanism: whatever `P2b-13` does to blend
+and time enemy attack playback, the sword's peak extension should land at or immediately before
+`t = 0.55 s` (the active window's onset), not at `0.4 s`. `P2b-13`'s own acceptance criteria should
+carry this number forward rather than re-deriving it.
+
+> ⚠️ **PROVISIONAL** — the `t ≈ 0.55 s` alignment target is a design ruling (contact should read as
+> caused by the visible swing, not by an invisible box after it settles); it is not yet arithmetic
+> against a specific `AnimationTree` implementation, since `P2b-13` hasn't landed. · **Settled by:**
+> `P2b-13` landing with the sword's peak retimed to `~0.55 s` and a played build confirming the
+> "invisible box after the blade settles" read is gone.
 
 ### Hero HP and the death rule (`P2b-01e`)
 
