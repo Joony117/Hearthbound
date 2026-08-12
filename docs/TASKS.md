@@ -1726,7 +1726,7 @@ needs to re-read.
 | `P2b-08` | A smash finishes the chain, and the parry window is visible | `fe1a74b` |
 | `P2-31` | The hub's two lists filter exactly and select in bulk | `fe1a74b` |
 | `P2-32` | Heroes have surnames | `fe1a74b` |
-| `P2b-09` | The hero capsule becomes a real animated model | `TBD` |
+| `P2b-09` | The hero capsule becomes a real animated model | `9757058` |
 
 The last five share one commit and have no bodies — they shipped before any ticket existed. The
 record of what they are and what they left unproved is the **Retro record** section above, not this
