@@ -158,6 +158,8 @@ func _physics_process(delta: float) -> void:
 			_update_locomotion(delta)
 	_update_hero_animation()
 	_update_enemy_animation()
+	if _hit_stop_remaining > 0.0:
+		_pause_capsule_animations()
 	_hero_capsule.move_and_slide()
 	_update_camera_pivot(delta)
 
@@ -295,12 +297,16 @@ func _update_hero_animation() -> void:
 		return
 	if _attack_elapsed >= 0.0:
 		if _attack_is_heavy:
-			_play_hero_animation(
-				&"ual2/Sword_Heavy_Combo",
-				BALANCE.arena_heavy_attack_startup
-				+ BALANCE.arena_heavy_attack_active
-				+ BALANCE.arena_heavy_attack_recovery,
+			var heavy_active_end: float = (
+				BALANCE.arena_heavy_attack_startup + BALANCE.arena_heavy_attack_active
 			)
+			if _attack_elapsed < heavy_active_end:
+				_play_hero_animation(&"ual2/Sword_Regular_A", heavy_active_end)
+			else:
+				_play_hero_animation(
+					&"ual2/Sword_Regular_A_Rec",
+					BALANCE.arena_heavy_attack_recovery,
+				)
 			return
 		var chain_clip: int = _combo_index % 3
 		if chain_clip == 2:
@@ -381,7 +387,11 @@ func _play_animation(
 	animation_name: StringName,
 	target_duration: float = 0.0,
 ) -> void:
-	if animation_player.current_animation == animation_name:
+	# pause() clears current_animation but retains assigned_animation and its position. Comparing the
+	# retained name is what resumes a hit-stop instead of restarting the clip on every frozen frame.
+	if animation_player.assigned_animation == animation_name:
+		if not animation_player.is_playing():
+			animation_player.play()
 		return
 	var custom_speed: float = 1.0
 	if target_duration > 0.0:
@@ -389,6 +399,14 @@ func _play_animation(
 		assert(animation != null)
 		custom_speed = animation.length / target_duration
 	animation_player.play(animation_name, -1.0, custom_speed)
+
+
+func _pause_capsule_animations() -> void:
+	var hero_player: AnimationPlayer = get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	hero_player.pause()
+	if is_instance_valid(_enemy_capsule) and not _enemy_capsule.is_queued_for_deletion():
+		var enemy_player: AnimationPlayer = get_node("EnemyCapsule/EnemyAnimationPlayer") as AnimationPlayer
+		enemy_player.pause()
 
 
 func _update_locomotion(delta: float) -> void:
@@ -706,6 +724,7 @@ func _update_enemy_dodge(delta: float) -> void:
 		_enemy_state = EnemyState.MOVE
 		_stop_enemy_horizontal()
 		return
+	_face_direction(_enemy_capsule, _enemy_dodge_direction)
 	_set_enemy_horizontal_velocity(_enemy_dodge_direction * BALANCE.arena_enemy_dodge_speed)
 
 
@@ -848,6 +867,7 @@ func _start_dodge() -> void:
 		_attack_active = false
 		_attack_hitbox.monitoring = false
 	var dodge_direction: Vector3 = _camera_relative_direction(input_direction)
+	_face_direction(_hero_capsule, dodge_direction)
 	_reset_combo_chain()
 	_dodge_elapsed = 0.0
 	_hero_capsule.velocity.x = dodge_direction.x * BALANCE.arena_dodge_speed
@@ -897,6 +917,11 @@ func _turn_enemy(delta: float) -> void:
 		target_yaw,
 		deg_to_rad(BALANCE.arena_enemy_turn_speed_degrees) * delta,
 	)
+
+
+func _face_direction(capsule: CharacterBody3D, direction: Vector3) -> void:
+	assert(direction != Vector3.ZERO)
+	capsule.rotation.y = atan2(-direction.x, -direction.z)
 
 
 func _stop_horizontal() -> void:

@@ -1,8 +1,8 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene format=3 uid="uid://bvveqryaquui2"]
 
-[ext_resource type="Script" path="res://combat/arena/arena.gd" id="1_arena"]
-[ext_resource type="PackedScene" path="res://combat/arena/models/hero/Superhero_Female_FullBody.gltf" id="2_hero"]
-[ext_resource type="PackedScene" path="res://combat/arena/models/hero/Superhero_Male_FullBody.gltf" id="3_enemy"]
+[ext_resource type="Script" uid="uid://cvnd2olbjc10b" path="res://combat/arena/arena.gd" id="1_arena"]
+[ext_resource type="PackedScene" uid="uid://b6wsjmuma711g" path="res://combat/arena/models/hero/Superhero_Female_FullBody.gltf" id="2_hero"]
+[ext_resource type="PackedScene" uid="uid://bhakfou8ojkf2" path="res://combat/arena/models/hero/Superhero_Male_FullBody.gltf" id="3_enemy"]
 
 [sub_resource type="Environment" id="Environment_arena"]
 background_mode = 1
@@ -18,15 +18,15 @@ albedo_color = Color(0.18, 0.2, 0.24, 1)
 material = SubResource("Material_floor")
 size = Vector2(24, 18)
 
+[sub_resource type="BoxShape3D" id="Shape_wall_x"]
+size = Vector3(0.5, 2.5, 18)
+
+[sub_resource type="BoxShape3D" id="Shape_wall_z"]
+size = Vector3(24, 2.5, 0.5)
+
 [sub_resource type="CapsuleShape3D" id="Shape_hero"]
 radius = 0.75
 height = 2.5
-
-[sub_resource type="BoxShape3D" id="Shape_attack"]
-size = Vector3(1.5, 2, 1.5)
-
-[sub_resource type="SphereShape3D" id="Shape_camera"]
-radius = 0.25
 
 [sub_resource type="StandardMaterial3D" id="Material_facing"]
 albedo_color = Color(1, 0.72, 0.18, 1)
@@ -35,121 +35,117 @@ albedo_color = Color(1, 0.72, 0.18, 1)
 material = SubResource("Material_facing")
 size = Vector3(0.3, 0.3, 1)
 
-[sub_resource type="BoxShape3D" id="Shape_wall_x"]
-size = Vector3(0.5, 2.5, 18)
+[sub_resource type="BoxShape3D" id="Shape_attack"]
+size = Vector3(1.5, 2, 1.5)
 
-[sub_resource type="BoxShape3D" id="Shape_wall_z"]
-size = Vector3(24, 2.5, 0.5)
+[sub_resource type="SphereShape3D" id="Shape_camera"]
+radius = 0.25
 
-[node name="Arena" type="Node3D"]
+[node name="Arena" type="Node3D" unique_id=506530936]
 script = ExtResource("1_arena")
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=109543516]
 environment = SubResource("Environment_arena")
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-55, -35, 0)
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=215609394]
+transform = Transform3D(0.81915206, 0.46984634, -0.32898995, 0, 0.57357645, 0.81915206, 0.57357645, -0.6710101, 0.46984634, 0, 0, 0)
 shadow_enabled = true
 
-[node name="Floor" type="MeshInstance3D" parent="."]
+[node name="Floor" type="MeshInstance3D" parent="." unique_id=1879956013]
 mesh = SubResource("Mesh_floor")
 
-[node name="ArenaBounds" type="StaticBody3D" parent="."]
+[node name="ArenaBounds" type="StaticBody3D" parent="." unique_id=1611539270]
 
-[node name="LeftWall" type="CollisionShape3D" parent="ArenaBounds"]
-position = Vector3(-12.25, 1.25, 0)
+[node name="LeftWall" type="CollisionShape3D" parent="ArenaBounds" unique_id=1429889630]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.25, 1.25, 0)
 shape = SubResource("Shape_wall_x")
 
-[node name="RightWall" type="CollisionShape3D" parent="ArenaBounds"]
-position = Vector3(12.25, 1.25, 0)
+[node name="RightWall" type="CollisionShape3D" parent="ArenaBounds" unique_id=1541914413]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.25, 1.25, 0)
 shape = SubResource("Shape_wall_x")
 
-[node name="ForwardWall" type="CollisionShape3D" parent="ArenaBounds"]
-position = Vector3(0, 1.25, -9.25)
+[node name="ForwardWall" type="CollisionShape3D" parent="ArenaBounds" unique_id=978064518]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -9.25)
 shape = SubResource("Shape_wall_z")
 
-[node name="BackWall" type="CollisionShape3D" parent="ArenaBounds"]
-position = Vector3(0, 1.25, 9.25)
+[node name="BackWall" type="CollisionShape3D" parent="ArenaBounds" unique_id=1831473089]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 9.25)
 shape = SubResource("Shape_wall_z")
 
-[node name="HeroCapsule" type="CharacterBody3D" parent="."]
+[node name="HeroCapsule" type="CharacterBody3D" parent="." unique_id=151947949]
 unique_name_in_owner = true
-position = Vector3(0, 1.25, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
 collision_mask = 3
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="HeroCapsule"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HeroCapsule" unique_id=275114270]
 shape = SubResource("Shape_hero")
 
-[node name="Superhero_Female_FullBody" parent="HeroCapsule" instance=ExtResource("2_hero")]
-position = Vector3(0, -1.238, 0)
-scale = Vector3(1.4, 1.4, 1.4)
+[node name="Superhero_Female_FullBody" parent="HeroCapsule" unique_id=1397341222 instance=ExtResource("2_hero")]
+transform = Transform3D(-1.4, 0, 0, 0, 1.4, 0, 0, 0, -1.4, 0, -1.238, 0)
 
-[node name="HeroAnimationPlayer" type="AnimationPlayer" parent="HeroCapsule"]
+[node name="HeroAnimationPlayer" type="AnimationPlayer" parent="HeroCapsule" unique_id=997262690]
 root_node = NodePath("../Superhero_Female_FullBody")
 
-[node name="FacingMarker" type="MeshInstance3D" parent="HeroCapsule"]
-position = Vector3(0, 0, -1)
+[node name="FacingMarker" type="MeshInstance3D" parent="HeroCapsule" unique_id=955572248]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1)
 mesh = SubResource("Mesh_facing")
 
-[node name="AttackHitbox" type="Area3D" parent="HeroCapsule"]
+[node name="AttackHitbox" type="Area3D" parent="HeroCapsule" unique_id=1551463727]
 unique_name_in_owner = true
-position = Vector3(0, 0, -0.75)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.75)
 collision_layer = 0
 collision_mask = 2
 monitoring = false
 monitorable = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="HeroCapsule/AttackHitbox"]
-position = Vector3(0, 0, -0.75)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HeroCapsule/AttackHitbox" unique_id=2118716664]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.75)
 shape = SubResource("Shape_attack")
 
-[node name="EnemyCapsule" type="CharacterBody3D" parent="."]
+[node name="EnemyCapsule" type="CharacterBody3D" parent="." unique_id=124339890]
 unique_name_in_owner = true
-position = Vector3(0, 1.25, -4)
-rotation_degrees = Vector3(0, 180, 0)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 1.25, -4)
 collision_layer = 2
 collision_mask = 1
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyCapsule"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyCapsule" unique_id=451445429]
 shape = SubResource("Shape_hero")
 
-[node name="Superhero_Male_FullBody" parent="EnemyCapsule" instance=ExtResource("3_enemy")]
-position = Vector3(0, -1.238, 0)
-scale = Vector3(1.4, 1.4, 1.4)
+[node name="Superhero_Male_FullBody" parent="EnemyCapsule" unique_id=1598465174 instance=ExtResource("3_enemy")]
+transform = Transform3D(-1.4, 0, 0, 0, 1.4, 0, 0, 0, -1.4, 0, -1.238, 0)
 
-[node name="EnemyAnimationPlayer" type="AnimationPlayer" parent="EnemyCapsule"]
+[node name="EnemyAnimationPlayer" type="AnimationPlayer" parent="EnemyCapsule" unique_id=1143814664]
 root_node = NodePath("../Superhero_Male_FullBody")
 
-[node name="EnemyAttackHitbox" type="Area3D" parent="EnemyCapsule"]
+[node name="EnemyAttackHitbox" type="Area3D" parent="EnemyCapsule" unique_id=765055186]
 unique_name_in_owner = true
-position = Vector3(0, 0, -0.75)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.75)
 collision_layer = 0
 collision_mask = 1
 monitoring = false
 monitorable = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyCapsule/EnemyAttackHitbox"]
-position = Vector3(0, 0, -0.75)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyCapsule/EnemyAttackHitbox" unique_id=712695763]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.75)
 shape = SubResource("Shape_attack")
 
-[node name="CameraPivot" type="Node3D" parent="."]
+[node name="CameraPivot" type="Node3D" parent="." unique_id=563876273]
 unique_name_in_owner = true
-position = Vector3(0, 2.25, 0)
-rotation_degrees = Vector3(-20, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 0.9396926, 0.34202012, 0, -0.34202012, 0.9396926, 0, 2.25, 0)
 
-[node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot"]
+[node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot" unique_id=262232093]
 unique_name_in_owner = true
 shape = SubResource("Shape_camera")
 margin = 0.1
 
-[node name="Camera3D" type="Camera3D" parent="CameraPivot/SpringArm3D"]
+[node name="Camera3D" type="Camera3D" parent="CameraPivot/SpringArm3D" unique_id=2068460705]
 unique_name_in_owner = true
-position = Vector3(0.5, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 0)
 current = true
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1251602333]
 
-[node name="Hint" type="Label" parent="UI"]
+[node name="Hint" type="Label" parent="UI" unique_id=2066312822]
 offset_left = 24.0
 offset_top = 24.0
 offset_right = 520.0

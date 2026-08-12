@@ -6115,3 +6115,99 @@ both fail the timing assertion on their own dominant motion, so nothing currentl
 scale and offset come from measured mesh bounds, and whether `Sword_Regular_A`/`Hit_Chest` *read*
 right for the enemy specifically is a played-build question. `FLINCH_ENEMY` and `DEFEAT_ENEMY` stay
 correctly tint-only; no state was left tint-only for want of a clip.
+
+---
+
+## P2b-11 — The arena's animation shows what the logic says is happening   [DONE]
+
+**Opened 2026-08-12 from `P2b-10`'s verifier pass.** Both defects below were found there, confirmed
+by an independent Codex re-derivation, and deliberately **not** fixed there: each has a root cause
+shared with the hero, and the hero capsule was an explicit `P2b-10` non-goal. Fixing either on the
+enemy side alone would make the two halves disagree, which is worse than the bug.
+
+### Objective
+A swing looks like a swing that is about to land, and a hit-stop freeze actually freezes. Today the
+hero's smash plays several swings during its wind-up, and every hit-stop keeps the animation running
+while the game logic is stopped.
+
+### Existing architecture
+- `_update_hero_animation()` binds `ual2/Sword_Heavy_Combo` for `_attack_is_heavy`, scaled across
+  `arena_heavy_attack_startup + active + recovery`. That is the **same whole-window binding of the
+  same multi-strike clip** that `P2b-10` corrected on the enemy, unflagged since `P2b-09`. The clip's
+  true global-max bone is `pelvis` at `46.119 rad/s` (footwork), not an arm.
+- `_update_enemy_animation()` shows the corrected shape: a single-swing clip split
+  `Sword_Regular_A` → `Sword_Regular_A_Rec` against the authored phases.
+- `_physics_process()` returns early while `_hit_stop_remaining > 0.0`, so neither animation updater
+  is called — but **an `AnimationPlayer` advances on its own regardless**. Nothing pauses it. On a
+  parry, `Hit_Chest` starts advancing during the `arena_parry_hit_stop` freeze *before*
+  `_enemy_stagger_remaining` is set, desyncing clip position from the logical stagger window by ~13%.
+- `test_arena.gd`'s `_dominant_rotation_key_time` helper is an unweighted argmax over every
+  `TYPE_ROTATION_3D` track in the skeleton, not anchored to the sword arm.
+
+### Acceptance criteria
+1. The hero's heavy attack no longer binds a multi-strike clip across its whole window. Its dominant
+   motion lands at the `arena_heavy_attack_startup` → active boundary rather than in the first fifth
+   of startup, asserted from the real clip's keyframes the way `P2b-10`'s enemy test does.
+2. `AnimationPlayer` playback on **both** capsules is frozen for the duration of `_hit_stop_remaining`
+   and resumes at the same frame, so the freeze reads as a freeze. Hero and enemy use the same
+   mechanism — a fix on one capsule only is a rejected diff.
+3. A test proves 2 by advancing time across a hit-stop and asserting `current_animation_position` is
+   unchanged. Not by restating whatever the fix assigns to `speed_scale`.
+4. `_dominant_rotation_key_time` is either anchored to the swinging arm, or left as-is with a comment
+   naming what it actually measures. `P2b-10` swept both staged libraries and found no clip that
+   exploits the weakness today — this criterion is about the next asset, not this one.
+5. No new field on `Arena`, no new tunable on `BalanceTable`, no `.tscn` change. If a `.tscn` change
+   turns out to be needed, that is boundary 2 and a `verifier` pass becomes mandatory — say so rather
+   than making it quietly.
+6. Import gate exit `0`, zero warnings; GUT at or above `14 / 187 / 187 / 10305`. `P2b-06`'s
+   enemy-behaviour and `P2b-08`'s super-armor tests assert arithmetic, not visuals, and must stay
+   green untouched.
+7. "Survives save and reload": N/A — presentation only, no state, no save key.
+
+### Files allowed to change
+`combat/arena/arena.gd`, `tests/unit/test_arena.gd`.
+
+### Non-goals
+**Not split, deliberately.** Two defects, one behavior — the animation disagreeing with the logic —
+each a one-condition fix in the same function pair, and criterion 2's whole point is that hero and
+enemy move together. Splitting would ship the asymmetry this ticket exists to avoid.
+
+The tint channel's fate and the parry-window re-ask, both still `game-designer`'s and both still
+waiting on a played build. Impact audio or particles. A death/defeat animation. Any change to
+`resolve()`, `CombatResult`, permadeath, or `GameSession` — the arena stays display-only
+(`DECISIONS.md` 2026-08-11).
+
+### Findings
+
+**Criterion 5 was widened deliberately, and the user authorised it.** A baseline run proved the
+uncommitted `arena.tscn` edits had rotated `EnemyCapsule` from `180°` to about `-7.5°`, which made
+ordinary hits satisfy the back-attack test and reddened four arena tests. The scene change is
+therefore boundary-2 repair, not editor churn: both imported bodies carry an exact local `180°`
+asset-forward correction, and the enemy root, attack-hitbox position and collision masks are restored
+to their authored gameplay values.
+
+`arena.gd` splits the hero smash across `Sword_Regular_A` / `_Rec`, pauses both `AnimationPlayer`s
+throughout hit-stop and resumes their assigned clips from the same position, and faces both capsules
+into their dodge velocity before playing the forward roll. The mechanism for criterion 2 is
+`assigned_animation` rather than `current_animation`: `pause()` clears the latter but retains the
+former along with the playback position, so comparing the retained name is what resumes a freeze
+instead of restarting the clip on every frozen frame. That distinction is the whole fix and is easy
+to lose in a later refactor.
+
+The run stays `Jog_Fwd` in every movement direction on purpose. This arena's published stance
+(`SYSTEMS.md`, `P2b-01f`) keeps the hero facing camera-forward while strafing and backpedalling;
+directional locomotion would reverse that design and needs a design ruling, not another
+animation-name branch.
+
+**Do not add root motion.** The staged animation packs are in place and bone `root` carries zero
+tracks. Script velocity remains the sole attack/dodge displacement authority.
+
+Evidence: import gate exit `0` with zero warnings; GUT `14 / 190 / 190 / 10324`. The new tests
+inspect real `upperarm_r` rotation keys, elapsed playback positions across a physics-frame freeze,
+model/capsule forward axes, hitbox masks and both dodge directions.
+
+**The played build then arrived and settled the two deferred feel calls against this ticket's own
+guesses** — both are `P2b-12`'s, not re-openable here. Two texture `.import` files also changed as
+part of the commit: that is Godot's automatic `detect_3d` re-import (VRAM compression plus mipmaps
+once a texture is used in 3D), correct to commit, and it recurs on any machine that runs the arena
+before committing.
