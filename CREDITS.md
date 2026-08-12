@@ -16,6 +16,9 @@ behind.
 | `combat/arena/models/animations/UAL1_Standard.glb` | `Universal Animation Library[Standard].zip` (15 MB) | [Universal Animation Library](https://quaternius.itch.io/universal-animation-library) |
 | `combat/arena/models/animations/UAL2_Standard.glb` | `Universal Animation Library 2[Standard].zip` (17 MB) | [Universal Animation Library 2](https://quaternius.itch.io/universal-animation-library-2) |
 
+The female body is the arena hero (`P2b-09`), the male body is the arena enemy (`P2b-10`) — both are
+in use, so neither is dead weight to prune.
+
 Downloaded 2026-08-11 from itch.io at the free ("name your own price", $0) tier. The paid `[Source]`
 tiers are `.blend` files and engine shader projects; nothing in `P2b-09`/`P2b-10` needs them.
 

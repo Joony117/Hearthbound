@@ -40,7 +40,11 @@ enum EnemyState {
 	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
 	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
 ]
-@onready var _enemy_capsule_mesh: MeshInstance3D = get_node("EnemyCapsule/Mesh") as MeshInstance3D
+@onready var _enemy_capsule_mesh: Array[MeshInstance3D] = [
+	get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/SuperHero_Male") as MeshInstance3D,
+	get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
+	get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
+]
 
 var _attack_elapsed: float = -1.0
 var _attack_active: bool = false
@@ -87,8 +91,9 @@ var _scene_change_requested: bool = false
 func _ready() -> void:
 	scene_change_requested.connect(SceneRouter.go_to)
 	_create_capsule_material_override(_hero_capsule_mesh)
-	_create_capsule_material_override([_enemy_capsule_mesh])
+	_create_capsule_material_override(_enemy_capsule_mesh)
 	_bind_hero_animation_libraries()
+	_bind_enemy_animation_libraries()
 	_spring_arm.spring_length = BALANCE.arena_camera_spring_length
 	_spring_arm.add_excluded_object(_hero_capsule.get_rid())
 	_attack_hitbox.body_entered.connect(_on_attack_hitbox_body_entered)
@@ -131,6 +136,7 @@ func _physics_process(delta: float) -> void:
 			return
 		_hero_capsule.move_and_slide()
 		_play_hero_animation(&"ual1/Idle")
+		_update_enemy_animation()
 		_update_camera_pivot(delta)
 		return
 	if _hit_stop_remaining > 0.0:
@@ -151,6 +157,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			_update_locomotion(delta)
 	_update_hero_animation()
+	_update_enemy_animation()
 	_hero_capsule.move_and_slide()
 	_update_camera_pivot(delta)
 
@@ -188,9 +195,9 @@ func _update_capsule_tints() -> void:
 	var hero_material: StandardMaterial3D = _hero_capsule_mesh[0].material_override as StandardMaterial3D
 	assert(hero_material != null)
 	hero_material.albedo_color = _hero_tint()
-	if not is_instance_valid(_enemy_capsule_mesh):
+	if not is_instance_valid(_enemy_capsule):
 		return
-	var enemy_material: StandardMaterial3D = _enemy_capsule_mesh.material_override as StandardMaterial3D
+	var enemy_material: StandardMaterial3D = _enemy_capsule_mesh[0].material_override as StandardMaterial3D
 	assert(enemy_material != null)
 	enemy_material.albedo_color = _enemy_tint()
 
@@ -221,7 +228,7 @@ func _enemy_tint() -> Color:
 		if _enemy_attack_elapsed >= BALANCE.arena_enemy_attack_startup - BALANCE.arena_enemy_telegraph_flash:
 			return ENEMY_TELEGRAPH_COLOR
 		return ENEMY_WINDUP_COLOR
-	return _authored_capsule_color([_enemy_capsule_mesh])
+	return _authored_capsule_color(_enemy_capsule_mesh)
 
 
 func _authored_capsule_color(capsule_meshes: Array[MeshInstance3D]) -> Color:
@@ -232,19 +239,28 @@ func _authored_capsule_color(capsule_meshes: Array[MeshInstance3D]) -> Color:
 
 func _bind_hero_animation_libraries() -> void:
 	var animation_player: AnimationPlayer = get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
-	_add_hero_animation_library(
+	_bind_animation_libraries(animation_player)
+
+
+func _bind_enemy_animation_libraries() -> void:
+	var animation_player: AnimationPlayer = get_node("EnemyCapsule/EnemyAnimationPlayer") as AnimationPlayer
+	_bind_animation_libraries(animation_player)
+
+
+func _bind_animation_libraries(animation_player: AnimationPlayer) -> void:
+	_add_animation_library(
 		animation_player,
 		&"ual1",
 		"res://combat/arena/models/animations/UAL1_Standard.glb",
 	)
-	_add_hero_animation_library(
+	_add_animation_library(
 		animation_player,
 		&"ual2",
 		"res://combat/arena/models/animations/UAL2_Standard.glb",
 	)
 
 
-func _add_hero_animation_library(
+func _add_animation_library(
 	animation_player: AnimationPlayer,
 	library_name: StringName,
 	scene_path: String,
@@ -256,7 +272,7 @@ func _add_hero_animation_library(
 	var library: AnimationLibrary = library_player.get_animation_library(&"")
 	assert(library != null)
 	# The call must sit outside the assert: Godot strips assert() expressions from release
-	# builds, so wrapping it would leave the exported game with no hero animations at all.
+	# builds, so wrapping it would leave the exported game with no character animations at all.
 	var add_result: int = animation_player.add_animation_library(library_name, library)
 	assert(add_result == OK)
 	library_instance.free()
@@ -318,6 +334,53 @@ func _update_hero_animation() -> void:
 
 func _play_hero_animation(animation_name: StringName, target_duration: float = 0.0) -> void:
 	var animation_player: AnimationPlayer = get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	_play_animation(animation_player, animation_name, target_duration)
+
+
+func _update_enemy_animation() -> void:
+	if not is_instance_valid(_enemy_capsule) or _enemy_capsule.is_queued_for_deletion():
+		return
+	if (
+		_hit_stop_outcome == HitStopOutcome.PARRY_HERO
+		or _enemy_state == EnemyState.STAGGER
+	):
+		_play_enemy_animation(&"ual1/Hit_Chest", BALANCE.arena_parry_enemy_stagger)
+		return
+	match _enemy_state:
+		EnemyState.ATTACK:
+			assert(_enemy_attack_elapsed >= 0.0)
+			var active_end: float = (
+				BALANCE.arena_enemy_attack_startup + BALANCE.arena_enemy_attack_active
+			)
+			if _enemy_attack_elapsed < active_end:
+				_play_enemy_animation(&"ual2/Sword_Regular_A", active_end)
+			else:
+				_play_enemy_animation(
+					&"ual2/Sword_Regular_A_Rec",
+					BALANCE.arena_enemy_attack_recovery,
+				)
+		EnemyState.DODGE:
+			_play_enemy_animation(&"ual1/Roll", BALANCE.arena_enemy_dodge_duration)
+		EnemyState.PARRY:
+			_play_enemy_animation(&"ual2/Sword_Block", BALANCE.arena_enemy_parry_active_window)
+		EnemyState.MOVE:
+			var horizontal_speed := Vector2(
+				_enemy_capsule.velocity.x,
+				_enemy_capsule.velocity.z,
+			).length()
+			_play_enemy_animation(&"ual1/Jog_Fwd" if horizontal_speed > 0.0 else &"ual1/Idle")
+
+
+func _play_enemy_animation(animation_name: StringName, target_duration: float = 0.0) -> void:
+	var animation_player: AnimationPlayer = get_node("EnemyCapsule/EnemyAnimationPlayer") as AnimationPlayer
+	_play_animation(animation_player, animation_name, target_duration)
+
+
+func _play_animation(
+	animation_player: AnimationPlayer,
+	animation_name: StringName,
+	target_duration: float = 0.0,
+) -> void:
 	if animation_player.current_animation == animation_name:
 		return
 	var custom_speed: float = 1.0

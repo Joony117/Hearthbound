@@ -1,7 +1,8 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://combat/arena/arena.gd" id="1_arena"]
 [ext_resource type="PackedScene" path="res://combat/arena/models/hero/Superhero_Female_FullBody.gltf" id="2_hero"]
+[ext_resource type="PackedScene" path="res://combat/arena/models/hero/Superhero_Male_FullBody.gltf" id="3_enemy"]
 
 [sub_resource type="Environment" id="Environment_arena"]
 background_mode = 1
@@ -18,14 +19,6 @@ material = SubResource("Material_floor")
 size = Vector2(24, 18)
 
 [sub_resource type="CapsuleShape3D" id="Shape_hero"]
-radius = 0.75
-height = 2.5
-
-[sub_resource type="StandardMaterial3D" id="Material_enemy"]
-albedo_color = Color(0.9, 0.22, 0.18, 1)
-
-[sub_resource type="CapsuleMesh" id="Mesh_enemy"]
-material = SubResource("Material_enemy")
 radius = 0.75
 height = 2.5
 
@@ -120,8 +113,12 @@ collision_mask = 1
 [node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyCapsule"]
 shape = SubResource("Shape_hero")
 
-[node name="Mesh" type="MeshInstance3D" parent="EnemyCapsule"]
-mesh = SubResource("Mesh_enemy")
+[node name="Superhero_Male_FullBody" parent="EnemyCapsule" instance=ExtResource("3_enemy")]
+position = Vector3(0, -1.238, 0)
+scale = Vector3(1.4, 1.4, 1.4)
+
+[node name="EnemyAnimationPlayer" type="AnimationPlayer" parent="EnemyCapsule"]
+root_node = NodePath("../Superhero_Male_FullBody")
 
 [node name="EnemyAttackHitbox" type="Area3D" parent="EnemyCapsule"]
 unique_name_in_owner = true

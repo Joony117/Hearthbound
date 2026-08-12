@@ -1543,74 +1543,98 @@ the parry window closes. Both fold into the already-scheduled parry-window re-as
 ---
 
 
-## P2b-10 — The enemy capsule becomes a real animated model           [TODO]
+**`P2b-10` landed in the commit below**, and with it the arena's two capsules are both real rigged
+models. It needed **two implementer rounds and two verifier passes**, and the reason is the most
+transferable thing it produced.
 
-**Unblocked 2026-08-11 — `P2b-09` landed and proved the pipeline.** The asset half cleared the same
-day. The same two animation libraries under `combat/arena/models/animations/` already carry
-every enemy state (`Death01`, `Idle_Shield_Break`, `Hit_Knockback`, plus the shared locomotion and
-swing clips), so this ticket needs no new download; if the enemy takes a different mesh, that one
-goes in `combat/arena/models/enemy/`. Proving the model-import and animation-driver pattern once on
-the hero de-risks doing it a second time on the enemy — the same sequencing `P2b-01c`→`P2b-01d`
-already used.
+The first pass bound `ual2/Sword_Heavy_Combo` — a **4.33 s multi-strike combo** — across the enemy's
+whole `0.55 + 0.10 + 0.45 s` attack window at `3.94×` speed. Four of its swing peaks landed before
+`arena_enemy_telegraph_flash` even starts, and the dominant one landed *after* the hitbox closed: the
+wind-up read as three swings already thrown, which is exactly what criterion 3 exists to forbid. It
+shipped past **186 green tests** because the only assertion covering it was
+`get_playing_speed() == animation.length / target_duration` — the code's own formula restated, which
+passes for any clip including the wrong one.
+
+**A test that re-derives the implementation's arithmetic tests nothing.** That is `P2-05g`'s
+unpressed Convert button one level harder to spot, because here a test *does* exist and *does*
+execute the path. The replacement locates the real dominant keyframe through Godot's `Animation`
+track API and checks its scaled position against the authored window. Any future clip binding gets
+asserted that way, not by restating `custom_speed`.
+
+Three things `P2b-10` leaves that no later ticket should re-find as bugs:
+
+- **The dominant motion at `0.4 s` lands before the `0.55–0.65 s` active hitbox window.** That is
+  **not** a criterion-3 failure — the criterion forbids only the wind-up reading complete before the
+  telegraph starts. Both verifier passes and an independent Codex read agree it is a feel note, and
+  it folds into the already-scheduled parry-window re-ask, settled by playing it.
+- **`SuperHero_Male`'s capital H** is real and now load-bearing in three `get_node()` calls, unlike
+  the folder, the file, the scene instance, and the female body's `Superhero_Female`. A pack swap
+  that normalizes the casing breaks the scene↔script seam with a green import gate.
+- **No `combat/arena/models/enemy/` exists.** The enemy is the male body `df45ba6` already staged
+  next to the hero's; criterion 7's "(new)" clause never fired.
+
+Full account, including the keyframe arithmetic, in [`TASKS-DONE.md`](TASKS-DONE.md).
+
+---
+
+## P2b-11 — The arena's animation shows what the logic says is happening   [TODO]
+
+**Opened 2026-08-12 from `P2b-10`'s verifier pass.** Both defects below were found there, confirmed
+by an independent Codex re-derivation, and deliberately **not** fixed there: each has a root cause
+shared with the hero, and the hero capsule was an explicit `P2b-10` non-goal. Fixing either on the
+enemy side alone would make the two halves disagree, which is worse than the bug.
 
 ### Objective
-The enemy's arena capsule is a real rigged low-poly humanoid that holds its stance, telegraphs a
-wind-up, swings, dodges, parries and staggers — instead of a solid-colour capsule that only ever
-changes tint. This is the higher-value half of the two model tickets: the enemy's telegraph is the
-single most load-bearing read in the fight (`0.55 s` wind-up, two-stage colour cue), so shipping it
-is not optional polish on top of the hero.
+A swing looks like a swing that is about to land, and a hit-stop freeze actually freezes. Today the
+hero's smash plays several swings during its wind-up, and every hit-stop keeps the animation running
+while the game logic is stopped.
 
 ### Existing architecture
-- `_enemy_capsule_mesh: MeshInstance3D = get_node("EnemyCapsule/Mesh")` (`arena.gd:39`) is the
-  node-path lookup this ticket repoints, mirroring `P2b-09`'s hero change.
-- `_enemy_tint()` (`arena.gd:200-216`) already reads five distinct states off `EnemyState`
-  (`arena.gd:24-30`: `MOVE / ATTACK / DODGE / PARRY / STAGGER`) plus `_enemy_attack_elapsed` for the
-  two-stage wind-up/telegraph split (`arena_enemy_attack_startup = 0.55 s`, telegraph flash the final
-  `arena_enemy_telegraph_flash = 0.2 s`, `balance_table.gd:62-64`). That is the exact state list the
-  animation driver reads — no new field.
-- `EnemyCapsule` mirrors `HeroCapsule`'s node shape: `CollisionShape3D` on `Shape_hero`, a `Mesh`
-  child (`arena.tscn:116-127`). Collision untouched.
-- Enemy attack and dodge horizontal movement is velocity the script assigns directly
-  (`_update_enemy_attack()`, `arena.gd:511-529`; `_update_enemy_dodge()`, `arena.gd:532-540`) — same
-  root-motion hazard as the hero.
-- `test_arena.gd`'s tint assertions (`:52-103`) cover the enemy capsule identically to the hero one;
-  `P2b-06`'s enemy state-machine tests (Retro record above) are the behavioural regression surface
-  this ticket must not touch.
+- `_update_hero_animation()` binds `ual2/Sword_Heavy_Combo` for `_attack_is_heavy`, scaled across
+  `arena_heavy_attack_startup + active + recovery`. That is the **same whole-window binding of the
+  same multi-strike clip** that `P2b-10` corrected on the enemy, unflagged since `P2b-09`. The clip's
+  true global-max bone is `pelvis` at `46.119 rad/s` (footwork), not an arm.
+- `_update_enemy_animation()` shows the corrected shape: a single-swing clip split
+  `Sword_Regular_A` → `Sword_Regular_A_Rec` against the authored phases.
+- `_physics_process()` returns early while `_hit_stop_remaining > 0.0`, so neither animation updater
+  is called — but **an `AnimationPlayer` advances on its own regardless**. Nothing pauses it. On a
+  parry, `Hit_Chest` starts advancing during the `arena_parry_hit_stop` freeze *before*
+  `_enemy_stagger_remaining` is set, desyncing clip position from the logical stagger window by ~13%.
+- `test_arena.gd`'s `_dominant_rotation_key_time` helper is an unweighted argmax over every
+  `TYPE_ROTATION_3D` track in the skeleton, not anchored to the sword arm.
 
 ### Acceptance criteria
-1. `EnemyCapsule`'s `Mesh` node is replaced by an instanced rigged low-poly humanoid, matching
-   `P2b-09`'s scale convention; `EnemyCapsule/CollisionShape3D` and `Shape_hero` are unchanged.
-2. An `AnimationPlayer` (or `AnimationTree`) under `EnemyCapsule` plays a distinct clip for:
-   idle/move, wind-up-and-swing (spanning `arena_enemy_attack_startup + active + recovery`,
-   `0.55 / 0.10 / 0.45 s`), dodge, parry stance, stagger — selected every physics frame from
-   `EnemyState` and `_enemy_attack_elapsed` alone. No new field, no new tunable.
-3. Every clip fits its authored window exactly, same rule as `P2b-09` criterion 3 — the wind-up clip
-   in particular must not read as complete before `arena_enemy_telegraph_flash` starts, since the
-   two-stage colour cue and the pose must agree.
-4. Root motion disabled on every clip, checked the same way as `P2b-09` criterion 4, against the
-   enemy's approach/back-off/dodge distances.
-5. Existing tint tests (`test_arena.gd:52-103`, `:1040-1062`) still pass for the enemy capsule,
-   updated only for node path. Multi-surface override rule from `P2b-09` criterion 6 applies
-   identically.
-6. Any state above the pack has no usable clip for is named in the commit message and left
-   tint-only — same discipline as `P2b-09` criterion 7.
-7. `CREDITS.md` gets a second line only if the enemy uses a different pack or character than the
-   hero; otherwise unchanged.
-8. "Survives save and reload": N/A, same reasoning as `P2b-09` criterion 9.
-9. Import gate exit `0`, zero warnings; GUT counts at or above baseline, `P2b-06`'s enemy-behaviour
-   tests specifically still green (they assert the arithmetic, not the visuals, so a model swap
-   should not touch them).
-10. `verifier` pass mandatory, same boundary-2 reasoning as `P2b-09`.
+1. The hero's heavy attack no longer binds a multi-strike clip across its whole window. Its dominant
+   motion lands at the `arena_heavy_attack_startup` → active boundary rather than in the first fifth
+   of startup, asserted from the real clip's keyframes the way `P2b-10`'s enemy test does.
+2. `AnimationPlayer` playback on **both** capsules is frozen for the duration of `_hit_stop_remaining`
+   and resumes at the same frame, so the freeze reads as a freeze. Hero and enemy use the same
+   mechanism — a fix on one capsule only is a rejected diff.
+3. A test proves 2 by advancing time across a hit-stop and asserting `current_animation_position` is
+   unchanged. Not by restating whatever the fix assigns to `speed_scale`.
+4. `_dominant_rotation_key_time` is either anchored to the swinging arm, or left as-is with a comment
+   naming what it actually measures. `P2b-10` swept both staged libraries and found no clip that
+   exploits the weakness today — this criterion is about the next asset, not this one.
+5. No new field on `Arena`, no new tunable on `BalanceTable`, no `.tscn` change. If a `.tscn` change
+   turns out to be needed, that is boundary 2 and a `verifier` pass becomes mandatory — say so rather
+   than making it quietly.
+6. Import gate exit `0`, zero warnings; GUT at or above `14 / 187 / 187 / 10305`. `P2b-06`'s
+   enemy-behaviour and `P2b-08`'s super-armor tests assert arithmetic, not visuals, and must stay
+   green untouched.
+7. "Survives save and reload": N/A — presentation only, no state, no save key.
 
 ### Files allowed to change
-`combat/arena/arena.gd`, `combat/arena/arena.tscn`, `combat/arena/models/enemy/**` (new),
-`tests/unit/test_arena.gd`, `CREDITS.md` (only if criterion 7 fires).
+`combat/arena/arena.gd`, `tests/unit/test_arena.gd`.
 
 ### Non-goals
-The hero capsule (`P2b-09`, lands first). A death/defeat animation — `DEFEAT_ENEMY_COLOR`'s
-flash-then-`queue_free()` is unchanged. The tint channel's fate, the parry-window re-ask, impact
-audio/particles, permadeath, controller input — identical to `P2b-09`'s Non-goals, not repeated per
-state here.
+**Not split, deliberately.** Two defects, one behavior — the animation disagreeing with the logic —
+each a one-condition fix in the same function pair, and criterion 2's whole point is that hero and
+enemy move together. Splitting would ship the asymmetry this ticket exists to avoid.
+
+The tint channel's fate and the parry-window re-ask, both still `game-designer`'s and both still
+waiting on a played build. Impact audio or particles. A death/defeat animation. Any change to
+`resolve()`, `CombatResult`, permadeath, or `GameSession` — the arena stays display-only
+(`DECISIONS.md` 2026-08-11).
 
 ---
 
@@ -1727,6 +1751,7 @@ needs to re-read.
 | `P2-31` | The hub's two lists filter exactly and select in bulk | `fe1a74b` |
 | `P2-32` | Heroes have surnames | `fe1a74b` |
 | `P2b-09` | The hero capsule becomes a real animated model | `9757058` |
+| `P2b-10` | The enemy capsule becomes a real animated model | see below |
 
 The last five share one commit and have no bodies — they shipped before any ticket existed. The
 record of what they are and what they left unproved is the **Retro record** section above, not this
