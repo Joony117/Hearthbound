@@ -12,6 +12,10 @@ const HIT_HERO_COLOR: Color = Color(1.0, 1.0, 1.0)
 const PARRY_HERO_COLOR: Color = Color(0.35, 0.95, 1.0)
 const PARRY_WINDOW_COLOR: Color = Color(0.14, 0.42, 0.55)
 const DEFEAT_ENEMY_COLOR: Color = Color(1.0, 1.0, 1.0)
+# Godot crossfades every play() by this much instead of cutting. It must finish inside the
+# shortest authored phase — arena_light_attack_startup is 0.10 s — or the swing pose is still
+# half blended when the hitbox opens.
+const ANIMATION_BLEND_TIME: float = 0.06
 
 enum HitStopOutcome {
 	NONE,
@@ -250,6 +254,9 @@ func _bind_enemy_animation_libraries() -> void:
 
 
 func _bind_animation_libraries(animation_player: AnimationPlayer) -> void:
+	# Both capsules bind through here, so both get the same blend. play(name, -1.0, speed) asks for
+	# this default; it was 0.0, which is why every arena transition was a hard cut.
+	animation_player.playback_default_blend_time = ANIMATION_BLEND_TIME
 	_add_animation_library(
 		animation_player,
 		&"ual1",

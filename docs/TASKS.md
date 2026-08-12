@@ -1628,10 +1628,28 @@ Full account, including the pre-routing measurements the ruling was built on, in
 
 ---
 
-## P2b-13 — Animation transitions blend instead of cutting   [TODO]
+## P2b-13 — Animation transitions blend instead of cutting   [WIP]
 
 **Opened 2026-08-12 from the user's direction:** *"try to use the AnimationTree and let godot handle
 the animation transitions."*
+
+**The cheap route is built and awaiting the played build.** `playback_default_blend_time` is set to
+`Arena.ANIMATION_BLEND_TIME` (`0.06 s`) once in `_bind_animation_libraries()`, which both capsules
+already route through — no `AnimationTree`, no `.tscn` change, so no boundary-2 crossing and no
+`verifier` pass. `0.06` rather than a rounder number because the blend has to finish inside the
+shortest authored phase (`arena_light_attack_startup`, `0.10 s`) or the swing pose is still a mixture
+when the hitbox opens; `tests/unit/test_arena.gd` asserts that relationship rather than the bare
+constant, so raising the blend past a phase boundary fails loudly. Gates: import gate exit `0`,
+GUT `14 / 193 / 193 / 10332`. **This closes only if a played build reads right** — if the blend is
+mushy on the fast chain clips or invisible on the slow ones, per-edge `xfade_time` is the reason to
+spend the `AnimationTree` rewrite, and the ticket reopens with that evidence.
+
+One finding: **`tests/unit/test_save_service.gd` has a flake of its own**, distinct from the hit-stop
+one `P2b-12` measured. `test_non_dictionary_save_is_refused_without_resetting_game_session` failed its
+`ExpectedError` assertion on one run and passed on the next with no diff between them — the two
+`Save file is corrupt` errors in that script look like they cross-satisfy each other's expectation
+depending on ordering. Unmeasured beyond 1 red / 1 green; it is not this ticket's and not the known
+one, so a red there needs re-running before it is believed.
 
 ### Read this before scoping the work
 

@@ -1558,6 +1558,17 @@ func test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames() -
 	assert_gt(enemy_player.current_animation_position, enemy_frozen_position)
 
 
+func test_both_animation_players_crossfade_instead_of_cutting() -> void:
+	var arena: Arena = _instantiate_arena()
+	var hero_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	var enemy_player := arena.get_node("EnemyCapsule/EnemyAnimationPlayer") as AnimationPlayer
+	assert_eq(hero_player.playback_default_blend_time, Arena.ANIMATION_BLEND_TIME)
+	assert_eq(enemy_player.playback_default_blend_time, Arena.ANIMATION_BLEND_TIME)
+	# The blend has to finish inside the shortest authored phase, or the swing pose is still a
+	# mixture when the hitbox opens.
+	assert_lt(Arena.ANIMATION_BLEND_TIME, BALANCE.arena_light_attack_startup)
+
+
 func test_dodge_capsules_face_their_roll_direction() -> void:
 	var arena: Arena = _instantiate_arena()
 	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
