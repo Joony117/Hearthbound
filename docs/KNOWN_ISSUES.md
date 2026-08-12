@@ -330,3 +330,42 @@ Practical effect: **a single red run on this one assert is not evidence of a reg
 before investigating. If it starts landing more than rarely, the fix is to have `load_game()` poll
 for the source's disappearance rather than to weaken the assert — the assert is testing the right
 thing.
+
+Reproduced 2026-08-12 during `P2b-13`, under the *same* conditions this entry already names: the
+first full-suite run of the session, immediately after an `import_gate.ps1` pass had rewritten
+`.godot/`; the next run of the identical tree was `193/193`. Two observations, both first-run-after-a-
+gate, is now the strongest thing here — if you are about to investigate a red on line 114, check
+whether the gate ran first, because that has been true every time.
+
+### Neither animation pack contains a directional locomotion clip
+
+**Every locomotion clip in both UAL packs faces forward.** `UAL1_Standard.glb` has `Idle`, `Jog_Fwd`,
+`Sprint`, `Walk`, `Walk_Formal`, `Crouch_Fwd`, `Swim_Fwd`; `UAL2_Standard.glb` adds `Walk_Carry` and
+`Zombie_Walk_Fwd`. There is **no backward, left, or right locomotion in either file** — read out of
+the glTF JSON chunk directly, 2026-08-12.
+
+This is the real blocker on 8-way movement, and it is not the one the arena's animation code looks
+like it is. `P2b-13` asked whether `playback_default_blend_time` can carry directional blending later
+or whether an `AnimationTree` becomes mandatory; the answer is that neither is reachable, because
+there are no clips to blend. **8-way starts with a pack swap**, which `P2b-13`'s non-goals flag as
+hazardous on its own terms (`SuperHero_Male`'s capital `H` is load-bearing in three `get_node()`
+calls, `P2b-10`).
+
+Two facts worth keeping with it, for whoever writes that ticket:
+
+- **A transition blend and a directional blend are different mechanisms.** `playback_default_blend_time`
+  crossfades clip A into clip B over a fixed time and scales to any number of states — no ceiling.
+  A continuous mix of Fwd/Bwd/Left/Right whose weights change every frame with the input vector is
+  `AnimationNodeBlendSpace2D` and **cannot** be done by an `AnimationPlayer` at all, which plays one
+  clip at a time. Picking the nearest of 8 clips by input angle and letting the default blend smooth
+  the switch *is* available on the cheap method; what it costs is within-bucket accuracy, since a
+  `30°` run plays the `45°` clip verbatim.
+- **Adoption is all-or-nothing per skeleton.** An active `AnimationTree` owns the tracks it drives, so
+  a blend space for locomotion cannot coexist with `AnimationPlayer.play()` for attacks on the same
+  player — they fight over the same properties. That is why `P2b-13` scoped the tree as a rewrite of
+  both updaters rather than a partial adoption.
+
+Note the clip names on disk carry `_Loop` suffixes (`Idle_Loop`, `Jog_Fwd_Loop`) that the code does
+not use. That is not a mismatch: `nodes/use_name_suffixes=true` in the `.import` files makes Godot
+strip the suffix and set the loop mode from it, so the imported name is `Idle`. `P2b-09` recorded the
+imported names; this entry records the source names, and both are correct.

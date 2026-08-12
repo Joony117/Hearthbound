@@ -6353,3 +6353,129 @@ Evidence: import gate exit `0`, zero `SCRIPT ERROR`/`ERROR:`/`WARNING` lines. GU
 `14 / 192 / 192 / 10329`, green on two consecutive full runs, against the `14 / 190 / 190 / 10324`
 floor. `P2b-06`'s enemy-behaviour tests and `P2b-08`'s super-armor tests stayed green untouched — the
 facing lock reddened neither, so no test was asserting the old tracking.
+
+---
+
+## P2b-13 — Animation transitions blend instead of cutting   [DONE]
+
+**Opened 2026-08-12 from the user's direction:** *"try to use the AnimationTree and let godot handle
+the animation transitions."* **Closed on the cheap route by the user's call** — *"we're keeping the
+cheap method"* — after the trial the ticket asked for came back sufficient.
+
+### Read this before scoping the work
+
+The stated goal is that Godot, not `arena.gd`, owns the transitions. There are two ways to get that
+and they are three orders of magnitude apart in cost, so **the implementer's first job is to check
+whether the cheap one is sufficient and report before building the expensive one.**
+
+`_play_animation()` currently calls `animation_player.play(animation_name, -1.0, custom_speed)`. The
+`-1.0` means "use the default blend time", and `AnimationPlayer.playback_default_blend_time` **has
+never been set on either player, so it is `0` and every transition in the arena is a hard cut.**
+Setting that one property is the entire difference between a cut and a crossfade, it is native
+Godot handling the blend, and it costs two lines and no `.tscn` change.
+
+An `AnimationTree` buys something genuinely more than that — per-transition blend times, transition
+conditions, and `xfade_time` authored per edge rather than one global number — but it is a rewrite
+of both animation updaters and it collides with two things this arena already does:
+
+- **Libraries are bound at runtime.** `_bind_animation_libraries()` loads `UAL1_Standard.glb` /
+  `UAL2_Standard.glb` and calls `add_animation_library()` in `_ready()`. An `AnimationNodeStateMachine`
+  authored in the `.tscn` references `ual1/Idle` and friends by name at load time, when they do not
+  exist yet. Either the state machine is built in code after the bind (no `.tscn` change, but then
+  "Godot handles it" buys only the blending, since the graph is still authored in GDScript), or the
+  libraries get baked into the `.tscn` and the runtime bind is deleted — which is **boundary 2 and a
+  mandatory `verifier` pass**. Say which one you are doing rather than discovering it halfway.
+- **Every attack clip is time-scaled to an authored phase.** `custom_speed` is computed per call as
+  `animation.length / target_duration` against `BalanceTable` durations. `AnimationNodeAnimation` has
+  no equivalent; this becomes `AnimationNodeTimeScale` nodes whose scale is written each frame through
+  `tree.set("parameters/.../scale", …)`. That is strictly more moving parts than the current line, and
+  the phase timings must come out numerically identical — `P2b-10` and `P2b-11` both shipped tests
+  that assert real keyframe positions against the authored windows, and those tests stay green.
+
+**Report the cheap result first.** If `playback_default_blend_time` alone reads right in a played
+build, that is the answer and this ticket closes there; the user asked to *try* the AnimationTree,
+not to land it regardless of what the trial shows.
+
+### Existing architecture
+- `_update_hero_animation()` and `_update_enemy_animation()` (`combat/arena/arena.gd`) map game state
+  to a clip name plus a target duration. Hero states: `Hit_Chest`, `Roll`, `Sword_Block`,
+  `Sword_Regular_A`/`_Rec` (smash), `Sword_Regular_A`/`B`/`C` + `_Rec` (chain), `Sprint`, `Jog_Fwd`,
+  `Idle`. Enemy states: `Hit_Chest`, `Sword_Regular_A`/`_Rec`, `Roll`, `Sword_Block`, `Jog_Fwd`,
+  `Idle`.
+- `_play_animation()` dedups on `assigned_animation` — **not** `current_animation`. `P2b-11` made that
+  deliberate: `pause()` clears the latter and retains the former with its playback position, and it is
+  what makes a hit-stop resume rather than restart. Any replacement must preserve the freeze, which
+  `tests/unit/test_arena.gd` asserts by advancing time across a hit-stop.
+- `AnimationTree` has its own freeze story (`active = false`, or manual `advance()`), which is cleaner
+  than the current pause pair — but it is a *different* mechanism and the existing test must still pass.
+- Bone `root` carries zero tracks in both packs. **Do not add root motion.** Script velocity remains
+  the sole attack/dodge displacement authority.
+- The run stays `Jog_Fwd` in every movement direction on purpose (`SYSTEMS.md`, `P2b-01f`: the hero
+  faces camera-forward while strafing and backpedalling). Directional locomotion is a design ruling,
+  not an animation-graph decision, and is out of scope here.
+
+### Acceptance criteria
+1. Transitions between arena animation states crossfade rather than cut, on **both** capsules by the
+   same mechanism — a fix on one capsule only is a rejected diff, same rule as `P2b-11` criterion 2.
+2. The `P2b-11` hit-stop freeze still holds: playback position is unchanged across a hit-stop and
+   resumes from the same frame. The existing test proves it and must not be weakened to suit a new
+   mechanism.
+3. Attack clip phase timings are numerically unchanged — the `P2b-10`/`P2b-11` keyframe-position
+   assertions stay green untouched.
+4. The implementer states in its return which of the two routes it took and why, and if it took the
+   `AnimationTree` route, whether the `.tscn` changed. A `.tscn` change is boundary 2 and makes a
+   `verifier` pass mandatory.
+5. Import gate exit `0`, zero warnings; GUT at or above `14 / 192 / 192 / 10329`. Note criterion 2's
+   test is the one `P2b-12` measured as flaky (about one run in three, `KNOWN_ISSUES.md`
+   § Environment) — re-run a red before believing it, and do not "fix" it by weakening the assertion.
+6. "Survives save and reload": N/A — presentation only, no state, no save key.
+
+### Files allowed to change
+`combat/arena/arena.gd`, `tests/unit/test_arena.gd`, and — only on the `AnimationTree` route, only
+with the boundary-2 call made explicitly — `combat/arena/arena.tscn`.
+
+### Non-goals
+Root motion. Directional locomotion clips. New animation packs or a pack swap — note
+`SuperHero_Male`'s capital `H` is load-bearing in three `get_node()` calls (`P2b-10`). Impact audio,
+particles, a death animation. Any change to `resolve()`, `CombatResult`, permadeath or `GameSession`
+— the arena stays display-only (`DECISIONS.md` 2026-08-11). Any combat *timing* change: that is
+`P2b-12`, which lands first.
+
+### What landed
+
+**The cheap route, in one property.** `playback_default_blend_time = Arena.ANIMATION_BLEND_TIME`
+(`0.06 s`) set once in `_bind_animation_libraries()` — the path both capsules already route through,
+which is why criterion 1's both-capsules rule needed no second edit. No `AnimationTree`, no `.tscn`
+change, so no boundary-2 crossing and no `verifier` pass (criterion 4). Backing it out is deleting one
+line.
+
+`0.06` and not a rounder number because **the blend has to finish inside the shortest authored phase**
+— `arena_light_attack_startup` is `0.10 s`, so a `0.10 s` blend leaves the swing pose still a mixture
+at the frame the hitbox opens. `tests/unit/test_arena.gd` asserts
+`ANIMATION_BLEND_TIME < arena_light_attack_startup` rather than the bare constant, so a later ticket
+that raises the blend past a phase boundary fails loudly instead of quietly softening the read of
+every attack.
+
+Criteria 2 and 3 needed no work and that is the point: **blending mixes poses, it does not reschedule
+them.** The clip still starts at `0` and still advances at `custom_speed`, so the `P2b-10`/`P2b-11`
+keyframe-position assertions and the hit-stop freeze are untouched and green.
+
+Gates: import gate exit `0`, zero `SCRIPT ERROR`/`ERROR:`/`WARNING` lines. GUT
+`14 / 193 / 193 / 10332` against the `14 / 192 / 192 / 10329` floor (`+1` test, `+3` asserts, all
+this ticket's).
+
+Three things it leaves:
+
+- **The played-build read is the user's, not a measurement.** The ticket said it closes if the blend
+  reads right in a played build; what closed it was the user's ruling to keep the cheap method. If
+  `0.06` later reads mushy on the fast chain clips or invisible on the slow enemy wind-up, per-edge
+  `xfade_time` is the concrete thing an `AnimationTree` buys and the reason to reopen — with that
+  evidence, not on principle.
+- **8-way locomotion is blocked on assets, not on the animation system.** Neither UAL pack contains a
+  single backward or strafe clip; the full account, and the transition-blend/directional-blend
+  distinction it turns on, is in `KNOWN_ISSUES.md` § Environment. Anyone scoping directional movement
+  starts at the pack swap.
+- **The `test_save_service.gd` line-114 flake reproduced**, under exactly the conditions its existing
+  `KNOWN_ISSUES.md` entry names — first full-suite run of the session, right after a gate rewrote
+  `.godot/`, green on the re-run. It was briefly written up here as a new and distinct flake with a
+  different cause; it is neither. Grep `KNOWN_ISSUES.md` for a test name before writing it up as new.
