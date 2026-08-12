@@ -174,6 +174,7 @@ func test_arena_attack_uses_left_mouse_and_authored_timeline() -> void:
 
 func test_arena_enemy_attack_and_dodge_use_authored_values() -> void:
 	assert_eq(BALANCE.arena_enemy_attack_startup, 0.55)
+	assert_eq(BALANCE.arena_enemy_attack_facing_lock, 0.36)
 	assert_eq(BALANCE.arena_enemy_attack_active, 0.10)
 	assert_eq(BALANCE.arena_enemy_attack_recovery, 0.45)
 	assert_eq(BALANCE.arena_enemy_attack_reach, 1.6)
@@ -189,7 +190,7 @@ func test_arena_enemy_attack_and_dodge_use_authored_values() -> void:
 	assert_eq(BALANCE.arena_dodge_iframe_duration, 0.25)
 	assert_eq(BALANCE.arena_dodge_cooldown, 0.15)
 	assert_eq(BALANCE.arena_parry_startup, 0.0)
-	assert_eq(BALANCE.arena_parry_active_window, 0.18)
+	assert_eq(BALANCE.arena_parry_active_window, 0.30)
 	assert_eq(BALANCE.arena_parry_whiff_recovery, 0.35)
 	assert_eq(BALANCE.arena_parry_success_recovery, 0.10)
 	assert_eq(BALANCE.arena_parry_cooldown, 0.15)
@@ -293,6 +294,32 @@ func test_enemy_swing_requires_range_and_locks_facing_during_active() -> void:
 	arena._physics_process(BALANCE.arena_enemy_attack_active * 0.5)
 	var facing_after: Vector3 = -enemy_capsule.global_basis.z.normalized()
 	assert_almost_eq(facing_after.dot(facing_before), 1.0, 0.001)
+
+
+func test_enemy_attack_locks_facing_before_the_active_window() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	enemy_capsule.position = Vector3(0.0, 1.25, -2.0)
+	arena._physics_process(0.0)
+
+	hero_capsule.position.x = 2.0
+	var pre_lock_step: float = BALANCE.arena_enemy_attack_facing_lock * 0.5
+	arena._physics_process(pre_lock_step)
+	var facing_before_lock: Vector3 = -enemy_capsule.global_basis.z.normalized()
+	var hero_before_lock: Vector3 = (hero_capsule.global_position - enemy_capsule.global_position).normalized()
+	assert_gt(facing_before_lock.dot(hero_before_lock), 0.99)
+
+	arena._physics_process(BALANCE.arena_enemy_attack_facing_lock - pre_lock_step)
+	var facing_at_lock: float = enemy_capsule.rotation.y
+	hero_capsule.position.x = -2.0
+	var post_lock_startup_step: float = (BALANCE.arena_enemy_attack_startup - BALANCE.arena_enemy_attack_facing_lock) * 0.5
+	arena._physics_process(post_lock_startup_step)
+	assert_almost_eq(enemy_capsule.rotation.y, facing_at_lock, 0.001)
+	arena._physics_process(post_lock_startup_step)
+	assert_almost_eq(enemy_capsule.rotation.y, facing_at_lock, 0.001)
 
 
 func test_enemy_hit_stops_then_knocks_back_and_locks_input() -> void:
@@ -600,6 +627,23 @@ func test_parry_after_active_window_uses_ordinary_hit_reaction() -> void:
 
 	assert_gt(Vector2(hero_capsule.velocity.x, hero_capsule.velocity.z).length(), 0.0)
 	assert_almost_eq(arena._hit_stun_remaining, BALANCE.arena_enemy_hit_stun, 0.001)
+
+
+func test_parry_between_dodge_iframes_and_active_window_succeeds() -> void:
+	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
+	var arena: Arena = arena_scene.instantiate() as Arena
+	add_child_autofree(arena)
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+	arena._unhandled_input(dodge_event)
+	var late_parry_time: float = (BALANCE.arena_dodge_iframe_duration + BALANCE.arena_parry_active_window) * 0.5
+	arena._physics_process(late_parry_time)
+	arena._enemy_attack_active = true
+	arena._on_enemy_attack_hitbox_body_entered(hero_capsule)
+
+	assert_eq(arena._hit_stop_outcome, Arena.HitStopOutcome.PARRY_HERO)
 
 
 func test_parry_whiff_recovery_locks_actions() -> void:

@@ -699,8 +699,9 @@ func _update_enemy_attack(delta: float) -> void:
 	_enemy_attack_elapsed += delta
 	var active_end: float = BALANCE.arena_enemy_attack_startup + BALANCE.arena_enemy_attack_active
 	var recovery_end: float = active_end + BALANCE.arena_enemy_attack_recovery
-	if _enemy_attack_elapsed < BALANCE.arena_enemy_attack_startup:
+	if _enemy_attack_elapsed < BALANCE.arena_enemy_attack_facing_lock:
 		_turn_enemy(delta)
+	if _enemy_attack_elapsed < BALANCE.arena_enemy_attack_startup:
 		return
 	if _enemy_attack_elapsed < active_end:
 		if not _enemy_attack_active:

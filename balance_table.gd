@@ -60,6 +60,8 @@ extends Resource
 @export var arena_screen_shake_magnitude_scale: float = 1.6
 @export var arena_screen_shake_duration_scale: float = 3.0
 @export var arena_enemy_attack_startup: float = 0.55
+## The played-build P2b-12 ruling locks enemy facing partway through attack startup so a lateral dodge can escape.
+@export var arena_enemy_attack_facing_lock: float = 0.36
 @export var arena_enemy_attack_active: float = 0.10
 @export var arena_enemy_attack_recovery: float = 0.45
 @export var arena_enemy_attack_reach: float = 1.6
@@ -76,7 +78,7 @@ extends Resource
 @export var arena_dodge_iframe_duration: float = 0.25
 @export var arena_dodge_cooldown: float = 0.15
 @export var arena_parry_startup: float = 0.0
-@export var arena_parry_active_window: float = 0.18
+@export var arena_parry_active_window: float = 0.30
 @export var arena_parry_whiff_recovery: float = 0.35
 @export var arena_parry_success_recovery: float = 0.10
 @export var arena_parry_cooldown: float = 0.15
