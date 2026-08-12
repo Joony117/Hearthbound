@@ -1279,19 +1279,54 @@ mutation and the work share one restore point.
  owed and never run — the mandatory boundary-2 verifier pass for three .tscn seam changes, and any
  test at all pressing the seven new controls. Neither is visible from the code.
 
- The live candidates, none of them written:
+ That verifier pass HAS SINCE RUN (c03d9a9) and found one real defect: pause_menu.gd assigned
+ button_pressed in _ready(), which emits toggled, which wrote user://settings.cfg on every hub load.
+ Fixed. It also corrected the retro record itself, which is now annotated in place. The remaining
+ gap from that batch is unchanged and unowned: nothing presses the six new hub controls, so a dropped
+ [connection] there still leaves every gate green.
 
- The next play pass, and it is now the only thing that can move anything. Three passes have run; the
- third (2026-08-11) settled arena_light_attack_startup at 0.10 s, the arena's first played value.
- Everything the batch above added is unplayed, the two PROVISIONAL markers name the same Settled by,
- and the shipped systems no pass has ever met still include training, traits, buildings and recovery.
+ ### START HERE, next session
+
+ P2b-09 is [TODO] and fully unblocked. It is the one row you can pick up cold and dispatch.
+
+ The assets are already in the repo (commit below): Quaternius Universal Base Characters plus both
+ Universal Animation Libraries, 19.3 MB staged under combat/arena/models/, CC0, provenance and
+ deliberate omissions in CREDITS.md. The import gate is green on them — exit 0, zero warnings — so
+ the engine has already accepted every file before any code is written. Only the root-motion-DISABLED
+ GLBs are staged, on purpose: the _RM variants would double-count the displacement arena.gd applies
+ itself, and leaving them out of the repo is what makes criterion 4 unfailable rather than merely
+ checked. Do not add them.
+
+ All eight states have a clip; P2b-09's header carries the state-to-clip map, so criterion 7 has
+ nothing to report. The one thing worth reading before dispatching: the chain clips are split
+ hit-from-recovery (Sword_Regular_A and Sword_Regular_A_Rec are separate animations), which is this
+ project's own attack anatomy, so criterion 3 binds per phase rather than per swing.
+
+ P2b-09 crosses boundary 2 (arena.tscn), so its verifier pass is mandatory. Given what the LAST
+ skipped boundary-2 pass turned out to be hiding, do not treat it as a formality.
+
+ P2b-10 (the enemy) is [BLOCKED] on P2b-09 landing and on nothing else — same libraries, no new
+ download.
+
+ The other live candidates, neither of them written:
+
+ The next play pass. Three have run; the third (2026-08-11) settled arena_light_attack_startup at
+ 0.10 s, the arena's first played value. Everything the fe1a74b batch added is unplayed, the two
+ PROVISIONAL markers name the same Settled by, and the shipped systems no pass has ever met still
+ include training, traits, buildings and recovery. Note the sequencing the user chose deliberately:
+ models FIRST, then play. Tuning feel against a capsule that cannot wind up is what produced two
+ re-tunes of the same number.
 
  The arena weight re-ask (arena_light_attack_hit_stop = 0.04 s and the values around it) — still no
  ticket. P2b-03 made the hit visible and P2b-07 now shakes the camera off that same number, so the
- re-ask has grown a second consumer rather than being answered.
+ re-ask has grown a second consumer rather than being answered. It trails P2b-09 for the same reason
+ the parry-window re-ask does.
 
- The boundary-2 verifier pass the batch skipped. This is the cheapest of the three and the only one
- that does not need a person playing.
+ The parry-window re-ask is the user's own played feedback — "needs to be a smidge larger" — and it
+ is deliberately NOT a ticket yet. arena_parry_active_window = 0.18 s was set against the 0.2 s
+ telegraph flash with arithmetic on the page; a real wind-up pose changes the read, so the number may
+ not need to move at all. game-designer's, after P2b-09 and P2b-10 land. Do not bump it blind: it
+ would spend the arena's only played value on a guess.
 
  P2b-02 (controller input) is on HOLD by the user and is not a candidate. Do not schedule it, do not
  route its design questions. GAME_SPEC.md:84 still calls controller support a hard constraint; that
@@ -1433,6 +1468,13 @@ design ruling: the user or the director (who has `computer-use`/Chrome tooling t
 has to pick a specific pack, download it, and stage the raw files under `combat/arena/models/` before
 either ticket below can move off `[BLOCKED]`.
 
+**Closed the same day.** The director downloaded the three Quaternius packs at the free tier, staged a
+19.3 MB subset, and ran the import gate on it — exit `0`, zero warnings. The scoping call this
+vindicates is criterion 7's: written to survive not knowing the clip list, and the clip list turned
+out to cover all eight states anyway, so the criterion costs nothing and would have cost a re-scope
+had it gone the other way. See `P2b-09`'s header for the state-to-clip map and `CREDITS.md` for what
+was left out of the repo on purpose.
+
 Everything else the ask asked to be ruled or flagged is resolved here rather than left open, because
 none of it needed a balance number or a boundary move:
 
@@ -1476,11 +1518,51 @@ Left open, flagged and not decided:
 
 ---
 
-## P2b-09 — The hero capsule becomes a real animated model            [BLOCKED]
+## P2b-09 — The hero capsule becomes a real animated model            [TODO]
 
-**Blocked on:** a specific KayKit or Quaternius character pack, downloaded and staged as raw files
-under `combat/arena/models/hero/` — nobody in this ticket's dispatch chain can fetch it. Once staged,
-this ticket is otherwise fully specified and can move straight to `[TODO]`.
+**Unblocked 2026-08-11 — the assets are staged and the import gate is green on them.** Provenance,
+tier and every deliberate omission are in [`CREDITS.md`](../CREDITS.md); criterion 8 is therefore
+already satisfied and needs no work.
+
+Staged under `combat/arena/models/`:
+
+- `hero/Superhero_{Male,Female}_FullBody.gltf` + `.bin` + base-colour texture — Quaternius **Universal
+  Base Characters**, ~13k tris, humanoid rig. Both are staged because male-vs-female is an aesthetic
+  call this ticket should not have to make; pick one and leave the other, or delete it.
+- `animations/UAL1_Standard.glb` and `animations/UAL2_Standard.glb` — the two **Universal Animation
+  Libraries**, 43 clips each, retargetable to that rig.
+
+Note the layout deviation from the split paragraph above: the animation libraries are shared between
+this ticket and `P2b-10`, so they sit in `models/animations/` rather than under `hero/`. `models/enemy/`
+is still where `P2b-10`'s mesh goes if it takes a different one.
+
+**Only the root-motion-*disabled* files are staged.** Each library ships twice; the `_RM` variants have
+root motion baked into every clip and are deliberately absent from the repo, so criterion 4 cannot be
+violated by opening the wrong file. This is most of what criterion 4 was worried about.
+
+**Every one of the eight states has a clip, so criterion 7 has nothing to report** — including the two
+that were flagged as doubtful before the packs were opened:
+
+| State | Clip | From |
+|---|---|---|
+| idle | `Idle_Loop` | UAL1 |
+| run (`arena_move_speed` `5.8`) | `Jog_Fwd_Loop` | UAL1 |
+| sprint (`arena_sprint_speed` `8.0`) | `Sprint_Loop` | UAL1 |
+| light attack, chain steps | `Sword_Regular_A` / `_B` / `_C`, each with a **separate** `*_Rec` recovery clip | UAL2 |
+| heavy attack (smash) | `Sword_Heavy_Combo` | UAL2 |
+| dodge | `Roll` (also `Sword_Dash`, `Slide_*`) | UAL1 / UAL2 |
+| parry stance | `Sword_Block` (also `Idle_Shield_Loop`, `Idle_Shield_Break`) | UAL2 |
+| hit reaction | `Hit_Chest`, `Hit_Head`, `Hit_Knockback` | UAL1 / UAL2 |
+
+**The chain clips are split hit-from-recovery, which is this project's own attack anatomy.**
+`Sword_Regular_A` and `Sword_Regular_A_Rec` are separate animations, so `startup + active` and
+`recovery` bind to separate clips rather than to two slices of one — which is what makes criterion 3
+(scale each clip to its authored window) a per-phase operation instead of a compromise across the
+whole swing. Three distinct hits exist against a five-step chain, so criterion 5's "one clip reused"
+is a floor, not the plan: `A / B / C / A / B` is available for free.
+
+For `P2b-10`: `Death01` (UAL1), `Idle_Shield_Break` and `Hit_Knockback` (UAL2) cover the enemy's
+defeat, guard-break and post-parry stagger with no further download.
 
 ### Objective
 The hero's arena capsule is a real rigged low-poly humanoid that idles, runs, sprints, chains a light
@@ -1535,7 +1617,9 @@ nothing about combat timing, damage or the state machine itself changes.
 7. Any of the eight states above the staged pack has no usable clip for is named explicitly in the
    commit message, with that state left on its current tint-only presentation — not invented, not
    silently dropped.
-8. A new root `CREDITS.md` names the staged pack and its CC0 licence, one line.
+8. ~~A new root `CREDITS.md` names the staged pack and its CC0 licence, one line.~~ **Already done**
+   — `CREDITS.md` landed with the assets and records the tier, the three source packs and every
+   deliberate omission. Nothing to do; do not re-add it.
 9. "Survives save and reload": N/A, and this line states why — no `GameSession`/`Hero` field is added
    and no save key changes; confirmed the same way `test_arena_loads_native_graybox_without_mutating_profile`
    already confirms it, by diffing `GameSession.to_dict()` before and after a run.
@@ -1562,9 +1646,13 @@ Controller input (`P2b-02`, on hold). A shared or top-level asset directory for 
 
 ## P2b-10 — The enemy capsule becomes a real animated model           [BLOCKED]
 
-**Blocked on:** the same staged pack `P2b-09` needs, plus `P2b-09` landing first — proving the
-model-import and animation-driver pattern once on the hero de-risks doing it a second time on the
-enemy, the same sequencing `P2b-01c`→`P2b-01d` already used.
+**Blocked on `P2b-09` landing, and nothing else** — the asset half cleared on 2026-08-11 along with
+`P2b-09`'s. The same two animation libraries under `combat/arena/models/animations/` already carry
+every enemy state (`Death01`, `Idle_Shield_Break`, `Hit_Knockback`, plus the shared locomotion and
+swing clips), so this ticket needs no new download; if the enemy takes a different mesh, that one
+goes in `combat/arena/models/enemy/`. Proving the model-import and animation-driver pattern once on
+the hero de-risks doing it a second time on the enemy — the same sequencing `P2b-01c`→`P2b-01d`
+already used.
 
 ### Objective
 The enemy's arena capsule is a real rigged low-poly humanoid that holds its stance, telegraphs a
