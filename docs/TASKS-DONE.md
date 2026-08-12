@@ -6211,3 +6211,145 @@ guesses** — both are `P2b-12`'s, not re-openable here. Two texture `.import` f
 part of the commit: that is Godot's automatic `detect_3d` re-import (VRAM compression plus mipmaps
 once a texture is used in 3D), correct to commit, and it recurs on any machine that runs the arena
 before committing.
+
+---
+
+## P2b-12 — The parry is gettable and a dodge actually escapes   [DONE]
+
+**Opened 2026-08-12 from the user's played build. Unblocked** — `game-designer`'s ruling landed in
+`SYSTEMS.md` § "The played build settles the parry window and the enemy's facing lock (`P2b-12`)",
+and every number below comes from it. Read that section before starting; this ticket does not restate
+its reasoning, only its outputs.
+
+The user's report, verbatim: *"either the parry window is non intuitive or the parry window is too
+small, its very to hard to get a parry off. and after dodge, the enemy is able to still reach the
+player and hit while the distance looks like its enough to avoid the attack."*
+
+### Objective
+A parry is winnable on a real read, and a sideways dodge actually leaves the swing's path instead of
+being erased by the enemy re-aiming.
+
+### Existing architecture
+- `_update_enemy_attack()` (`combat/arena/arena.gd:698`) calls `_turn_enemy(delta)` for the whole
+  `arena_enemy_attack_startup` window, then locks facing when the active window opens.
+- `_start_enemy_attack()` already calls `_stop_enemy_horizontal()`, so the enemy never translates
+  during its own attack — only rotates. That is what makes this a pure rotation-timing change with no
+  position math to reconcile.
+- `_hero_has_active_parry()` reads `arena_parry_startup` (`0.0`) and `arena_parry_active_window`.
+- `arena_parry_active_window` is `balance_table.gd:79`; `arena_enemy_turn_speed_degrees` is line 68
+  and `arena_enemy_attack_startup` line 62 — the new field belongs with the enemy-attack block.
+- `BalanceTable` fields are read through the `BALANCE` preload. A `.tres` value and a `.gd` default
+  must be authored together or the `.tres` silently wins for existing saves of the resource.
+
+### Acceptance criteria
+1. `arena_parry_active_window` is `0.30` (was `0.18`), in **both** `balance_table.gd` and
+   `balance.tres`.
+2. A new tunable `arena_enemy_attack_facing_lock` exists, defaulting to `0.36`, authored in both
+   files, and `_update_enemy_attack()` stops calling `_turn_enemy()` once
+   `_enemy_attack_elapsed >= arena_enemy_attack_facing_lock` rather than at
+   `arena_enemy_attack_startup`. The enemy still turns freely in every other state.
+3. A test proves the lock: advance an enemy attack past `arena_enemy_attack_facing_lock`, move the
+   hero laterally, and assert the enemy's `rotation.y` is unchanged — and that it *does* still track
+   before the lock. Assert the behaviour, not the constant.
+4. A test proves the parry window's new width at the seam that matters: a parry pressed at a time that
+   failed under `0.18` and succeeds under `0.30` registers `PARRY_HERO`. Drive it through
+   `_hero_has_active_parry()`/the hitbox path, not by restating the tunable.
+5. `arena_parry_whiff_recovery` stays `0.35`. The ruling reviewed and deliberately held it; changing
+   it here is a rejected diff.
+6. `arena_enemy_attack_reach`, `arena_enemy_preferred_range`, `arena_enemy_turn_speed_degrees` and the
+   capsule radius are **unchanged**. The ruling rejected each by name as an alternative to the facing
+   lock.
+7. Import gate exit `0`, zero warnings; GUT at or above `14 / 190 / 190 / 10324`. `P2b-06`'s
+   enemy-behaviour and `P2b-08`'s super-armor tests must stay green — if the facing lock reddens one,
+   that is a real finding about a test asserting the old tracking, so report it rather than adjusting
+   the number to suit.
+8. "Survives save and reload": N/A — arena is display-only, no state, no save key.
+
+### Files allowed to change
+`balance_table.gd`, `balance.tres`, `combat/arena/arena.gd`, `tests/unit/test_arena.gd`.
+
+### Non-goals
+The capsule radius (`PROVISIONAL` in the ruling — its blast radius is locomotion and camera collision
+project-wide, so it is its own ticket if the director measures the mesh and it turns out to matter).
+The clip/phase misalignment — the ruling sets the target at `t ≈ 0.55 s` alignment but routes the fix
+to `P2b-13`, so the animation layer is re-timed once rather than twice. Any change to
+`arena_enemy_attack_startup`: the ruling rejected shortening it by name, since `P2b-01d`'s dodge
+fairness arithmetic and `P2b-01e`'s timeline check both rest on `0.55 s`. Impact audio, particles, a
+death animation. Any change to `resolve()`, `CombatResult`, permadeath or `GameSession`.
+
+### What the ruling left open, for whoever plays it next
+Diagonal dodges are **not** guaranteed by `0.36 s` — a `45°` dodge delivers `1.36 m` of lateral
+clearance against a `1.5 m` corridor. The ruling declined to trade pure-lateral margin for it, on the
+grounds that a diagonal also gains real distance along the now-fixed forward axis that its single-axis
+arithmetic did not credit. Worth checking deliberately in the next played build.
+
+<details>
+<summary>Director's pre-routing measurements (kept — the ruling builds on these)</summary>
+
+**What the director measured before routing it**, so the ruling did not have to re-derive it and so
+no later ticket re-finds it as a bug:
+
+- **`EnemyAttackHitbox`'s box spans capsule-local `z ∈ [-2.35, -0.75]`, half-width `0.75`.** The
+  `Area3D` sits at `z = -0.75` and `_ready()` then offsets the `CollisionShape3D` by another
+  `-arena_enemy_attack_reach * 0.5`. With both capsules at `CapsuleShape3D` radius `0.75`, contact
+  reaches **3.10 m centre-to-centre** with a **±1.5 m lateral corridor**. `size.x`/`size.y` are
+  inherited from the shared graybox `Shape_attack` and **no tunable governs either**.
+- **There is no spacing margin.** `arena_enemy_preferred_range = 2.4` against a 3.10 m connect
+  distance: at its own preferred range the enemy already has the hero 0.7 m inside the box.
+- **A lateral dodge provably cannot escape.** `_update_enemy_attack()` calls `_turn_enemy()` for the
+  whole `0.55 s` startup at `720°/s`. Clearing the corridor from 2.4 m needs 32° of arc; the enemy
+  re-closes 32° in `0.044 s` against a `0.38 s` dodge. Only a radial dodge does anything, while the
+  hero visibly travels ≈ 2.57 m. That is the reported symptom exactly.
+- **`P2b-10`'s deferred note is probably the larger cause.** The enemy's `Sword_Regular_A` dominant
+  arm motion peaks at `0.4 s`; the hitbox goes live at `0.55 s`. The visible sword finishes its arc
+  and an invisible box registers ~`0.15 s` later.
+- **Capsule radius `0.75` predates the real models.** Authored for a graybox in `P2b-01a`, never
+  revisited in `P2b-09`/`P2b-10`. A humanoid is nothing like 1.5 m wide, so the hero can look clear
+  of the sword and still be hit.
+- **The parry's trigger is settled and is NOT part of this fix.** The director's first read was that
+  the "non intuitive" half was the trigger — `P2b-01f` binds parry to a press of `dodge` while
+  `Input.get_vector(...)` is *exactly* `Vector2.ZERO`, so in a live fight reaching the parry branch
+  means fully releasing WASD **and then** pressing dodge inside a `0.18 s` window. **The user ruled
+  otherwise from the played build: they like it and it stays.** It is a deliberate commitment cost,
+  now user-confirmed by play rather than merely unexamined. Do not propose a separate bind and do not
+  re-open `P2b-01f`'s hold-to-guard rejection.
+- **So the parry fix is one number: `arena_parry_active_window` rises above `0.18 s`.** The window has
+  to be sized for the *combined* act — release movement, then press — not for the press alone.
+  `arena_parry_whiff_recovery` (`0.35 s`) may have to move with it: `P2b-01f` set it equal to
+  `arena_enemy_hit_stun` on purpose so that guessing wrong costs about what eating the hit costs, and
+  a wider window against an unchanged whiff cost shifts that trade. *(The ruling reviewed this and
+  held whiff recovery at `0.35 s` — the cost-parity is between two fixed numbers the window does not
+  touch, and the release-first trigger is the anti-spam brake. See criterion 5.)*
+
+</details>
+
+### Findings
+
+**The one-line version of criterion 2 is a behaviour regression, and the import gate cannot see it.**
+`_update_enemy_attack()`'s startup branch was a single `if` whose `return` did two jobs: end the turn
+phase, and hold the hitbox shut for the whole startup. Because `0.36 < 0.55`, swapping the constant in
+that one condition opens the hitbox `0.19 s` early — silently invalidating `P2b-01d`'s dodge-fairness
+arithmetic and `P2b-01e`'s timeline check, both of which rest on `0.55 s`. The fix is two conditions,
+turn-gate then startup-gate. What catches it is not the gate but
+`test_enemy_swing_requires_range_and_locks_facing_during_active`, which already asserted `monitoring`
+false right up to `startup - 0.01`. The trap was flagged in the dispatch rather than discovered, and
+it generalizes: any `if <phase>: <do thing>; return` is two gates wearing one condition.
+
+**The GUT suite is not deterministic, and it was not deterministic before this ticket.**
+`test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames` (`P2b-11`'s) fails about one
+run in three. The director's first full-suite spot-check came back `191 / 192` against the worker's
+reported `192 / 192`, which looked exactly like a worker over-claiming — it was not. Measured on
+**unmodified `master` with this ticket's diff stashed**: 6 runs, 4 green, 2 red, same two `assert_gt`s.
+Cause and the rejected fix are in `KNOWN_ISSUES.md` § Environment. It was left unfixed on purpose —
+`wait_process_frames(2)` makes the *other* half fail instead, which says the freeze may have a real
+one-frame leak that physics-frame waiting has been hiding. That is a `P2b-11` mechanism question, not
+a timing-number ticket's to chase, and the stop rule applies.
+
+The generalizable part is about spot-checking, not about the flake: **a re-run that disagrees with a
+worker's reported gate is not proof the worker was wrong.** Establish whether the difference survives
+on a clean tree before treating it as a finding against the diff.
+
+Evidence: import gate exit `0`, zero `SCRIPT ERROR`/`ERROR:`/`WARNING` lines. GUT
+`14 / 192 / 192 / 10329`, green on two consecutive full runs, against the `14 / 190 / 190 / 10324`
+floor. `P2b-06`'s enemy-behaviour tests and `P2b-08`'s super-armor tests stayed green untouched — the
+facing lock reddened neither, so no test was asserting the old tracking.

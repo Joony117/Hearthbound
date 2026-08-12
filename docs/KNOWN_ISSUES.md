@@ -152,6 +152,29 @@ test scripts after `_ready()`, which is why `tests/unit/*` can name `Expedition`
 Measured 2026-08-04 during `P2-04d`; the hung process had to be reaped with
 `Get-Process Godot* | Stop-Process -Force`.
 
+### `test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames` is flaky
+
+**The GUT suite is not deterministic.** `tests/unit/test_arena.gd`'s hit-stop test fails roughly
+**one run in three** with `[0.10833333730698] expected to be > than [0.10833333730698]` — the
+resumed playback position identical to the frozen one, both `assert_gt`s on lines 1557-1558.
+
+Measured 2026-08-12 during `P2b-12`, on **unmodified `master` with the ticket's changes stashed**:
+6 runs of `-gtest=res://tests/unit/test_arena.gd`, 4 green and 2 red. It predates `P2b-12` and is
+not caused by it. Re-run before believing a red gate that names only this test.
+
+Root cause is a mismatch of frame kinds. Both `AnimationPlayer`s use Godot's default
+`callback_mode_process = ANIMATION_PROCESS_IDLE`, so only a `_process` pass advances playback — and
+the test awaits `wait_physics_frames(1)`. Whether an idle frame lands inside that physics frame is
+down to headless frame pacing, which runs uncapped.
+
+Swapping to `wait_process_frames(2)` was tried and **is not the fix**: it makes the *other* half
+fail instead (`0.10871133730697632` against a frozen `0.10833333730698`), i.e. the paused player
+advances by one uncapped idle delta of ~`0.4 ms` while it is supposed to be frozen. Two possible
+readings — the freeze has a real one-frame leak that physics-frame waiting has been hiding, or the
+engine's own `_physics_process` on the in-tree arena node is racing the manual drive calls — and
+this ticket deliberately did not chase either. Whoever does owns the mechanism, not the wait call;
+tightening the assertion tolerance would only re-hide it.
+
 ### Console binary required for CLI
 `tools/godot/Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows stdout.
 Always use `Godot_v4.7.1-stable_win64_console.exe` for headless and scripted runs.
