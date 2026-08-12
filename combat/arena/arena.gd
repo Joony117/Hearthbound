@@ -35,7 +35,11 @@ enum EnemyState {
 @onready var _attack_hitbox: Area3D = %AttackHitbox
 @onready var _enemy_capsule: CharacterBody3D = %EnemyCapsule
 @onready var _enemy_attack_hitbox: Area3D = %EnemyAttackHitbox
-@onready var _hero_capsule_mesh: MeshInstance3D = get_node("HeroCapsule/Mesh") as MeshInstance3D
+@onready var _hero_capsule_mesh: Array[MeshInstance3D] = [
+	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Superhero_Female") as MeshInstance3D,
+	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
+	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
+]
 @onready var _enemy_capsule_mesh: MeshInstance3D = get_node("EnemyCapsule/Mesh") as MeshInstance3D
 
 var _attack_elapsed: float = -1.0
@@ -83,7 +87,8 @@ var _scene_change_requested: bool = false
 func _ready() -> void:
 	scene_change_requested.connect(SceneRouter.go_to)
 	_create_capsule_material_override(_hero_capsule_mesh)
-	_create_capsule_material_override(_enemy_capsule_mesh)
+	_create_capsule_material_override([_enemy_capsule_mesh])
+	_bind_hero_animation_libraries()
 	_spring_arm.spring_length = BALANCE.arena_camera_spring_length
 	_spring_arm.add_excluded_object(_hero_capsule.get_rid())
 	_attack_hitbox.body_entered.connect(_on_attack_hitbox_body_entered)
@@ -125,6 +130,7 @@ func _physics_process(delta: float) -> void:
 			_request_hub()
 			return
 		_hero_capsule.move_and_slide()
+		_play_hero_animation(&"ual1/Idle")
 		_update_camera_pivot(delta)
 		return
 	if _hit_stop_remaining > 0.0:
@@ -144,6 +150,7 @@ func _physics_process(delta: float) -> void:
 			_update_attack(delta)
 		else:
 			_update_locomotion(delta)
+	_update_hero_animation()
 	_hero_capsule.move_and_slide()
 	_update_camera_pivot(delta)
 
@@ -170,14 +177,15 @@ func _start_screen_shake(hit_stop: float) -> void:
 	_shake_magnitude = hit_stop * BALANCE.arena_screen_shake_magnitude_scale
 
 
-func _create_capsule_material_override(capsule_mesh: MeshInstance3D) -> void:
+func _create_capsule_material_override(capsule_meshes: Array[MeshInstance3D]) -> void:
 	var material: StandardMaterial3D = StandardMaterial3D.new()
-	material.albedo_color = _authored_capsule_color(capsule_mesh)
-	capsule_mesh.material_override = material
+	material.albedo_color = _authored_capsule_color(capsule_meshes)
+	for capsule_mesh: MeshInstance3D in capsule_meshes:
+		capsule_mesh.material_override = material
 
 
 func _update_capsule_tints() -> void:
-	var hero_material: StandardMaterial3D = _hero_capsule_mesh.material_override as StandardMaterial3D
+	var hero_material: StandardMaterial3D = _hero_capsule_mesh[0].material_override as StandardMaterial3D
 	assert(hero_material != null)
 	hero_material.albedo_color = _hero_tint()
 	if not is_instance_valid(_enemy_capsule_mesh):
@@ -213,13 +221,111 @@ func _enemy_tint() -> Color:
 		if _enemy_attack_elapsed >= BALANCE.arena_enemy_attack_startup - BALANCE.arena_enemy_telegraph_flash:
 			return ENEMY_TELEGRAPH_COLOR
 		return ENEMY_WINDUP_COLOR
-	return _authored_capsule_color(_enemy_capsule_mesh)
+	return _authored_capsule_color([_enemy_capsule_mesh])
 
 
-func _authored_capsule_color(capsule_mesh: MeshInstance3D) -> Color:
-	var authored_material: StandardMaterial3D = capsule_mesh.mesh.surface_get_material(0) as StandardMaterial3D
+func _authored_capsule_color(capsule_meshes: Array[MeshInstance3D]) -> Color:
+	var authored_material: StandardMaterial3D = capsule_meshes[0].mesh.surface_get_material(0) as StandardMaterial3D
 	assert(authored_material != null)
 	return authored_material.albedo_color
+
+
+func _bind_hero_animation_libraries() -> void:
+	var animation_player: AnimationPlayer = get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	_add_hero_animation_library(
+		animation_player,
+		&"ual1",
+		"res://combat/arena/models/animations/UAL1_Standard.glb",
+	)
+	_add_hero_animation_library(
+		animation_player,
+		&"ual2",
+		"res://combat/arena/models/animations/UAL2_Standard.glb",
+	)
+
+
+func _add_hero_animation_library(
+	animation_player: AnimationPlayer,
+	library_name: StringName,
+	scene_path: String,
+) -> void:
+	var library_scene: PackedScene = load(scene_path) as PackedScene
+	assert(library_scene != null)
+	var library_instance: Node = library_scene.instantiate()
+	var library_player: AnimationPlayer = library_instance.get_node("AnimationPlayer") as AnimationPlayer
+	var library: AnimationLibrary = library_player.get_animation_library(&"")
+	assert(library != null)
+	# The call must sit outside the assert: Godot strips assert() expressions from release
+	# builds, so wrapping it would leave the exported game with no hero animations at all.
+	var add_result: int = animation_player.add_animation_library(library_name, library)
+	assert(add_result == OK)
+	library_instance.free()
+
+
+func _update_hero_animation() -> void:
+	# Super armor keeps the smash's pose: the hit counts, it just does not cancel the swing. The
+	# check is needed here as well as in _update_hit_stop() because HIT_HERO is registered on
+	# contact and only resolved when the freeze ends, so the freeze frames would otherwise cut to
+	# a reaction and then restart the swing from frame 0. _hit_stun_remaining needs no such guard:
+	# an armored hit returns before it is ever set.
+	if (_hit_stop_outcome == HitStopOutcome.HIT_HERO and not _hero_has_super_armor()) or _hit_stun_remaining > 0.0:
+		_play_hero_animation(&"ual1/Hit_Chest")
+		return
+	if _dodge_elapsed >= 0.0:
+		_play_hero_animation(&"ual1/Roll", BALANCE.arena_dodge_duration)
+		return
+	if _parry_elapsed >= 0.0:
+		_play_hero_animation(&"ual2/Sword_Block")
+		return
+	if _attack_elapsed >= 0.0:
+		if _attack_is_heavy:
+			_play_hero_animation(
+				&"ual2/Sword_Heavy_Combo",
+				BALANCE.arena_heavy_attack_startup
+				+ BALANCE.arena_heavy_attack_active
+				+ BALANCE.arena_heavy_attack_recovery,
+			)
+			return
+		var chain_clip: int = _combo_index % 3
+		if chain_clip == 2:
+			_play_hero_animation(
+				&"ual2/Sword_Regular_C",
+				BALANCE.arena_light_attack_startup
+				+ BALANCE.arena_light_attack_active
+				+ BALANCE.arena_light_attack_recovery,
+			)
+			return
+		var in_recovery: bool = (
+			_attack_elapsed >= BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
+		)
+		var suffix: StringName = &"B" if chain_clip == 1 else &"A"
+		var animation_name := StringName("ual2/Sword_Regular_%s%s" % [suffix, "_Rec" if in_recovery else ""])
+		var target_duration: float = (
+			BALANCE.arena_light_attack_recovery
+			if in_recovery
+			else BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
+		)
+		_play_hero_animation(animation_name, target_duration)
+		return
+	var horizontal_speed := Vector2(_hero_capsule.velocity.x, _hero_capsule.velocity.z).length()
+	if horizontal_speed > (BALANCE.arena_move_speed + BALANCE.arena_sprint_speed) * 0.5:
+		_play_hero_animation(&"ual1/Sprint")
+	elif horizontal_speed > 0.0:
+		_play_hero_animation(&"ual1/Jog_Fwd")
+	else:
+		_play_hero_animation(&"ual1/Idle")
+
+
+func _play_hero_animation(animation_name: StringName, target_duration: float = 0.0) -> void:
+	var animation_player: AnimationPlayer = get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	if animation_player.current_animation == animation_name:
+		return
+	var custom_speed: float = 1.0
+	if target_duration > 0.0:
+		var animation: Animation = animation_player.get_animation(animation_name)
+		assert(animation != null)
+		custom_speed = animation.length / target_duration
+	animation_player.play(animation_name, -1.0, custom_speed)
 
 
 func _update_locomotion(delta: float) -> void:

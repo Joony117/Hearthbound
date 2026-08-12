@@ -1,6 +1,7 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://combat/arena/arena.gd" id="1_arena"]
+[ext_resource type="PackedScene" path="res://combat/arena/models/hero/Superhero_Female_FullBody.gltf" id="2_hero"]
 
 [sub_resource type="Environment" id="Environment_arena"]
 background_mode = 1
@@ -15,14 +16,6 @@ albedo_color = Color(0.18, 0.2, 0.24, 1)
 [sub_resource type="PlaneMesh" id="Mesh_floor"]
 material = SubResource("Material_floor")
 size = Vector2(24, 18)
-
-[sub_resource type="StandardMaterial3D" id="Material_hero"]
-albedo_color = Color(0.2, 0.62, 0.95, 1)
-
-[sub_resource type="CapsuleMesh" id="Mesh_hero"]
-material = SubResource("Material_hero")
-radius = 0.75
-height = 2.5
 
 [sub_resource type="CapsuleShape3D" id="Shape_hero"]
 radius = 0.75
@@ -94,8 +87,12 @@ collision_mask = 3
 [node name="CollisionShape3D" type="CollisionShape3D" parent="HeroCapsule"]
 shape = SubResource("Shape_hero")
 
-[node name="Mesh" type="MeshInstance3D" parent="HeroCapsule"]
-mesh = SubResource("Mesh_hero")
+[node name="Superhero_Female_FullBody" parent="HeroCapsule" instance=ExtResource("2_hero")]
+position = Vector3(0, -1.238, 0)
+scale = Vector3(1.4, 1.4, 1.4)
+
+[node name="HeroAnimationPlayer" type="AnimationPlayer" parent="HeroCapsule"]
+root_node = NodePath("../Superhero_Female_FullBody")
 
 [node name="FacingMarker" type="MeshInstance3D" parent="HeroCapsule"]
 position = Vector3(0, 0, -1)

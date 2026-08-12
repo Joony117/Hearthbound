@@ -20,7 +20,7 @@ func after_each() -> void:
 	SceneRouter.reset_arena_transition_state()
 
 
-func test_arena_loads_native_graybox_without_mutating_profile() -> void:
+func test_arena_loads_animated_hero_without_mutating_profile() -> void:
 	var hero := Hero.new("Keeper", 0)
 	hero.def_id = &"knight"
 	GameSession.from_dict({"roster": [hero.to_dict()]})
@@ -34,6 +34,8 @@ func test_arena_loads_native_graybox_without_mutating_profile() -> void:
 	var hero_capsule := arena.get_node_or_null("HeroCapsule") as CharacterBody3D
 	assert_not_null(hero_capsule)
 	assert_not_null(arena.get_node_or_null("HeroCapsule/CollisionShape3D"))
+	assert_not_null(arena.get_node_or_null("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D"))
+	assert_not_null(arena.get_node_or_null("HeroCapsule/HeroAnimationPlayer"))
 	assert_not_null(arena.get_node_or_null("HeroCapsule/FacingMarker"))
 	assert_not_null(arena.get_node_or_null("HeroCapsule/AttackHitbox"))
 	assert_not_null(arena.get_node_or_null("EnemyCapsule"))
@@ -46,14 +48,21 @@ func test_arena_loads_native_graybox_without_mutating_profile() -> void:
 	assert_not_null(camera)
 	assert_almost_eq(camera.position.x, 0.5, 0.001)
 	assert_not_null(arena.get_node_or_null("Sun"))
-	assert_eq(GameSession.to_dict(), profile_before)
+	var profile_after: Dictionary = GameSession.to_dict()
+	print("P2B09_PROFILE before=%s after=%s" % [profile_before, profile_after])
+	assert_eq(profile_after, profile_before)
 
 
 func test_arena_capsule_overrides_render_combat_tints_without_mutating_authored_materials() -> void:
 	var arena_scene: PackedScene = load(SceneRouter.ARENA) as PackedScene
 	var arena: Arena = arena_scene.instantiate() as Arena
 	add_child_autofree(arena)
-	var hero_mesh := arena.get_node("HeroCapsule/Mesh") as MeshInstance3D
+	var hero_meshes: Array[MeshInstance3D] = [
+		arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Superhero_Female") as MeshInstance3D,
+		arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
+		arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
+	]
+	var hero_mesh: MeshInstance3D = hero_meshes[0]
 	var enemy_mesh := arena.get_node("EnemyCapsule/Mesh") as MeshInstance3D
 	var hero_authored_material := hero_mesh.mesh.surface_get_material(0) as StandardMaterial3D
 	var enemy_authored_material := enemy_mesh.mesh.surface_get_material(0) as StandardMaterial3D
@@ -61,6 +70,8 @@ func test_arena_capsule_overrides_render_combat_tints_without_mutating_authored_
 	var enemy_base_color: Color = enemy_authored_material.albedo_color
 
 	assert_not_null(hero_mesh.material_override)
+	for tinted_mesh: MeshInstance3D in hero_meshes:
+		assert_eq(tinted_mesh.material_override, hero_mesh.material_override)
 	assert_not_null(enemy_mesh.material_override)
 	assert_ne(hero_mesh.material_override, hero_authored_material)
 	assert_ne(enemy_mesh.material_override, enemy_authored_material)
@@ -75,7 +86,8 @@ func test_arena_capsule_overrides_render_combat_tints_without_mutating_authored_
 	arena._hit_stop_outcome = Arena.HitStopOutcome.HIT_HERO
 	arena._hit_stop_remaining = BALANCE.arena_enemy_attack_hit_stop
 	arena._physics_process(0.0)
-	assert_eq((hero_mesh.material_override as StandardMaterial3D).albedo_color, Arena.HIT_HERO_COLOR)
+	for tinted_mesh: MeshInstance3D in hero_meshes:
+		assert_eq((tinted_mesh.material_override as StandardMaterial3D).albedo_color, Arena.HIT_HERO_COLOR)
 	arena._hit_stop_outcome = Arena.HitStopOutcome.NONE
 	arena._hit_stun_remaining = BALANCE.arena_enemy_hit_stun
 	arena._physics_process(0.0)
@@ -1039,7 +1051,7 @@ func test_super_armor_keeps_the_smash_swinging_but_still_counts_the_hit() -> voi
 
 func test_parry_window_and_enemy_telegraph_tint_the_capsules() -> void:
 	var arena: Arena = _instantiate_arena()
-	var hero_mesh := arena.get_node("HeroCapsule/Mesh") as MeshInstance3D
+	var hero_mesh := arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Superhero_Female") as MeshInstance3D
 	var enemy_mesh := arena.get_node("EnemyCapsule/Mesh") as MeshInstance3D
 	var dodge_event := InputEventAction.new()
 	dodge_event.action = &"dodge"
@@ -1075,3 +1087,189 @@ func _capture_scene_request(scene_path: String) -> void:
 
 func _capture_combat_result(result: CombatResult) -> void:
 	_combat_result = result
+
+
+func test_hero_animations_do_not_change_attack_or_dodge_displacement() -> void:
+	var arena: Arena = _instantiate_arena()
+	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
+	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	enemy_capsule.position = Vector3(8.0, 1.25, 8.0)
+	var attack_event := InputEventAction.new()
+	attack_event.action = &"attack"
+	attack_event.pressed = true
+	var attack_start: Vector3 = hero_capsule.global_position
+	arena._unhandled_input(attack_event)
+	for _frame: int in range(120):
+		await wait_physics_frames(1)
+		if arena._attack_elapsed < 0.0:
+			break
+	var attack_displacement: float = hero_capsule.global_position.distance_to(attack_start)
+
+	var dodge_event := InputEventAction.new()
+	dodge_event.action = &"dodge"
+	dodge_event.pressed = true
+	Input.action_press(&"move_back")
+	var dodge_start: Vector3 = hero_capsule.global_position
+	arena._unhandled_input(dodge_event)
+	for _frame: int in range(120):
+		await wait_physics_frames(1)
+		if arena._dodge_elapsed < 0.0:
+			break
+	Input.action_release(&"move_back")
+	var dodge_displacement: float = hero_capsule.global_position.distance_to(dodge_start)
+	print("P2B09_DISPLACEMENT attack=%.6f dodge=%.6f" % [attack_displacement, dodge_displacement])
+	assert_almost_eq(attack_displacement, 2.0, 0.001)
+	assert_almost_eq(dodge_displacement, 2.464957, 0.001)
+
+
+func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windows() -> void:
+	var arena: Arena = _instantiate_arena()
+	var animation_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	assert_true(animation_player.has_animation_library(&"ual1"))
+	assert_true(animation_player.has_animation_library(&"ual2"))
+
+	arena._physics_process(0.0)
+	assert_eq(animation_player.current_animation, &"ual1/Idle")
+	arena._hero_capsule.velocity.z = BALANCE.arena_move_speed
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual1/Jog_Fwd")
+	arena._hero_capsule.velocity.z = BALANCE.arena_sprint_speed
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual1/Sprint")
+
+	arena._hero_capsule.velocity = Vector3.ZERO
+	arena._attack_elapsed = 0.0
+	arena._combo_index = 0
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"ual2/Sword_Regular_A").length
+		/ (BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active),
+		0.001,
+	)
+	arena._attack_elapsed = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A_Rec")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"ual2/Sword_Regular_A_Rec").length
+		/ BALANCE.arena_light_attack_recovery,
+		0.001,
+	)
+	arena._combo_index = 1
+	arena._attack_elapsed = 0.0
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B")
+	arena._attack_elapsed = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B_Rec")
+	arena._combo_index = 2
+	arena._attack_elapsed = 0.0
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_C")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"ual2/Sword_Regular_C").length
+		/ (
+			BALANCE.arena_light_attack_startup
+			+ BALANCE.arena_light_attack_active
+			+ BALANCE.arena_light_attack_recovery
+		),
+		0.001,
+	)
+
+	arena._attack_is_heavy = true
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Heavy_Combo")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"ual2/Sword_Heavy_Combo").length
+		/ (
+			BALANCE.arena_heavy_attack_startup
+			+ BALANCE.arena_heavy_attack_active
+			+ BALANCE.arena_heavy_attack_recovery
+		),
+		0.001,
+	)
+	arena._attack_elapsed = -1.0
+	arena._attack_is_heavy = false
+	arena._dodge_elapsed = 0.0
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual1/Roll")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"ual1/Roll").length / BALANCE.arena_dodge_duration,
+		0.001,
+	)
+	arena._dodge_elapsed = -1.0
+	arena._parry_elapsed = 0.0
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Block")
+	assert_almost_eq(animation_player.get_playing_speed(), 1.0, 0.001)
+	arena._parry_elapsed = -1.0
+	arena._hit_stun_remaining = BALANCE.arena_enemy_hit_stun
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual1/Hit_Chest")
+	assert_almost_eq(animation_player.get_playing_speed(), 1.0, 0.001)
+
+
+## Chain steps 3 and 4 reuse the A and B clips — the `% 3` wrap that makes `A / B / C / A / B`
+## free rather than needing five authored clips. Steps 0-2 are covered above; without these two
+## the wrap itself is never exercised.
+func test_hero_light_attack_chain_wraps_back_onto_the_a_and_b_clips() -> void:
+	var arena: Arena = _instantiate_arena()
+	var animation_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+
+	arena._attack_elapsed = 0.0
+	arena._combo_index = 3
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	arena._combo_index = 4
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"ual2/Sword_Regular_B").length
+		/ (BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active),
+		0.001,
+	)
+	arena._attack_elapsed = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B_Rec")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"ual2/Sword_Regular_B_Rec").length
+		/ BALANCE.arena_light_attack_recovery,
+		0.001,
+	)
+
+
+## `HIT_HERO` is registered the instant the enemy hitbox connects and stays set for the whole
+## hit-stop freeze, while `_update_hit_stop()` only resolves super armor when that freeze ends.
+## Without the armor check in `_update_hero_animation()`, those freeze frames cut to a hit
+## reaction and then restart the smash from frame 0 — desyncing the pose from `_attack_elapsed`,
+## which never paused. This is the animation half of `test_super_armor_keeps_the_smash_swinging`.
+func test_super_armor_keeps_the_smash_animation_through_the_hit_freeze() -> void:
+	var arena: Arena = _instantiate_arena()
+	var animation_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+
+	arena._attack_is_heavy = true
+	arena._attack_elapsed = BALANCE.arena_heavy_attack_startup
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual2/Sword_Heavy_Combo")
+
+	arena._hit_stop_outcome = Arena.HitStopOutcome.HIT_HERO
+	arena._update_hero_animation()
+	assert_eq(
+		animation_player.current_animation,
+		&"ual2/Sword_Heavy_Combo",
+		"An armored smash must hold its pose, not cut to a reaction and restart the swing.",
+	)
+
+	# The same hit past the armor window is an ordinary interrupt.
+	arena._attack_elapsed = (
+		BALANCE.arena_heavy_attack_startup + BALANCE.arena_heavy_attack_active + 0.01
+	)
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"ual1/Hit_Chest")

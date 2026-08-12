@@ -5795,3 +5795,198 @@ sizes ever stopped matching.
 **Still uncovered, and pre-existing:** nothing tests `hub.gd`'s `_hero_detail_text`. No test file
 in this repo covers it, before or after — `P2-14` shipped the same readout the same way. Criterion
 9 was accepted on a code read.
+
+---
+
+## P2b-09 — The hero capsule becomes a real animated model            [DONE]
+
+**Unblocked 2026-08-11 — the assets are staged and the import gate is green on them.** Provenance,
+tier and every deliberate omission are in [`CREDITS.md`](../CREDITS.md); criterion 8 is therefore
+already satisfied and needs no work.
+
+Staged under `combat/arena/models/`:
+
+- `hero/Superhero_{Male,Female}_FullBody.gltf` + `.bin` + base-colour texture — Quaternius **Universal
+  Base Characters**, ~13k tris, humanoid rig. Both are staged because male-vs-female is an aesthetic
+  call this ticket should not have to make; pick one and leave the other, or delete it.
+- `animations/UAL1_Standard.glb` and `animations/UAL2_Standard.glb` — the two **Universal Animation
+  Libraries**, 43 clips each, retargetable to that rig.
+
+Note the layout deviation from the split paragraph above: the animation libraries are shared between
+this ticket and `P2b-10`, so they sit in `models/animations/` rather than under `hero/`. `models/enemy/`
+is still where `P2b-10`'s mesh goes if it takes a different one.
+
+**Only the root-motion-*disabled* files are staged.** Each library ships twice; the `_RM` variants have
+root motion baked into every clip and are deliberately absent from the repo, so criterion 4 cannot be
+violated by opening the wrong file. This is most of what criterion 4 was worried about.
+
+**Every one of the eight states has a clip, so criterion 7 has nothing to report** — including the two
+that were flagged as doubtful before the packs were opened:
+
+| State | Clip | Length | From |
+|---|---|---|---|
+| idle | `Idle` | 2.50 | UAL1 |
+| run (`arena_move_speed` `5.8`) | `Jog_Fwd` | 0.93 | UAL1 |
+| sprint (`arena_sprint_speed` `8.0`) | `Sprint` | 0.67 | UAL1 |
+| light attack, chain steps | `Sword_Regular_A` / `_B` / `_C`, plus `_A_Rec` / `_B_Rec` | 0.43 / 0.53 / 2.00, 0.97 / 1.03 | UAL2 |
+| heavy attack (smash) | `Sword_Heavy_Combo` | 4.33 | UAL2 |
+| dodge | `Roll` (also `Sword_Dash`, `Slide_*`) | 1.47 | UAL1 |
+| parry stance | `Sword_Block` (also `Idle_Shield`, `Idle_Shield_Break`) | 1.23 | UAL2 |
+| hit reaction | `Hit_Chest` (also `Hit_Head`, `Hit_Knockback`) | 0.33 | UAL1 |
+
+**Verified against the packs on 2026-08-11**, not read off the store page — a headless introspection
+pass loaded all four assets and printed every clip name, length and track path. Two corrections to
+what this table said before that run, both of which would have cost an implementer a debugging cycle:
+the locomotion clips carry **no `_Loop` suffix** (`Idle`, `Jog_Fwd`, `Sprint`, not `Idle_Loop` etc.),
+and **`Sword_Regular_C_Rec` does not exist** — only `_A_Rec` and `_B_Rec` do.
+
+**The chain clips are split hit-from-recovery, which is this project's own attack anatomy.**
+`Sword_Regular_A` and `Sword_Regular_A_Rec` are separate animations, so `startup + active` and
+`recovery` bind to separate clips rather than to two slices of one — which is what makes criterion 3
+(scale each clip to its authored window) a per-phase operation instead of a compromise across the
+whole swing. That holds for `A` and `B` only; `C` is a single `2.0 s` clip that must be sliced or
+scaled whole, since it has no recovery partner. Three distinct hits exist against a five-step chain,
+so criterion 5's "one clip reused" is a floor, not the plan: `A / B / C / A / B` is available for
+free.
+
+**The libraries retarget for free — no editor step, and criterion 7 reports nothing missing.** All
+four assets (both hero meshes, both libraries) expose a byte-identical **65-bone** skeleton at the
+same relative node path `Armature/Skeleton3D`, and every animation track is addressed
+`Armature/Skeleton3D:<bone>`. So an `AnimationPlayer` whose `root_node` is the instanced model root
+resolves the library's tracks with no bone map and no retargeting pass. This was the one risk that
+could have blocked the ticket in a headless environment; it is closed.
+
+For `P2b-10`: `Death01` (UAL1), `Idle_Shield_Break` and `Hit_Knockback` (UAL2) cover the enemy's
+defeat, guard-break and post-parry stagger with no further download.
+
+### Objective
+The hero's arena capsule is a real rigged low-poly humanoid that idles, runs, sprints, chains a light
+attack, swings a smash, dodges, holds a parry stance and reacts to being hit — instead of a
+solid-colour capsule that only ever changes tint. `arena.gd`'s existing state machine drives it;
+nothing about combat timing, damage or the state machine itself changes.
+
+### Existing architecture
+- `_hero_capsule_mesh: MeshInstance3D = get_node("HeroCapsule/Mesh")` (`arena.gd:38`) is the one
+  node-path lookup this ticket repoints at wherever the imported model's real mesh sits.
+- Three functions own the entire tint vocabulary and must keep working unchanged in *logic*, only in
+  node path: `_create_capsule_material_override()` (`arena.gd:173-176`) builds one
+  `StandardMaterial3D` and assigns it as `material_override`; `_update_capsule_tints()`
+  (`arena.gd:179-187`) writes `albedo_color` onto it every physics frame from
+  `_hero_tint()`/`_enemy_tint()`; `_authored_capsule_color()` (`arena.gd:219-222`) reads the *base*
+  colour off `capsule_mesh.mesh.surface_get_material(0)` — today exactly one surface.
+- The hero's entire state is already fields on `Arena`, not new state this ticket adds:
+  `_attack_elapsed`/`_attack_is_heavy`/`_combo_index` (`arena.gd:41-49`) for the attack chain,
+  `_dodge_elapsed` for dodge, `_hero_has_active_parry()`/`_parry_succeeded` (`arena.gd:793-797`) for
+  parry, `_hit_stun_remaining` for hit reaction, and horizontal speed against
+  `arena_move_speed`/`arena_sprint_speed` (`5.8`/`8.0`, `balance_table.gd:15-16`) for locomotion.
+- Displacement during dodge and attack is velocity the script assigns directly (`_update_attack()`,
+  `arena.gd:256-258`; `_update_dodge()`, `arena.gd:332-338`) — an imported clip's own root-motion
+  track must not also move the node, or the lunge/dodge distance doubles.
+- `HeroCapsule` is a `CharacterBody3D` with a `CollisionShape3D` on `Shape_hero` (capsule, radius
+  `0.75`, height `2.5`) and a `Mesh` child (`arena.tscn:89-99`); collision is untouched by this
+  ticket, only the visual child.
+- `tests/unit/test_arena.gd:52-103` and `:1040-1062` assert `material_override.albedo_color`
+  transitions for the hero capsule across every combat state — the concrete regression surface.
+
+### Acceptance criteria
+1. `HeroCapsule`'s `Mesh` node is replaced by an instanced rigged low-poly humanoid from the staged
+   pack, scaled to read at roughly the current capsule's silhouette; `HeroCapsule/CollisionShape3D`
+   and its `Shape_hero` collision are unchanged.
+2. An `AnimationPlayer` (or `AnimationTree`) under `HeroCapsule` plays a distinct clip for: idle, run,
+   sprint, light attack, heavy attack (smash), dodge, parry stance, hit reaction — selected every
+   physics frame purely from the existing state fields listed above. No new field on `Arena`, no new
+   tunable in `balance_table.gd`/`balance.tres`, no new phase in `_update_attack()`'s timeline.
+3. Every clip is scaled to fit its authored duration exactly — light attack's `startup+active+
+   recovery`, the three `arena_heavy_attack_*` fields, `arena_dodge_duration` — never the reverse. A
+   clip that runs long or short against its window is a defect, not a rounding choice.
+4. Root motion is disabled (import setting or ignored track) on every clip. Checkable: the hero's net
+   displacement across one full light attack and one full dodge, measured the way `test_arena.gd`'s
+   existing movement/attack tests already measure it, is unchanged from the pre-animation numbers
+   within a small tolerance.
+5. One light-attack clip, reused and scaled across all five chain steps, is sufficient — five
+   distinct clips are not required (see Non-goals).
+6. Every existing tint test in `test_arena.gd:52-103` and `:1040-1062` still passes, updated only for
+   the node path that now resolves to the model's mesh — never for tint *logic*. If the model has
+   more than one mesh surface, the override is applied to all of them so the whole body still
+   recolors as one, matching current single-surface behaviour.
+7. Any of the eight states above the staged pack has no usable clip for is named explicitly in the
+   commit message, with that state left on its current tint-only presentation — not invented, not
+   silently dropped.
+8. ~~A new root `CREDITS.md` names the staged pack and its CC0 licence, one line.~~ **Already done**
+   — `CREDITS.md` landed with the assets and records the tier, the three source packs and every
+   deliberate omission. Nothing to do; do not re-add it.
+9. "Survives save and reload": N/A, and this line states why — no `GameSession`/`Hero` field is added
+   and no save key changes; confirmed the same way `test_arena_loads_native_graybox_without_mutating_profile`
+   already confirms it, by diffing `GameSession.to_dict()` before and after a run.
+10. Import gate exits `0` with zero warnings. GUT's Scripts/Tests/Asserts counts are at or above the
+    `14 / 179 / 179 / 10237` baseline (`docs/TASKS.md` § Commands; compare counts per `P2-28`'s
+    Findings, not the exit code).
+11. A `verifier` pass confirms `arena.tscn`'s changed node tree and any new
+    `[connection]`/`unique_name_in_owner` wiring resolves correctly and the scene opens clean in the
+    editor — `CLAUDE.md` boundary 2, mandatory because this ticket edits `arena.tscn`.
+
+### Files allowed to change
+`combat/arena/arena.gd`, `combat/arena/arena.tscn`, `combat/arena/models/hero/**` (new),
+`tests/unit/test_arena.gd`, `CREDITS.md` (new).
+
+### Non-goals
+The enemy capsule (`P2b-10`). Five distinct light-attack clips, one per chain step. Changing, moving
+or removing the `material_override` tint channel — preserved exactly, the channel's fate is
+`game-designer`'s call, flagged above. `arena_parry_active_window`'s value — re-asked after this
+lands, by playing it. Impact audio and hit particles (already deferred, `SYSTEMS.md` § "Impact
+feedback channels"). Permadeath or `resolve()`/`CombatResult` changes (`D-02`'s, not this ticket's).
+Controller input (`P2b-02`, on hold). A shared or top-level asset directory for `D-01` town reuse.
+
+
+### Findings
+
+**Two defects shipped past a green import gate and 181 green tests, and both were invisible for the
+same reason: the test environment is a debug build and the game is not.**
+
+The first was `assert(animation_player.add_animation_library(library_name, library) == OK)`. Godot
+strips `assert()` expressions from release builds **including their side effects**, so the exported
+game — the only build a player runs — would have bound no animation libraries at all and every
+`_play_hero_animation()` call would have failed to resolve its clip. Debug runs and the whole GUT
+suite stayed green because asserts are live there. This is `P2-05d`'s rule (*an `assert()` is not a
+guard for anything that can arrive from a save file*) generalized and made worse: there the guard
+merely vanished, here **the work itself vanished**. The rule this earns is broader than the original:
+**an `assert()` expression must be a pure predicate.** A repo-wide sweep of all 77 `assert()` calls
+confirmed this was the only one performing work, so the codebase is currently clean on the point.
+
+The second is why a boundary review is not a formality. `_update_hero_animation()`'s hit-reaction
+branch fired on `_hit_stop_outcome == HIT_HERO` alone. That outcome is registered **the instant the
+enemy hitbox connects** and is only resolved into armored-or-not when the ~0.06 s hit-stop freeze
+ends (`_update_hit_stop()`). So a super-armored hero hit mid-smash — the exact case super armor
+exists for — cut to `Hit_Chest` for the freeze, then restarted `Sword_Heavy_Combo` from frame 0
+while `_attack_elapsed` had never paused, desyncing pose from phase for the rest of the swing.
+`_hit_stun_remaining` needed no equivalent guard: an armored hit returns before it is ever set.
+Gameplay was already correct and already tested (`test_super_armor_keeps_the_smash_swinging_but_
+still_counts_the_hit`); only the *presentation* was wrong, which is precisely the class of bug a
+suite asserting arithmetic cannot see. The fix is one condition; the test pinning it was red-proved
+by reverting the guard and confirming exactly one failure.
+
+**The generalizable sequencing rule:** a field that records *that something happened* is not the
+same as a field that records *what it meant*, and animation selection reads the first while game
+logic reads the second. Any future state added to `_update_hero_animation()` should be checked for
+the same gap between registration and resolution.
+
+**The asset risk that did not materialize.** All four staged assets carry a byte-identical 65-bone
+skeleton at the same `Armature/Skeleton3D` path, with tracks addressed `Armature/Skeleton3D:<bone>`,
+so the libraries retarget with no bone map and no editor-only pass — the one thing that could have
+made this ticket impossible in a headless environment. Bone 0 is named `root` and carries **zero
+tracks in every staged clip**, so criterion 4's root-motion requirement is satisfied by the assets
+themselves rather than by an import setting. No `.import` file needed changing; the libraries are
+extracted at runtime via `add_animation_library`/`get_animation_library("")`.
+
+**Two corrections to this ticket's own clip table**, found by introspecting the packs rather than
+trusting the header: the locomotion clips carry **no `_Loop` suffix** (`Idle`, `Jog_Fwd`, `Sprint`),
+and **`Sword_Regular_C_Rec` does not exist** — only `_A_Rec` and `_B_Rec` do, so `Sword_Regular_C`
+is scaled whole at 4.76x rather than split hit-from-recovery like `A` and `B`.
+
+**Left unproved, and honestly so: nobody has looked at it.** Scale `1.4` and offset `-1.238` were
+computed from measured mesh bounds, never rendered. Criterion 1's "reads at roughly the current
+capsule's silhouette" is a subjective criterion satisfied by arithmetic. Parry stance
+(`Sword_Block`) and hit reaction (`Hit_Chest`) play at authored speed rather than scale-fit, which
+is correct against criterion 3's literal wording — it names only light/heavy/dodge — but means the
+parry pose is visibly mid-animation when the parry window closes. That feeds directly into the
+already-scheduled parry-window re-ask, which was always to be settled **by playing it**.

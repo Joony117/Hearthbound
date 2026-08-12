@@ -1518,136 +1518,35 @@ Left open, flagged and not decided:
 
 ---
 
-## P2b-09 — The hero capsule becomes a real animated model            [TODO]
+**`P2b-09` landed in the commit below** — the hero is a rigged Quaternius humanoid driven off the
+existing state machine, and `P2b-10` is unblocked. Three things it learned that `P2b-10` inherits
+rather than rediscovers, with the full account in [`TASKS-DONE.md`](TASKS-DONE.md):
 
-**Unblocked 2026-08-11 — the assets are staged and the import gate is green on them.** Provenance,
-tier and every deliberate omission are in [`CREDITS.md`](../CREDITS.md); criterion 8 is therefore
-already satisfied and needs no work.
+- **The libraries retarget for free.** Identical 65-bone skeleton at `Armature/Skeleton3D` across
+  every staged asset, tracks addressed `Armature/Skeleton3D:<bone>`, bone 0 (`root`) carrying zero
+  tracks in every clip. No `.import` change, no bone map, no editor pass — criterion 4's root-motion
+  requirement is met by the assets themselves. `P2b-10` needs none of this investigation again.
+- **An `assert()` expression must be a pure predicate.** A release build strips the expression *and
+  its side effects*, so `assert(player.add_animation_library(...) == OK)` would have shipped a game
+  with no animations while every debug run and all 181 tests stayed green. `P2-05d`'s rule, one
+  level worse. `P2b-10` will write the same binding call.
+- **A field recording *that* something happened is not one recording *what it meant*.** The hit
+  branch fired on `_hit_stop_outcome == HIT_HERO`, which is registered on contact and only resolved
+  into armored-or-not when the freeze ends — so an armored smash cut to a hit reaction and restarted
+  from frame 0. `P2b-10` reads `EnemyState` and `_enemy_attack_elapsed`, which have the same
+  registration-versus-resolution gap; check it rather than assume it.
 
-Staged under `combat/arena/models/`:
-
-- `hero/Superhero_{Male,Female}_FullBody.gltf` + `.bin` + base-colour texture — Quaternius **Universal
-  Base Characters**, ~13k tris, humanoid rig. Both are staged because male-vs-female is an aesthetic
-  call this ticket should not have to make; pick one and leave the other, or delete it.
-- `animations/UAL1_Standard.glb` and `animations/UAL2_Standard.glb` — the two **Universal Animation
-  Libraries**, 43 clips each, retargetable to that rig.
-
-Note the layout deviation from the split paragraph above: the animation libraries are shared between
-this ticket and `P2b-10`, so they sit in `models/animations/` rather than under `hero/`. `models/enemy/`
-is still where `P2b-10`'s mesh goes if it takes a different one.
-
-**Only the root-motion-*disabled* files are staged.** Each library ships twice; the `_RM` variants have
-root motion baked into every clip and are deliberately absent from the repo, so criterion 4 cannot be
-violated by opening the wrong file. This is most of what criterion 4 was worried about.
-
-**Every one of the eight states has a clip, so criterion 7 has nothing to report** — including the two
-that were flagged as doubtful before the packs were opened:
-
-| State | Clip | From |
-|---|---|---|
-| idle | `Idle_Loop` | UAL1 |
-| run (`arena_move_speed` `5.8`) | `Jog_Fwd_Loop` | UAL1 |
-| sprint (`arena_sprint_speed` `8.0`) | `Sprint_Loop` | UAL1 |
-| light attack, chain steps | `Sword_Regular_A` / `_B` / `_C`, each with a **separate** `*_Rec` recovery clip | UAL2 |
-| heavy attack (smash) | `Sword_Heavy_Combo` | UAL2 |
-| dodge | `Roll` (also `Sword_Dash`, `Slide_*`) | UAL1 / UAL2 |
-| parry stance | `Sword_Block` (also `Idle_Shield_Loop`, `Idle_Shield_Break`) | UAL2 |
-| hit reaction | `Hit_Chest`, `Hit_Head`, `Hit_Knockback` | UAL1 / UAL2 |
-
-**The chain clips are split hit-from-recovery, which is this project's own attack anatomy.**
-`Sword_Regular_A` and `Sword_Regular_A_Rec` are separate animations, so `startup + active` and
-`recovery` bind to separate clips rather than to two slices of one — which is what makes criterion 3
-(scale each clip to its authored window) a per-phase operation instead of a compromise across the
-whole swing. Three distinct hits exist against a five-step chain, so criterion 5's "one clip reused"
-is a floor, not the plan: `A / B / C / A / B` is available for free.
-
-For `P2b-10`: `Death01` (UAL1), `Idle_Shield_Break` and `Hit_Knockback` (UAL2) cover the enemy's
-defeat, guard-break and post-parry stagger with no further download.
-
-### Objective
-The hero's arena capsule is a real rigged low-poly humanoid that idles, runs, sprints, chains a light
-attack, swings a smash, dodges, holds a parry stance and reacts to being hit — instead of a
-solid-colour capsule that only ever changes tint. `arena.gd`'s existing state machine drives it;
-nothing about combat timing, damage or the state machine itself changes.
-
-### Existing architecture
-- `_hero_capsule_mesh: MeshInstance3D = get_node("HeroCapsule/Mesh")` (`arena.gd:38`) is the one
-  node-path lookup this ticket repoints at wherever the imported model's real mesh sits.
-- Three functions own the entire tint vocabulary and must keep working unchanged in *logic*, only in
-  node path: `_create_capsule_material_override()` (`arena.gd:173-176`) builds one
-  `StandardMaterial3D` and assigns it as `material_override`; `_update_capsule_tints()`
-  (`arena.gd:179-187`) writes `albedo_color` onto it every physics frame from
-  `_hero_tint()`/`_enemy_tint()`; `_authored_capsule_color()` (`arena.gd:219-222`) reads the *base*
-  colour off `capsule_mesh.mesh.surface_get_material(0)` — today exactly one surface.
-- The hero's entire state is already fields on `Arena`, not new state this ticket adds:
-  `_attack_elapsed`/`_attack_is_heavy`/`_combo_index` (`arena.gd:41-49`) for the attack chain,
-  `_dodge_elapsed` for dodge, `_hero_has_active_parry()`/`_parry_succeeded` (`arena.gd:793-797`) for
-  parry, `_hit_stun_remaining` for hit reaction, and horizontal speed against
-  `arena_move_speed`/`arena_sprint_speed` (`5.8`/`8.0`, `balance_table.gd:15-16`) for locomotion.
-- Displacement during dodge and attack is velocity the script assigns directly (`_update_attack()`,
-  `arena.gd:256-258`; `_update_dodge()`, `arena.gd:332-338`) — an imported clip's own root-motion
-  track must not also move the node, or the lunge/dodge distance doubles.
-- `HeroCapsule` is a `CharacterBody3D` with a `CollisionShape3D` on `Shape_hero` (capsule, radius
-  `0.75`, height `2.5`) and a `Mesh` child (`arena.tscn:89-99`); collision is untouched by this
-  ticket, only the visual child.
-- `tests/unit/test_arena.gd:52-103` and `:1040-1062` assert `material_override.albedo_color`
-  transitions for the hero capsule across every combat state — the concrete regression surface.
-
-### Acceptance criteria
-1. `HeroCapsule`'s `Mesh` node is replaced by an instanced rigged low-poly humanoid from the staged
-   pack, scaled to read at roughly the current capsule's silhouette; `HeroCapsule/CollisionShape3D`
-   and its `Shape_hero` collision are unchanged.
-2. An `AnimationPlayer` (or `AnimationTree`) under `HeroCapsule` plays a distinct clip for: idle, run,
-   sprint, light attack, heavy attack (smash), dodge, parry stance, hit reaction — selected every
-   physics frame purely from the existing state fields listed above. No new field on `Arena`, no new
-   tunable in `balance_table.gd`/`balance.tres`, no new phase in `_update_attack()`'s timeline.
-3. Every clip is scaled to fit its authored duration exactly — light attack's `startup+active+
-   recovery`, the three `arena_heavy_attack_*` fields, `arena_dodge_duration` — never the reverse. A
-   clip that runs long or short against its window is a defect, not a rounding choice.
-4. Root motion is disabled (import setting or ignored track) on every clip. Checkable: the hero's net
-   displacement across one full light attack and one full dodge, measured the way `test_arena.gd`'s
-   existing movement/attack tests already measure it, is unchanged from the pre-animation numbers
-   within a small tolerance.
-5. One light-attack clip, reused and scaled across all five chain steps, is sufficient — five
-   distinct clips are not required (see Non-goals).
-6. Every existing tint test in `test_arena.gd:52-103` and `:1040-1062` still passes, updated only for
-   the node path that now resolves to the model's mesh — never for tint *logic*. If the model has
-   more than one mesh surface, the override is applied to all of them so the whole body still
-   recolors as one, matching current single-surface behaviour.
-7. Any of the eight states above the staged pack has no usable clip for is named explicitly in the
-   commit message, with that state left on its current tint-only presentation — not invented, not
-   silently dropped.
-8. ~~A new root `CREDITS.md` names the staged pack and its CC0 licence, one line.~~ **Already done**
-   — `CREDITS.md` landed with the assets and records the tier, the three source packs and every
-   deliberate omission. Nothing to do; do not re-add it.
-9. "Survives save and reload": N/A, and this line states why — no `GameSession`/`Hero` field is added
-   and no save key changes; confirmed the same way `test_arena_loads_native_graybox_without_mutating_profile`
-   already confirms it, by diffing `GameSession.to_dict()` before and after a run.
-10. Import gate exits `0` with zero warnings. GUT's Scripts/Tests/Asserts counts are at or above the
-    `14 / 179 / 179 / 10237` baseline (`docs/TASKS.md` § Commands; compare counts per `P2-28`'s
-    Findings, not the exit code).
-11. A `verifier` pass confirms `arena.tscn`'s changed node tree and any new
-    `[connection]`/`unique_name_in_owner` wiring resolves correctly and the scene opens clean in the
-    editor — `CLAUDE.md` boundary 2, mandatory because this ticket edits `arena.tscn`.
-
-### Files allowed to change
-`combat/arena/arena.gd`, `combat/arena/arena.tscn`, `combat/arena/models/hero/**` (new),
-`tests/unit/test_arena.gd`, `CREDITS.md` (new).
-
-### Non-goals
-The enemy capsule (`P2b-10`). Five distinct light-attack clips, one per chain step. Changing, moving
-or removing the `material_override` tint channel — preserved exactly, the channel's fate is
-`game-designer`'s call, flagged above. `arena_parry_active_window`'s value — re-asked after this
-lands, by playing it. Impact audio and hit particles (already deferred, `SYSTEMS.md` § "Impact
-feedback channels"). Permadeath or `resolve()`/`CombatResult` changes (`D-02`'s, not this ticket's).
-Controller input (`P2b-02`, on hold). A shared or top-level asset directory for `D-01` town reuse.
+The two open items are both **feel calls needing a played build**, not code: nobody has visually
+confirmed the model's scale (`1.4`) and offset (`-1.238`), and the parry pose is mid-animation when
+the parry window closes. Both fold into the already-scheduled parry-window re-ask below.
 
 ---
 
-## P2b-10 — The enemy capsule becomes a real animated model           [BLOCKED]
 
-**Blocked on `P2b-09` landing, and nothing else** — the asset half cleared on 2026-08-11 along with
-`P2b-09`'s. The same two animation libraries under `combat/arena/models/animations/` already carry
+## P2b-10 — The enemy capsule becomes a real animated model           [TODO]
+
+**Unblocked 2026-08-11 — `P2b-09` landed and proved the pipeline.** The asset half cleared the same
+day. The same two animation libraries under `combat/arena/models/animations/` already carry
 every enemy state (`Death01`, `Idle_Shield_Break`, `Hit_Knockback`, plus the shared locomotion and
 swing clips), so this ticket needs no new download; if the enemy takes a different mesh, that one
 goes in `combat/arena/models/enemy/`. Proving the model-import and animation-driver pattern once on
@@ -1827,6 +1726,7 @@ needs to re-read.
 | `P2b-08` | A smash finishes the chain, and the parry window is visible | `fe1a74b` |
 | `P2-31` | The hub's two lists filter exactly and select in bulk | `fe1a74b` |
 | `P2-32` | Heroes have surnames | `fe1a74b` |
+| `P2b-09` | The hero capsule becomes a real animated model | `TBD` |
 
 The last five share one commit and have no bodies — they shipped before any ticket existed. The
 record of what they are and what they left unproved is the **Retro record** section above, not this
