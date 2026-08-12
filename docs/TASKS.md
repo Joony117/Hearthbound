@@ -1630,10 +1630,18 @@ no later ticket re-finds it as a bug:
 - **Capsule radius `0.75` predates the real models.** Authored for a graybox in `P2b-01a`, never
   revisited in `P2b-09`/`P2b-10`. A humanoid is nothing like 1.5 m wide, so the hero can look clear
   of the sword and still be hit.
-- **The parry's "non intuitive" half is most likely the trigger, not the number.** `P2b-01f` binds
-  parry to a press of `dodge` while `Input.get_vector(...)` is *exactly* `Vector2.ZERO`. In a live
-  fight the player is nearly always holding a movement key, so reaching the parry branch means fully
-  releasing WASD **and then** pressing dodge inside a `0.18 s` window.
+- **The parry's trigger is settled and is NOT part of this fix.** The director's first read was that
+  the "non intuitive" half was the trigger — `P2b-01f` binds parry to a press of `dodge` while
+  `Input.get_vector(...)` is *exactly* `Vector2.ZERO`, so in a live fight reaching the parry branch
+  means fully releasing WASD **and then** pressing dodge inside a `0.18 s` window. **The user ruled
+  otherwise from the played build: they like it and it stays.** It is a deliberate commitment cost,
+  now user-confirmed by play rather than merely unexamined. Do not propose a separate bind and do not
+  re-open `P2b-01f`'s hold-to-guard rejection.
+- **So the parry fix is one number: `arena_parry_active_window` rises above `0.18 s`.** The window has
+  to be sized for the *combined* act — release movement, then press — not for the press alone.
+  `arena_parry_whiff_recovery` (`0.35 s`) may have to move with it: `P2b-01f` set it equal to
+  `arena_enemy_hit_stun` on purpose so that guessing wrong costs about what eating the hit costs, and
+  a wider window against an unchanged whiff cost shifts that trade.
 
 Sequence this **before** `P2b-13`. It is mostly balance numbers over a settled animation layer,
 whereas `P2b-13` rebuilds that layer — doing `P2b-13` first means re-timing everything twice.
