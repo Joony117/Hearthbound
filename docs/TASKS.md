@@ -1685,6 +1685,63 @@ writer. A ticket that breaks one of those is expensive here even though nothing 
 
 ---
 
+## P2b-14 — 8-way movement blends between two base clips instead of eight   [TODO]
+
+**Blocked on assets, not on design.** Do not schedule this until the roster's movement set holds
+more than the current pack's forward-walk clip — see `KNOWN_ISSUES.md` § Environment and the
+`P2b-13` retro note above: neither UAL pack today ships a backward or strafe clip, so there is
+nothing to blend yet. This ticket is the pre-written answer for when that stops being true.
+
+### Objective
+
+A moving hero or enemy shows the correct facing-relative locomotion pose (forward, back,
+strafe, and the four diagonals) from exactly two authored clips — a forward walk and a right
+strafe — rather than eight separately authored ones.
+
+### Existing architecture
+
+- `P2b-13` closed the transition-blend ticket on the cheap route: `playback_default_blend_time`
+  on a bare `AnimationPlayer`, no `AnimationTree`. That mechanism only crossfades *between*
+  whole-clip states (idle → attack); it cannot blend two clips *together* by a 2D direction
+  vector, which is what 8-way locomotion needs. This ticket is a different mechanism, not a
+  reopening of `P2b-13`.
+- **Adopting `AnimationTree` here is a boundary move, not a local change** — `KNOWN_ISSUES.md`
+  notes an `AnimationTree` is all-or-nothing per skeleton, so it replaces how *every* animation
+  on that character plays, including the attack/parry/dodge states `P2b-11`/`P2b-12` already
+  wired through the raw `AnimationPlayer`. Route the tree-vs-no-tree call through
+  `godot-architect` before implementation; it may warrant a `DECISIONS.md` entry.
+  `combat/arena/arena.gd` and `arena.tscn` are the current owners of that seam.
+- Mirroring a `walk_right` clip for `walk_left` and reverse-playing `walk_forward` for `walk_back`
+  (rather than authoring four more clips) only works if both source clips start on the same foot.
+  Verify that before wiring the blend space — a phase mismatch shows up as leg-crossing on the
+  diagonals, not as an error.
+
+### Acceptance criteria
+
+1. `AnimationNodeBlendSpace2D` (or equivalent) drives locomotion from a normalized local-space
+   input vector; the four cardinal and four diagonal directions all read as the correct pose with
+   no foot-crossing or twitching, checked by eye in a real run, not just by wiring it up.
+2. The two source clips are synced (`sync = true`, matched custom length, `LOOP_LINEAR`) so the
+   diagonal blends don't drift out of phase over time.
+3. Existing arena combat states (attack, parry, dodge, hit reaction) still play correctly after
+   the `AnimationTree` swap — this is the regression `P2b-11`/`P2b-12` already paid for.
+4. `tests/unit/test_arena.gd`'s existing blend-timing assertion (`P2b-13`'s phase-boundary check)
+   still passes; BUILT green.
+
+### Files allowed to change
+
+`combat/arena/arena.gd`, `combat/arena/arena.tscn`, `docs/ARCHITECTURE.md` /
+`docs/DECISIONS.md` if `godot-architect` rules the `AnimationTree` adoption needs one.
+
+### Non-goals
+
+- Do not author the missing backward/strafe clips yourself — that's the asset-pack blocker this
+  ticket exists downstream of, and a `game-designer`/art call, not an implementer one.
+- Do not extend the blend space to run/sprint speeds or turn-in-place; two clips, eight
+  directions, walk speed only.
+
+---
+
 ## Completed tickets
 
 Full bodies — objective, existing architecture, acceptance criteria, non-goals, and the
