@@ -1288,9 +1288,12 @@ mutation and the work share one restore point.
  ### START HERE, next session
 
  SUPERSEDED 2026-08-12 — everything under this heading describes the 2026-08-11 session and is kept
- for its findings, not as a pointer. P2b-09 through P2b-13 have all shipped. The two live rows are
- now P2-33 (the batch's seven unpressed controls, the last gap that batch left) and D-01a (the town
- ruling that unblocks D-01). Neither is blocked on the other; P2-33 is the one you can dispatch cold.
+ for its findings, not as a pointer. P2b-09 through P2b-13 have all shipped, and P2-33 closed the
+ batch's last gap on 2026-08-13 — its seven controls are now pressed by tests, so a dropped
+ [connection] there is no longer silent.
+
+ **The one live row is D-01a** (the town ruling that unblocks D-01), and it is a ruling rather than
+ a build. P2b-14 stays blocked: the Mixamo pack has strafe left/right but still no backpedal clip.
 
  P2b-09 is [TODO] and fully unblocked. It is the one row you can pick up cold and dispatch.
 
@@ -1657,60 +1660,13 @@ re-find:
 
 ---
 
-## P2-33 — Every control from the 2026-08-11 batch is pressed by a test, not just wired   [TODO]
+## ~~P2-33 — Every control from the 2026-08-11 batch is pressed by a test, not just wired~~   [DONE]
 
-### Objective
-
-Each of the seven controls that shipped ticketless in `fe1a74b` does its job when its own signal
-fires, proven by a test that presses the control rather than by one that calls the handler.
-
-### Existing architecture
-
-- Six live in `hub/hub.tscn`, each a `unique_name_in_owner` node with one `[connection]`:
-  `RosterExactRank` → `_on_roster_exact_rank_toggled`, `RosterTypeFilter` →
-  `_on_roster_type_filter_item_selected`, `SelectAllRoster` → `_on_select_all_roster_pressed`,
-  `InventoryExactRank` → `_on_inventory_exact_rank_toggled`, `SelectAllInventory` →
-  `_on_select_all_inventory_pressed`, `UnequipAll` → `_on_unequip_all_pressed`.
-- **The node half is already covered by accident and the wire half is not.** `hub.gd` resolves all
-  six as `@onready` and several tests instantiate `hub.tscn`, so a deleted *node* reddens the suite.
-  Drop any one of the six *wires* and every gate stays green while the button does nothing. That is
-  `P2-05g`'s unpressed Convert button, six times over — § "What the batch did not prove", item 2.
-- The seventh is `ui/pause_menu.tscn`'s `ScreenShake` `CheckButton` → `_on_screen_shake_toggled`
-  (`ui/pause_menu.gd:20`), which writes through `Settings` (`systems/settings.gd`, static, not an
-  autoload). Its wire *is* covered, badly: the `c03d9a9` verifier pass found that breaking it turns
-  23 unrelated tests red on an arity error against `_on_resume_pressed`, and called that accidental
-  coverage of the worst kind. Replace it with an assertion that names what it is testing.
-- `tests/unit/test_buildings.gd:84` is the idiom to copy — fetch the node, `pressed.emit()`, assert
-  on the resulting state.
-
-### Acceptance criteria
-
-1. Each of the seven controls has a test that emits **the control's own signal**
-   (`pressed.emit()`, `toggled.emit(...)`, `item_selected.emit(...)`) and asserts the state change
-   that follows.
-2. No test satisfies criterion 1 by calling an `_on_*` handler directly. Calling the handler is
-   precisely the thing that still passes once the wire is gone.
-3. Deleting any one of the seven `[connection]` lines turns **that control's** test red and is
-   otherwise quiet. Prove it the way the import gate's red is proven — break it, run, restore — and
-   record all seven results in the ticket's findings.
-4. `ScreenShake`'s test asserts against `Settings.screen_shake_enabled()` and leaves no
-   `user://settings.cfg` behind. `P2-29` gave this repo discipline against stray `save.json` writes
-   and none at all against `settings.cfg` ones, which is the gap the `c03d9a9` defect lived in.
-5. Existing tests still pass; BUILT green.
-
-### Files allowed to change
-
-`tests/unit/` — a new `test_hub_controls.gd`, or additions to `test_buildings.gd`.
-`docs/KNOWN_ISSUES.md` § Environment, if a tooling fact falls out of criterion 3.
-
-### Non-goals
-
-- **Do not change `hub.tscn`, `hub.gd`, `pause_menu.tscn` or `pause_menu.gd`.** If a control turns
-  out to be broken, that is a finding and a second ticket. A test ticket that fixes the thing it was
-  written to measure destroys its own evidence.
-- Do not extend coverage to the hub's older controls. Seven, named above, and nothing else.
-- Do not convert these to input-event simulation. Emitting the signal is what proves the wire; a
-  synthetic click proves the wire *and* the theme's hit-testing, which nobody asked for.
+**Landed in the commit below.** Body moved to [`TASKS-DONE.md`](TASKS-DONE.md); row in Completed
+tickets below. All seven wires proved live — nothing was broken, which is the result a measuring
+ticket wants. **Read its Findings before writing another GUT helper:** the first pass called
+`assert_fail`, which does not exist in GUT's `Test` base, inside the one branch that only runs when
+the wiring is already wrong.
 
 ---
 
@@ -1954,6 +1910,7 @@ needs to re-read.
 | `P2b-11` | The arena's animation shows what the logic says is happening | `52232fb` |
 | `P2b-12` | The parry is gettable and a dodge actually escapes | `d78d33d` |
 | `P2b-13` | Animation transitions blend instead of cutting | `53a87b1` |
+| `P2-33` | Every control from the 2026-08-11 batch is pressed by a test | the commit below |
 
 The last five share one commit and have no bodies — they shipped before any ticket existed. The
 record of what they are and what they left unproved is the **Retro record** section above, not this

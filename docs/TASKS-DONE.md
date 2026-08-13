@@ -6479,3 +6479,105 @@ Three things it leaves:
   `KNOWN_ISSUES.md` entry names — first full-suite run of the session, right after a gate rewrote
   `.godot/`, green on the re-run. It was briefly written up here as a new and distinct flake with a
   different cause; it is neither. Grep `KNOWN_ISSUES.md` for a test name before writing it up as new.
+
+---
+
+## P2-33 — Every control from the 2026-08-11 batch is pressed by a test, not just wired   [DONE]
+
+### Objective
+
+Each of the seven controls that shipped ticketless in `fe1a74b` does its job when its own signal
+fires, proven by a test that presses the control rather than by one that calls the handler.
+
+### Existing architecture
+
+- Six live in `hub/hub.tscn`, each a `unique_name_in_owner` node with one `[connection]`:
+  `RosterExactRank` -> `_on_roster_exact_rank_toggled`, `RosterTypeFilter` ->
+  `_on_roster_type_filter_item_selected`, `SelectAllRoster` -> `_on_select_all_roster_pressed`,
+  `InventoryExactRank` -> `_on_inventory_exact_rank_toggled`, `SelectAllInventory` ->
+  `_on_select_all_inventory_pressed`, `UnequipAll` -> `_on_unequip_all_pressed`.
+- **The node half is already covered by accident and the wire half is not.** `hub.gd` resolves all
+  six as `@onready` and several tests instantiate `hub.tscn`, so a deleted *node* reddens the suite.
+  Drop any one of the six *wires* and every gate stays green while the button does nothing. That is
+  `P2-05g`'s unpressed Convert button, six times over.
+- The seventh is `ui/pause_menu.tscn`'s `ScreenShake` `CheckButton` -> `_on_screen_shake_toggled`
+  (`ui/pause_menu.gd:20`), which writes through `Settings` (`systems/settings.gd`, static, not an
+  autoload). Its wire *is* covered, badly: the `c03d9a9` verifier pass found that breaking it turns
+  23 unrelated tests red on an arity error against `_on_resume_pressed`, and called that accidental
+  coverage of the worst kind. Replace it with an assertion that names what it is testing.
+- `tests/unit/test_buildings.gd:84` is the idiom to copy — fetch the node, `pressed.emit()`, assert
+  on the resulting state.
+
+### Acceptance criteria
+
+1. Each of the seven controls has a test that emits **the control's own signal**
+   (`pressed.emit()`, `toggled.emit(...)`, `item_selected.emit(...)`) and asserts the state change
+   that follows.
+2. No test satisfies criterion 1 by calling an `_on_*` handler directly. Calling the handler is
+   precisely the thing that still passes once the wire is gone.
+3. Deleting any one of the seven `[connection]` lines turns **that control's** test red and is
+   otherwise quiet. Prove it the way the import gate's red is proven — break it, run, restore — and
+   record all seven results in the ticket's findings.
+4. `ScreenShake`'s test asserts against `Settings.screen_shake_enabled()` and leaves no
+   `user://settings.cfg` behind. `P2-29` gave this repo discipline against stray `save.json` writes
+   and none at all against `settings.cfg` ones, which is the gap the `c03d9a9` defect lived in.
+5. Existing tests still pass; BUILT green.
+
+### Files allowed to change
+
+`tests/unit/` — a new `test_hub_controls.gd`, or additions to `test_buildings.gd`.
+`docs/KNOWN_ISSUES.md` § Environment, if a tooling fact falls out of criterion 3.
+
+### Non-goals
+
+- **Do not change `hub.tscn`, `hub.gd`, `pause_menu.tscn` or `pause_menu.gd`.** If a control turns
+  out to be broken, that is a finding and a second ticket. A test ticket that fixes the thing it was
+  written to measure destroys its own evidence.
+- Do not extend coverage to the hub's older controls. Seven, named above, and nothing else.
+- Do not convert these to input-event simulation. Emitting the signal is what proves the wire; a
+  synthetic click proves the wire *and* the theme's hit-testing, which nobody asked for.
+
+### Findings
+
+**All seven wires were already live. Nothing was broken, and that is the expected result** — this
+ticket measures, it does not repair. The value is that the six hub wires are no longer droppable in
+silence, and that the seventh's coverage now says what it is testing.
+
+**Criterion 3, all seven cycles.** Each `[connection]` deleted individually, full suite run,
+restored, `git status` confirmed empty before the next. Every one reddened **only** its own
+control's test — `202/203` each time, never the `23`-test cross-contamination the `c03d9a9`
+`ScreenShake` defect produced:
+
+| Broken line | Test that went red |
+|---|---|
+| `hub.tscn:406` `RosterExactRank` | `test_roster_exact_rank_signal_filters_to_only_the_selected_rank` |
+| `hub.tscn:407` `RosterTypeFilter` | `test_roster_type_filter_signal_limits_rows_to_selected_archetype` |
+| `hub.tscn:408` `SelectAllRoster` | `test_select_all_roster_signal_selects_every_visible_row` |
+| `hub.tscn:417` `InventoryExactRank` | `test_inventory_exact_rank_signal_filters_to_only_the_selected_rank` |
+| `hub.tscn:419` `SelectAllInventory` | `test_select_all_inventory_signal_selects_every_visible_row` |
+| `hub.tscn:421` `UnequipAll` | `test_unequip_all_signal_clears_the_selected_heros_equipment` |
+| `pause_menu.tscn:51` `ScreenShake` | `test_screen_shake_signal_writes_the_setting` |
+
+The `hub.tscn:421` row was re-run independently by the director rather than taken on the worker's
+word, and reproduced exactly: `202/203`, the `UnequipAll` test and nothing else.
+
+**`assert_fail` is not a GUT method, and a passing suite will not tell you.** The first pass used it
+in the `OptionButton` metadata lookup helper. GUT's `Test` base (`addons/gut/test.gd`) has
+`fail_test(text)` and no `assert_fail` at all, so the call would have raised a script error instead
+of failing the test cleanly. It never fired, because the path is only reachable when the wiring is
+already wrong — an error handler that is itself broken, in the one file whose job is to be trusted
+when something breaks. Corrected before acceptance.
+
+**`user://settings.cfg` needs one thing `user://save.json` does not.** `Settings._config` is a
+static cache, so restoring the file's bytes in `after_all` is not sufficient on its own — a later
+reader in the same process would still serve the test's value from memory. The test nulls the cache
+too. Written up in `KNOWN_ISSUES.md` § Environment, appended to the existing `%APPDATA%` entry
+rather than filed as a new one, because it is the same gap with a second file in it.
+
+Gates: import gate exit `0`, zero `SCRIPT ERROR`/`ERROR:`/`WARNING` lines. GUT
+`15 / 203 / 203 / 10375` against the `14 / 196 / 196 / 10349` floor — `+1` script, `+7` tests, one
+per control. The `test_save_service.gd` line-114 flake did not appear in any run this session.
+
+One thing it deliberately leaves: **the hub's older, pre-`fe1a74b` controls still have no wire
+coverage.** That was a non-goal, not an oversight — seven named controls and nothing else. Whoever
+wants the rest has a working idiom to copy and a proven red-proof method to check it with.

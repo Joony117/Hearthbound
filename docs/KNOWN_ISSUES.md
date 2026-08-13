@@ -248,6 +248,15 @@ One exception, added by `P2-08`: `tests/unit/test_save_service.gd` backs the fil
 SHA-256 identical after a `-gtest=` run of that file alone). It is the only file that does. The
 redirect stays mandatory for a suite run, because the other eleven files still overwrite.
 
+**`save.json` is not the only file under this gap.** `P2-33` added the second one:
+`user://settings.cfg`, written by `Settings` (`systems/settings.gd`, static, not an autoload) and
+now touched by `test_hub_controls.gd`'s `ScreenShake` test. It uses the same backup/restore idiom,
+plus one thing `test_save_service.gd` does not need — `Settings._config` is a **static cache**, so
+restoring the bytes is not enough on its own; `after_all` nulls it too, or a later reader in the
+same process serves the test's value from memory and never re-reads the restored file. Verified
+2026-08-13: the real `settings.cfg` came back SHA-256 identical across ten full-suite runs. Anything
+that adds a third `user://` file inherits both halves of this.
+
 ### A Godot editor serves LSP on 6005 and is a second engine consumer
 `--headless --editor --path E:/Game` serves the LSP port. The `_console` wrapper is not what holds
 it — it spawns a child `Godot_v4.7.1-stable_win64.exe`, and that child is bound to 6005.
