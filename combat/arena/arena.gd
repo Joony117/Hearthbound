@@ -16,6 +16,52 @@ const DEFEAT_ENEMY_COLOR: Color = Color(1.0, 1.0, 1.0)
 # shortest authored phase — arena_light_attack_startup is 0.10 s — or the swing pose is still
 # half blended when the hitbox opens.
 const ANIMATION_BLEND_TIME: float = 0.06
+const ANIMATION_DIR: String = "res://combat/arena/models/animations/mixamo/"
+# Mixamo ships one clip per file and names every take the same, so the file name is the clip name.
+const MIXAMO_TAKE: StringName = &"mixamo_com"
+const HIPS_TRACK: String = "Skeleton3D:mixamorig_Hips"
+const ANIMATION_CLIPS: Array[StringName] = [
+	&"Idle",
+	&"Jog_Fwd",
+	&"Sprint",
+	&"Sword And Shield Strafe left",
+	&"Sword And Shield Strafe right",
+	&"Standing Dodge Forward",
+	&"Standing Dodge Right",
+	&"Standing Dodge Backward",
+	&"Standing Dodge Left",
+	&"Hit_Chest",
+	&"Big Hit To Head",
+	&"Block",
+	&"Attack_A",
+	&"Attack_B",
+	&"Attack_C",
+	&"Attack_Heavy",
+]
+const LOOPING_CLIPS: Array[StringName] = [
+	&"Idle",
+	&"Jog_Fwd",
+	&"Sprint",
+	&"Sword And Shield Strafe left",
+	&"Sword And Shield Strafe right",
+	&"Block",
+]
+const LIGHT_ATTACK_CLIPS: Array[StringName] = [
+	&"mixamo/Attack_A",
+	&"mixamo/Attack_B",
+	&"mixamo/Attack_C",
+]
+## Quadrant order: forward, right, backward, left. Indexed by `_dodge_clip()`, so the order is the
+## table, not decoration.
+const DODGE_CLIPS: Array[StringName] = [
+	&"mixamo/Standing Dodge Forward",
+	&"mixamo/Standing Dodge Right",
+	&"mixamo/Standing Dodge Backward",
+	&"mixamo/Standing Dodge Left",
+]
+const STRAFE_LEFT_CLIP: StringName = &"mixamo/Sword And Shield Strafe left"
+const STRAFE_RIGHT_CLIP: StringName = &"mixamo/Sword And Shield Strafe right"
+const BIG_HIT_CLIP: StringName = &"mixamo/Big Hit To Head"
 
 enum HitStopOutcome {
 	NONE,
@@ -40,14 +86,12 @@ enum EnemyState {
 @onready var _enemy_capsule: CharacterBody3D = %EnemyCapsule
 @onready var _enemy_attack_hitbox: Area3D = %EnemyAttackHitbox
 @onready var _hero_capsule_mesh: Array[MeshInstance3D] = [
-	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Superhero_Female") as MeshInstance3D,
-	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
-	get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
+	get_node("HeroCapsule/HeroModel/Skeleton3D/Beta_Surface") as MeshInstance3D,
+	get_node("HeroCapsule/HeroModel/Skeleton3D/Beta_Joints") as MeshInstance3D,
 ]
 @onready var _enemy_capsule_mesh: Array[MeshInstance3D] = [
-	get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/SuperHero_Male") as MeshInstance3D,
-	get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
-	get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
+	get_node("EnemyCapsule/EnemyModel/Skeleton3D/Beta_Surface") as MeshInstance3D,
+	get_node("EnemyCapsule/EnemyModel/Skeleton3D/Beta_Joints") as MeshInstance3D,
 ]
 
 var _attack_elapsed: float = -1.0
@@ -60,6 +104,7 @@ var _combo_buffered: bool = false
 var _heavy_buffered: bool = false
 var _combo_window_remaining: float = 0.0
 var _dodge_elapsed: float = -1.0
+var _dodge_direction: Vector3 = Vector3.FORWARD
 var _dodge_cooldown_remaining: float = 0.0
 var _parry_elapsed: float = -1.0
 var _parry_succeeded: bool = false
@@ -76,6 +121,9 @@ var _enemy_attack_active: bool = false
 var _enemy_attack_hit: bool = false
 var _enemy_attack_cooldown_remaining: float = 0.0
 var _enemy_stagger_remaining: float = 0.0
+## Set when a landed hit rolls the big-hit reaction, cleared when that stagger ends. It selects the
+## clip *and* the tint, so it has to outlive the hit-stop that starts it.
+var _enemy_big_hit: bool = false
 var _enemy_state: EnemyState = EnemyState.MOVE
 var _enemy_hp: float = 0.0
 var _enemy_dodge_elapsed: float = -1.0
@@ -139,7 +187,7 @@ func _physics_process(delta: float) -> void:
 			_request_hub()
 			return
 		_hero_capsule.move_and_slide()
-		_play_hero_animation(&"ual1/Idle")
+		_play_hero_animation(&"mixamo/Idle")
 		_update_enemy_animation()
 		_update_camera_pivot(delta)
 		return
@@ -222,6 +270,9 @@ func _enemy_tint() -> Color:
 	if (
 		_hit_stop_outcome == HitStopOutcome.FLINCH_ENEMY
 		or _hit_stop_outcome == HitStopOutcome.DEFEAT_ENEMY
+		# A big hit is a hit, not a parry. Without this it inherits the stagger branch below and
+		# flashes the parry colour, telling the player they read the attack when they got lucky.
+		or _enemy_big_hit
 	):
 		return DEFEAT_ENEMY_COLOR
 	if (
@@ -257,34 +308,37 @@ func _bind_animation_libraries(animation_player: AnimationPlayer) -> void:
 	# Both capsules bind through here, so both get the same blend. play(name, -1.0, speed) asks for
 	# this default; it was 0.0, which is why every arena transition was a hard cut.
 	animation_player.playback_default_blend_time = ANIMATION_BLEND_TIME
-	_add_animation_library(
-		animation_player,
-		&"ual1",
-		"res://combat/arena/models/animations/UAL1_Standard.glb",
-	)
-	_add_animation_library(
-		animation_player,
-		&"ual2",
-		"res://combat/arena/models/animations/UAL2_Standard.glb",
-	)
+	var library := AnimationLibrary.new()
+	for clip_name: StringName in ANIMATION_CLIPS:
+		var clip_scene: PackedScene = load(ANIMATION_DIR + clip_name + ".fbx") as PackedScene
+		assert(clip_scene != null)
+		var clip_instance: Node = clip_scene.instantiate()
+		var clip_player: AnimationPlayer = clip_instance.get_node("AnimationPlayer") as AnimationPlayer
+		var animation: Animation = clip_player.get_animation(MIXAMO_TAKE)
+		assert(animation != null)
+		animation.loop_mode = (
+			Animation.LOOP_LINEAR if clip_name in LOOPING_CLIPS else Animation.LOOP_NONE
+		)
+		_pin_hips_in_place(animation)
+		# The calls must sit outside the assert: Godot strips assert() expressions from release
+		# builds, so wrapping them would leave the exported game with no character animations.
+		var add_result: int = library.add_animation(clip_name, animation)
+		assert(add_result == OK)
+		clip_instance.free()
+	var library_result: int = animation_player.add_animation_library(&"mixamo", library)
+	assert(library_result == OK)
 
 
-func _add_animation_library(
-	animation_player: AnimationPlayer,
-	library_name: StringName,
-	scene_path: String,
-) -> void:
-	var library_scene: PackedScene = load(scene_path) as PackedScene
-	assert(library_scene != null)
-	var library_instance: Node = library_scene.instantiate()
-	var library_player: AnimationPlayer = library_instance.get_node("AnimationPlayer") as AnimationPlayer
-	var library: AnimationLibrary = library_player.get_animation_library(&"")
-	assert(library != null)
-	# The call must sit outside the assert: Godot strips assert() expressions from release
-	# builds, so wrapping it would leave the exported game with no character animations at all.
-	var add_result: int = animation_player.add_animation_library(library_name, library)
-	assert(add_result == OK)
-	library_instance.free()
+func _pin_hips_in_place(animation: Animation) -> void:
+	# Mixamo authors real travel into the hips, but the CharacterBody3D owns movement here, so the
+	# mesh would slide off its own capsule. Flattening X/Z to the first key keeps the vertical bob,
+	# which is what gives a swing its weight. In-place clips are unaffected — their X/Z never move.
+	var track: int = animation.find_track(HIPS_TRACK, Animation.TYPE_POSITION_3D)
+	assert(track >= 0)
+	var origin: Vector3 = animation.track_get_key_value(track, 0)
+	for key: int in animation.track_get_key_count(track):
+		var value: Vector3 = animation.track_get_key_value(track, key)
+		animation.track_set_key_value(track, key, Vector3(origin.x, value.y, origin.z))
 
 
 func _update_hero_animation() -> void:
@@ -294,55 +348,70 @@ func _update_hero_animation() -> void:
 	# a reaction and then restart the swing from frame 0. _hit_stun_remaining needs no such guard:
 	# an armored hit returns before it is ever set.
 	if (_hit_stop_outcome == HitStopOutcome.HIT_HERO and not _hero_has_super_armor()) or _hit_stun_remaining > 0.0:
-		_play_hero_animation(&"ual1/Hit_Chest")
+		_play_hero_animation(&"mixamo/Hit_Chest")
 		return
 	if _dodge_elapsed >= 0.0:
-		_play_hero_animation(&"ual1/Roll", BALANCE.arena_dodge_duration)
+		_play_hero_animation(
+			_dodge_clip(_hero_capsule, _dodge_direction),
+			BALANCE.arena_dodge_duration,
+		)
 		return
 	if _parry_elapsed >= 0.0:
-		_play_hero_animation(&"ual2/Sword_Block")
+		_play_hero_animation(&"mixamo/Block")
 		return
 	if _attack_elapsed >= 0.0:
+		# Mixamo authors a swing as one clip, windup through recovery, so unlike the UAL pack there
+		# is no separate recovery clip to switch to — one play() spans the whole attack instead.
 		if _attack_is_heavy:
-			var heavy_active_end: float = (
-				BALANCE.arena_heavy_attack_startup + BALANCE.arena_heavy_attack_active
-			)
-			if _attack_elapsed < heavy_active_end:
-				_play_hero_animation(&"ual2/Sword_Regular_A", heavy_active_end)
-			else:
-				_play_hero_animation(
-					&"ual2/Sword_Regular_A_Rec",
-					BALANCE.arena_heavy_attack_recovery,
-				)
-			return
-		var chain_clip: int = _combo_index % 3
-		if chain_clip == 2:
 			_play_hero_animation(
-				&"ual2/Sword_Regular_C",
-				BALANCE.arena_light_attack_startup
-				+ BALANCE.arena_light_attack_active
-				+ BALANCE.arena_light_attack_recovery,
+				&"mixamo/Attack_Heavy",
+				BALANCE.arena_heavy_attack_startup
+				+ BALANCE.arena_heavy_attack_active
+				+ BALANCE.arena_heavy_attack_recovery,
 			)
 			return
-		var in_recovery: bool = (
-			_attack_elapsed >= BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
+		_play_hero_animation(
+			LIGHT_ATTACK_CLIPS[_combo_index % LIGHT_ATTACK_CLIPS.size()],
+			BALANCE.arena_light_attack_startup
+			+ BALANCE.arena_light_attack_active
+			+ BALANCE.arena_light_attack_recovery,
 		)
-		var suffix: StringName = &"B" if chain_clip == 1 else &"A"
-		var animation_name := StringName("ual2/Sword_Regular_%s%s" % [suffix, "_Rec" if in_recovery else ""])
-		var target_duration: float = (
-			BALANCE.arena_light_attack_recovery
-			if in_recovery
-			else BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
-		)
-		_play_hero_animation(animation_name, target_duration)
 		return
 	var horizontal_speed := Vector2(_hero_capsule.velocity.x, _hero_capsule.velocity.z).length()
-	if horizontal_speed > (BALANCE.arena_move_speed + BALANCE.arena_sprint_speed) * 0.5:
-		_play_hero_animation(&"ual1/Sprint")
-	elif horizontal_speed > 0.0:
-		_play_hero_animation(&"ual1/Jog_Fwd")
-	else:
-		_play_hero_animation(&"ual1/Idle")
+	if horizontal_speed <= 0.0:
+		_play_hero_animation(&"mixamo/Idle")
+		return
+	_play_hero_animation(
+		_locomotion_clip(
+			_hero_capsule,
+			horizontal_speed > (BALANCE.arena_move_speed + BALANCE.arena_sprint_speed) * 0.5,
+		),
+	)
+
+
+## Nearest of four, by where the character is actually travelling relative to where it faces. This
+## is the cheap route `P2b-13` scoped: an `AnimationPlayer` plays one clip at a time, so a 30° run
+## plays the 0° clip verbatim and the default blend smooths the switch. A continuous mix would be
+## an `AnimationTree` and a rewrite of both updaters.
+func _local_quadrant(capsule: CharacterBody3D, direction: Vector3) -> int:
+	var local: Vector3 = capsule.global_basis.inverse() * direction
+	# Forward is -Z, so -local.z is the forward component. Negative quadrants wrap through the mask.
+	return int(round(atan2(local.x, -local.z) / (PI * 0.5))) & 3
+
+
+func _dodge_clip(capsule: CharacterBody3D, direction: Vector3) -> StringName:
+	return DODGE_CLIPS[_local_quadrant(capsule, direction)]
+
+
+## Mixamo's sword-and-shield pack has no backward locomotion, so backpedalling plays the forward jog
+## — the one direction of the four that still lies. See `KNOWN_ISSUES.md`.
+func _locomotion_clip(capsule: CharacterBody3D, sprinting: bool) -> StringName:
+	match _local_quadrant(capsule, capsule.velocity):
+		1:
+			return STRAFE_RIGHT_CLIP
+		3:
+			return STRAFE_LEFT_CLIP
+	return &"mixamo/Sprint" if sprinting else &"mixamo/Jog_Fwd"
 
 
 func _play_hero_animation(animation_name: StringName, target_duration: float = 0.0) -> void:
@@ -357,31 +426,33 @@ func _update_enemy_animation() -> void:
 		_hit_stop_outcome == HitStopOutcome.PARRY_HERO
 		or _enemy_state == EnemyState.STAGGER
 	):
-		_play_enemy_animation(&"ual1/Hit_Chest", BALANCE.arena_parry_enemy_stagger)
+		if _enemy_big_hit:
+			_play_enemy_animation(BIG_HIT_CLIP, BALANCE.arena_enemy_big_hit_stagger)
+		else:
+			_play_enemy_animation(&"mixamo/Hit_Chest", BALANCE.arena_parry_enemy_stagger)
 		return
 	match _enemy_state:
 		EnemyState.ATTACK:
 			assert(_enemy_attack_elapsed >= 0.0)
-			var active_end: float = (
-				BALANCE.arena_enemy_attack_startup + BALANCE.arena_enemy_attack_active
+			_play_enemy_animation(
+				&"mixamo/Attack_A",
+				BALANCE.arena_enemy_attack_startup
+				+ BALANCE.arena_enemy_attack_active
+				+ BALANCE.arena_enemy_attack_recovery,
 			)
-			if _enemy_attack_elapsed < active_end:
-				_play_enemy_animation(&"ual2/Sword_Regular_A", active_end)
-			else:
-				_play_enemy_animation(
-					&"ual2/Sword_Regular_A_Rec",
-					BALANCE.arena_enemy_attack_recovery,
-				)
 		EnemyState.DODGE:
-			_play_enemy_animation(&"ual1/Roll", BALANCE.arena_enemy_dodge_duration)
+			_play_enemy_animation(
+				_dodge_clip(_enemy_capsule, _enemy_dodge_direction),
+				BALANCE.arena_enemy_dodge_duration,
+			)
 		EnemyState.PARRY:
-			_play_enemy_animation(&"ual2/Sword_Block", BALANCE.arena_enemy_parry_active_window)
+			_play_enemy_animation(&"mixamo/Block", BALANCE.arena_enemy_parry_active_window)
 		EnemyState.MOVE:
 			var horizontal_speed := Vector2(
 				_enemy_capsule.velocity.x,
 				_enemy_capsule.velocity.z,
 			).length()
-			_play_enemy_animation(&"ual1/Jog_Fwd" if horizontal_speed > 0.0 else &"ual1/Idle")
+			_play_enemy_animation(&"mixamo/Jog_Fwd" if horizontal_speed > 0.0 else &"mixamo/Idle")
 
 
 func _play_enemy_animation(animation_name: StringName, target_duration: float = 0.0) -> void:
@@ -396,15 +467,17 @@ func _play_animation(
 ) -> void:
 	# pause() clears current_animation but retains assigned_animation and its position. Comparing the
 	# retained name is what resumes a hit-stop instead of restarting the clip on every frozen frame.
-	if animation_player.assigned_animation == animation_name:
-		if not animation_player.is_playing():
-			animation_player.play()
+	if animation_player.assigned_animation == animation_name and animation_player.is_playing():
 		return
 	var custom_speed: float = 1.0
 	if target_duration > 0.0:
 		var animation: Animation = animation_player.get_animation(animation_name)
 		assert(animation != null)
 		custom_speed = animation.length / target_duration
+	# Resuming has to restate custom_speed. A bare play() defaults it to 1.0, which dropped the rest
+	# of the swing to the clip's native rate — barely visible when only the short recovery clip was
+	# left to play, but Mixamo authors a swing as one clip, so it now drags the whole remainder.
+	# Naming the already-assigned animation resumes from its retained position rather than seeking.
 	animation_player.play(animation_name, -1.0, custom_speed)
 
 
@@ -589,13 +662,31 @@ func _update_hit_stop(delta: float) -> void:
 		_hero_capsule.velocity.x = knockback_direction.x * BALANCE.arena_enemy_knockback_speed
 		_hero_capsule.velocity.z = knockback_direction.z * BALANCE.arena_enemy_knockback_speed
 		_hit_stun_remaining = BALANCE.arena_enemy_hit_stun
+	elif _hit_stop_outcome == HitStopOutcome.FLINCH_ENEMY and _enemy_big_hit:
+		_stagger_enemy(BALANCE.arena_enemy_big_hit_stagger)
 	elif _hit_stop_outcome == HitStopOutcome.PARRY_HERO:
-		_enemy_attack_elapsed = -1.0
-		_enemy_attack_active = false
-		_enemy_attack_hitbox.monitoring = false
-		_enemy_stagger_remaining = BALANCE.arena_parry_enemy_stagger
-		_enemy_state = EnemyState.STAGGER
+		_enemy_big_hit = false
+		_stagger_enemy(BALANCE.arena_parry_enemy_stagger)
 	_hit_stop_outcome = HitStopOutcome.NONE
+
+
+## The one way into `STAGGER`. A big hit can land on an enemy mid-parry, or in the tail of a dodge
+## after its i-frames have expired - both of those states own a cooldown that their own update
+## function would have set on the way out, and neither update function runs again once the state
+## has changed. Without this the enemy leaves the stagger able to parry or dodge immediately.
+func _stagger_enemy(duration: float) -> void:
+	match _enemy_state:
+		EnemyState.PARRY:
+			_enemy_parry_elapsed = -1.0
+			_enemy_parry_cooldown_remaining = BALANCE.arena_enemy_parry_cooldown
+		EnemyState.DODGE:
+			_enemy_dodge_elapsed = -1.0
+			_enemy_dodge_cooldown_remaining = BALANCE.arena_enemy_dodge_cooldown
+	_enemy_attack_elapsed = -1.0
+	_enemy_attack_active = false
+	_enemy_attack_hitbox.monitoring = false
+	_enemy_stagger_remaining = duration
+	_enemy_state = EnemyState.STAGGER
 
 
 func _begin_combat(team: Array[Hero], wave: Wave) -> void:
@@ -732,7 +823,10 @@ func _update_enemy_dodge(delta: float) -> void:
 		_enemy_state = EnemyState.MOVE
 		_stop_enemy_horizontal()
 		return
-	_face_direction(_enemy_capsule, _enemy_dodge_direction)
+	# Keeps tracking the hero through the dodge instead of turning to face the way it is going. With
+	# only `Roll` on hand the enemy had to spin so a forward clip pointed the right way; the standing
+	# dodges are authored per direction, so the correct read is the enemy backing off still guarding.
+	_turn_enemy(delta)
 	_set_enemy_horizontal_velocity(_enemy_dodge_direction * BALANCE.arena_enemy_dodge_speed)
 
 
@@ -749,6 +843,7 @@ func _update_enemy_stagger(delta: float) -> void:
 	_stop_enemy_horizontal()
 	_enemy_stagger_remaining = maxf(0.0, _enemy_stagger_remaining - delta)
 	if _enemy_stagger_remaining <= 0.0:
+		_enemy_big_hit = false
 		_enemy_attack_cooldown_remaining = BALANCE.arena_enemy_attack_cooldown
 		_enemy_state = EnemyState.MOVE
 
@@ -875,9 +970,12 @@ func _start_dodge() -> void:
 		_attack_active = false
 		_attack_hitbox.monitoring = false
 	var dodge_direction: Vector3 = _camera_relative_direction(input_direction)
-	_face_direction(_hero_capsule, dodge_direction)
+	# No turn into the dodge: the hero keeps facing the camera and the clip is picked from the
+	# direction instead. Sidestepping while still looking at the enemy is the whole point of having
+	# four dodges rather than one roll, and it leaves the follow-up attack aimed where it was.
 	_reset_combo_chain()
 	_dodge_elapsed = 0.0
+	_dodge_direction = dodge_direction
 	_hero_capsule.velocity.x = dodge_direction.x * BALANCE.arena_dodge_speed
 	_hero_capsule.velocity.z = dodge_direction.z * BALANCE.arena_dodge_speed
 
@@ -927,11 +1025,6 @@ func _turn_enemy(delta: float) -> void:
 	)
 
 
-func _face_direction(capsule: CharacterBody3D, direction: Vector3) -> void:
-	assert(direction != Vector3.ZERO)
-	capsule.rotation.y = atan2(-direction.x, -direction.z)
-
-
 func _stop_horizontal() -> void:
 	_hero_capsule.velocity.x = 0.0
 	_hero_capsule.velocity.z = 0.0
@@ -962,6 +1055,10 @@ func _on_attack_hitbox_body_entered(body: Node3D) -> void:
 		_hit_stop_remaining = BALANCE.arena_heavy_attack_hit_stop if _attack_is_heavy else BALANCE.arena_light_attack_hit_stop
 		_hit_stop_outcome = HitStopOutcome.DEFEAT_ENEMY
 	else:
+		# Rolled per landed hit, and never cleared here: a second hit that does not roll must not
+		# cancel the reaction a first one started. `_update_enemy_stagger()` owns clearing it.
+		if randf() < BALANCE.arena_enemy_big_hit_chance:
+			_enemy_big_hit = true
 		_hit_stop_remaining = BALANCE.arena_heavy_attack_hit_stop if _attack_is_heavy else BALANCE.arena_enemy_hit_flinch_stop
 		_hit_stop_outcome = HitStopOutcome.FLINCH_ENEMY
 	_start_screen_shake(_hit_stop_remaining)

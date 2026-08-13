@@ -2052,6 +2052,26 @@ overlapping flags. The enemy commits to its own swing: a dodge or parry can only
 | `arena_enemy_parry_active_window` | `0.2 s` | |
 | `arena_enemy_parry_cooldown` | `1.6 s` | |
 | `arena_enemy_parry_damage_reduction` | `0.6` | Fraction of the hit removed. |
+| `arena_enemy_big_hit_chance` | `0.1` | Rolled on every landed non-lethal hit, light or smash. |
+| `arena_enemy_big_hit_stagger` | `0.9 s` | The opening a big hit buys. |
+
+### One hit in ten is a big one
+
+A landed hit normally buys `0.05 s` of hit-stop and nothing else: the enemy keeps its pose and
+resumes whatever it was doing. `arena_enemy_big_hit_chance = 0.1` of them instead cancel the enemy's
+attack outright and drop it into `STAGGER` for `arena_enemy_big_hit_stagger`, playing the `Big Hit To
+Head` reaction. It is the same state a parry produces, on a longer clock and tinted as a hit rather
+than as a parry — the player should not read a coin flip as a successful defensive read.
+
+The length is set against the light-attack cycle, not against the clip. Three lights fit in
+`0.42 × 3 = 1.26 s`, so playing the Mixamo reaction at its authored `1.30 s` would hand over a free
+full chain for something the player did not earn. `0.9 s` fits two, which reads as a real opening
+without out-paying the parry's `0.6 s` by more than the parry's own advantage of being deliberate.
+
+> ⚠️ **PROVISIONAL** — the rate and the window are both desk numbers. At `0.1`, a `120 HP` enemy dying
+> to roughly six to eight hits sees a big hit in about half of all fights, which is either "a rare
+> treat" or "an inconsistency the player cannot plan around" depending entirely on how it feels.
+> **Settled by:** a played build. Nothing about this is resolvable by arithmetic.
 
 **The enemy's parry is not the player's parry, and that asymmetry is the design.** A player parry
 hit-stops, staggers the enemy for `0.6 s` and opens a counter. An enemy parry does exactly one

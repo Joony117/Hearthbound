@@ -152,28 +152,34 @@ test scripts after `_ready()`, which is why `tests/unit/*` can name `Expedition`
 Measured 2026-08-04 during `P2-04d`; the hung process had to be reaped with
 `Get-Process Godot* | Stop-Process -Force`.
 
-### `test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames` is flaky
+### ~~`test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames` is flaky~~ — fixed 2026-08-12
 
-**The GUT suite is not deterministic.** `tests/unit/test_arena.gd`'s hit-stop test fails roughly
-**one run in three** with `[0.10833333730698] expected to be > than [0.10833333730698]` — the
-resumed playback position identical to the frozen one, both `assert_gt`s on lines 1557-1558.
+**Resolved during the Mixamo animation swap.** Kept because the mechanism bites any test that drives
+an `AnimationPlayer` from a manually-called `_physics_process`, and because chasing it turned up a
+real gameplay bug that the flake had been hiding.
 
-Measured 2026-08-12 during `P2b-12`, on **unmodified `master` with the ticket's changes stashed**:
-6 runs of `-gtest=res://tests/unit/test_arena.gd`, 4 green and 2 red. It predates `P2b-12` and is
-not caused by it. Re-run before believing a red gate that names only this test.
+The original diagnosis was right: both `AnimationPlayer`s use Godot's default
+`callback_mode_process = ANIMATION_PROCESS_IDLE`, so only a `_process` pass advances playback, and
+the test awaited `wait_physics_frames(1)`. What the earlier pass missed is that **one frame of
+either kind is never enough** — the awaiting coroutine resumes before that frame's animation
+processing has run. Probed directly: position was unchanged after `wait_physics_frames(1)` *and*
+after `wait_idle_frames(1)`, then advanced normally after `wait_idle_frames(3)`.
 
-Root cause is a mismatch of frame kinds. Both `AnimationPlayer`s use Godot's default
-`callback_mode_process = ANIMATION_PROCESS_IDLE`, so only a `_process` pass advances playback — and
-the test awaits `wait_physics_frames(1)`. Whether an idle frame lands inside that physics frame is
-down to headless frame pacing, which runs uncapped.
+The fix is asymmetric, which is why `wait_process_frames(2)` everywhere failed before: the
+**frozen** assertion stays on `wait_physics_frames(1)`, so no uncapped idle delta can leak into a
+player that is supposed to be stopped, and only the **resume** assertion moves to
+`wait_idle_frames(4)`. Four idle frames still land inside the light-attack window, so the swing clip
+is what advances rather than a fallback to idle.
 
-Swapping to `wait_process_frames(2)` was tried and **is not the fix**: it makes the *other* half
-fail instead (`0.10871133730697632` against a frozen `0.10833333730698`), i.e. the paused player
-advances by one uncapped idle delta of ~`0.4 ms` while it is supposed to be frozen. Two possible
-readings — the freeze has a real one-frame leak that physics-frame waiting has been hiding, or the
-engine's own `_physics_process` on the in-tree arena node is racing the manual drive calls — and
-this ticket deliberately did not chase either. Whoever does owns the mechanism, not the wait call;
-tightening the assertion tolerance would only re-hide it.
+**The bug it was hiding:** the resume path called a bare `AnimationPlayer.play()`, which defaults
+`custom_speed` to `1.0` and silently discarded the swing's authored rate — measured 3.57× dropping
+to 1.0× for the hero, 1.36× to 1.0× for the enemy. Barely visible while only the short `_Rec`
+recovery clip was left to play; the Mixamo swap made one clip span the whole attack, so it began
+dragging the entire remainder of every swing that got hit-stopped. `arena.gd:_play_animation()` now
+restates `custom_speed` on the way back in, and the test asserts the playing speed survives the
+freeze — the assertion whose absence let this sit unnoticed.
+
+Verified 4/4 green full-suite runs after the fix, against 9/9 red before it.
 
 ### Console binary required for CLI
 `tools/godot/Godot_v4.7.1-stable_win64.exe` detaches from the terminal and swallows stdout.
@@ -336,6 +342,22 @@ first full-suite run of the session, immediately after an `import_gate.ps1` pass
 `.godot/`; the next run of the identical tree was `193/193`. Two observations, both first-run-after-a-
 gate, is now the strongest thing here — if you are about to investigate a red on line 114, check
 whether the gate ran first, because that has been true every time.
+
+### Backward is the one direction with no locomotion clip
+
+**Superseded in part, 2026-08-12.** The entry below is still true of the two UAL packs, but the arena
+does not load them any more, and the Mixamo set now has directional clips: `Sword And Shield Strafe
+left`/`right` for locomotion and four `Standing Dodge` clips. `combat/arena/arena.gd` picks the
+nearest of four by the angle between travel and facing (`_local_quadrant()`), which is exactly the
+cheap route `P2b-13` scoped — one clip at a time, the default blend smoothing the switch, a 30° run
+playing the 0° clip verbatim.
+
+**What is still missing is backward.** There is no backpedal in the Mixamo pack either, so moving
+away from the camera plays `Jog_Fwd` and the hero moonwalks. Three of four directions are honest and
+the fourth is not; `_locomotion_clip()` names this at the call site. Fixing it is one more Mixamo
+download (`sword and shield walk backward`) and one line in `_locomotion_clip()`, not an
+`AnimationTree` — the paragraph below explaining why a continuous mix needs one still holds, and is
+still the reason 8-way-with-real-blending is a different, larger ticket than 4-way-by-nearest.
 
 ### Neither animation pack contains a directional locomotion clip
 

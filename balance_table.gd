@@ -41,6 +41,12 @@ extends Resource
 @export var arena_enemy_telegraph_flash: float = 0.2
 @export var arena_enemy_max_hp: float = 120.0
 @export var arena_enemy_hit_flinch_stop: float = 0.05
+## One landed hit in ten staggers the enemy outright instead of only freezing the frame.
+@export var arena_enemy_big_hit_chance: float = 0.1
+## The Mixamo reaction clip is 1.30 s and gets compressed into this. Three light attacks fit in
+## 1.26 s, so playing it at its authored length would hand over a free chain for a coin flip that
+## the player did not earn; 0.9 s reads as a real stagger and fits two.
+@export var arena_enemy_big_hit_stagger: float = 0.9
 @export var arena_enemy_move_speed: float = 4.2
 @export var arena_enemy_preferred_range: float = 2.4
 @export var arena_enemy_backoff_range: float = 1.6

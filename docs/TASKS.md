@@ -1287,6 +1287,11 @@ mutation and the work share one restore point.
 
  ### START HERE, next session
 
+ SUPERSEDED 2026-08-12 — everything under this heading describes the 2026-08-11 session and is kept
+ for its findings, not as a pointer. P2b-09 through P2b-13 have all shipped. The two live rows are
+ now P2-33 (the batch's seven unpressed controls, the last gap that batch left) and D-01a (the town
+ ruling that unblocks D-01). Neither is blocked on the other; P2-33 is the one you can dispatch cold.
+
  P2b-09 is [TODO] and fully unblocked. It is the one row you can pick up cold and dispatch.
 
  The assets are already in the repo (commit below): Quaternius Universal Base Characters plus both
@@ -1652,6 +1657,129 @@ re-find:
 
 ---
 
+## P2-33 — Every control from the 2026-08-11 batch is pressed by a test, not just wired   [TODO]
+
+### Objective
+
+Each of the seven controls that shipped ticketless in `fe1a74b` does its job when its own signal
+fires, proven by a test that presses the control rather than by one that calls the handler.
+
+### Existing architecture
+
+- Six live in `hub/hub.tscn`, each a `unique_name_in_owner` node with one `[connection]`:
+  `RosterExactRank` → `_on_roster_exact_rank_toggled`, `RosterTypeFilter` →
+  `_on_roster_type_filter_item_selected`, `SelectAllRoster` → `_on_select_all_roster_pressed`,
+  `InventoryExactRank` → `_on_inventory_exact_rank_toggled`, `SelectAllInventory` →
+  `_on_select_all_inventory_pressed`, `UnequipAll` → `_on_unequip_all_pressed`.
+- **The node half is already covered by accident and the wire half is not.** `hub.gd` resolves all
+  six as `@onready` and several tests instantiate `hub.tscn`, so a deleted *node* reddens the suite.
+  Drop any one of the six *wires* and every gate stays green while the button does nothing. That is
+  `P2-05g`'s unpressed Convert button, six times over — § "What the batch did not prove", item 2.
+- The seventh is `ui/pause_menu.tscn`'s `ScreenShake` `CheckButton` → `_on_screen_shake_toggled`
+  (`ui/pause_menu.gd:20`), which writes through `Settings` (`systems/settings.gd`, static, not an
+  autoload). Its wire *is* covered, badly: the `c03d9a9` verifier pass found that breaking it turns
+  23 unrelated tests red on an arity error against `_on_resume_pressed`, and called that accidental
+  coverage of the worst kind. Replace it with an assertion that names what it is testing.
+- `tests/unit/test_buildings.gd:84` is the idiom to copy — fetch the node, `pressed.emit()`, assert
+  on the resulting state.
+
+### Acceptance criteria
+
+1. Each of the seven controls has a test that emits **the control's own signal**
+   (`pressed.emit()`, `toggled.emit(...)`, `item_selected.emit(...)`) and asserts the state change
+   that follows.
+2. No test satisfies criterion 1 by calling an `_on_*` handler directly. Calling the handler is
+   precisely the thing that still passes once the wire is gone.
+3. Deleting any one of the seven `[connection]` lines turns **that control's** test red and is
+   otherwise quiet. Prove it the way the import gate's red is proven — break it, run, restore — and
+   record all seven results in the ticket's findings.
+4. `ScreenShake`'s test asserts against `Settings.screen_shake_enabled()` and leaves no
+   `user://settings.cfg` behind. `P2-29` gave this repo discipline against stray `save.json` writes
+   and none at all against `settings.cfg` ones, which is the gap the `c03d9a9` defect lived in.
+5. Existing tests still pass; BUILT green.
+
+### Files allowed to change
+
+`tests/unit/` — a new `test_hub_controls.gd`, or additions to `test_buildings.gd`.
+`docs/KNOWN_ISSUES.md` § Environment, if a tooling fact falls out of criterion 3.
+
+### Non-goals
+
+- **Do not change `hub.tscn`, `hub.gd`, `pause_menu.tscn` or `pause_menu.gd`.** If a control turns
+  out to be broken, that is a finding and a second ticket. A test ticket that fixes the thing it was
+  written to measure destroys its own evidence.
+- Do not extend coverage to the hub's older controls. Seven, named above, and nothing else.
+- Do not convert these to input-event simulation. Emitting the signal is what proves the wire; a
+  synthetic click proves the wire *and* the theme's hit-testing, which nobody asked for.
+
+---
+
+## D-01a — Town ruling: who the player is in it, and where the hub's panels go   [TODO]
+
+**A ruling, not a build.** It produces two decisions in `docs/`, no scene and no player-facing
+behavior — the exception the completed ruling tickets already establish (`P2-04b`, `P2-05e`,
+`P2-07a`, `P2-22`). **It does not schedule `D-01` itself.** The core loop still comes first and the
+Phase 2 exit question still governs; what this closes is the reason `D-01` cannot be written as a
+ticket today, so that when the exit question is answered the row is ready instead of blocked.
+
+### Objective
+
+`GAME_SPEC.md` states who the player embodies in the town, and `ARCHITECTURE.md` states how the
+town reaches the hub's existing panels — the two answers the direction table names as `D-01`'s
+prerequisites.
+
+### Existing architecture
+
+- **`GAME_SPEC.md` leaves embodiment open on purpose.** Summoner or a controlled hero are both
+  live readings and they are not cosmetic: if the player *is* a roster hero, permadeath can delete
+  the character they walk around as, and `Expedition` is the only writer permitted to do that
+  (`ARCHITECTURE.md` r8, boundary 3). A summoner avatar has no such coupling and needs its own
+  model and its own answer to "what is my relationship to the roster".
+- **The hub's Control panels are shipped features, not placeholders.** Roster, equipment, summon,
+  buildings, sacrifice, expedition setup — `hub/hub.tscn` and `hub/hub.gd`. The direction table is
+  explicit that a town is a *second* way to reach them, not a replacement, "or every shipped hub
+  feature gets rebuilt". The ruling has to say which: does a town scene host the same panels, or
+  does walking up to a building route to `hub.tscn` through `SceneRouter`?
+- **That routing question is boundary 2 and a seam.** `GAME_SPEC.md` § Direction names one scene
+  router as one of the three seams that keep the whole direction backlog cheap. An answer that adds
+  a second navigation mechanism is an ADR, and goes through `godot-architect`.
+- **Building levels already persist and nothing renders them.** `P2-07b` put Summoning Circle,
+  Forge and Sanctum levels in `GameSession` and on disk. "Build it up" therefore has state to bind
+  to, and the open question is only whether a town building *looks* different at level 3.
+
+### Acceptance criteria
+
+1. `GAME_SPEC.md` states the embodiment answer in one paragraph, and states what happens to the
+   town avatar when a hero dies — including the case where the answer makes those the same
+   character. `game-designer` owns this; it is a scope and feel call, not an architecture one.
+2. `ARCHITECTURE.md` states how the town reaches each existing hub panel, in terms of the one
+   scene router, and says whether that is a new seam or an existing one. `godot-architect` owns
+   this and writes the `DECISIONS.md` entry if it is a boundary move.
+3. Both answers name what they cost the other direction rows: `D-02` walks out of the town gate and
+   `D-04` needs a second town, so anything decided here is inherited by both.
+4. Every answer that is a preference rather than a constraint carries a `PROVISIONAL` marker with a
+   real `Settled by`. "Needs a played build" is a legitimate `Settled by` here and is expected on
+   at least the embodiment half.
+5. No code changes. No `.tscn`. No new autoload — the cap is three and this ruling is not the place
+   to spend the fourth.
+
+### Files allowed to change
+
+`docs/GAME_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, and the `D-01` row of the
+direction table below.
+
+### Non-goals
+
+- **Do not answer `D-02`'s four questions.** What an objective is, how a run ends, authored versus
+  generated, and how a played run reports through `CombatResult` are that row's, and answering them
+  here buries the largest design decision in the project inside a town ticket.
+- Do not decide the town's art, layout, size, or NPC roster. This ruling decides who you are and
+  where the buttons went.
+- Do not turn arena permadeath on, and do not touch `resolve()` or `CombatResult`. That is `D-02`'s
+  by decision (`DECISIONS.md` 2026-08-11), not something a town inherits by being built first.
+
+---
+
 # Direction backlog — after the core loop
 
 Recorded 2026-08-11 from the user's direction. `GAME_SPEC.md` § Direction is the spec half; this
@@ -1667,7 +1795,7 @@ The core loop is unchanged and still comes first. The exit question above still 
 
 | # | Direction | What it actually is | What it needs before it can be a ticket |
 |---|---|---|---|
-| D-01 | **The town** | The hub becomes a walkable 3D place: move around it, talk to your own heroes and to NPCs, build it up, defend it against attack. | A ruling on who the player embodies in town (summoner or a controlled hero — `GAME_SPEC.md` leaves it open), and what happens to `hub.tscn`'s existing Control-based panels. They do not disappear; a town is a *second* way to reach them, not a replacement, or every shipped hub feature gets rebuilt. Building levels (`P2-07b`) already persist, so "build it up" has state to bind to — what does not exist is anything that renders a building. |
+| D-01 | **The town** | The hub becomes a walkable 3D place: move around it, talk to your own heroes and to NPCs, build it up, defend it against attack. | **`D-01a` above is now that ruling and is `[TODO]`.** A ruling on who the player embodies in town (summoner or a controlled hero — `GAME_SPEC.md` leaves it open), and what happens to `hub.tscn`'s existing Control-based panels. They do not disappear; a town is a *second* way to reach them, not a replacement, or every shipped hub feature gets rebuilt. Building levels (`P2-07b`) already persist, so "build it up" has state to bind to — what does not exist is anything that renders a building. |
 | D-02 | **Controlled expeditions** | Walk out of the town gate into an instanced open-world map with objectives, and play the run instead of resolving it. Sent expeditions stay math and are not replaced. | The largest of the four by a wide margin. Needs: what an objective is, how a run ends, whether the instance is authored or generated (`GAME_SPEC.md` § Scope boundaries excludes procedural generation from the draft, deliberately), and how a played run reports through `CombatResult` without upstream branching on which path produced it. This is the ticket that turns arena permadeath back on. |
 | D-03 | **Hopping into a sent expedition** | Take direct control of one hero mid-run to raise its chance of success. | Depends on D-02 — there is no played run to hop into before it. The hard question is what the math path does with the intervention: an expedition currently resolves every wave inside one synchronous `Expedition.resolve()` call, so "mid-run" is not a moment that exists yet. |
 | D-04 | **Caravans** | Escort a cargo wagon to another town to trade resources. Send heroes and let the NPCs handle it, or ride along with a controlled hero and defend it. | A **simulated event, not background arithmetic** — that is the user's framing and the whole point of the feature, so a version that resolves as a dice roll is not a smaller D-04, it is a different feature. Needs a second town to exist (D-01 shape), a resource-trading rule, and D-02's played-run machinery for the ride-along half. |

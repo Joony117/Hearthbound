@@ -1,8 +1,7 @@
 [gd_scene format=3 uid="uid://bvveqryaquui2"]
 
 [ext_resource type="Script" uid="uid://cvnd2olbjc10b" path="res://combat/arena/arena.gd" id="1_arena"]
-[ext_resource type="PackedScene" uid="uid://b6wsjmuma711g" path="res://combat/arena/models/hero/Superhero_Female_FullBody.gltf" id="2_hero"]
-[ext_resource type="PackedScene" uid="uid://bhakfou8ojkf2" path="res://combat/arena/models/hero/Superhero_Male_FullBody.gltf" id="3_enemy"]
+[ext_resource type="PackedScene" uid="uid://brjjpmlma4tbo" path="res://combat/arena/models/xbot/X_Bot.fbx" id="2_hero"]
 
 [sub_resource type="Environment" id="Environment_arena"]
 background_mode = 1
@@ -80,11 +79,11 @@ collision_mask = 3
 [node name="CollisionShape3D" type="CollisionShape3D" parent="HeroCapsule" unique_id=275114270]
 shape = SubResource("Shape_hero")
 
-[node name="Superhero_Female_FullBody" parent="HeroCapsule" unique_id=1397341222 instance=ExtResource("2_hero")]
+[node name="HeroModel" parent="HeroCapsule" unique_id=1397341222 instance=ExtResource("2_hero")]
 transform = Transform3D(-1.4, 0, 0, 0, 1.4, 0, 0, 0, -1.4, 0, -1.238, 0)
 
 [node name="HeroAnimationPlayer" type="AnimationPlayer" parent="HeroCapsule" unique_id=997262690]
-root_node = NodePath("../Superhero_Female_FullBody")
+root_node = NodePath("../HeroModel")
 
 [node name="FacingMarker" type="MeshInstance3D" parent="HeroCapsule" unique_id=955572248]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1)
@@ -111,11 +110,11 @@ collision_mask = 1
 [node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyCapsule" unique_id=451445429]
 shape = SubResource("Shape_hero")
 
-[node name="Superhero_Male_FullBody" parent="EnemyCapsule" unique_id=1598465174 instance=ExtResource("3_enemy")]
+[node name="EnemyModel" parent="EnemyCapsule" unique_id=1598465174 instance=ExtResource("2_hero")]
 transform = Transform3D(-1.4, 0, 0, 0, 1.4, 0, 0, 0, -1.4, 0, -1.238, 0)
 
 [node name="EnemyAnimationPlayer" type="AnimationPlayer" parent="EnemyCapsule" unique_id=1143814664]
-root_node = NodePath("../Superhero_Male_FullBody")
+root_node = NodePath("../EnemyModel")
 
 [node name="EnemyAttackHitbox" type="Area3D" parent="EnemyCapsule" unique_id=765055186]
 unique_name_in_owner = true

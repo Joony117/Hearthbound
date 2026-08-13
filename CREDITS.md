@@ -2,11 +2,42 @@
 
 ## Third-party assets
 
-All third-party art in this repository is **CC0 1.0 Universal (Public Domain Dedication)** —
+Most third-party art in this repository is **CC0 1.0 Universal (Public Domain Dedication)** —
 <https://creativecommons.org/publicdomain/zero/1.0/>. CC0 requires no attribution; this file exists
 because a silent omission would be a decision by accident rather than one made on purpose, and
 because the next person to touch these files needs to know where they came from and what was left
 behind.
+
+**The Mixamo assets below are the exception and are not CC0.** They ship in `game.pck`
+(`export_presets.cfg` exports `all_resources`), so the blanket claim this file used to make no
+longer covers everything the build contains.
+
+### Adobe Mixamo — <https://www.mixamo.com>
+
+| Staged as | From |
+|---|---|
+| `combat/arena/models/xbot/X_Bot.fbx` | Mixamo's stock "X Bot" character, downloaded skinned |
+| `combat/arena/models/animations/mixamo/*.fbx` (17 clips) | `Pro Sword and Shield Pack.zip` plus seven later single-clip downloads, all "Without Skin" |
+
+These are the arena's hero, enemy, and entire moveset as of the Mixamo swap; the Quaternius rows
+below are the pack they replaced, kept on disk as the rollback point.
+
+> ⚠️ **Licensing unconfirmed.** Mixamo content is royalty-free for use *inside* a project, but
+> Adobe's terms restrict redistributing the assets standalone — and a public repo containing the raw
+> `.fbx` files is arguably exactly that, independent of what the built game does.
+> **Settled by:** reading Adobe's current Mixamo terms and deciding whether the source files stay
+> committed or move to a fetch step. Nothing else in this file has that ambiguity.
+
+The clip-name-to-Mixamo-move mapping is not one-to-one for the pack files — Mixamo names every
+download `sword and shield <move> (n)`, so each was picked by measuring its root travel, and those
+file names are the arena's clip names rather than Mixamo's. The seven later files keep Mixamo's own
+names, spaces and inconsistent capitalisation included (`Sword And Shield Strafe left`), which is why
+the arena's clip constants quote them verbatim instead of matching the pack's `Snake_Case`.
+
+`Roll.fbx` is **no longer bound**. It is a sidestep, and measurement puts it at the same `0.667 s`
+and `2.32 m` of travel as `Sword And Shield Strafe left.fbx` — the same move, re-downloaded under its
+real name. It stays on disk unreferenced rather than being deleted with the licensing question above
+still open; nothing loads it.
 
 ### Quaternius — <https://quaternius.com>
 

@@ -34,10 +34,10 @@ func test_arena_loads_animated_characters_without_mutating_profile() -> void:
 	var hero_capsule := arena.get_node_or_null("HeroCapsule") as CharacterBody3D
 	assert_not_null(hero_capsule)
 	assert_not_null(arena.get_node_or_null("HeroCapsule/CollisionShape3D"))
-	var hero_model := arena.get_node_or_null("HeroCapsule/Superhero_Female_FullBody") as Node3D
+	var hero_model := arena.get_node_or_null("HeroCapsule/HeroModel") as Node3D
 	assert_not_null(hero_model)
 	assert_gt(hero_model.basis.z.normalized().dot(Vector3.FORWARD), 0.999)
-	assert_not_null(hero_model.get_node_or_null("Armature/Skeleton3D"))
+	assert_not_null(hero_model.get_node_or_null("Skeleton3D"))
 	assert_not_null(arena.get_node_or_null("HeroCapsule/HeroAnimationPlayer"))
 	assert_not_null(arena.get_node_or_null("HeroCapsule/FacingMarker"))
 	var attack_hitbox := arena.get_node_or_null("HeroCapsule/AttackHitbox") as Area3D
@@ -47,10 +47,10 @@ func test_arena_loads_animated_characters_without_mutating_profile() -> void:
 	assert_not_null(enemy_capsule)
 	assert_gt((-enemy_capsule.basis.z).normalized().dot(Vector3.BACK), 0.999)
 	assert_not_null(arena.get_node_or_null("EnemyCapsule/CollisionShape3D"))
-	var enemy_model := arena.get_node_or_null("EnemyCapsule/Superhero_Male_FullBody") as Node3D
+	var enemy_model := arena.get_node_or_null("EnemyCapsule/EnemyModel") as Node3D
 	assert_not_null(enemy_model)
 	assert_gt(enemy_model.basis.z.normalized().dot(Vector3.FORWARD), 0.999)
-	assert_not_null(enemy_model.get_node_or_null("Armature/Skeleton3D"))
+	assert_not_null(enemy_model.get_node_or_null("Skeleton3D"))
 	assert_not_null(arena.get_node_or_null("EnemyCapsule/EnemyAnimationPlayer"))
 	var enemy_hitbox := arena.get_node_or_null("EnemyCapsule/EnemyAttackHitbox") as Area3D
 	assert_not_null(enemy_hitbox)
@@ -74,15 +74,13 @@ func test_arena_capsule_overrides_render_combat_tints_without_mutating_authored_
 	var arena: Arena = arena_scene.instantiate() as Arena
 	add_child_autofree(arena)
 	var hero_meshes: Array[MeshInstance3D] = [
-		arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Superhero_Female") as MeshInstance3D,
-		arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
-		arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
+		arena.get_node("HeroCapsule/HeroModel/Skeleton3D/Beta_Surface") as MeshInstance3D,
+		arena.get_node("HeroCapsule/HeroModel/Skeleton3D/Beta_Joints") as MeshInstance3D,
 	]
 	var hero_mesh: MeshInstance3D = hero_meshes[0]
 	var enemy_meshes: Array[MeshInstance3D] = [
-		arena.get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/SuperHero_Male") as MeshInstance3D,
-		arena.get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/Eyebrows") as MeshInstance3D,
-		arena.get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/Eyes") as MeshInstance3D,
+		arena.get_node("EnemyCapsule/EnemyModel/Skeleton3D/Beta_Surface") as MeshInstance3D,
+		arena.get_node("EnemyCapsule/EnemyModel/Skeleton3D/Beta_Joints") as MeshInstance3D,
 	]
 	var enemy_mesh: MeshInstance3D = enemy_meshes[0]
 	var hero_authored_material := hero_mesh.mesh.surface_get_material(0) as StandardMaterial3D
@@ -1118,8 +1116,8 @@ func test_super_armor_keeps_the_smash_swinging_but_still_counts_the_hit() -> voi
 
 func test_parry_window_and_enemy_telegraph_tint_the_capsules() -> void:
 	var arena: Arena = _instantiate_arena()
-	var hero_mesh := arena.get_node("HeroCapsule/Superhero_Female_FullBody/Armature/Skeleton3D/Superhero_Female") as MeshInstance3D
-	var enemy_mesh := arena.get_node("EnemyCapsule/Superhero_Male_FullBody/Armature/Skeleton3D/SuperHero_Male") as MeshInstance3D
+	var hero_mesh := arena.get_node("HeroCapsule/HeroModel/Skeleton3D/Beta_Surface") as MeshInstance3D
+	var enemy_mesh := arena.get_node("EnemyCapsule/EnemyModel/Skeleton3D/Beta_Surface") as MeshInstance3D
 	var dodge_event := InputEventAction.new()
 	dodge_event.action = &"dodge"
 	dodge_event.pressed = true
@@ -1192,52 +1190,78 @@ func test_hero_animations_do_not_change_attack_or_dodge_displacement() -> void:
 func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windows() -> void:
 	var arena: Arena = _instantiate_arena()
 	var animation_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
-	assert_true(animation_player.has_animation_library(&"ual1"))
-	assert_true(animation_player.has_animation_library(&"ual2"))
+	assert_true(animation_player.has_animation_library(&"mixamo"))
+	var jog_animation: Animation = animation_player.get_animation(&"mixamo/Jog_Fwd")
+	var hips_track: int = jog_animation.find_track(
+		NodePath("Skeleton3D:mixamorig_Hips"),
+		Animation.TYPE_POSITION_3D,
+	)
+	var first_hips_position: Vector3 = jog_animation.track_get_key_value(hips_track, 0)
+	var last_hips_position: Vector3 = jog_animation.track_get_key_value(
+		hips_track,
+		jog_animation.track_get_key_count(hips_track) - 1,
+	)
+	assert_almost_eq(
+		Vector2(first_hips_position.x, first_hips_position.z).distance_to(
+			Vector2(last_hips_position.x, last_hips_position.z),
+		),
+		0.0,
+		0.0001,
+	)
 
 	arena._physics_process(0.0)
-	assert_eq(animation_player.current_animation, &"ual1/Idle")
+	assert_eq(animation_player.current_animation, &"mixamo/Idle")
 	arena._hero_capsule.velocity.z = BALANCE.arena_move_speed
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Jog_Fwd")
+	assert_eq(animation_player.current_animation, &"mixamo/Jog_Fwd")
 	arena._hero_capsule.velocity.z = BALANCE.arena_sprint_speed
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Sprint")
+	assert_eq(animation_player.current_animation, &"mixamo/Sprint")
 
 	arena._hero_capsule.velocity = Vector3.ZERO
 	arena._attack_elapsed = 0.0
 	arena._combo_index = 0
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_A")
+	var light_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Regular_A").length
-		/ (BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active),
+		animation_player.get_animation(&"mixamo/Attack_A").length
+		/ (
+			BALANCE.arena_light_attack_startup
+			+ BALANCE.arena_light_attack_active
+			+ BALANCE.arena_light_attack_recovery
+		),
 		0.001,
 	)
 	arena._attack_elapsed = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A_Rec")
+	assert_eq(animation_player.current_animation, light_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Regular_A_Rec").length
-		/ BALANCE.arena_light_attack_recovery,
+		animation_player.get_animation(&"mixamo/Attack_A").length
+		/ (
+			BALANCE.arena_light_attack_startup
+			+ BALANCE.arena_light_attack_active
+			+ BALANCE.arena_light_attack_recovery
+		),
 		0.001,
 	)
 	arena._combo_index = 1
 	arena._attack_elapsed = 0.0
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_B")
+	var second_light_attack_animation: StringName = animation_player.current_animation
 	arena._attack_elapsed = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B_Rec")
+	assert_eq(animation_player.current_animation, second_light_attack_animation)
 	arena._combo_index = 2
 	arena._attack_elapsed = 0.0
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_C")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_C")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Regular_C").length
+		animation_player.get_animation(&"mixamo/Attack_C").length
 		/ (
 			BALANCE.arena_light_attack_startup
 			+ BALANCE.arena_light_attack_active
@@ -1248,41 +1272,52 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 
 	arena._attack_is_heavy = true
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_Heavy")
+	var heavy_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Regular_A").length
-		/ (BALANCE.arena_heavy_attack_startup + BALANCE.arena_heavy_attack_active),
+		animation_player.get_animation(&"mixamo/Attack_Heavy").length
+		/ (
+			BALANCE.arena_heavy_attack_startup
+			+ BALANCE.arena_heavy_attack_active
+			+ BALANCE.arena_heavy_attack_recovery
+		),
 		0.001,
 	)
 	arena._attack_elapsed = BALANCE.arena_heavy_attack_startup + BALANCE.arena_heavy_attack_active
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A_Rec")
+	assert_eq(animation_player.current_animation, heavy_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Regular_A_Rec").length
-		/ BALANCE.arena_heavy_attack_recovery,
+		animation_player.get_animation(&"mixamo/Attack_Heavy").length
+		/ (
+			BALANCE.arena_heavy_attack_startup
+			+ BALANCE.arena_heavy_attack_active
+			+ BALANCE.arena_heavy_attack_recovery
+		),
 		0.001,
 	)
 	arena._attack_elapsed = -1.0
 	arena._attack_is_heavy = false
 	arena._dodge_elapsed = 0.0
+	arena._dodge_direction = Vector3.FORWARD
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Roll")
+	assert_eq(animation_player.current_animation, &"mixamo/Standing Dodge Forward")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual1/Roll").length / BALANCE.arena_dodge_duration,
+		animation_player.get_animation(&"mixamo/Standing Dodge Forward").length
+		/ BALANCE.arena_dodge_duration,
 		0.001,
 	)
 	arena._dodge_elapsed = -1.0
 	arena._parry_elapsed = 0.0
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Block")
+	assert_eq(animation_player.current_animation, &"mixamo/Block")
 	assert_almost_eq(animation_player.get_playing_speed(), 1.0, 0.001)
 	arena._parry_elapsed = -1.0
 	arena._hit_stun_remaining = BALANCE.arena_enemy_hit_stun
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Hit_Chest")
+	assert_eq(animation_player.current_animation, &"mixamo/Hit_Chest")
 	assert_almost_eq(animation_player.get_playing_speed(), 1.0, 0.001)
 
 
@@ -1322,70 +1357,161 @@ func test_enemy_animations_do_not_change_attack_or_dodge_displacement() -> void:
 func test_enemy_animation_player_covers_every_state_and_fits_authored_windows() -> void:
 	var arena: Arena = _instantiate_arena()
 	var animation_player := arena.get_node("EnemyCapsule/EnemyAnimationPlayer") as AnimationPlayer
-	assert_true(animation_player.has_animation_library(&"ual1"))
-	assert_true(animation_player.has_animation_library(&"ual2"))
+	assert_true(animation_player.has_animation_library(&"mixamo"))
 
 	arena._enemy_state = Arena.EnemyState.MOVE
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Idle")
+	assert_eq(animation_player.current_animation, &"mixamo/Idle")
 	arena._enemy_capsule.velocity.z = BALANCE.arena_enemy_move_speed
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Jog_Fwd")
+	assert_eq(animation_player.current_animation, &"mixamo/Jog_Fwd")
 
 	arena._enemy_capsule.velocity = Vector3.ZERO
 	arena._enemy_state = Arena.EnemyState.ATTACK
 	arena._enemy_attack_elapsed = 0.0
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_A")
+	var enemy_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		0.666667,
+		animation_player.get_animation(&"mixamo/Attack_A").length
+		/ (
+			BALANCE.arena_enemy_attack_startup
+			+ BALANCE.arena_enemy_attack_active
+			+ BALANCE.arena_enemy_attack_recovery
+		),
 		0.001,
 	)
 	arena._enemy_attack_elapsed = (
 		BALANCE.arena_enemy_attack_startup + BALANCE.arena_enemy_attack_active
 	)
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A_Rec")
-	assert_almost_eq(
-		animation_player.get_animation(&"ual2/Sword_Regular_A_Rec").length,
-		0.966667,
-		0.001,
-	)
+	assert_eq(animation_player.current_animation, enemy_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		2.148148,
+		animation_player.get_animation(&"mixamo/Attack_A").length
+		/ (
+			BALANCE.arena_enemy_attack_startup
+			+ BALANCE.arena_enemy_attack_active
+			+ BALANCE.arena_enemy_attack_recovery
+		),
 		0.001,
 	)
 
 	arena._enemy_state = Arena.EnemyState.DODGE
 	arena._enemy_attack_elapsed = -1.0
+	# The enemy only ever dodges straight away from a hero it is facing, so its dodge is always the
+	# backward clip. It gets the other three for free if a later ticket gives it a sidestep.
+	arena._enemy_dodge_direction = arena._enemy_capsule.global_basis.z.normalized()
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Roll")
+	assert_eq(animation_player.current_animation, &"mixamo/Standing Dodge Backward")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual1/Roll").length
+		animation_player.get_animation(&"mixamo/Standing Dodge Backward").length
 		/ BALANCE.arena_enemy_dodge_duration,
 		0.001,
 	)
 
 	arena._enemy_state = Arena.EnemyState.PARRY
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Block")
+	assert_eq(animation_player.current_animation, &"mixamo/Block")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Block").length
+		animation_player.get_animation(&"mixamo/Block").length
 		/ BALANCE.arena_enemy_parry_active_window,
 		0.001,
 	)
 
 	arena._enemy_state = Arena.EnemyState.STAGGER
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Hit_Chest")
+	assert_eq(animation_player.current_animation, &"mixamo/Hit_Chest")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual1/Hit_Chest").length
+		animation_player.get_animation(&"mixamo/Hit_Chest").length
 		/ BALANCE.arena_parry_enemy_stagger,
+		0.001,
+	)
+
+
+func test_hero_locomotion_picks_the_strafe_clip_its_travel_direction_calls_for() -> void:
+	var arena: Arena = _instantiate_arena()
+	var animation_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	arena._hero_capsule.rotation.y = 0.0
+	arena._hero_capsule.velocity = Vector3(BALANCE.arena_move_speed, 0.0, 0.0)
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"mixamo/Sword And Shield Strafe right")
+	arena._hero_capsule.velocity = Vector3(-BALANCE.arena_move_speed, 0.0, 0.0)
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"mixamo/Sword And Shield Strafe left")
+	arena._hero_capsule.velocity = Vector3(0.0, 0.0, -BALANCE.arena_move_speed)
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"mixamo/Jog_Fwd")
+
+	# The pick is relative to facing, not to the world. Yawed a quarter turn the hero's forward is
+	# world -X, so the velocity that just jogged now strafes and the one that strafed now jogs.
+	arena._hero_capsule.rotation.y = PI * 0.5
+	arena._hero_capsule.velocity = Vector3(-BALANCE.arena_move_speed, 0.0, 0.0)
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"mixamo/Jog_Fwd")
+	arena._hero_capsule.velocity = Vector3(0.0, 0.0, -BALANCE.arena_move_speed)
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"mixamo/Sword And Shield Strafe right")
+
+
+func test_big_hit_staggers_the_enemy_out_of_its_attack_and_plays_its_own_reaction() -> void:
+	var arena: Arena = _instantiate_arena()
+	var animation_player := arena.get_node("EnemyCapsule/EnemyAnimationPlayer") as AnimationPlayer
+
+	# The 90% case first: an ordinary flinch is hit-stop only and leaves the enemy's attack running.
+	arena._enemy_state = Arena.EnemyState.ATTACK
+	arena._enemy_attack_elapsed = 0.0
+	arena._hit_stop_outcome = Arena.HitStopOutcome.FLINCH_ENEMY
+	arena._hit_stop_remaining = BALANCE.arena_enemy_hit_flinch_stop
+	arena._update_hit_stop(BALANCE.arena_enemy_hit_flinch_stop)
+	assert_eq(arena._enemy_state, Arena.EnemyState.ATTACK)
+
+	arena._enemy_attack_active = true
+	arena._enemy_attack_hitbox.monitoring = true
+	arena._enemy_big_hit = true
+	arena._hit_stop_outcome = Arena.HitStopOutcome.FLINCH_ENEMY
+	arena._hit_stop_remaining = BALANCE.arena_enemy_hit_flinch_stop
+	arena._update_hit_stop(BALANCE.arena_enemy_hit_flinch_stop)
+	assert_eq(arena._enemy_state, Arena.EnemyState.STAGGER)
+	assert_almost_eq(arena._enemy_stagger_remaining, BALANCE.arena_enemy_big_hit_stagger, 0.001)
+	assert_eq(arena._enemy_attack_elapsed, -1.0)
+	assert_false(arena._enemy_attack_active)
+	assert_false(arena._enemy_attack_hitbox.monitoring)
+
+	arena._update_enemy_animation()
+	assert_eq(animation_player.current_animation, &"mixamo/Big Hit To Head")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		animation_player.get_animation(&"mixamo/Big Hit To Head").length
+		/ BALANCE.arena_enemy_big_hit_stagger,
+		0.001,
+	)
+	# A big hit is a hit. Reading as a parry here would credit the player with a read they never made.
+	assert_eq(arena._enemy_tint(), Arena.DEFEAT_ENEMY_COLOR)
+
+	arena._update_enemy_stagger(BALANCE.arena_enemy_big_hit_stagger)
+	assert_eq(arena._enemy_state, Arena.EnemyState.MOVE)
+	assert_false(arena._enemy_big_hit)
+
+
+func test_big_hit_landing_mid_parry_still_puts_that_parry_on_cooldown() -> void:
+	var arena: Arena = _instantiate_arena()
+	arena._enemy_state = Arena.EnemyState.PARRY
+	arena._enemy_parry_elapsed = 0.0
+	arena._enemy_parry_cooldown_remaining = 0.0
+	arena._enemy_big_hit = true
+	arena._hit_stop_outcome = Arena.HitStopOutcome.FLINCH_ENEMY
+	arena._hit_stop_remaining = BALANCE.arena_enemy_hit_flinch_stop
+	arena._update_hit_stop(BALANCE.arena_enemy_hit_flinch_stop)
+	assert_eq(arena._enemy_state, Arena.EnemyState.STAGGER)
+	assert_eq(arena._enemy_parry_elapsed, -1.0)
+	assert_almost_eq(
+		arena._enemy_parry_cooldown_remaining,
+		BALANCE.arena_enemy_parry_cooldown,
 		0.001,
 	)
 
@@ -1399,10 +1525,14 @@ func test_enemy_attack_dominant_motion_lands_inside_telegraph_window() -> void:
 	var animation: Animation = animation_player.get_animation(animation_player.current_animation)
 	var dominant_key_time: float = _dominant_rotation_key_time(animation)
 	var scaled_key_time: float = dominant_key_time / animation_player.get_playing_speed()
+	print(
+		"MIXAMO_ATTACK_A_TIMING length=%.6f dominant=%.6f scaled=%.6f"
+		% [animation.length, dominant_key_time, scaled_key_time],
+	)
 
-	assert_almost_eq(animation.length, 0.433333, 0.001)
-	assert_almost_eq(dominant_key_time, 0.266667, 0.001)
-	assert_almost_eq(scaled_key_time, 0.4, 0.001)
+	assert_almost_eq(animation.length, 1.5, 0.001)
+	assert_almost_eq(dominant_key_time, 0.593333, 0.001)
+	assert_almost_eq(scaled_key_time, 0.435111, 0.001)
 	assert_gte(
 		scaled_key_time,
 		BALANCE.arena_enemy_attack_startup - BALANCE.arena_enemy_telegraph_flash,
@@ -1419,9 +1549,13 @@ func test_hero_smash_uses_one_swing_with_its_arm_peak_at_the_active_boundary() -
 	var animation: Animation = animation_player.get_animation(animation_player.current_animation)
 	var dominant_key_time: float = _dominant_rotation_key_time(animation)
 	var scaled_key_time: float = dominant_key_time / animation_player.get_playing_speed()
+	print(
+		"MIXAMO_ATTACK_HEAVY_TIMING length=%.6f dominant=%.6f scaled=%.6f"
+		% [animation.length, dominant_key_time, scaled_key_time],
+	)
 
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
-	assert_almost_eq(dominant_key_time, 0.266667, 0.001)
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_Heavy")
+	assert_almost_eq(dominant_key_time, 0.333333, 0.001)
 	assert_almost_eq(scaled_key_time, BALANCE.arena_heavy_attack_startup, 0.05)
 
 
@@ -1432,7 +1566,7 @@ func _dominant_rotation_key_time(animation: Animation) -> float:
 		if (
 			animation.track_get_type(track_index) != Animation.TYPE_ROTATION_3D
 			or animation.track_get_path(track_index)
-			!= NodePath("Armature/Skeleton3D:upperarm_r")
+			!= NodePath("Skeleton3D:mixamorig_RightArm")
 		):
 			continue
 		for key_index: int in range(1, animation.track_get_key_count(track_index)):
@@ -1462,12 +1596,12 @@ func test_enemy_parry_registration_starts_stagger_animation_during_hit_stop() ->
 	arena._enemy_state = Arena.EnemyState.ATTACK
 	arena._enemy_attack_elapsed = BALANCE.arena_enemy_attack_startup
 	arena._update_enemy_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_A")
 
 	arena._hit_stop_outcome = Arena.HitStopOutcome.PARRY_HERO
 	arena._hit_stop_remaining = BALANCE.arena_parry_hit_stop
 	arena._physics_process(0.0)
-	assert_eq(animation_player.assigned_animation, &"ual1/Hit_Chest")
+	assert_eq(animation_player.assigned_animation, &"mixamo/Hit_Chest")
 
 
 ## Chain steps 3 and 4 reuse the A and B clips — the `% 3` wrap that makes `A / B / C / A / B`
@@ -1480,23 +1614,32 @@ func test_hero_light_attack_chain_wraps_back_onto_the_a_and_b_clips() -> void:
 	arena._attack_elapsed = 0.0
 	arena._combo_index = 3
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_A")
 	arena._combo_index = 4
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_B")
+	var wrapped_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Regular_B").length
-		/ (BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active),
+		animation_player.get_animation(&"mixamo/Attack_B").length
+		/ (
+			BALANCE.arena_light_attack_startup
+			+ BALANCE.arena_light_attack_active
+			+ BALANCE.arena_light_attack_recovery
+		),
 		0.001,
 	)
 	arena._attack_elapsed = BALANCE.arena_light_attack_startup + BALANCE.arena_light_attack_active
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_B_Rec")
+	assert_eq(animation_player.current_animation, wrapped_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"ual2/Sword_Regular_B_Rec").length
-		/ BALANCE.arena_light_attack_recovery,
+		animation_player.get_animation(&"mixamo/Attack_B").length
+		/ (
+			BALANCE.arena_light_attack_startup
+			+ BALANCE.arena_light_attack_active
+			+ BALANCE.arena_light_attack_recovery
+		),
 		0.001,
 	)
 
@@ -1513,13 +1656,13 @@ func test_super_armor_keeps_the_smash_animation_through_the_hit_freeze() -> void
 	arena._attack_is_heavy = true
 	arena._attack_elapsed = BALANCE.arena_heavy_attack_startup
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual2/Sword_Regular_A")
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_Heavy")
 
 	arena._hit_stop_outcome = Arena.HitStopOutcome.HIT_HERO
 	arena._update_hero_animation()
 	assert_eq(
 		animation_player.current_animation,
-		&"ual2/Sword_Regular_A",
+		&"mixamo/Attack_Heavy",
 		"An armored smash must hold its pose, not cut to a reaction and restart the swing.",
 	)
 
@@ -1528,7 +1671,7 @@ func test_super_armor_keeps_the_smash_animation_through_the_hit_freeze() -> void
 		BALANCE.arena_heavy_attack_startup + BALANCE.arena_heavy_attack_active + 0.01
 	)
 	arena._update_hero_animation()
-	assert_eq(animation_player.current_animation, &"ual1/Hit_Chest")
+	assert_eq(animation_player.current_animation, &"mixamo/Hit_Chest")
 
 
 func test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames() -> void:
@@ -1542,6 +1685,8 @@ func test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames() -
 	arena._update_enemy_animation()
 	hero_player.advance(0.05)
 	enemy_player.advance(0.05)
+	var hero_swing_speed: float = hero_player.get_playing_speed()
+	var enemy_swing_speed: float = enemy_player.get_playing_speed()
 	arena._hit_stop_outcome = Arena.HitStopOutcome.FLINCH_ENEMY
 	arena._hit_stop_remaining = BALANCE.arena_light_attack_hit_stop
 	arena._physics_process(0.0)
@@ -1553,9 +1698,15 @@ func test_hit_stop_pauses_both_animation_players_and_resumes_the_same_frames() -
 	assert_almost_eq(enemy_player.current_animation_position, enemy_frozen_position, 0.0001)
 
 	arena._physics_process(BALANCE.arena_light_attack_hit_stop)
-	await wait_physics_frames(1)
+	# Both players run on the idle callback, and one frame is not enough — the awaiting coroutine
+	# resumes before that frame's animation processing has run, which is what made this test flaky.
+	# Four idle frames still land inside the attack window, so the swing clip is what advances.
+	await wait_idle_frames(4)
 	assert_gt(hero_player.current_animation_position, hero_frozen_position)
 	assert_gt(enemy_player.current_animation_position, enemy_frozen_position)
+	# Resuming used to hand the rest of the swing back at the clip's native rate.
+	assert_almost_eq(hero_player.get_playing_speed(), hero_swing_speed, 0.0001)
+	assert_almost_eq(enemy_player.get_playing_speed(), enemy_swing_speed, 0.0001)
 
 
 func test_both_animation_players_crossfade_instead_of_cutting() -> void:
@@ -1569,16 +1720,27 @@ func test_both_animation_players_crossfade_instead_of_cutting() -> void:
 	assert_lt(Arena.ANIMATION_BLEND_TIME, BALANCE.arena_light_attack_startup)
 
 
-func test_dodge_capsules_face_their_roll_direction() -> void:
+## Inverts `P2b-09`'s `test_dodge_capsules_face_their_roll_direction`. With one roll clip a dodge had
+## to spin the capsule so that a forward animation pointed the right way. Four authored directions
+## make the opposite the contract: a dodge turns nobody, and the clip follows the direction instead.
+func test_dodge_turns_neither_capsule_and_picks_the_clip_from_the_direction() -> void:
 	var arena: Arena = _instantiate_arena()
 	var hero_capsule := arena.get_node("HeroCapsule") as CharacterBody3D
 	var enemy_capsule := arena.get_node("EnemyCapsule") as CharacterBody3D
+	var hero_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	hero_capsule.rotation.y = 0.0
 	Input.action_press(&"move_right")
 	arena._start_dodge()
-	assert_gt((-hero_capsule.global_basis.z).normalized().dot(Vector3.RIGHT), 0.999)
+	Input.action_release(&"move_right")
+	assert_almost_eq(hero_capsule.rotation.y, 0.0, 0.0001)
+	arena._update_hero_animation()
+	assert_eq(hero_player.current_animation, &"mixamo/Standing Dodge Right")
 
+	# The enemy keeps tracking the hero through its own dodge — 0.5 s at 720°/s covers any start.
 	arena._enemy_state = Arena.EnemyState.DODGE
 	arena._enemy_dodge_elapsed = 0.0
 	arena._enemy_dodge_direction = Vector3.LEFT
-	arena._update_enemy_dodge(0.0)
-	assert_gt((-enemy_capsule.global_basis.z).normalized().dot(Vector3.LEFT), 0.999)
+	arena._update_enemy_dodge(0.5)
+	var to_hero: Vector3 = hero_capsule.global_position - enemy_capsule.global_position
+	to_hero.y = 0.0
+	assert_gt((-enemy_capsule.global_basis.z).normalized().dot(to_hero.normalized()), 0.999)
