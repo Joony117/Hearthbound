@@ -1292,8 +1292,22 @@ mutation and the work share one restore point.
  batch's last gap on 2026-08-13 — its seven controls are now pressed by tests, so a dropped
  [connection] there is no longer silent.
 
- **The one live row is D-01a** (the town ruling that unblocks D-01), and it is a ruling rather than
- a build. P2b-14 stays blocked: the Mixamo pack has strafe left/right but still no backpedal clip.
+ SUPERSEDED AGAIN 2026-08-13 — D-01a has since been ruled and is [DONE]. Read its Findings: the
+ routing half of that ticket had two candidate answers and both were wrong, because hub.tscn is
+ already a Node3D with the buildings in it and the panels on a CanvasLayer in the same tree. The
+ town is that scene with a body in it, not a second scene. D-01 is now writable and still
+ unscheduled — it wants a tech-lead split into three slices before anything is dispatched.
+
+ **There is now no [TODO] row that is not blocked.** P2b-14 stays blocked: the Mixamo pack has
+ strafe left/right but still no backpedal clip. Note its ticket body is stale on this point — it
+ says neither pack ships a strafe clip, which stopped being true when the Mixamo pack landed. The
+ blocker is the backpedal alone.
+
+ The real next move is the one this file has been saying for three sessions and is not a ticket:
+ **someone plays it.** The Phase 2 exit question is unanswered, the arena's 22 PROVISIONAL feel
+ values are unfelt individually, and the parry-window and hit-stop re-asks are both waiting on a
+ played pass rather than on a dispatch. The user's own sequencing was models first, then play —
+ the models have landed.
 
  P2b-09 is [TODO] and fully unblocked. It is the one row you can pick up cold and dispatch.
 
@@ -1670,7 +1684,39 @@ the wiring is already wrong.
 
 ---
 
-## D-01a — Town ruling: who the player is in it, and where the hub's panels go   [TODO]
+## D-01a — Town ruling: who the player is in it, and where the hub's panels go   [DONE]
+
+**Ruled 2026-08-13.** `GAME_SPEC.md` § The town avatar (embodiment), `ARCHITECTURE.md` § The town
+is `hub.tscn` (routing), one `DECISIONS.md` entry carrying both and their rejected alternatives.
+No code, no `.tscn`, no fourth autoload. `D-01` is now writable and still unscheduled.
+
+### Findings
+
+**The routing half was answered by the file, not by a design call.** `hub/hub.tscn` is already a
+`Node3D` with camera, ground and five building meshes under `Buildings/`; the six Control panels
+are a `CanvasLayer` in that same tree. The ticket framed "does a town scene host the same panels,
+or does walking up to a building route to `hub.tscn`" as a boundary question with two answers —
+both readings assume the town is a *second* scene, and neither is true. The town is this scene
+with a body in it. No `SceneRouter` change, no new seam, so criterion 2's "new seam or existing
+one" resolves to neither. **Read the scene before ruling on a scene's boundaries** — this was
+five minutes of `grep '^\[node' hub/hub.tscn` against a question that had been sitting open since
+2026-08-11.
+
+**The embodiment half was the user's and was asked, not inferred.** Ruling: a controlled roster
+hero, swappable at will — chosen over the summoner avatar for `D-02` continuity. The
+consequence worth carrying forward is that **an embodied hero cannot be sent on an expedition**,
+implemented as a filter on team selection rather than an exception inside the permadeath path,
+so rule 8 keeps exactly one writer with no special case.
+
+**Kept open on purpose:** free swapping vs. a cost to change bodies is `PROVISIONAL`, settled by
+a played build. The empty-roster case is answered (camera detaches to a fixed overview — today's
+hub state), and `D-02` still owns what happens when a controlled expedition can kill the body
+you walked out in.
+
+---
+
+<details>
+<summary>Original ticket body</summary>
 
 **A ruling, not a build.** It produces two decisions in `docs/`, no scene and no player-facing
 behavior — the exception the completed ruling tickets already establish (`P2-04b`, `P2-05e`,
@@ -1734,6 +1780,8 @@ direction table below.
 - Do not turn arena permadeath on, and do not touch `resolve()` or `CombatResult`. That is `D-02`'s
   by decision (`DECISIONS.md` 2026-08-11), not something a town inherits by being built first.
 
+</details>
+
 ---
 
 # Direction backlog — after the core loop
@@ -1751,7 +1799,7 @@ The core loop is unchanged and still comes first. The exit question above still 
 
 | # | Direction | What it actually is | What it needs before it can be a ticket |
 |---|---|---|---|
-| D-01 | **The town** | The hub becomes a walkable 3D place: move around it, talk to your own heroes and to NPCs, build it up, defend it against attack. | **`D-01a` above is now that ruling and is `[TODO]`.** A ruling on who the player embodies in town (summoner or a controlled hero — `GAME_SPEC.md` leaves it open), and what happens to `hub.tscn`'s existing Control-based panels. They do not disappear; a town is a *second* way to reach them, not a replacement, or every shipped hub feature gets rebuilt. Building levels (`P2-07b`) already persist, so "build it up" has state to bind to — what does not exist is anything that renders a building. |
+| D-01 | **The town** | The hub becomes a walkable 3D place: move around it, talk to your own heroes and to NPCs, build it up, defend it against attack. | **Unblocked — `D-01a` ruled it on 2026-08-13** (`GAME_SPEC.md` § The town avatar, `ARCHITECTURE.md` § The town is `hub.tscn`, `DECISIONS.md`). The town **is** `hub.tscn` with a player-controlled body; the panels stay where they are and become proximity-gated. The avatar is a swappable roster hero, and an embodied hero cannot be sent on an expedition. Still unscheduled: the core loop comes first and the Phase 2 exit question still governs. What it now needs is only a `tech-lead` split into shippable slices — walk + camera, proximity panels, and building visuals are three tickets, not one. Building levels (`P2-07b`) already persist; nothing renders them. |
 | D-02 | **Controlled expeditions** | Walk out of the town gate into an instanced open-world map with objectives, and play the run instead of resolving it. Sent expeditions stay math and are not replaced. | The largest of the four by a wide margin. Needs: what an objective is, how a run ends, whether the instance is authored or generated (`GAME_SPEC.md` § Scope boundaries excludes procedural generation from the draft, deliberately), and how a played run reports through `CombatResult` without upstream branching on which path produced it. This is the ticket that turns arena permadeath back on. |
 | D-03 | **Hopping into a sent expedition** | Take direct control of one hero mid-run to raise its chance of success. | Depends on D-02 — there is no played run to hop into before it. The hard question is what the math path does with the intervention: an expedition currently resolves every wave inside one synchronous `Expedition.resolve()` call, so "mid-run" is not a moment that exists yet. |
 | D-04 | **Caravans** | Escort a cargo wagon to another town to trade resources. Send heroes and let the NPCs handle it, or ride along with a controlled hero and defend it. | A **simulated event, not background arithmetic** — that is the user's framing and the whole point of the feature, so a version that resolves as a dice roll is not a smaller D-04, it is a different feature. Needs a second town to exist (D-01 shape), a resource-trading rule, and D-02's played-run machinery for the ride-along half. |
@@ -1910,7 +1958,8 @@ needs to re-read.
 | `P2b-11` | The arena's animation shows what the logic says is happening | `52232fb` |
 | `P2b-12` | The parry is gettable and a dodge actually escapes | `d78d33d` |
 | `P2b-13` | Animation transitions blend instead of cutting | `53a87b1` |
-| `P2-33` | Every control from the 2026-08-11 batch is pressed by a test | the commit below |
+| `P2-33` | Every control from the 2026-08-11 batch is pressed by a test | `aa64ced` |
+| `D-01a` | Town ruling — you walk as a swappable roster hero, and the town *is* `hub.tscn` | the commit below |
 
 The last five share one commit and have no bodies — they shipped before any ticket existed. The
 record of what they are and what they left unproved is the **Retro record** section above, not this

@@ -7,6 +7,47 @@ Newest first.
 
 ---
 
+## 2026-08-13: The town is `hub.tscn` with an avatar, and the avatar is a controlled hero
+
+User ruling, closing `TASKS.md` D-01a. Two answers, one architectural and one design.
+
+**The town does not get its own scene.** `hub/hub.tscn` is already a `Node3D` — camera, ground,
+five building meshes under `Buildings/` — with the roster/equipment/buildings/summon/sacrifice/
+expedition panels on a `CanvasLayer` in the same tree. The walkable town is that scene gaining a
+player-controlled body and proximity-gated panel visibility. `SceneRouter` is untouched, rule 5
+is untouched, and no new seam appears. Written up in `ARCHITECTURE.md` § The town is `hub.tscn`.
+
+**Rejected: a separate `town.tscn` routed to from the hub.** This is the reading the direction
+table was warning about, and it is the expensive one for a reason that is easy to miss — it does
+not just duplicate scenes, it makes every shipped hub panel reachable from two places, which
+means every panel needs an answer for "which scene am I in" forever after. The cheap version of
+that (town hosts *copies* of the panels) is the "every shipped hub feature gets rebuilt" outcome
+stated verbatim in `TASKS.md`'s D-01 row. Nobody would choose it deliberately; it gets chosen by
+assuming a new feature needs a new scene. It does not — the 3D hub has been sitting there since
+the skeleton.
+
+**The player embodies a roster hero, swappable at will**, not a summoner avatar.
+`GAME_SPEC.md` § The town avatar is the design half. The architectural consequence is the one
+worth recording here: **an embodied hero cannot be sent on an expedition.** That is a design
+rule with teeth (you must step out of a body before you can spend it) and it is deliberately
+*not* implemented as an exception inside the permadeath path — it is a filter on team selection,
+upstream of `Expedition.resolve()`, which keeps rule 8 at exactly one writer with no special
+case. A rule that reads "permadeath, except when" is how single-writer boundaries rot.
+
+**Rejected: the summoner as the town avatar.** It is the more literal reading of Player fantasy
+("You never fight as yourself") and it has a real advantage — an avatar with zero coupling to
+permadeath cannot be deleted out from under the camera. Refused because it buys that safety by
+putting a body in the world that the roster does not contain, which needs its own model, its own
+answer to "what am I to the roster", and an explicit hand-off at the gate for `D-02` where the
+summoner stops and a hero starts. The hero avatar makes `D-02` continuity instead of a seam, and
+the fantasy still holds: the summoner is steering, which is what the arena already does.
+
+**What changes in the code: nothing.** This ruling produces no scene, no script and no behavior.
+`D-01` is still unwritten and still unscheduled — the core loop comes first and the Phase 2 exit
+question still governs. What it removes is the reason `D-01` could not be *written*.
+
+---
+
 ## 2026-08-11: The arena is a combat-feel prototype; permadeath is not wired to it
 
 User ruling, and it reverses a published line in `GAME_SPEC.md`. That document's Combat model

@@ -118,6 +118,41 @@ the ramp-interpolation math into each implementation is how they'd quietly disag
 
 ---
 
+## The town is `hub.tscn`, not a destination next to it
+
+Ruled 2026-08-13 (`DECISIONS.md`). **The walkable town is the hub scene gaining an avatar, not a
+second scene that has to reach back into the first one.** This is stated here because the
+question it answers — "how does the town reach the roster panel?" — sounds like a routing
+question and is not one.
+
+`hub/hub.tscn` is already a `Node3D`: camera, ground, and five building meshes under
+`Buildings/`, each with a `Label3D`. The roster, equipment, buildings, summon, sacrifice and
+expedition panels are `Control` nodes under a `CanvasLayer` **in that same scene**. The 3D town
+and the panels already share one scene tree and one script.
+
+So:
+
+- **Every existing hub panel is reached the same way it is today** — it is already there. Walking
+  up to the Forge shows the panel that is already parented to the same scene; it does not route
+  anywhere. What changes is when a panel is visible, which is `hub.gd`'s business and not a
+  boundary's.
+- **`SceneRouter` gains nothing and loses nothing.** Rule 5 is untouched, `GAME_SPEC.md`
+  § Direction seam 1 is untouched, and no second navigation mechanism appears. The town is not a
+  new main scene, so there is no new transition to own.
+- **This is not a new seam.** It is the absence of one, which is the entire reason the ruling is
+  worth writing down: the alternative reading — town scene *plus* hub scene, with routing between
+  them — invents a seam, forces every panel to be reachable from two scenes, and is what the
+  direction table meant by "or every shipped hub feature gets rebuilt."
+- **Rule 1 governs the avatar.** The town observes the roster; it does not write to it. A hero
+  dying mid-expedition reaches the avatar as a signal, never as the town calling `kill_hero()`.
+  Rule 8 stays single-writer with no exception carved for the town.
+
+The one thing this does *not* settle is whether a level-3 building looks different from a level-1
+one. Levels already persist (`GameSession`), nothing renders them, and that is art, not
+architecture.
+
+---
+
 ## Project layout
 
 Feature-grouped, per Godot's project-organization guidance: assets live next to the scenes

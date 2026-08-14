@@ -126,9 +126,8 @@ live in `TASKS.md` § Direction backlog.
 The game becomes open-ish world. The hub stops being a menu and becomes a place you leave.
 
 - **The town.** The hub is walkable. You move around it, talk to your own heroes and to
-  NPCs, build it up, and eventually defend it against attack. Who the player embodies in
-  town — the summoner or a controlled hero — is **open**; either way the summoner still
-  never fights, so Player fantasy above holds unchanged.
+  NPCs, build it up, and eventually defend it against attack. See § The town avatar below
+  for who you walk around as.
 - **Two kinds of expedition.** *Sent* expeditions stay math (`combat/quick_resolve.gd`) —
   that path is not being replaced, and it is what makes a large roster playable.
   *Controlled* expeditions walk out of the town gate into an instanced open-world map with
@@ -152,6 +151,48 @@ The game becomes open-ish world. The hub stops being a menu and becomes a place 
    something upstream branches on *which* path produced a result, the seam is gone.
 3. **Permadeath keeps exactly one writer** (`ARCHITECTURE.md` r8). Every path above can
    eventually kill a hero. None of them gets its own kill call.
+
+---
+
+## The town avatar
+
+Ruled 2026-08-13. Settles the question § Direction left open.
+
+**You walk around town as one of your own heroes, and you can swap which one at will.** The
+summoner is still who you *are* — you run the hall, you pull, you decide whose life to spend —
+but the body standing in the town square is a roster hero you are puppeting, the same way you
+take direct control of one party member in the arena. Player fantasy above holds unchanged and
+literally: the summoner never fights, because the thing that fights is a hero you are steering.
+The avatar is a **view onto the roster, not a member of it** — embodying a hero grants it
+nothing, costs it nothing, and changes no stat.
+
+**When the hero you are embodying dies, you are standing in a corpse's shoes — so the game does
+not let you get there.** A hero currently being embodied cannot be added to a sent expedition
+team. To spend the hero you have been walking around as, you first step out of it and into
+another body, deliberately, as its own act. That is the point rather than a safety rail: this
+game is about how uncomfortable it is to decide whose life to spend, and making you leave a body
+before you can feed it to a zone is the strongest version of that decision the town can offer.
+Permadeath itself is untouched — `Expedition.resolve()` stays the only writer, and the town
+observes the roster rather than editing it.
+
+The remaining death case is the **empty roster**: a wipe can leave you with no hero to embody.
+The town's answer is that it is a place you can be standing in with no body — the camera detaches
+to a fixed overview of the square and the panels still work, which is exactly the state the hub
+is in today. You always afford one more pull (`SYSTEMS.md`, `TASKS.md` P2-18), so the way out of
+it is the way out of every wipe.
+
+> ⚠️ **PROVISIONAL** — whether swapping bodies at will is right, or whether the embodied hero
+> should be a commitment you pay to change. Free swapping is the cheaper build and the weaker
+> attachment; a cost makes the body matter but risks feeling like a tax on walking around.
+> **Settled by:** a played build with a walkable town and more than one hero worth standing in.
+
+**What this costs the other direction rows.** `D-02` inherits an avatar that is already a hero,
+so walking out the gate is continuity rather than a hand-off — and it inherits the reason
+permadeath belongs there: the moment a controlled expedition can kill you, the "you cannot send
+the body you are in" rule stops protecting anything, because you walked it out yourself. `D-02`
+decides what happens then; this ruling does not. `D-04` inherits it twice over, since riding
+along with a caravan is the same walk-out, and a second town is a second place the same avatar
+stands.
 
 ---
 
