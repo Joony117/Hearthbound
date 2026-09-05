@@ -3,8 +3,15 @@
 A Godot 4.7.1 GDScript game. `docs/` is the spec set and it is authoritative:
 `GAME_SPEC.md` (what the game is) · `ARCHITECTURE.md` (the nine boundary rules) ·
 `CODING_RULES.md` (how GDScript is written here) · `SYSTEMS.md` (the numbers) ·
-`DECISIONS.md` (ADRs) · `TASKS.md` (the live backlog, and the delegation payload) ·
+`DECISIONS.md` (ADRs) · `TASKS.md` (ticket format, split reasoning, shipped bodies, findings) ·
 `KNOWN_ISSUES.md` (deliberate shortcuts).
+
+**The live backlog is Beads (`bd`), not `docs/TASKS.md`.** Start a session with `bd ready`;
+`bd blocked` says what is waiting and on what. `docs/TASKS.md` was retired as a backlog on
+2026-09-04 — its `[TODO]`/`[DONE]`/`[BLOCKED]` markers are frozen history, and status,
+priority and dependencies now live only in `bd`. It stays authoritative for everything else
+it holds, including findings later work inherits. Beads points there for bodies; it points to
+Beads for status.
 
 `docs/TASKS-DONE.md` is **archive, not spec** — 78 shipped ticket bodies, ~18k tokens, append-only.
 Grep it; never read it into context. Nothing in the live workflow depends on it.
@@ -56,9 +63,13 @@ stdout, so a scripted run against it reports success no matter what happened
 already has `tools/godot/` populated. A fresh clone has no engine binary at all.
 
 **GUT 9.7.1 is installed** under `addons/gut/`, committed and not gitignored. It landed ahead of
-`docs/TASKS.md` P2-03 rather than as part of it — P2-03 is still `TODO` and remains the ticket
-that writes the first real combat tests. See `docs/KNOWN_ISSUES.md` for why the suite lives in
-`tests/unit/` and not `tests/`.
+`docs/TASKS.md` P2-03 rather than as part of it. See `docs/KNOWN_ISSUES.md` for why the suite
+lives in `tests/unit/` and not `tests/`.
+
+> The sentence that used to follow here claimed `P2-03` was still `TODO` and still owed the
+> first real combat tests. That was stale on both halves — `P2-03a` through `P2-03f` have all
+> landed, and `tests/unit/` now runs 148 tests including `test_arena.gd`. No bead was filed for
+> it because there is no work left in it.
 
 BUILT therefore also requires the GUT suite green:
 
@@ -111,7 +122,7 @@ answer yourself. Spawning a role to perform an edit you already know how to make
 
 | Change | Route to | Owns |
 |---|---|---|
-| Vague ask → ticket | `tech-lead` | `docs/TASKS.md` (not `TASKS-DONE.md` — the director moves bodies there on `[DONE]`) |
+| Vague ask → ticket | `tech-lead` | the bead (`bd create`), plus its body in `docs/TASKS.md` when the body is long enough to want the full format |
 | Game numbers, feel, scope | `game-designer` | `docs/SYSTEMS.md`, `GAME_SPEC.md`, `KNOWN_ISSUES.md` **except** its `## Environment` section |
 | Boundary moves, autoload count, ADRs | `godot-architect` | `docs/ARCHITECTURE.md`, `DECISIONS.md` |
 | Code | global `implementer` → Codex | `*.gd`, `*.tscn`, `project.godot` |
@@ -198,9 +209,10 @@ contract, not a replacement for it.
   reconcile in either direction.
 - **One Godot process against this project at a time.** See below — this one is not obvious and
   has already bitten twice.
-- **One ticket per session, then `/clear`.** `docs/TASKS.md` is written so a cold session
-  reloads a ticket in one Read. The spec set exists to make sessions disposable; use it that
-  way. (Why this pays, with the measured numbers: `~/.claude/CLAUDE.md`, Session economics.)
+- **One ticket per session, then `/clear`.** `bd ready` then `bd show <id>` reloads a cold
+  session's ticket in two commands, and each bead's description carries enough to act without
+  this conversation. The spec set exists to make sessions disposable; use it that way. (Why
+  this pays, with the measured numbers: `~/.claude/CLAUDE.md`, Session economics.)
 
 ## Serialize engine access
 

@@ -13,9 +13,9 @@ the full convention set. What follows is only what bites most often.
 cites by number in its comments — match that. `SYSTEMS.md` holds every balance number; do not
 invent one that is already written down, and do not change one that is.
 
-The scope you were given names the files you may change. `docs/TASKS.md` tickets carry an explicit
-**Non-goals** list — those adjacent features are not yours to invent, however obvious they look
-while you are in there.
+The scope you were given names the files you may change. Tickets carry an explicit **Non-goals**
+list — in the bead (`bd show <id>`), or in the ticket body it points at in `docs/TASKS.md`. Those
+adjacent features are not yours to invent, however obvious they look while you are in there.
 
 ## GDScript
 

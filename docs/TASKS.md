@@ -1,5 +1,26 @@
 # Tasks
 
+> ## The live backlog is Beads, not this file.
+>
+> ```bash
+> bd ready          # what can be worked now
+> bd blocked        # what is waiting, and on what
+> bd show <id>      # one item, with its full reasoning
+> ```
+>
+> Retired as a backlog on 2026-09-04. **Status, scheduling and dependencies live in `bd`**;
+> every `[TODO]` / `[DONE]` / `[BLOCKED]` marker below is frozen history and must not be
+> trusted or updated. Twelve beads carry the work that was still open — the play pass, the two
+> feel re-asks, `P2b-14` and its asset blocker, the `D-01` split, `D-01`–`D-04` direction,
+> the arena debt, the `P2b-02` hold, and one housekeeping row.
+>
+> **What this file still is, and why it was not deleted:** the ticket format, the split
+> reasoning, the full bodies of shipped tickets, the two playtest-feedback passes, the retro
+> record, the Direction backlog prose, and the Phase 2 exit question. Several of those carry
+> findings later work inherits — the `gut_cmdln.gd` parse-failure trap, `select_mode = 2`
+> being `SELECT_TOGGLE`, the red-proof-on-a-dirty-tree hazard. Beads points here for bodies;
+> this file points to Beads for status. Neither is redundant.
+
 Tickets, not feature names. "Add an inventory system" hands an implementer dozens of
 architectural decisions; the format below doesn't.
 
@@ -9,17 +30,18 @@ file is too small. A ticket that produces a subsystem is too large.
 This document doubles as the delegation payload — scope, acceptance criteria, constraints,
 build/test commands, decision bounds. One write, both purposes.
 
-**Status:** `TODO` · `WIP` · `DONE` · `BLOCKED`
+**Status lives in Beads.** `tech-lead` owns ticket **bodies**; `bd` owns **status, priority and
+dependencies**. A status word is not content, and putting it in two places is how a ticket left
+`[TODO]` after it lands gets rebuilt — which is the failure this split now prevents rather than
+merely warns about.
 
-`tech-lead` owns ticket **bodies**; the director owns **status transitions**. A status word is
-not content, and the director is the only role that sees a ticket's gates come back green.
-Stale status is expensive here — `tech-lead` reads this file first and an `implementer` takes
-its scope from the ticket, so a ticket left `[TODO]` after it lands gets rebuilt.
+A new ticket is a `bd create` whose description either carries the body or names where it lives.
+When a body is long enough to want the format below, write it here under a heading and point the
+bead at it; when it isn't, the bead is the whole ticket. Either way `bd show <id>` is the entry
+point, not a grep of this file.
 
-**On `[DONE]`, the director moves the body to [`TASKS-DONE.md`](TASKS-DONE.md)** and leaves a row
-in Completed tickets below. This file is read start-to-finish by every `tech-lead` dispatch, so
-it stays the *live* backlog; shipped bodies are the bulk of the text and the part nobody needs to
-re-read. Move them verbatim — a shipped ticket's acceptance criteria are the record of why the
+**On close, the director moves any inline body to [`TASKS-DONE.md`](TASKS-DONE.md)** and closes
+the bead. Move bodies verbatim — a shipped ticket's acceptance criteria are the record of why the
 code looks the way it does, and several carry findings later tickets inherit.
 
 ---
