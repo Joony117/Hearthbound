@@ -48,7 +48,7 @@ func test_damage_numbers_are_red_on_both_sides_and_crits_pop_yellow() -> void:
 		assert_eq(normal.text, "12")
 		assert_eq(normal.modulate, BattleVfx.DAMAGE_COLOR)
 		assert_eq(normal.font_size, BattleVfx.DAMAGE_FONT_SIZE)
-		assert_eq(normal.scale, Vector3.ONE)
+		assert_almost_eq(normal.scale, Vector3.ONE * BattleVfx.DAMAGE_POP_SCALE, Vector3.ONE * 0.001, "numbers pop in")
 	vfx.spawn({"kind": "hit", "faction": "enemy", "position": Vector3.ZERO, "damage": 124, "critical": true})
 	var crit: Label3D = _label(vfx)
 	assert_eq(crit.text, "124!")
@@ -56,7 +56,8 @@ func test_damage_numbers_are_red_on_both_sides_and_crits_pop_yellow() -> void:
 	assert_eq(crit.outline_modulate, BattleVfx.CRIT_OUTLINE_COLOR)
 	assert_eq(crit.font_size, BattleVfx.CRIT_FONT_SIZE)
 	assert_gte(float(BattleVfx.CRIT_FONT_SIZE), BattleVfx.DAMAGE_FONT_SIZE * 1.5, "a crit stays clearly bigger")
-	assert_almost_eq(crit.scale, Vector3.ONE * 1.8, Vector3.ONE * 0.001, "pop starts large")
+	assert_almost_eq(crit.scale, Vector3.ONE * BattleVfx.CRIT_POP_SCALE, Vector3.ONE * 0.001, "pop starts large")
+	assert_gt(BattleVfx.CRIT_POP_SCALE, BattleVfx.DAMAGE_POP_SCALE, "crits pop harder")
 	assert_between(crit.position.x, -BattleVfx.CRIT_JITTER, BattleVfx.CRIT_JITTER)
 	await wait_seconds(1.0)
 	assert_eq(vfx.get_child_count(), 0, "crit effect frees itself")
@@ -224,14 +225,146 @@ func test_enemy_death() -> void:
 func test_spawn_builds_every_kind_and_respects_cap() -> void:
 	var vfx := BattleVfx.new()
 	add_child_autofree(vfx)
-	for kind: String in ["hit", "heal", "basic_attack", "skill", "enemy_skill", "dodge", "death"]:
+	for kind: String in ["hit", "heal", "basic_attack", "skill", "enemy_skill", "dodge", "landing"]:
 		vfx.spawn({"kind": kind, "position": Vector3.ZERO, "damage": 5, "amount": 5, "archetype": "mage", "shape": "circle", "radius": 2.0, "target_position": Vector3.ONE, "facing": Vector3.FORWARD})
 	assert_eq(vfx.get_child_count(), 7)
 	for index: int in 50:
-		vfx.spawn({"kind": "death", "position": Vector3.ZERO})
+		vfx.spawn({"kind": "landing", "position": Vector3.ZERO})
 	assert_eq(vfx.get_child_count(), BattleVfx.MAX_LIVE_EFFECTS)
 	await wait_seconds(0.8)
 	assert_eq(vfx.get_child_count(), 0, "every effect frees itself")
+
+
+func test_death_itself_draws_nothing_the_landing_does() -> void:
+	var vfx := BattleVfx.new()
+	add_child_autofree(vfx)
+	vfx.spawn({"kind": "death", "position": Vector3.ZERO})
+	await wait_process_frames(1)
+	assert_eq(vfx.get_child_count(), 0, "the dust waits for the body to land")
+	var view: BattleView = _view()
+	view._on_unit_body_landed(Vector3(1.0, 0.0, 2.0))
+	assert_eq(view._vfx.get_child_count(), 1)
+	assert_eq(view._vfx.get_child(0).find_children("*", "CPUParticles3D", true, false).size(), 1, "a dust puff")
+
+
+func test_damage_numbers_settle_at_their_resting_size() -> void:
+	var vfx := BattleVfx.new()
+	add_child_autofree(vfx)
+	vfx.spawn({"kind": "hit", "position": Vector3.ZERO, "damage": 12})
+	await wait_seconds(BattleVfx.DAMAGE_POP_SECONDS + 0.05)
+	assert_almost_eq(_label(vfx).scale, Vector3.ONE, Vector3.ONE * 0.001)
+
+
+func test_every_effect_mesh_and_speck_shares_one_material() -> void:
+	var vfx := BattleVfx.new()
+	add_child_autofree(vfx)
+	for archetype: String in ["knight", "ranger", "mage", "rogue"]:
+		vfx.spawn({"kind": "skill", "archetype": archetype, "position": Vector3.ZERO, "facing": Vector3.FORWARD, "radius": 2.0, "range": 4.0})
+	vfx.spawn({"kind": "hit", "position": Vector3.ZERO, "damage": 5, "critical": true})
+	vfx.spawn({"kind": "basic_attack", "faction": "ally", "projectile": true, "position": Vector3.ZERO, "target_position": Vector3.ONE})
+	var meshes: Array[Node] = vfx.find_children("*", "MeshInstance3D", true, false)
+	assert_gt(meshes.size(), 10)
+	for mesh: Node in meshes:
+		assert_same((mesh as MeshInstance3D).material_override, BattleVfx._effect_material)
+	for particles: Node in vfx.find_children("*", "CPUParticles3D", true, false):
+		assert_same((particles as CPUParticles3D).mesh.surface_get_material(0), BattleVfx._speck_material)
+
+
+func test_crits_add_two_rings_and_hits_throw_more_bigger_sparks() -> void:
+	var vfx := BattleVfx.new()
+	add_child_autofree(vfx)
+	vfx.spawn({"kind": "hit", "position": Vector3.ZERO, "damage": 5})
+	vfx.spawn({"kind": "hit", "position": Vector3.ZERO, "damage": 5, "critical": true})
+	var plain: Node = vfx.get_child(0)
+	var crit: Node = vfx.get_child(1)
+	var sparks: CPUParticles3D = plain.find_children("*", "CPUParticles3D", true, false)[0] as CPUParticles3D
+	assert_eq(sparks.amount, BattleVfx.HIT_SPARK_COUNT)
+	assert_gte(BattleVfx.HIT_SPARK_COUNT, 28, "twice the old 14")
+	assert_gt(BattleVfx.HIT_SPARK_SIZE, 0.08, "bigger than the old specks")
+	assert_eq(_rings(plain), 0, "an ordinary hit has no ring")
+	assert_eq(_rings(crit), 2, "a crit gets a second, larger ring")
+
+
+func test_projectile_impacts_burst_at_the_target_after_the_flight() -> void:
+	var vfx := BattleVfx.new()
+	add_child_autofree(vfx)
+	vfx.spawn({"kind": "basic_attack", "faction": "enemy", "projectile": true, "position": Vector3.ZERO, "target_position": Vector3(3.0, 0.0, 0.0)})
+	var burst: CPUParticles3D = vfx.get_child(0).find_children("*", "CPUParticles3D", true, false)[0] as CPUParticles3D
+	assert_almost_eq(burst.position, Vector3(3.0, 0.9, 0.0), Vector3.ONE * 0.001)
+	assert_false(burst.emitting, "it waits for the projectile to arrive")
+	await wait_seconds(BattleVfx.PROJECTILE_SECONDS + 0.05)
+	assert_true(burst.emitting)
+
+
+func test_every_skill_signature_flashes_rings_and_bursts_in_its_color() -> void:
+	var vfx := BattleVfx.new()
+	add_child_autofree(vfx)
+	var colors: Dictionary = {"knight": BattleVfx.KNIGHT_SKILL_COLOR, "ranger": BattleVfx.RANGER_SKILL_COLOR, "mage": BattleVfx.MAGE_SKILL_COLOR, "rogue": BattleVfx.ROGUE_SKILL_COLOR}
+	var events: Array[Dictionary] = []
+	for archetype: String in colors:
+		for faction: String in ["ally", "enemy"]:
+			events.append({"kind": "skill", "faction": faction, "archetype": archetype, "position": Vector3.ZERO, "previous_position": Vector3.ONE, "facing": Vector3.FORWARD, "radius": 2.0, "range": 4.0, "center": Vector3(0.0, 0.0, -2.0)})
+	for shape: String in ["circle", "line"]:
+		events.append({"kind": "enemy_skill", "shape": shape, "origin": Vector3.ZERO, "point": Vector3(0.0, 0.0, 3.0), "radius": 2.0})
+	for event: Dictionary in events:
+		vfx.spawn(event)
+	for index: int in events.size():
+		var event: Dictionary = events[index]
+		var effect: Node = vfx.get_child(index)
+		var spheres: int = 0
+		var tints: Array[Color] = []
+		for mesh: Node in effect.find_children("*", "MeshInstance3D", true, false):
+			if (mesh as MeshInstance3D).mesh is SphereMesh:
+				spheres += 1
+			tints.append((mesh as MeshInstance3D).get_instance_shader_parameter(&"tint"))
+		var label: String = "%s %s" % [event.get("faction", "enemy"), event.get("archetype", event.get("shape"))]
+		var showpiece: bool = event.get("archetype", "") == "mage" or event.get("shape", "") == "circle"
+		assert_eq(spheres, 2 if showpiece else 1, "%s: a cast flash, plus the expanding sphere on a burst" % label)
+		assert_gte(_rings(effect), 1, "%s: a ground shockwave" % label)
+		assert_eq(effect.find_children("*", "CPUParticles3D", true, false).size(), 1, "%s: an impact burst" % label)
+		var impact: CPUParticles3D = effect.find_children("*", "CPUParticles3D", true, false)[0] as CPUParticles3D
+		assert_eq(impact.amount, BattleVfx.SKILL_IMPACT_COUNT, "%s: larger than a hit" % label)
+		var expected: Color = BattleVfx.ENEMY_SKILL_COLOR if event["kind"] == "enemy_skill" or event["faction"] == "enemy" else colors[event["archetype"]]
+		assert_eq(impact.color, expected, "%s: the impact burns in its color" % label)
+		assert_true(tints.any(func(tint: Color) -> bool: return tint.is_equal_approx(expected)), "%s: the shockwave shares it" % label)
+
+
+func test_camera_shakes_only_on_crits_and_skills() -> void:
+	assert_eq(BattleVfx.shake_for({"kind": "hit", "critical": false}), 0.0, "an ordinary hit never shakes")
+	assert_eq(BattleVfx.shake_for({"kind": "basic_attack", "critical": true}), 0.0, "a crit shakes once, on its hit")
+	for kind: String in ["heal", "dodge", "death", "landing"]:
+		assert_eq(BattleVfx.shake_for({"kind": kind}), 0.0, kind)
+	assert_gt(BattleVfx.shake_for({"kind": "hit", "critical": true}), 0.0)
+	var mage: float = BattleVfx.shake_for({"kind": "skill", "archetype": "mage"})
+	for archetype: String in ["knight", "ranger", "rogue"]:
+		var shake: float = BattleVfx.shake_for({"kind": "skill", "archetype": archetype})
+		assert_gt(shake, 0.0, archetype)
+		assert_lt(shake, mage, "%s shakes less than the mage burst" % archetype)
+	assert_eq(BattleVfx.shake_for({"kind": "enemy_skill", "shape": "circle"}), mage)
+	assert_gt(BattleVfx.shake_for({"kind": "enemy_skill", "shape": "line"}), 0.0)
+	var view: BattleView = _view()
+	view._play_event({"kind": "hit", "position": Vector3.ZERO, "damage": 5})
+	assert_eq(view._shake_trauma, 0.0)
+	view._play_event({"kind": "hit", "position": Vector3.ZERO, "damage": 5, "critical": true})
+	assert_almost_eq(view._shake_trauma, BattleVfx.SHAKE_CRIT, 0.0001)
+
+
+func test_camera_shake_runs_in_view_time_and_holds_while_paused() -> void:
+	var view: BattleView = _view()
+	view._shake_trauma = 1.0
+	view._pause_requested = true
+	view._update_shake(0.1)
+	assert_eq(view._shake_trauma, 1.0, "paused, the shake does not decay")
+	assert_eq(Vector2(view._camera.h_offset, view._camera.v_offset), Vector2.ZERO, "and the camera holds still")
+	view._pause_requested = false
+	view._set_view_time_scale(BattleView.SLOW_MO_SCALE)
+	view._update_shake(0.1)
+	assert_almost_eq(view._shake_trauma, 1.0 - BattleView.SHAKE_DECAY_PER_SECOND * 0.1 * BattleView.SLOW_MO_SCALE, 0.0001, "slow-mo slows the decay")
+	assert_ne(Vector2(view._camera.h_offset, view._camera.v_offset), Vector2.ZERO)
+	view._set_view_time_scale(1.0)
+	view._update_shake(10.0)
+	assert_eq(view._shake_trauma, 0.0)
+	assert_eq(Vector2(view._camera.h_offset, view._camera.v_offset), Vector2.ZERO, "a spent shake leaves the camera centered")
 
 
 func test_view_drops_all_units_when_a_retried_run_restarts_the_tick() -> void:
@@ -423,6 +556,10 @@ func _actor(id: String, faction: String, archetype: String, effects: Dictionary 
 	var actor: Dictionary = {"id": id, "faction": faction, "archetype": archetype, "life": "alive", "hp": 100.0, "max_hp": 100.0, "attack_cooldown": 0.0, "position": [0.0, 0.0], "facing": [1.0, 0.0], "effect_state": effect_state}
 	actor.merge(fields, true)
 	return actor
+
+
+func _rings(effect: Node) -> int:
+	return effect.find_children("*", "MeshInstance3D", true, false).filter(func(mesh: Node) -> bool: return (mesh as MeshInstance3D).mesh is TorusMesh).size()
 
 
 func _label(vfx: BattleVfx) -> Label3D:

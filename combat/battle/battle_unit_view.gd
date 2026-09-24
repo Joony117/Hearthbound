@@ -1,6 +1,9 @@
 class_name BattleUnitView
 extends Node3D
 
+## Emitted once when an animated death clip ends, with the body where it came to rest.
+signal body_landed(at: Vector3)
+
 const MODEL_DIR: String = "res://combat/battle/models/kaykit/"
 # Scales the 2.5-unit KayKit knight to the old unit's height, under the bar.
 const MODEL_SCALE: float = 0.75
@@ -57,6 +60,11 @@ const BAR_CHIP_SECONDS: float = 0.4
 # One priority for every bar layer, under damage numbers (Label3D at 3/4); sorting_offset orders
 # the layers inside one bar so two overlapping bars never interleave.
 const BAR_RENDER_PRIORITY: int = 1
+# PROVISIONAL (ig-iml): hit flash feel, unfelt. Settled by: a played build.
+const HIT_FLASH_SECONDS: float = 0.08
+const HIT_FLASH_CRIT_SECONDS: float = 0.16
+const HIT_FLASH_STRENGTH: float = 0.6
+const HIT_FLASH_CRIT_STRENGTH: float = 0.95
 
 static var _bar_back_material: StandardMaterial3D = _bar_material(BAR_BACK_COLOR)
 static var _bar_chip_material: StandardMaterial3D = _bar_material(BAR_CHIP_COLOR)
@@ -64,6 +72,8 @@ static var _bar_ally_material: StandardMaterial3D = _bar_material(BAR_ALLY_COLOR
 static var _bar_enemy_material: StandardMaterial3D = _bar_material(BAR_ENEMY_COLOR)
 # Built once on first use and shared by every unit.
 static var _clip_library: AnimationLibrary
+# One overlay for every unit's hit flash; each mesh carries its own strength as an instance uniform.
+static var _flash_material: ShaderMaterial = _build_flash_material()
 
 var actor_id: String = ""
 var hero_id: String = ""
@@ -140,6 +150,10 @@ var _glide_elapsed: float = 0.0
 # A hit inside a multi-tick render reacts at its own tick, not the moment the render lands.
 var _pending_reaction: Dictionary = {}
 var _reaction_remaining: float = 0.0
+var _flash_meshes: Array[MeshInstance3D] = []
+var _flash_tween: Tween
+# The fall played as a clip, so its end is a landing worth a dust puff; a corpse seen already down never lands.
+var _fall_animated: bool = false
 
 
 func _ready() -> void:
@@ -259,6 +273,7 @@ func _react(reaction: Dictionary) -> void:
 	if (critical or reaction["heavy"]) and life != "dead" and _pivot != null:
 		_recoil(critical)
 	if reaction["hit"]:
+		_flash(critical)
 		_play_once("Hit_B" if critical else "Hit_A")
 
 
@@ -324,6 +339,8 @@ func _build_visual() -> void:
 	_animator.root_node = NodePath("..")
 	_animator.add_animation_library("", _shared_clips())
 	_animator.animation_finished.connect(_on_clip_finished)
+	for mesh: Node in model.find_children("*", "MeshInstance3D", true, false):
+		_flash_meshes.append(mesh as MeshInstance3D)
 	var ring_mesh := TorusMesh.new()
 	ring_mesh.inner_radius = 0.48
 	ring_mesh.outer_radius = 0.57
@@ -438,6 +455,7 @@ func _pose_dead() -> void:
 	_dead_posed = true
 	if not _animate_death:
 		return
+	_fall_animated = true
 	var tween: Tween = _track(create_tween().set_parallel())
 	tween.tween_property(self, "_fling_offset", -_facing_world * _fling_distance, DEAD_TWEEN_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_method(_set_fling_phase, 0.0, 1.0, DEAD_TWEEN_SECONDS)
@@ -566,8 +584,52 @@ func _play_once(clip: String) -> void:
 	_animator.seek(0.0)
 
 
-func _on_clip_finished(_clip: StringName) -> void:
+func _on_clip_finished(clip: StringName) -> void:
 	_one_shot = false
+	if _fall_animated and clip == StringName(_clips["dead"]):
+		_fall_animated = false
+		body_landed.emit(_pivot.global_position)
+
+
+# Hit-stop freezes this tween with the rest, so a crit holds its flash through the freeze.
+func _flash(critical: bool) -> void:
+	if _flash_meshes.is_empty():
+		return
+	if _flash_tween != null:
+		_flash_tween.kill()
+	for mesh: MeshInstance3D in _flash_meshes:
+		mesh.material_overlay = _flash_material
+	var strength: float = HIT_FLASH_CRIT_STRENGTH if critical else HIT_FLASH_STRENGTH
+	_set_flash(strength)
+	_flash_tween = _track(create_tween())
+	_flash_tween.tween_method(_set_flash, strength, 0.0, HIT_FLASH_CRIT_SECONDS if critical else HIT_FLASH_SECONDS)
+	_flash_tween.tween_callback(_clear_flash)
+
+
+func _set_flash(strength: float) -> void:
+	for mesh: MeshInstance3D in _flash_meshes:
+		mesh.set_instance_shader_parameter(&"flash", strength)
+
+
+# The overlay is an extra draw pass, so it only stays on while a flash runs.
+func _clear_flash() -> void:
+	for mesh: MeshInstance3D in _flash_meshes:
+		mesh.material_overlay = null
+
+
+static func _build_flash_material() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = """shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never;
+instance uniform float flash = 0.0;
+void fragment() {
+	ALBEDO = vec3(1.0);
+	ALPHA = flash;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	return material
 
 
 # Clips are copied out of the Rig_Medium files once: loops set, root motion pinned.

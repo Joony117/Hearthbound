@@ -21,6 +21,42 @@ const ROGUE_SKILL_COLOR: Color = Color("766f75")
 const ENEMY_SKILL_COLOR: Color = Color("e85b4f")
 const DODGE_COLOR: Color = Color("8cc8ec")
 const DUST_COLOR: Color = Color("8a8a86")
+# PROVISIONAL (ig-iml): impact feel numbers, unfelt. Settled by: a played build.
+const HIT_SPARK_COUNT: int = 28
+const HIT_SPARK_SIZE: float = 0.13
+const HIT_SPARK_SPEED: float = 1.4
+const CRIT_RING_RADIUS: float = 1.0
+const CRIT_BIG_RING_RADIUS: float = 2.0
+const CRIT_RING_SECONDS: float = 0.3
+const PROJECTILE_SECONDS: float = 0.12
+const PROJECTILE_IMPACT_COUNT: int = 16
+const PROJECTILE_IMPACT_SIZE: float = 0.12
+const SKILL_CAST_FLASH_RADIUS: float = 0.9
+const SKILL_CAST_FLASH_SECONDS: float = 0.22
+const SKILL_SHOCKWAVE_RADIUS: float = 2.4
+const SKILL_SHOCKWAVE_SECONDS: float = 0.35
+const SKILL_IMPACT_COUNT: int = 32
+const SKILL_IMPACT_SIZE: float = 0.18
+const SKILL_IMPACT_SPEED: float = 1.5
+const BURST_SPHERE_SECONDS: float = 0.35
+const BURST_SPHERE_ALPHA: float = 0.55
+const DAMAGE_POP_SCALE: float = 1.3
+const CRIT_POP_SCALE: float = 2.2
+const DAMAGE_POP_SECONDS: float = 0.12
+const LANDING_DUST_COUNT: int = 18
+const LANDING_DUST_SIZE: float = 0.16
+const LANDING_DUST_SPEED: float = 0.6
+const LANDING_RING_RADIUS: float = 1.1
+# Camera trauma per event, 0-1; battle_view squares it into a shake offset.
+const SHAKE_CRIT: float = 0.45
+const SHAKE_SKILL: float = 0.55
+const SHAKE_MAGE: float = 0.9
+
+# One material for every effect mesh; each mesh carries its color and fade as an instance uniform.
+static var _effect_material: ShaderMaterial = _build_effect_material()
+# One material for every particle speck; CPUParticles3D.color tints it per burst.
+static var _speck_material: StandardMaterial3D = _build_speck_material()
+static var _specks: Dictionary = {}
 
 # Every tween spawn starts, so the view's slow-mo can rescale live effects mid-flight.
 var _tweens: Array[Tween] = []
@@ -85,6 +121,7 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 			var skill: Dictionary = {
 				"kind": "skill",
 				"actor_id": actor_id,
+				"faction": faction,
 				"archetype": archetype,
 				"position": spot,
 				"previous_position": _world(before.get("position")),
@@ -105,7 +142,7 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 				if count > 0:
 					var centroid: Vector3 = total / float(count)
 					skill["center"] = centroid
-					# Sim facing only turns while moving, so a standing ranger aims at what it actually hit.
+					# The sim faces the shot at its first target; the streak follows what it actually pierced.
 					if archetype == "ranger" and not centroid.is_equal_approx(spot):
 						skill["facing"] = (centroid - spot).normalized()
 			events.append(skill)
@@ -137,14 +174,18 @@ func spawn(event: Dictionary) -> void:
 	var spot: Vector3 = event.get("position", Vector3.ZERO)
 	match str(event.get("kind", "")):
 		"hit":
-			_burst(effect, spot + Vector3(0.0, 0.9, 0.0), SPARK_COLOR, 14, 0.3)
+			_burst(effect, spot + Vector3(0.0, 0.9, 0.0), SPARK_COLOR, HIT_SPARK_COUNT, 0.3, HIT_SPARK_SIZE, HIT_SPARK_SPEED)
+			var critical: bool = bool(event.get("critical", false))
+			if critical:
+				_expanding_ring(effect, spot, CRIT_COLOR, 0.3, CRIT_RING_RADIUS, CRIT_RING_SECONDS)
+				_expanding_ring(effect, spot, CRIT_OUTLINE_COLOR, 0.5, CRIT_BIG_RING_RADIUS, CRIT_RING_SECONDS * 1.5)
 			var damage: int = int(event.get("damage", 0))
 			if damage > 0:
-				if bool(event.get("critical", false)):
+				if critical:
 					_crit_label(effect, spot, "%d!" % damage)
 					lifetime = 0.85
 				else:
-					_rising_label(effect, spot, str(damage), DAMAGE_COLOR)
+					_rising_label(effect, spot, str(damage), DAMAGE_COLOR, 0.0, DAMAGE_POP_SCALE)
 					lifetime = 0.7
 		"heal":
 			_rising_label(effect, spot, "+%d" % int(event.get("amount", 0)), HEAL_COLOR)
@@ -164,9 +205,10 @@ func spawn(event: Dictionary) -> void:
 			_fade(ghost, 0.3)
 			_rising_label(effect, spot, "DODGE", DODGE_COLOR)
 			lifetime = 0.7
-		"death":
-			_burst(effect, spot + Vector3(0.0, 0.3, 0.0), DUST_COLOR, 10, 0.5)
-			lifetime = 0.5
+		"landing":
+			_burst(effect, spot + Vector3(0.0, 0.15, 0.0), DUST_COLOR, LANDING_DUST_COUNT, 0.6, LANDING_DUST_SIZE, LANDING_DUST_SPEED)
+			_expanding_ring(effect, spot, DUST_COLOR, 0.3, LANDING_RING_RADIUS, 0.4)
+			lifetime = 0.6
 		_:
 			effect.queue_free()
 			return
@@ -185,8 +227,11 @@ func _basic_attack(effect: Node3D, event: Dictionary) -> float:
 		var projectile: MeshInstance3D = _mesh(effect, ball, color)
 		projectile.position = origin
 		var target: Vector3 = (event.get("target_position", Vector3.ZERO) as Vector3) + Vector3(0.0, 0.9, 0.0)
-		_track(projectile.create_tween()).tween_property(projectile, "position", target, 0.12)
-		return 0.12
+		var flight: Tween = _track(projectile.create_tween())
+		flight.tween_property(projectile, "position", target, PROJECTILE_SECONDS)
+		flight.tween_callback(projectile.hide)
+		_burst(effect, target, color, PROJECTILE_IMPACT_COUNT, 0.3, PROJECTILE_IMPACT_SIZE, 1.0, PROJECTILE_SECONDS)
+		return PROJECTILE_SECONDS + 0.3
 	var facing: Vector3 = event.get("facing", Vector3.FORWARD)
 	var arc_mesh := TorusMesh.new()
 	arc_mesh.inner_radius = 0.45
@@ -197,45 +242,97 @@ func _basic_attack(effect: Node3D, event: Dictionary) -> float:
 	arc.scale = Vector3(0.4, 0.1, 0.2)
 	var tween: Tween = _track(arc.create_tween().set_parallel())
 	tween.tween_property(arc, "scale", Vector3(1.0, 0.1, 0.45), 0.18)
-	tween.tween_property(arc.material_override, "albedo_color:a", 0.0, 0.18)
+	_fade(arc, 0.18)
 	return 0.18
 
 
+# Every signature: a cast flash at the caster, a ground shockwave, and a big impact where it lands.
 func _skill(effect: Node3D, event: Dictionary) -> float:
 	var spot: Vector3 = event.get("position", Vector3.ZERO)
 	var facing: Vector3 = event.get("facing", Vector3.FORWARD)
-	match str(event.get("archetype", "")):
+	var archetype: String = str(event.get("archetype", ""))
+	var colors: Dictionary = {"knight": KNIGHT_SKILL_COLOR, "ranger": RANGER_SKILL_COLOR, "mage": MAGE_SKILL_COLOR, "rogue": ROGUE_SKILL_COLOR}
+	var color: Color = ENEMY_SKILL_COLOR if str(event.get("faction", "")) == "enemy" else colors.get(archetype, ENEMY_SKILL_COLOR)
+	match archetype:
 		"knight":
-			_expanding_ring(effect, spot, KNIGHT_SKILL_COLOR, 0.3, float(event.get("radius", 1.0)), 0.4)
-			return 0.4
+			_cast_flash(effect, spot, color)
+			_expanding_ring(effect, spot, color, 0.3, float(event.get("radius", 1.0)), 0.4)
+			_impact(effect, spot, color)
+			return 0.45
 		"ranger":
-			_streak(effect, spot, spot + facing * float(event.get("range", 1.0)), 0.12, RANGER_SKILL_COLOR, 0.3)
-			return 0.3
+			return _line_signature(effect, spot, spot + facing * float(event.get("range", 1.0)), event.get("center", spot), 0.12, color)
 		"mage":
-			var center: Vector3 = event.get("center", spot)
-			var radius: float = float(event.get("radius", 1.0))
-			_expanding_ring(effect, center, MAGE_SKILL_COLOR, radius * 0.3, radius, 0.4)
-			_burst(effect, center + Vector3(0.0, 0.4, 0.0), MAGE_SKILL_COLOR, 18, 0.4)
-			return 0.4
+			return _burst_signature(effect, spot, event.get("center", spot), float(event.get("radius", 1.0)), color)
 		"rogue":
-			_burst(effect, (event.get("previous_position", spot) as Vector3) + Vector3(0.0, 0.6, 0.0), ROGUE_SKILL_COLOR, 12, 0.4)
-			_burst(effect, spot + Vector3(0.0, 0.6, 0.0), ROGUE_SKILL_COLOR, 12, 0.4)
-			return 0.4
+			# Vanish where it stood, strike where it lands.
+			_cast_flash(effect, event.get("previous_position", spot), color)
+			_expanding_ring(effect, spot, color, 0.3, SKILL_SHOCKWAVE_RADIUS * 0.7, SKILL_SHOCKWAVE_SECONDS)
+			_impact(effect, spot, color)
+			return 0.45
 	return 0.0
 
 
 func _enemy_skill(effect: Node3D, event: Dictionary) -> float:
 	var point: Vector3 = event.get("point", Vector3.ZERO)
+	var origin: Vector3 = event.get("origin", point)
 	if str(event.get("shape", "")) == "line":
-		_streak(effect, event.get("origin", point), point, 0.3, ENEMY_SKILL_COLOR, 0.3)
-		return 0.3
-	var radius: float = float(event.get("radius", 1.0))
-	_expanding_ring(effect, point, ENEMY_SKILL_COLOR, radius * 0.3, radius, 0.4)
-	_burst(effect, point + Vector3(0.0, 0.4, 0.0), ENEMY_SKILL_COLOR, 16, 0.4)
-	return 0.4
+		return _line_signature(effect, origin, point, point, 0.3, ENEMY_SKILL_COLOR)
+	return _burst_signature(effect, origin, point, float(event.get("radius", 1.0)), ENEMY_SKILL_COLOR)
 
 
-func _burst(effect: Node3D, at: Vector3, color: Color, amount: int, lifetime: float) -> void:
+func _line_signature(effect: Node3D, from: Vector3, to: Vector3, impact_at: Vector3, width: float, color: Color) -> float:
+	_cast_flash(effect, from, color)
+	_expanding_ring(effect, from, color, 0.2, SKILL_SHOCKWAVE_RADIUS * 0.5, SKILL_SHOCKWAVE_SECONDS)
+	_streak(effect, from, to, width, color, 0.3)
+	_impact(effect, impact_at, color)
+	return 0.45
+
+
+# The mage burst is the showpiece: a sphere swelling to the blast radius over a double shockwave.
+func _burst_signature(effect: Node3D, caster: Vector3, center: Vector3, radius: float, color: Color) -> float:
+	_cast_flash(effect, caster, color)
+	var sphere_mesh := SphereMesh.new()
+	sphere_mesh.radial_segments = 24
+	sphere_mesh.rings = 12
+	var sphere: MeshInstance3D = _mesh(effect, sphere_mesh, Color(color, BURST_SPHERE_ALPHA))
+	sphere.position = Vector3(center.x, 0.3, center.z)
+	sphere.scale = Vector3.ONE * radius * 0.2
+	_track(sphere.create_tween()).tween_property(sphere, "scale", Vector3(radius, radius * 0.6, radius), BURST_SPHERE_SECONDS).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	_fade(sphere, BURST_SPHERE_SECONDS)
+	_expanding_ring(effect, center, color, radius * 0.3, radius, 0.4)
+	_expanding_ring(effect, center, color.lightened(0.4), radius * 0.5, radius * 1.4, 0.5)
+	_impact(effect, center, color)
+	return 0.5
+
+
+func _cast_flash(effect: Node3D, at: Vector3, color: Color) -> void:
+	var flash_mesh := SphereMesh.new()
+	flash_mesh.radial_segments = 16
+	flash_mesh.rings = 8
+	var flash: MeshInstance3D = _mesh(effect, flash_mesh, Color(color.lightened(0.5), 0.9))
+	flash.position = at + Vector3(0.0, 0.9, 0.0)
+	flash.scale = Vector3.ONE * 0.2
+	_track(flash.create_tween()).tween_property(flash, "scale", Vector3.ONE * SKILL_CAST_FLASH_RADIUS, SKILL_CAST_FLASH_SECONDS)
+	_fade(flash, SKILL_CAST_FLASH_SECONDS)
+
+
+func _impact(effect: Node3D, at: Vector3, color: Color) -> void:
+	_burst(effect, at + Vector3(0.0, 0.6, 0.0), color, SKILL_IMPACT_COUNT, 0.45, SKILL_IMPACT_SIZE, SKILL_IMPACT_SPEED)
+
+
+## Camera trauma an event adds: crits and skills shake, ordinary hits never do.
+static func shake_for(event: Dictionary) -> float:
+	match str(event.get("kind", "")):
+		"hit":
+			return SHAKE_CRIT if bool(event.get("critical", false)) else 0.0
+		"skill":
+			return SHAKE_MAGE if str(event.get("archetype", "")) == "mage" else SHAKE_SKILL
+		"enemy_skill":
+			return SHAKE_MAGE if str(event.get("shape", "")) == "circle" else SHAKE_SKILL
+	return 0.0
+
+
+func _burst(effect: Node3D, at: Vector3, color: Color, amount: int, lifetime: float, size: float = 0.08, speed: float = 1.0, delay: float = 0.0) -> void:
 	var particles := CPUParticles3D.new()
 	particles.one_shot = true
 	particles.explosiveness = 1.0
@@ -243,17 +340,21 @@ func _burst(effect: Node3D, at: Vector3, color: Color, amount: int, lifetime: fl
 	particles.lifetime = lifetime
 	particles.direction = Vector3.UP
 	particles.spread = 180.0
-	particles.initial_velocity_min = 2.0
-	particles.initial_velocity_max = 4.0
+	particles.initial_velocity_min = 2.0 * speed
+	particles.initial_velocity_max = 4.0 * speed
 	particles.gravity = Vector3(0.0, -6.0, 0.0)
-	var speck := BoxMesh.new()
-	speck.size = Vector3(0.08, 0.08, 0.08)
-	speck.material = _material(color)
-	particles.mesh = speck
+	particles.mesh = _speck(size)
+	particles.color = color
 	particles.speed_scale = _time_scale
 	particles.position = at
 	effect.add_child(particles)
-	particles.emitting = true
+	# CPUParticles3D starts emitting on its own, so a delayed burst must be held first.
+	particles.emitting = delay <= 0.0
+	if delay <= 0.0:
+		return
+	var fuse: Tween = _track(particles.create_tween())
+	fuse.tween_interval(delay)
+	fuse.tween_callback(particles.set_emitting.bind(true))
 
 
 func _expanding_ring(effect: Node3D, at: Vector3, color: Color, from_radius: float, to_radius: float, seconds: float) -> void:
@@ -265,7 +366,7 @@ func _expanding_ring(effect: Node3D, at: Vector3, color: Color, from_radius: flo
 	ring.scale = Vector3(from_radius, 1.0, from_radius)
 	var tween: Tween = _track(ring.create_tween().set_parallel())
 	tween.tween_property(ring, "scale", Vector3(to_radius, 1.0, to_radius), seconds)
-	tween.tween_property(ring.material_override, "albedo_color:a", 0.0, seconds)
+	_fade(ring, seconds)
 
 
 func _streak(effect: Node3D, from: Vector3, to: Vector3, width: float, color: Color, seconds: float) -> void:
@@ -280,14 +381,13 @@ func _streak(effect: Node3D, from: Vector3, to: Vector3, width: float, color: Co
 
 func _crit_label(effect: Node3D, at: Vector3, text: String) -> void:
 	var jitter: Vector3 = Vector3(randf_range(-CRIT_JITTER, CRIT_JITTER), 0.0, 0.0)
-	var label: Label3D = _rising_label(effect, at + jitter, text, CRIT_COLOR, 0.12)
+	var label: Label3D = _rising_label(effect, at + jitter, text, CRIT_COLOR, 0.12, CRIT_POP_SCALE)
 	label.outline_modulate = CRIT_OUTLINE_COLOR
 	label.font_size = CRIT_FONT_SIZE
-	label.scale = Vector3.ONE * 1.8
-	_track(label.create_tween()).tween_property(label, "scale", Vector3.ONE, 0.12)
 
 
-func _rising_label(effect: Node3D, at: Vector3, text: String, color: Color, delay: float = 0.0) -> Label3D:
+# pop: the scale a damage number bursts in at before it settles, with overshoot, to its resting size.
+func _rising_label(effect: Node3D, at: Vector3, text: String, color: Color, delay: float = 0.0, pop: float = 1.0) -> Label3D:
 	var label := Label3D.new()
 	label.text = text
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -305,11 +405,19 @@ func _rising_label(effect: Node3D, at: Vector3, text: String, color: Color, dela
 	tween.tween_property(label, "position:y", label.position.y + 0.9, 0.7).set_delay(delay)
 	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_delay(delay)
 	tween.tween_property(label, "outline_modulate:a", 0.0, 0.7).set_delay(delay)
+	if pop != 1.0:
+		label.scale = Vector3.ONE * pop
+		_track(label.create_tween()).tween_property(label, "scale", Vector3.ONE, DAMAGE_POP_SECONDS).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return label
 
 
 func _fade(instance: MeshInstance3D, seconds: float) -> void:
-	_track(instance.create_tween()).tween_property(instance.material_override, "albedo_color:a", 0.0, seconds)
+	var tint: Color = instance.get_instance_shader_parameter(&"tint")
+	_track(instance.create_tween()).tween_method(_set_alpha.bind(instance, tint), tint.a, 0.0, seconds)
+
+
+static func _set_alpha(alpha: float, instance: MeshInstance3D, tint: Color) -> void:
+	instance.set_instance_shader_parameter(&"tint", Color(tint, alpha))
 
 
 func _track(tween: Tween) -> Tween:
@@ -330,17 +438,41 @@ func _prune_tweens() -> void:
 func _mesh(effect: Node3D, mesh_resource: Mesh, color: Color) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
 	instance.mesh = mesh_resource
-	instance.material_override = _material(color)
+	instance.material_override = _effect_material
+	instance.set_instance_shader_parameter(&"tint", color)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	effect.add_child(instance)
 	return instance
 
 
-static func _material(color: Color) -> StandardMaterial3D:
+static func _speck(size: float) -> BoxMesh:
+	if not _specks.has(size):
+		var speck := BoxMesh.new()
+		speck.size = Vector3.ONE * size
+		speck.material = _speck_material
+		_specks[size] = speck
+	return _specks[size]
+
+
+static func _build_effect_material() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = """shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never;
+instance uniform vec4 tint : source_color = vec4(1.0);
+void fragment() {
+	ALBEDO = tint.rgb;
+	ALPHA = tint.a;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	return material
+
+
+static func _build_speck_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = color
+	material.vertex_color_use_as_albedo = true
 	return material
 
 

@@ -24,6 +24,11 @@ const STANDARD_CAMERA_SIZE: float = 36.0
 # Wave-clear slow-mo is view-only: unit lerps, tweens and particles slow; the sim never does.
 const SLOW_MO_SCALE: float = 0.25
 const SLOW_MO_SECONDS: float = 0.8
+# PROVISIONAL (ig-iml): camera shake feel, unfelt. Settled by: a played build.
+# Trauma per event is BattleVfx.shake_for; it decays in view time and squares into an offset.
+const SHAKE_DECAY_PER_SECOND: float = 2.2
+const SHAKE_MAX_OFFSET_FRACTION: float = 0.03
+const SHAKE_FREQUENCY: float = 24.0
 
 @onready var _camera_rig: Node3D = %CameraRig
 @onready var _camera: Camera3D = %Camera3D
@@ -75,6 +80,8 @@ var _last_rendered_tick: int = -1
 var _slow_mo_remaining: float = 0.0
 # Events from a multi-tick render wait here for their own tick: {"due": real seconds, "event": Dictionary}.
 var _pending_events: Array[Dictionary] = []
+var _shake_trauma: float = 0.0
+var _shake_clock: float = 0.0
 var _view_time_scale: float = 1.0
 var _last_living_enemy_ids: Array[String] = []
 var _snapshot_elapsed: float = 0.0
@@ -197,6 +204,7 @@ func _process(delta: float) -> void:
 		if _slow_mo_remaining <= 0.0:
 			_set_view_time_scale(1.0)
 	_play_due_events(delta)
+	_update_shake(delta)
 	if _mode == "practice" and _practice_state != null:
 		if not _pause_requested:
 			BattleSimulation.advance(_practice_state, delta)
@@ -515,6 +523,7 @@ func _update_unit_views() -> void:
 			unit.name = "Unit_%s" % actor_id.validate_node_name()
 			unit.set_actor(actor, actor_id in _selected_ids, glide)
 			unit.set_time_scale(_view_time_scale)
+			unit.body_landed.connect(_on_unit_body_landed)
 			_units_root.add_child(unit)
 			_unit_views[actor_id] = unit
 		else:
@@ -584,6 +593,7 @@ func _play_event(event: Dictionary) -> void:
 		_set_view_time_scale(SLOW_MO_SCALE)
 		return
 	_vfx.spawn(event)
+	_shake_trauma = minf(1.0, _shake_trauma + BattleVfx.shake_for(event))
 	var unit: BattleUnitView = _unit_views.get(str(event.get("actor_id", ""))) as BattleUnitView
 	if unit == null:
 		return
@@ -607,9 +617,30 @@ func _set_view_time_scale(value: float) -> void:
 		_vfx.set_time_scale(value)
 
 
+func _on_unit_body_landed(at: Vector3) -> void:
+	if _vfx != null:
+		_vfx.spawn({"kind": "landing", "position": at})
+
+
+# The offset rides on h/v_offset, so camera panning and zone framing never fight it.
+# Runs in view time, so slow-mo slows the shake, and a paused battle holds still.
+func _update_shake(delta: float) -> void:
+	if _is_paused():
+		_camera.h_offset = 0.0
+		_camera.v_offset = 0.0
+		return
+	var scaled: float = delta * _view_time_scale
+	_shake_trauma = maxf(0.0, _shake_trauma - SHAKE_DECAY_PER_SECOND * scaled)
+	_shake_clock += scaled
+	var amplitude: float = _camera.size * SHAKE_MAX_OFFSET_FRACTION * _shake_trauma * _shake_trauma
+	_camera.h_offset = amplitude * sin(_shake_clock * SHAKE_FREQUENCY * TAU)
+	_camera.v_offset = amplitude * sin(_shake_clock * SHAKE_FREQUENCY * 1.37 * TAU + 1.0)
+
+
 # Also drops queued events: they belong to the run or view being reset.
 func _reset_slow_mo() -> void:
 	_pending_events.clear()
+	_shake_trauma = 0.0
 	_slow_mo_remaining = 0.0
 	_last_living_enemy_ids.clear()
 	_set_view_time_scale(1.0)

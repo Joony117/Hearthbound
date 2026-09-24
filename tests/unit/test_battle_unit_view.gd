@@ -399,6 +399,43 @@ func test_telegraph_line_points_along_its_aim() -> void:
 		assert_almost_eq(absf(unit._telegraph_line.global_basis.z.normalized().dot(aim)), 1.0, 0.001, "facing %s" % str(facing))
 
 
+func test_hit_flash_shares_one_overlay_and_crits_flash_brighter_and_longer() -> void:
+	var plain: BattleUnitView = _unit({"archetype": "knight"})
+	var crit: BattleUnitView = _unit({"archetype": "mage", "id": "enemy-2"})
+	plain._react({"hit": true, "skill": false, "critical": false, "heavy": false})
+	crit._react({"hit": true, "skill": false, "critical": true, "heavy": false})
+	assert_gt(plain._flash_meshes.size(), 1)
+	for unit: BattleUnitView in [plain, crit]:
+		for mesh: MeshInstance3D in unit._flash_meshes:
+			assert_same(mesh.material_overlay, BattleUnitView._flash_material, "one overlay for the whole battle")
+	assert_gt(float(crit._flash_meshes[0].get_instance_shader_parameter(&"flash")), float(plain._flash_meshes[0].get_instance_shader_parameter(&"flash")), "crits flash brighter")
+	plain._flash_tween.custom_step(BattleUnitView.HIT_FLASH_SECONDS + 0.01)
+	crit._flash_tween.custom_step(BattleUnitView.HIT_FLASH_SECONDS + 0.01)
+	assert_null(plain._flash_meshes[0].material_overlay, "the overlay comes off when the flash ends")
+	assert_same(crit._flash_meshes[0].material_overlay, BattleUnitView._flash_material, "crits flash longer")
+
+
+func test_no_flash_without_a_landed_hit() -> void:
+	var unit: BattleUnitView = _unit({})
+	unit._react({"hit": false, "skill": true, "critical": false, "heavy": false})
+	assert_null(unit._flash_meshes[0].material_overlay)
+
+
+func test_an_animated_fall_lands_once_and_a_corpse_seen_dead_never_does() -> void:
+	var falling: BattleUnitView = _unit({"effect_state": {"last_hit_tick": 1}})
+	watch_signals(falling)
+	falling.set_actor(_actor({"hp": 0.0, "life": "dead", "effect_state": {"last_hit_tick": 2}}), false)
+	falling._on_clip_finished(&"Hit_A")
+	assert_signal_not_emitted(falling, "body_landed", "a hit clip ending is not the landing")
+	falling._on_clip_finished(&"Skeletons_Death")
+	falling._on_clip_finished(&"Skeletons_Death")
+	assert_signal_emit_count(falling, "body_landed", 1)
+	var corpse: BattleUnitView = _unit({"hp": 0.0, "life": "dead"})
+	watch_signals(corpse)
+	corpse._on_clip_finished(&"Skeletons_Death")
+	assert_signal_not_emitted(corpse, "body_landed")
+
+
 func _pivot_offset(unit: BattleUnitView) -> Vector3:
 	var offset: Vector3 = unit._pivot.global_position - unit.global_position
 	offset.y = 0.0
