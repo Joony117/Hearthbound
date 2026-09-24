@@ -936,6 +936,22 @@ add save state and a balance row, and nothing asks for either.
 - **Townsfolk.** Only your heroes live in the town. The heroes run the buildings themselves
   (§ Heroes staff the buildings, below). There are no decorative keepers and no NPCs.
 
+**Play-test fix: the way to battle (`ig-4pr`, 2026-09-24).** The owner could not find how to send a
+team out ("i cant figure out how to dispatch a team into battle"). No building name said
+"expedition", and the path took two screens and a hidden Ctrl-click. The fix makes the path
+visible without a tutorial:
+
+- The building list names the job for the two core-loop buildings: **3 · Teams** (the Training
+  Hall) and **6 · Expeditions** (the Town Gate). The buildings keep their names in town.
+- The Town Gate always shows one primary button, the next step. With no heroes, it goes to the
+  Summoning Circle. With heroes but no team, it says **Make a team** and goes to the Training Hall.
+  The dispatch controls appear once a team exists.
+- The team editor starts a new team's name as "Team N", and says how to pick several heroes.
+  **Save and go to Expeditions** saves the team and opens the Town Gate with it selected. The
+  player still presses Dispatch and confirms.
+- If a second play-test still stumbles, the next step is a roster picker on the Town Gate itself,
+  so a team can be made where it is sent out.
+
 ### Heroes staff the buildings — owner ruling 2026-09-23 (`ig-wgj`)
 
 The owner, 2026-09-23: "I want the heroes themselves be the shopkeep NPCs, they have their own
