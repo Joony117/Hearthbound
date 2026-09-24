@@ -77,6 +77,7 @@ var _pause_left: float = 0.0
 var _model: Node3D
 var _animator: AnimationPlayer
 var _label: Label3D
+var _sign: Label3D
 
 
 static func create(hero: Hero) -> TownWalker:
@@ -109,7 +110,15 @@ static func create(hero: Hero) -> TownWalker:
 	walker._label.position.y = 2.1
 	walker._label.visible = false
 	walker.add_child(walker._label)
+	walker._sign = TownHero.sign_label()
+	walker.add_child(walker._sign)
 	return walker
+
+
+## Shows "♥ <partner>" over its head, or nothing for "". Hidden while its meeting line shows.
+func set_sign(text: String) -> void:
+	_sign.text = text
+	_sign.visible = not text.is_empty() and not _label.visible
 
 
 static func work_clip(station_id: StringName) -> StringName:
@@ -203,6 +212,7 @@ func step(delta: float) -> void:
 	if _line_left > 0.0:
 		_line_left -= delta
 		_label.visible = _line_left > 0.0
+		_sign.visible = not _label.visible and not _sign.text.is_empty()
 	# Before the pause, so a body it switches to mid-greeting still gets its own.
 	if _following and is_instance_valid(greet):
 		var distance: float = _flat_distance(greet)
@@ -275,6 +285,7 @@ func _greet() -> void:
 	_animator.queue(&"Idle_A")
 	_label.text = line
 	_label.visible = true
+	_sign.visible = false
 	_line_left = LINE_SECONDS
 	_pause_left = LINE_SECONDS
 

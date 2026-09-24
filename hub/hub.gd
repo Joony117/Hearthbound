@@ -3,6 +3,8 @@ extends Node3D
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const UI_BUILDER := preload("res://hub/hub_ui_builder.gd")
 const MAX_TEAM_SIZE: int = 5
+## A bonded hero's roster flag and town sign (ig-m6o.2.2.1), with the partner's name.
+const PARTNER_SIGN: String = "♥ %s"
 const NO_BUILDING: StringName = &""
 ## What each building opens (GAME_SPEC.md § The town hub). Every node named here is hidden unless
 ## the open building lists it.
@@ -120,6 +122,14 @@ var _moving: StringName = NO_BUILDING
 ## View state, not a tally: _refresh_partner rebuilds it from the Ledger on every roster change.
 var _partner_id: String = ""
 var _partner_line: String = ""
+## Every hero's bond (Bonds.index), kept until the ledger changes: keyed on the ledger array's
+## identity and ledger_next_seq (DECISIONS.md 2026-09-24 "Bonds stay derived", item 3). View state,
+## never saved. BALANCE is a const, so no balance change can outdate it at runtime.
+var _bonds: Dictionary = {}
+var _bonds_ledger: Variant = null
+var _bonds_seq: int = -1
+## How many times _bonds was built, for tests.
+var bond_builds: int = 0
 var _order_structure_key: String = ""
 # True while the placed-building picker lists who to take out, false while it lists who to put in.
 var _placed_picker_clears: bool = false
@@ -326,6 +336,7 @@ func _refresh_hero_list(list: ItemList) -> void:
 		if selected_hero != null and not selected_ids.has(selected_hero.instance_id):
 			selected_ids.append(selected_hero.instance_id)
 	list.clear()
+	var living: Dictionary = _roster_names()
 	for hero: Hero in GameSession.roster:
 		if _roster_min_rank != -1 and (
 			hero.rank != _roster_min_rank if _roster_exact_rank.button_pressed else hero.rank < _roster_min_rank
@@ -347,6 +358,9 @@ func _refresh_hero_list(list: ItemList) -> void:
 		var flags: PackedStringArray = []
 		if hero.favorite:
 			flags.append("★")
+		var partner_sign: String = _partner_sign(hero.instance_id, living)
+		if not partner_sign.is_empty():
+			flags.append(partner_sign)
 		if busy:
 			flags.append("Away")
 		elif GameSession.is_embodied(hero):
@@ -660,12 +674,13 @@ func _history_lines(hero: Hero) -> Array[String]:
 
 
 ## The bond and dream lines above History (SYSTEMS.md § Bonds and dreams, slice 1), each block
-## followed by a blank line; "" when the hero has neither. The selected hero only: never per row.
+## followed by a blank line; "" when the hero has neither. The bond comes from the kept index; the
+## dream is still read for the selected hero only, on refresh, never per row.
 func _bond_text(hero: Hero) -> String:
 	var living: Dictionary = _roster_names()
 	var names: Dictionary = Ledger.known_names(GameSession.ledger, living)
 	var text: String = ""
-	var bond: Dictionary = Bonds.bond(GameSession.ledger, hero.instance_id, living, BALANCE)
+	var bond: Dictionary = Bonds.bond_from(_bond_index(), hero.instance_id, living, BALANCE)
 	if not bond.is_empty():
 		text += "%s\n\n" % Bonds.bond_line(bond, names, GameSession.is_hero_busy(GameSession.hero_by_id(bond["partner"])))
 	var dream: Array[String] = Bonds.dream_lines(Bonds.dream(GameSession.ledger, hero.instance_id), hero.instance_id, names, BALANCE)
@@ -674,7 +689,7 @@ func _bond_text(hero: Hero) -> String:
 	return text
 
 
-## The walking hero's bonded partner and greeting, read from the Ledger on roster_changed only
+## The walking hero's bonded partner and greeting, from the kept index on roster_changed only
 ## (every settle that writes a record also changes the roster); never per frame or per pulse.
 func _refresh_partner() -> void:
 	var old_partner: String = _partner_id
@@ -683,7 +698,7 @@ func _refresh_partner() -> void:
 	var walker: Hero = GameSession.hero_by_id(GameSession.embodied_hero_id)
 	if walker != null:
 		var living: Dictionary = _roster_names()
-		var bond: Dictionary = Bonds.bond(GameSession.ledger, walker.instance_id, living, BALANCE)
+		var bond: Dictionary = Bonds.bond_from(_bond_index(), walker.instance_id, living, BALANCE)
 		if not bond.is_empty():
 			_partner_id = bond["partner"]
 			_partner_line = Bonds.greeting(bond, Ledger.known_names(GameSession.ledger, living))
@@ -697,14 +712,69 @@ func _refresh_partner() -> void:
 ## Every hero in town walks (ig-6m2.6): on the roster, not away, and not the body. In pick order, so
 ## the wanderer cap keeps the same heroes each visit: keepers and workers, the partner, then
 ## favorites, higher rank, lower instance_id. Runs on the 0.25 s pulse too: TownView keeps unchanged
-## figures, so a quiet pulse changes nothing.
+## figures, so a quiet pulse changes nothing. Each hero at home (the body too) gets its partner
+## sign from the kept index: a pulse with no ledger change rebuilds nothing, and asking it walks
+## each hero's own pairs, at most one per other hero on the roster.
 func _refresh_walkers() -> void:
+	var living: Dictionary = _roster_names()
 	var heroes: Array[Hero] = []
+	var signs: Dictionary = {}
 	for hero: Hero in GameSession.roster:
-		if not GameSession.is_hero_busy(hero) and not GameSession.is_embodied(hero):
+		if GameSession.is_hero_busy(hero):
+			continue
+		if not GameSession.is_embodied(hero):
 			heroes.append(hero)
+		var partner_sign: String = _partner_sign(hero.instance_id, living)
+		if not partner_sign.is_empty():
+			signs[hero.instance_id] = partner_sign
 	heroes.sort_custom(_walks_before)
-	%Town.show_walkers(heroes)
+	%Town.show_walkers(heroes, signs)
+
+
+## "♥ Mara" for a hero bonded to Mara (a key of living), or "" for none. Stays while Mara is away.
+func _partner_sign(hero_id: String, living: Dictionary) -> String:
+	var partner: String = str(Bonds.bond_from(_bond_index(), hero_id, living, BALANCE).get("partner", ""))
+	return "" if partner.is_empty() else PARTNER_SIGN % living[partner]
+
+
+## The kept bond index, rebuilt only when the ledger array or ledger_next_seq differs from the one it
+## was built for: never per frame, and a pulse or refresh with no ledger change reuses it. A rollback
+## puts the same array back with its old ledger_next_seq, so an index built before it stays valid.
+func _bond_index() -> Dictionary:
+	var ledger: Array[Dictionary] = GameSession.ledger
+	if is_same(ledger, _bonds_ledger) and GameSession.ledger_next_seq == _bonds_seq:
+		return _bonds
+	var fresh: Dictionary = Bonds.index(ledger, BALANCE)
+	# The first build and a load (a new array) say nothing: those bonds formed before this session saw them.
+	if is_same(ledger, _bonds_ledger):
+		_say_new_bonds(_bonds, fresh)
+	_bonds = fresh
+	_bonds_ledger = ledger
+	_bonds_seq = GameSession.ledger_next_seq
+	bond_builds += 1
+	return _bonds
+
+
+## "Mara and Dunn grew close." for a new mutual pair, "Dunn grew close to Mara." for a one-way one,
+## on the status line; several at once say the first and " (+N more)". A bond that ends says nothing.
+func _say_new_bonds(before: Dictionary, after: Dictionary) -> void:
+	var living: Dictionary = _roster_names()
+	var partners: Dictionary = {}
+	for id: String in living:
+		partners[id] = str(Bonds.bond_from(after, id, living, BALANCE).get("partner", ""))
+	var news: PackedStringArray = []
+	var said: Dictionary = {}
+	for id: String in living:
+		var partner: String = partners[id]
+		if partner.is_empty() or said.has(id) or partner == str(Bonds.bond_from(before, id, living, BALANCE).get("partner", "")):
+			continue
+		if partners[partner] == id:
+			news.append("%s and %s grew close." % [living[id], living[partner]])
+			said[partner] = true
+		else:
+			news.append("%s grew close to %s." % [living[id], living[partner]])
+	if not news.is_empty():
+		_status.text = news[0] + ("" if news.size() == 1 else " (+%d more)" % (news.size() - 1))
 
 
 func _walks_before(a: Hero, b: Hero) -> bool:

@@ -109,6 +109,8 @@ var _partner_line: String = ""
 var _walkers_shown: bool = false
 ## The hero who just stopped being the body and where it stood (town space), for the next show_walkers.
 var _stepped_out: Dictionary = {}
+## Hero id -> its partner sign ("♥ Mara"), from hub.gd with the last walker list; the body reads it too.
+var _signs: Dictionary = {}
 
 
 func _ready() -> void:
@@ -288,6 +290,7 @@ func embody(hero: Hero) -> void:
 			_overview_camera.make_current()
 		return
 	body = TownHero.create(hero)
+	body.set_sign(str(_signs.get(hero.instance_id, "")))
 	body.controls_enabled = input_enabled
 	var walk: Rect2 = walk_bounds()
 	var corner: Vector3 = to_global(Vector3(walk.position.x, 0.0, walk.position.y))
@@ -419,7 +422,12 @@ func _update_graph(buildings: Array[Dictionary]) -> void:
 ## figure and its walk, so the 0.25 s pulse changes nothing. A new figure starts at work (or on a
 ## street) on the first show, where the body stood for the hero who just stepped out of it, and
 ## otherwise at the TownGate, walking in. A hero whose role changes re-plans from where it stands.
-func show_walkers(heroes: Array[Hero]) -> void:
+## signs (hero id -> "♥ Mara") puts a partner sign over each listed figure and the body; hub.gd
+## picks them, so TownView still never reads GameSession or the Ledger.
+func show_walkers(heroes: Array[Hero], signs: Dictionary = {}) -> void:
+	_signs = signs
+	if body != null:
+		body.set_sign(str(signs.get(body.hero_id, "")))
 	var wanted: Dictionary[String, bool] = {}
 	var wanderers: int = 0
 	for hero: Hero in heroes:
@@ -431,10 +439,13 @@ func show_walkers(heroes: Array[Hero]) -> void:
 		wanted[hero.instance_id] = true
 		var station: StringName = hero.station if works else Hero.NO_STATION
 		var walker: TownWalker = walkers.get(hero.instance_id)
+		if walker != null:
+			walker.set_sign(str(signs.get(hero.instance_id, "")))
 		if walker != null and walker.station == station and walker.home == hero.home:
 			continue
 		if walker == null:
 			walker = TownWalker.create(hero)
+			walker.set_sign(str(signs.get(hero.instance_id, "")))
 			walker.planner = _wander.bind(walker, false)
 			add_child(walker)
 			walkers[hero.instance_id] = walker

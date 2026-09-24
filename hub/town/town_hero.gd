@@ -45,6 +45,7 @@ var _stop_radius: float = 0.0
 ## The building a click walk heads for; &"" when not walking to one.
 var _walk_building: StringName = &""
 var _stuck_seconds: float = 0.0
+var _sign: Label3D
 
 
 static func create(hero: Hero) -> TownHero:
@@ -72,7 +73,28 @@ static func create(hero: Hero) -> TownHero:
 	body.camera.name = "FollowCamera"
 	body.add_child(body.camera)
 	body._place_camera()
+	body._sign = sign_label()
+	body.add_child(body._sign)
 	return body
+
+
+## The partner sign over a figure's head, "♥ Mara" (ig-m6o.2.2.1): hidden until it has text. Where a
+## walker's meeting line shows, so the walker hides it while the line is up.
+static func sign_label() -> Label3D:
+	var label := Label3D.new()
+	label.name = "Sign"
+	label.pixel_size = 0.006
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.modulate = Color(1.0, 0.8, 0.85)
+	label.position.y = 2.1
+	label.visible = false
+	return label
+
+
+## Shows "♥ <partner>" over the body, or nothing for "".
+func set_sign(text: String) -> void:
+	_sign.text = text
+	_sign.visible = not text.is_empty()
 
 
 func _ready() -> void:

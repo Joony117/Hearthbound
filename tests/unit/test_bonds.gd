@@ -8,6 +8,9 @@ const A: String = "hero:a"
 const B: String = "hero:b"
 const C: String = "hero:c"
 const D: String = "hero:d"
+const E: String = "hero:e"
+const F: String = "hero:f"
+const G: String = "hero:g"
 const NAMES: Dictionary = {A: "Ada", B: "Bea", C: "Cal"}
 
 var _ledger: Array[Dictionary] = []
@@ -194,7 +197,7 @@ func test_the_detail_panel_shows_the_bond_and_dream_above_history() -> void:
 	hub._open(&"Forge")
 	var roster: ItemList = hub.get_node("%RosterList") as ItemList
 	for index: int in roster.item_count:
-		if roster.get_item_text(index).contains("Ada"):
+		if roster.get_item_text(index).contains("  Ada — "):
 			roster.select(index)
 			roster.multi_selected.emit(index, true)
 	var text: String = (hub.get_node("%HeroDetail") as Label).text
@@ -375,7 +378,395 @@ func test_a_house_on_the_old_partner_spot_never_swallows_the_partner() -> void:
 	assert_eq(_walker_figures(town, B), 1)
 
 
+## ---- ig-m6o.2.2.1: one pass for every pair, kept by the hub, shown on the roster and in town
+
+func test_one_pass_answers_every_hero_as_the_per_hero_reader_did() -> void:
+	# Every fact type and the legacy gaps, by hand.
+	_battle([A, B, C], "retreated", {"order": "order:x", "moments": [_moment("revived", A, B), _moment("carried", B, A), _moment("revived", C, "enemy:goblin"), _moment("revived", C, C)]})
+	_record("died", {"hero": D, "name": "Dov", "battle_order": "order:x"})
+	_battle([A, B, D], "stranded", {"order": "order:y", "rescued": [B], "rescuers": [C]})
+	_record("died", {"hero": A, "name": "Ada", "battle_order": "order:y"})
+	_battle([B, C], "victory", {"rescued": [C], "order": "order:z"})
+	_record("died", {"hero": C, "name": "Cal"})
+	_battle([B, C], "victory")
+	_assert_same_answers([A, B, C, D, "hero:none"])
+	# And a seeded mess of them.
+	_ledger = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var heroes: Array[String] = []
+	for index: int in 9:
+		heroes.append("hero:%d" % index)
+	for index: int in 400:
+		var team: Array[String] = []
+		for _slot: int in rng.randi_range(1, 5):
+			team.append(heroes[rng.randi_range(0, heroes.size() - 1)])
+		var moments: Array = []
+		for _moment_index: int in rng.randi_range(0, 3):
+			var by: String = ["enemy:goblin", "", heroes[rng.randi_range(0, heroes.size() - 1)]][rng.randi_range(0, 2)]
+			moments.append(_moment(["revived", "carried", "downed"][rng.randi_range(0, 2)], team[rng.randi_range(0, team.size() - 1)], by))
+		var fields: Dictionary = {"order": "order:%d" % index, "result": ["victory", "retreated", "stranded"][rng.randi_range(0, 2)], "moments": moments}
+		if rng.randi_range(0, 4) == 0:
+			fields["rescued"] = [team[0]]
+			if rng.randi_range(0, 1) == 0:
+				fields["rescuers"] = [heroes[rng.randi_range(0, heroes.size() - 1)], heroes[rng.randi_range(0, heroes.size() - 1)]]
+		_battle(team, str(fields["result"]), fields)
+		if rng.randi_range(0, 9) == 0:
+			var died: Dictionary = {"hero": team[team.size() - 1], "name": "X"}
+			if rng.randi_range(0, 1) == 0:
+				died["battle_order"] = "order:%d" % index
+			_record("died", died)
+	_assert_same_answers(heroes)
+
+
+func test_a_rescuer_from_outside_the_team_is_the_rescued_heros_partner() -> void:
+	# The review's case: Cal is only in rescuers. Bea scores the rescues toward Cal; Cal, in
+	# neither team nor rescued, scores nothing, as in slice 1.
+	_battle([B], "stranded", {"rescued": [B], "rescuers": [C]})
+	_battle([B], "stranded", {"rescued": [B], "rescuers": [C]})
+	var living: Dictionary = {B: true, C: true}
+	var bond: Dictionary = Bonds.bond(_ledger, B, living, BALANCE)
+	assert_eq(bond.get("partner"), C)
+	assert_eq(bond.get("rescues"), 2)
+	assert_eq(bond, _slice1_bond(_ledger, B, living, BALANCE))
+	assert_true(Bonds.bond(_ledger, C, living, BALANCE).is_empty())
+	_assert_same_answers([B, C])
+
+
+func test_the_hub_builds_the_index_once_per_ledger_change() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(C, "Cal")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	assert_eq(hub.bond_builds, 1, "the first refresh builds it")
+	GameSession.roster_changed.emit()
+	_select(hub, "Ada")
+	for _pulse: int in 3:
+		GameSession.expeditions_changed.emit()
+	assert_true(GameSession.embody_hero(A))
+	assert_eq(hub.bond_builds, 1, "refreshes, a selection, pulses and walking rebuild nothing")
+	GameSession._record("battle", {"order": "order:new", "zone": ZONE, "team": [A, C], "result": "retreated", "moments": []})
+	GameSession.roster_changed.emit()
+	GameSession.expeditions_changed.emit()
+	assert_eq(hub.bond_builds, 2, "an appended record rebuilds once")
+	var data: Dictionary = GameSession.to_dict()
+	data["ledger"] = GameSession.ledger.duplicate(true)
+	GameSession.from_dict(data)
+	GameSession.roster_changed.emit()
+	GameSession.roster_changed.emit()
+	assert_eq(hub.bond_builds, 3, "a load (a new array) rebuilds once")
+	# A mutation that appends and rolls back: the same array, cut back, with its old next seq.
+	var seq: int = GameSession.ledger_next_seq
+	var mutation := func() -> bool:
+		for _index: int in 2:
+			GameSession._record("battle", {"order": "order:gone", "zone": ZONE, "team": [A, C], "result": "victory", "moments": [_moment("revived", C, A)]})
+		return false
+	assert_false(GameSession._commit_profile_mutation(mutation))
+	assert_eq(GameSession.ledger_next_seq, seq)
+	GameSession.roster_changed.emit()
+	assert_eq(hub.bond_builds, 3, "the index built before the rollback is still valid")
+	var living: Dictionary = {A: true, B: true, C: true}
+	for id: String in living:
+		assert_eq(Bonds.bond_from(hub._bond_index(), id, living, BALANCE), Bonds.bond(GameSession.ledger, id, living, BALANCE), id)
+	assert_eq(str(Bonds.bond(GameSession.ledger, C, living, BALANCE).get("partner", "")), "", "Cal's rolled-back saves are gone")
+
+
+func test_a_bonded_row_shows_its_partner_and_keeps_it_while_the_partner_is_away() -> void:
+	var ada: Hero = _hero(A, "Ada")
+	var bea: Hero = _hero(B, "Bea")
+	_hero(C, "Cal")
+	ada.favorite = true
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B, C], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	assert_string_contains(_row(hub, "Ada"), " · ★, ♥ Bea")
+	assert_string_contains(_row(hub, "Bea"), " · ♥ Ada")
+	assert_false(_row(hub, "Cal").contains("♥"), "an unbonded hero has no sign")
+	assert_ne(GameSession.dispatch_expedition([bea.instance_id], ZONE, 1, "Out"), "", GameSession.last_action_error)
+	assert_string_contains(_row(hub, "Ada"), "♥ Bea", "the flag stays while Bea is away")
+	assert_string_contains(_row(hub, "Bea"), " · ♥ Ada, Away", "after the heart, before Away")
+
+
+func test_bonded_walkers_carry_their_partner_signs_in_town() -> void:
+	_hero(A, "Ada")
+	var bea: Hero = _hero(B, "Bea")
+	_hero(C, "Cal")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B, C], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var town: TownView = _hub().get_node("%Town") as TownView
+	assert_eq(_sign(town.walkers[A]), "♥ Bea")
+	assert_eq(_sign(town.walkers[B]), "♥ Ada")
+	assert_eq(_sign(town.walkers[C]), "", "Cal has no visible sign")
+	assert_ne(GameSession.dispatch_expedition([bea.instance_id], ZONE, 1, "Out"), "", GameSession.last_action_error)
+	assert_false(town.walkers.has(B), "Bea left the town, and her sign with her")
+	assert_eq(_sign(town.walkers[A]), "♥ Bea", "Ada keeps hers")
+
+
+func test_the_body_shows_its_sign_and_a_walker_hides_its_sign_while_it_greets() -> void:
+	var town: TownView = _bonded_town()
+	assert_eq(_sign(town.body), "♥ Bea", "the body")
+	var bea: TownWalker = town.partner
+	assert_eq(_sign(bea), "♥ Ada")
+	var start: Vector3 = town.free_point(Vector3(-12.0, 0.0, 12.0))
+	bea.linger_at(start, &"Idle_B", NAN, 1.0e6)
+	town.body.global_position = town.to_global(start + Vector3(0.0, 0.0, 8.0))
+	bea.step(0.1)
+	town.body.global_position = town.to_global(start + Vector3(0.0, 0.0, 2.0))
+	bea.step(0.1)
+	assert_true(bea.is_showing_line())
+	assert_eq(_sign(bea), "", "the line shows, so the sign hides")
+	GameSession.expeditions_changed.emit()
+	assert_eq(_sign(bea), "", "a pulse keeps it hidden")
+	for _step: int in 41:
+		bea.step(0.1)
+	assert_false(bea.is_showing_line())
+	assert_eq(_sign(bea), "♥ Ada", "back when the line is gone")
+
+
+func test_a_settled_battle_that_crosses_the_threshold_says_who_grew_close() -> void:
+	var ada: Hero = _hero(A, "Ada")
+	var bea: Hero = _hero(B, "Bea")
+	_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	var status: Label = hub.get_node("%Status") as Label
+	status.text = "before"
+	GameSession.roster_changed.emit()
+	GameSession.expeditions_changed.emit()
+	assert_eq(status.text, "before", "no ledger change, no notice")
+	var order_id: String = GameSession.dispatch_expedition([ada.instance_id, bea.instance_id], ZONE, 1, "Out")
+	assert_ne(order_id, "", GameSession.last_action_error)
+	status.text = "before"
+	var order: Dictionary = GameSession.expedition_orders[0]
+	var battle: Dictionary = order["battle"] as Dictionary
+	battle["status"] = "victory"
+	battle["moments"] = [_moment("revived", A, B)]
+	order["phase"] = "returning"
+	order["remaining_seconds"] = 0.0
+	GameSession.tick_expeditions(0.1)
+	assert_eq(GameSession.ledger.back()["kind"], "battle", "the settle wrote its record")
+	assert_eq(status.text, "Ada and Bea grew close.")
+	status.text = "before"
+	GameSession.roster_changed.emit()
+	assert_eq(status.text, "before", "said once")
+
+
+func test_one_way_and_several_bonds_at_once_and_a_load_says_nothing() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(C, "Cal")
+	_hero(D, "Dov")
+	_hero(E, "Eve")
+	_hero(F, "Fay")
+	_hero(G, "Gil")
+	for _index: int in 3:
+		_battle_in(GameSession.ledger, [B, C], "victory", {"moments": [_moment("revived", B, C)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	var status: Label = hub.get_node("%Status") as Label
+	for _index: int in 2:
+		GameSession._record("battle", {"order": "order:ab", "zone": ZONE, "team": [A, B], "result": "victory", "moments": [_moment("revived", A, B)]})
+	GameSession.roster_changed.emit()
+	assert_eq(status.text, "Ada grew close to Bea.", "Bea stays closest to Cal")
+	GameSession._record("battle", {"order": "order:cd", "zone": ZONE, "team": [A, D], "result": "victory", "moments": [_moment("revived", A, D), _moment("revived", A, D)]})
+	GameSession._record("battle", {"order": "order:cd2", "zone": ZONE, "team": [A, D], "result": "victory", "moments": [_moment("revived", A, D)]})
+	GameSession._record("battle", {"order": "order:cd3", "zone": ZONE, "team": [A, D], "result": "victory", "moments": [_moment("revived", A, D)]})
+	GameSession.roster_changed.emit()
+	assert_eq(status.text, "Ada and Dov grew close.", "Ada moves to Dov (12 over 8) and Dov gets Ada")
+	status.text = "before"
+	var data: Dictionary = GameSession.to_dict()
+	var ledger: Array[Dictionary] = GameSession.ledger.duplicate(true)
+	for _index: int in 3:
+		ledger.append({"seq": ledger.back()["seq"] + 1, "at": 0, "kind": "battle", "order": "order:x", "zone": ZONE, "team": [C, D], "result": "retreated", "moments": [_moment("revived", C, D)]})
+	data["ledger"] = ledger
+	GameSession.from_dict(data)
+	GameSession.roster_changed.emit()
+	assert_eq(status.text, "before", "bonds that formed before a load say nothing")
+	for _index: int in 2:
+		GameSession._record("battle", {"order": "order:efg", "zone": ZONE, "team": [E, F, G], "result": "victory", "moments": [_moment("revived", E, F), _moment("revived", G, F)]})
+	GameSession.roster_changed.emit()
+	assert_eq(status.text, "Eve and Fay grew close. (+1 more)", "and Gil grew close to Fay, who ties to Eve on the lower id")
+
+
+## ADR item 5: a full all-pairs rebuild and the end-to-end roster refresh at the cap, with the
+## largest preset team, best and worst of seven. A measurement for this bead, not a gate.
+func test_rebuild_and_refresh_cost_at_the_cap() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var heroes: Array[String] = []
+	for index: int in 50:
+		heroes.append(_hero("hero:%d" % index, "H%d" % index).instance_id)
+	for index: int in BALANCE.ledger_max_records:
+		var team: Array[String] = _team(rng, heroes, 5)
+		_battle_in(GameSession.ledger, team, "victory", _mix(rng, index, team))
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var runs: Array[int] = []
+	for _run: int in 7:
+		var started: int = Time.get_ticks_usec()
+		Bonds.index(GameSession.ledger, BALANCE)
+		runs.append(Time.get_ticks_usec() - started)
+	_print_cost("all-pairs rebuild", runs)
+	var hub: Node3D = _hub()
+	_select(hub, "H0")
+	var changed: Array[int] = []
+	var quiet: Array[int] = []
+	var pulse: Array[int] = []
+	for run: int in 7:
+		GameSession._record("battle", {"order": "order:more%d" % run, "zone": ZONE, "team": _team(rng, heroes, 5), "result": "retreated", "moments": []})
+		var started: int = Time.get_ticks_usec()
+		GameSession.roster_changed.emit()
+		changed.append(Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
+		GameSession.roster_changed.emit()
+		quiet.append(Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
+		GameSession.expeditions_changed.emit()
+		pulse.append(Time.get_ticks_usec() - started)
+	_print_cost("roster refresh after a new record (one rebuild)", changed)
+	_print_cost("roster refresh with no ledger change", quiet)
+	_print_cost("0.25 s pulse", pulse)
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	assert_eq(hub.bond_builds, 8, "the first build, then one per new record")
+
+
 ## ---- helpers
+
+func _assert_same_answers(heroes: Array) -> void:
+	var livings: Array[Dictionary] = [{}, {D: true}]
+	var everyone: Dictionary = {}
+	for id: String in heroes:
+		everyone[id] = true
+	livings.append(everyone)
+	var some: Dictionary = everyone.duplicate()
+	some.erase(heroes[0])
+	livings.append(some)
+	var pairs: Dictionary = Bonds.index(_ledger, _counting)
+	for living: Dictionary in livings:
+		for id: String in heroes:
+			for balance: BalanceTable in [BALANCE, _counting]:
+				assert_eq(Bonds.bond(_ledger, id, living, balance), _slice1_bond(_ledger, id, living, balance), "%s among %s" % [id, living.keys()])
+			assert_eq(Bonds.bond_from(pairs, id, living, _counting), _slice1_bond(_ledger, id, living, _counting), "a kept index: %s" % id)
+
+
+func _select(hub: Node3D, hero_name: String) -> void:
+	var roster: ItemList = hub.get_node("%RosterList") as ItemList
+	for index: int in roster.item_count:
+		if roster.get_item_text(index).contains("  %s — " % hero_name):
+			roster.select(index)
+			roster.multi_selected.emit(index, true)
+
+
+func _row(hub: Node3D, hero_name: String) -> String:
+	var roster: ItemList = hub.get_node("%RosterList") as ItemList
+	for index: int in roster.item_count:
+		if roster.get_item_text(index).contains("  %s — " % hero_name):
+			return roster.get_item_text(index)
+	return ""
+
+
+## A figure's partner sign as seen: its text while visible, else "".
+func _sign(figure: Node3D) -> String:
+	var label: Label3D = figure.get_node("Sign") as Label3D
+	return label.text if label.visible else ""
+
+
+func _team(rng: RandomNumberGenerator, heroes: Array[String], size: int) -> Array[String]:
+	var team: Array[String] = []
+	while team.size() < size:
+		var id: String = heroes[rng.randi_range(0, heroes.size() - 1)]
+		if not team.has(id):
+			team.append(id)
+	return team
+
+
+## The read-cost mix of test_read_cost_at_the_cap: 6 in 10 routine wins, the rest hard with a
+## revive, one in 10 a rescue.
+func _mix(rng: RandomNumberGenerator, index: int, team: Array[String]) -> Dictionary:
+	var roll: int = rng.randi_range(0, 9)
+	var fields: Dictionary = {"order": "order:%d" % index}
+	if roll >= 6:
+		fields.merge({"result": "retreated", "moments": [_moment("downed", team[0], "enemy:goblin"), _moment("revived", team[0], team[1])]})
+	if roll == 9:
+		fields.merge({"rescued": [team[2]], "rescuers": [team[3]]})
+	return fields
+
+
+func _print_cost(what: String, runs: Array[int]) -> void:
+	gut.p("BOND COST: %s, %d records, best %.2f ms, worst %.2f ms of 7" % [what, GameSession.ledger.size(), runs.min() / 1000.0, runs.max() / 1000.0])
+
+
+## ig-m6o.2.1's per-hero reader, kept verbatim as the answer the one-pass index must give.
+static func _slice1_bond(ledger: Array[Dictionary], hero_id: String, living: Dictionary, balance: BalanceTable) -> Dictionary:
+	var dead_by_order: Dictionary = {}
+	for record: Dictionary in ledger:
+		if str(record.get("kind", "")) == "died" and record.has("battle_order"):
+			var order: String = str(record["battle_order"])
+			if not dead_by_order.has(order):
+				dead_by_order[order] = []
+			(dead_by_order[order] as Array).append(str(record.get("hero", "")))
+	var tallies: Dictionary = {}
+	for record: Dictionary in ledger:
+		if str(record.get("kind", "")) != "battle":
+			continue
+		var team: Array = Bonds._array(record, "team")
+		var rescued: Array = Bonds._array(record, "rescued")
+		var rescuers: Array = Bonds._array(record, "rescuers")
+		if not (team.has(hero_id) or rescued.has(hero_id)):
+			continue
+		var seq: int = int(record.get("seq", 0))
+		var zone: String = str(record.get("zone", ""))
+		var hard: bool = team.has(hero_id) and not Ledger.is_routine(record)
+		var dead: Array = dead_by_order.get(str(record.get("order", "")), [])
+		var saved_with: Dictionary = {}
+		for raw_moment: Variant in Bonds._array(record, "moments"):
+			var moment: Dictionary = raw_moment as Dictionary if raw_moment is Dictionary else {}
+			if not str(moment.get("what", "")) in Bonds.SAVES:
+				continue
+			if str(moment.get("hero", "")) == hero_id and not saved_with.has(str(moment.get("by", ""))):
+				saved_with[str(moment.get("by", ""))] = "saved_by"
+			elif str(moment.get("by", "")) == hero_id and not saved_with.has(str(moment.get("hero", ""))):
+				saved_with[str(moment.get("hero", ""))] = "saved"
+		var others: Dictionary = {}
+		for id: Variant in team + rescued + rescuers:
+			if str(id) != hero_id and living.has(str(id)):
+				others[str(id)] = true
+		for other: String in others:
+			var facts: Array[Dictionary] = []
+			if hard and team.has(other):
+				facts.append({"kind": "hard", "points": balance.bond_points_hard_battle})
+			if saved_with.has(other):
+				facts.append({"kind": saved_with[other], "points": balance.bond_points_saved, "count": "saves"})
+			if rescuers.has(hero_id) and rescued.has(other) or rescuers.has(other) and rescued.has(hero_id):
+				facts.append({"kind": "saved" if rescuers.has(hero_id) else "saved_by", "points": balance.bond_points_rescued, "count": "rescues"})
+			var witnessed: Array = dead.filter(func(id: String) -> bool: return id != hero_id and id != other)
+			if not witnessed.is_empty() and team.has(hero_id) and team.has(other):
+				facts.append({"kind": "death", "points": balance.bond_points_death_witnessed, "count": "deaths", "dead": witnessed[0]})
+			if facts.is_empty():
+				continue
+			if not tallies.has(other):
+				tallies[other] = {"partner": other, "points": 0, "hard": 0, "saves": 0, "rescues": 0, "deaths": 0, "last_seq": 0, "fact": {}}
+			var tally: Dictionary = tallies[other]
+			tally["last_seq"] = seq
+			for fact: Dictionary in facts:
+				tally["points"] += fact["points"]
+				var count: String = fact.get("count", "hard")
+				tally[count] += 1
+				var best: Dictionary = tally["fact"]
+				if best.is_empty() or fact["points"] >= best["points"]:
+					tally["fact"] = {"kind": fact["kind"], "points": fact["points"], "seq": seq, "zone": zone, "dead": fact.get("dead", "")}
+	var chosen: Dictionary = {}
+	for tally: Dictionary in tallies.values():
+		if tally["points"] < balance.bond_threshold:
+			continue
+		if chosen.is_empty() or Bonds._ahead(tally, chosen):
+			chosen = tally
+	return chosen
+
 
 ## A hub with Ada and Bea bonded and, unless embody is false, Ada as the body.
 func _bonded_town(embody: bool = true) -> TownView:

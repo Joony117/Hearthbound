@@ -1,13 +1,13 @@
 class_name Bonds
 extends RefCounted
 
-## Bonds and dreams, slice 1 (SYSTEMS.md § Bonds and dreams, slice 1): pure static readers over the
-## Ledger, like its History list. Nothing is saved and nothing outlives one read (DECISIONS.md
-## 2026-09-24 "The Ledger", item 9 and "Rejected: saved tallies").
-## ponytail: every read walks the whole ledger, so callers read on refresh only, never per frame.
-## ig-m6o.2.2's derived-or-stored ADR settles whether that holds up.
+## Bonds and dreams (SYSTEMS.md § Bonds and dreams): pure static readers over the Ledger, like its
+## History list. Nothing is saved (DECISIONS.md 2026-09-24 "Bonds stay derived"). The reader keeps
+## no state: whoever needs every hero's bond holds index() until the ledger changes (hub.gd).
 
 const SAVES: Array[String] = ["revived", "carried"]
+## The fact kinds in the order a record scores them, and the tally keys that count them.
+const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths"]
 const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"]
 
 
@@ -15,8 +15,28 @@ const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five"
 ## bond_threshold. Ties go to the more recent last shared fact, then the lower instance_id. {} for
 ## none. Otherwise {partner, points, hard, saves, rescues, deaths, last_seq, fact}; fact is the
 ## strongest single fact {kind, points, seq, zone, dead}, kind "saved_by" (the partner saved or
-## rescued hero_id), "saved" (the reverse), "death" or "hard".
+## rescued hero_id), "saved" (the reverse), "death" or "hard". Builds a whole index for one answer:
+## a caller asking for several heroes keeps index() and asks bond_from.
 static func bond(ledger: Array[Dictionary], hero_id: String, living: Dictionary, balance: BalanceTable) -> Dictionary:
+	return bond_from(index(ledger, balance), hero_id, living, balance)
+
+
+## bond() answered from a kept index().
+static func bond_from(pairs: Dictionary, hero_id: String, living: Dictionary, balance: BalanceTable) -> Dictionary:
+	var chosen: Dictionary = {}
+	for tally: Dictionary in (pairs.get(hero_id, {}) as Dictionary).values():
+		if not living.has(tally["partner"]) or tally["points"] < balance.bond_threshold:
+			continue
+		if chosen.is_empty() or _ahead(tally, chosen):
+			chosen = tally
+	return chosen.duplicate(true)
+
+
+## Every directed pair's tally in one oldest-first pass: {hero_id: {other_id: tally}}, the tally as
+## bond() returns it. A toward B and B toward A are separate entries: the same scoring, each with
+## its own fact wording. It keeps every hero it saw, living or not; bond_from filters by living
+## when asked. The dream is not in it.
+static func index(ledger: Array[Dictionary], balance: BalanceTable) -> Dictionary:
 	var dead_by_order: Dictionary = {}
 	for record: Dictionary in ledger:
 		if str(record.get("kind", "")) == "died" and record.has("battle_order"):
@@ -24,64 +44,119 @@ static func bond(ledger: Array[Dictionary], hero_id: String, living: Dictionary,
 			if not dead_by_order.has(order):
 				dead_by_order[order] = []
 			(dead_by_order[order] as Array).append(str(record.get("hero", "")))
-	var tallies: Dictionary = {}
-	for record: Dictionary in ledger:
+	# The pass only counts: hero -> other -> one slot per fact kind (FACTS order), each
+	# [count, index of the last record with it, its wording, the dead]. _tally turns them into tallies.
+	var counts: Dictionary = {}
+	for at: int in ledger.size():
+		var record: Dictionary = ledger[at]
 		if str(record.get("kind", "")) != "battle":
 			continue
-		var team: Array = _array(record, "team")
-		var rescued: Array = _array(record, "rescued")
-		var rescuers: Array = _array(record, "rescuers")
-		if not (team.has(hero_id) or rescued.has(hero_id)):
-			continue
-		var seq: int = int(record.get("seq", 0))
-		var zone: String = str(record.get("zone", ""))
-		var hard: bool = team.has(hero_id) and not Ledger.is_routine(record)
+		var routine: bool = Ledger.is_routine(record)
 		var dead: Array = dead_by_order.get(str(record.get("order", "")), [])
+		# A routine victory with no death seen scores no fact, so it touches no tally.
+		if routine and dead.is_empty():
+			continue
+		var team: Dictionary = _id_set(record, "team")
+		var rescued: Dictionary = _id_set(record, "rescued")
+		var rescuers: Dictionary = _id_set(record, "rescuers")
+		# Hero -> {other: "saved_by" or "saved"}: the first save between them in this record.
 		var saved_with: Dictionary = {}
 		for raw_moment: Variant in _array(record, "moments"):
 			var moment: Dictionary = raw_moment as Dictionary if raw_moment is Dictionary else {}
 			if not str(moment.get("what", "")) in SAVES:
 				continue
-			if str(moment.get("hero", "")) == hero_id and not saved_with.has(str(moment.get("by", ""))):
-				saved_with[str(moment.get("by", ""))] = "saved_by"
-			elif str(moment.get("by", "")) == hero_id and not saved_with.has(str(moment.get("hero", ""))):
-				saved_with[str(moment.get("hero", ""))] = "saved"
-		var others: Dictionary = {}
-		for id: Variant in team + rescued + rescuers:
-			if str(id) != hero_id and living.has(str(id)):
-				others[str(id)] = true
-		for other: String in others:
-			var facts: Array[Dictionary] = []
-			if hard and team.has(other):
-				facts.append({"kind": "hard", "points": balance.bond_points_hard_battle})
-			if saved_with.has(other):
-				facts.append({"kind": saved_with[other], "points": balance.bond_points_saved, "count": "saves"})
-			if rescuers.has(hero_id) and rescued.has(other) or rescuers.has(other) and rescued.has(hero_id):
-				facts.append({"kind": "saved" if rescuers.has(hero_id) else "saved_by", "points": balance.bond_points_rescued, "count": "rescues"})
-			var witnessed: Array = dead.filter(func(id: String) -> bool: return id != hero_id and id != other)
-			if not witnessed.is_empty() and team.has(hero_id) and team.has(other):
-				facts.append({"kind": "death", "points": balance.bond_points_death_witnessed, "count": "deaths", "dead": witnessed[0]})
-			if facts.is_empty():
+			var saved: String = str(moment.get("hero", ""))
+			var by: String = str(moment.get("by", ""))
+			if not (saved_with.get_or_add(saved, {}) as Dictionary).has(by):
+				saved_with[saved][by] = "saved_by"
+			if by != saved and not (saved_with.get_or_add(by, {}) as Dictionary).has(saved):
+				saved_with[by][saved] = "saved"
+		# Each kind in its own loop, at most once per record for a pair. Only a hero in the team or
+		# rescued scores; the other may be any hero in the record.
+		var ids: Array = team.keys()
+		for hero_id: String in ids:
+			var others: Dictionary = _others(counts, hero_id)
+			for other: String in ids:
+				if other == hero_id:
+					continue
+				var slots: Array = _slots(others, other)
+				if not routine:
+					# The hottest line at the cap, so inline: the hard slot's wording is always "hard".
+					var hard: Array = slots[0]
+					hard[0] += 1
+					hard[1] = at
+				for id: String in dead:
+					if id != hero_id and id != other:
+						_count(slots[3], at, "death", id)
+						break
+		for hero_id: String in saved_with:
+			if not (team.has(hero_id) or rescued.has(hero_id)):
 				continue
-			if not tallies.has(other):
-				tallies[other] = {"partner": other, "points": 0, "hard": 0, "saves": 0, "rescues": 0, "deaths": 0, "last_seq": 0, "fact": {}}
-			var tally: Dictionary = tallies[other]
-			tally["last_seq"] = seq
-			for fact: Dictionary in facts:
-				tally["points"] += fact["points"]
-				var count: String = fact.get("count", "hard")
-				tally[count] += 1
-				var best: Dictionary = tally["fact"]
-				# Oldest first, so an equal fact later on is the more recent one.
-				if best.is_empty() or fact["points"] >= best["points"]:
-					tally["fact"] = {"kind": fact["kind"], "points": fact["points"], "seq": seq, "zone": zone, "dead": fact.get("dead", "")}
-	var chosen: Dictionary = {}
-	for tally: Dictionary in tallies.values():
-		if tally["points"] < balance.bond_threshold:
+			var mine: Dictionary = saved_with[hero_id]
+			for other: String in mine:
+				if other != hero_id and (team.has(other) or rescued.has(other) or rescuers.has(other)):
+					_count(_slots(_others(counts, hero_id), other)[1], at, mine[other], "")
+		# A rescuer and a rescued hero, either way round, once per pair.
+		var rescues: Dictionary = {}
+		for rescuer: String in rescuers:
+			for saved: String in rescued:
+				if rescuer != saved:
+					if team.has(rescuer) or rescued.has(rescuer):
+						(rescues.get_or_add(rescuer, {}) as Dictionary)[saved] = true
+					(rescues.get_or_add(saved, {}) as Dictionary)[rescuer] = true
+		for hero_id: String in rescues:
+			for other: String in rescues[hero_id]:
+				_count(_slots(_others(counts, hero_id), other)[2], at, "saved" if rescuers.has(hero_id) else "saved_by", "")
+	var pairs: Dictionary = {}
+	for hero_id: String in counts:
+		var tallies: Dictionary = {}
+		for other: String in counts[hero_id]:
+			tallies[other] = _tally(other, counts[hero_id][other], ledger, balance)
+		pairs[hero_id] = tallies
+	return pairs
+
+
+static func _others(counts: Dictionary, hero_id: String) -> Dictionary:
+	if not counts.has(hero_id):
+		counts[hero_id] = {}
+	return counts[hero_id]
+
+
+## One pair's slots, one per kind in FACTS order.
+static func _slots(others: Dictionary, other: String) -> Array:
+	if not others.has(other):
+		others[other] = [[0, -1, "hard", ""], [0, -1, "", ""], [0, -1, "", ""], [0, -1, "", ""]]
+	return others[other]
+
+
+static func _count(slot: Array, at: int, wording: String, dead: String) -> void:
+	slot[0] += 1
+	slot[1] = at
+	slot[2] = wording
+	slot[3] = dead
+
+
+## One pair's counted slots as the tally bond() returns. The strongest fact is the last one with the
+## most points, as an oldest-first running best with >= keeps it: a later record wins a tie, and
+## within one record the later kind in FACTS order does.
+static func _tally(other: String, slots: Array, ledger: Array[Dictionary], balance: BalanceTable) -> Dictionary:
+	var points: Array[int] = [balance.bond_points_hard_battle, balance.bond_points_saved, balance.bond_points_rescued, balance.bond_points_death_witnessed]
+	var tally: Dictionary = {"partner": other, "points": 0, "last_seq": 0}
+	var last: int = -1
+	var best: int = -1
+	for kind: int in FACTS.size():
+		var slot: Array = slots[kind]
+		tally[FACTS[kind]] = slot[0]
+		if slot[0] == 0:
 			continue
-		if chosen.is_empty() or _ahead(tally, chosen):
-			chosen = tally
-	return chosen
+		tally["points"] += slot[0] * points[kind]
+		last = maxi(last, slot[1])
+		if best < 0 or points[kind] > points[best] or points[kind] == points[best] and slot[1] >= slots[best][1]:
+			best = kind
+	var record: Dictionary = ledger[slots[best][1]]
+	tally["last_seq"] = int(ledger[last].get("seq", 0))
+	tally["fact"] = {"kind": slots[best][2], "points": points[best], "seq": int(record.get("seq", 0)), "zone": str(record.get("zone", "")), "dead": slots[best][3]}
+	return tally
 
 
 static func _ahead(tally: Dictionary, chosen: Dictionary) -> bool:
@@ -191,3 +266,11 @@ static func _name(id: String, names: Dictionary) -> String:
 static func _array(record: Dictionary, key: String) -> Array:
 	var value: Variant = record.get(key)
 	return value as Array if value is Array else []
+
+
+## The ids under key as a set of strings, in list order.
+static func _id_set(record: Dictionary, key: String) -> Dictionary:
+	var ids: Dictionary = {}
+	for id: Variant in _array(record, key):
+		ids[str(id)] = true
+	return ids
