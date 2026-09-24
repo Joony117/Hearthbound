@@ -57,6 +57,7 @@ Codex-written work gets a Claude reviewer.
 ## Standing constraints
 
 - **Three autoloads, hard cap:** `SceneRouter`, `SaveService`, `GameSession`. A fourth needs an ADR first.
+  Dev-tool autoloads stripped from exports (Godot AI's `_mcp_game_helper`) don't count (`DECISIONS.md`).
   Autoloads hold no level state and no game rules.
 - **Stop rule:** after 2-3 failed patches on the same error, stop and rethink the structure.
 - **Vague feature asks** ("add inventory") become a scoped bead before any code.

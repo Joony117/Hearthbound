@@ -7,6 +7,31 @@ Newest first.
 
 ---
 
+## 2026-09-23: Dev-tool autoloads that exports strip do not count toward the three-autoload cap
+
+**ACCEPTED, owner ruling 2026-09-23.** The Godot AI editor plugin (`addons/godot_ai/`, MIT, v4.2.1)
+writes `_mcp_game_helper` into `project.godot` `[autoload]` whenever it is enabled. That autoload
+lets the director see and drive the running game: framebuffer screenshots and simulated input.
+
+**Rule.** The cap of three (`SceneRouter`, `SaveService`, `GameSession`) covers game autoloads. An
+autoload is exempt only if **all** of these hold:
+- It belongs to a dev tool under `addons/`.
+- It is stripped from exported builds. Godot AI's `export/mcp_export_plugin.gd` does this.
+- It holds no game state, and no game code references it.
+
+Anything else still needs its own ADR.
+
+**Rejected.**
+- Patching the plugin so it never registers the autoload. Editor-viewport screenshots would still
+  work, but running-game capture and input would be lost, and every plugin update would need the
+  patch again.
+- Counting it against the cap. That would block the tool, and it guards nothing: the cap exists
+  to stop game rules and level state from collecting in globals.
+
+**Check.** After any export, `export/game.pck` must not contain `_mcp_game_helper`.
+
+---
+
 ## 2026-09-23: Masterwork draughts are two more supply kinds, not a tier on the old ones
 
 **ACCEPTED by the director, 2026-09-23**, on the owner's ruling to build masterwork draughts now
