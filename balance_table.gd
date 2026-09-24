@@ -141,6 +141,8 @@ extends Resource
 @export var battle_cohesion_regroup_distance: float = 4.0
 @export var battle_detection_range: float = 12.0
 @export var battle_enemy_leash_range: float = 18.0
+## A Knight hit on an enemy targeting a back-row ally taunts it this long (ig-uu7.2, PROVISIONAL in SYSTEMS).
+@export var battle_cover_taunt_seconds: float = 3.0
 @export var battle_enemy_hp_budget_multiplier: float = 1.0
 @export var battle_enemy_atk_budget_multiplier: float = 0.04
 @export var battle_enemy_def_budget_multiplier: float = 0.1

@@ -19,8 +19,10 @@ const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ##   the caster. "target_below": the target's HP below ai_fraction. "target_lacks_status": the
 ##   target has no ai_status.
 ## buff band: "allies_near": at least ai_count living allies within ai_radius of the caster, the
-##   caster included. "fight_on": the caster has a target in range. "enemy_on_weaker_ally": an
-##   enemy within range_units attacks an ally with less HP (as a fraction) than the caster.
+##   caster included. "fight_on": the caster has a target in range. "enemy_on_weaker_ally": the
+##   caster's own target when it is within range_units and attacks a back-row ally (a Knight's
+##   covered threat, ig-uu7.2), else an enemy within range_units that attacks a back-row ally or an
+##   ally with less HP (as a fraction) than the caster.
 ## heal band: "ally_below_heal_below": the lowest-HP ally within range_units below the battle's
 ##   heal_below. "ally_below": the lowest-HP ally within range_units below ai_fraction (of
 ##   ai_archetype when set, without ai_status when set). "allies_below": ai_count allies within

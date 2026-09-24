@@ -115,7 +115,7 @@ of its stance. A Knight keeps its threat while it stays a threat, and never take
 Knight is already targeting. A new pick takes the victim first in its cover order (below), then the
 lowest victim HP fraction, then the nearest threat, then spawn order. Rogues do not cover.
 
-Every Knight hit (basic or weaponskill, auto or not) on an enemy targeting a back-row ally gives
+Every Knight hit (any direct hit: a basic, a weaponskill or an ability, auto or not; not a bleed or burn tick) on an enemy targeting a back-row ally gives
 that enemy a taunt from the Knight (`battle_cover_taunt_seconds`), the same status Gauntlet Toss
 uses. The enemy switches on the next tick, when enemy targets are chosen, and stays on the Knight
 after the taunt ends because enemies keep their target. Gauntlet Toss aims at the covered threat

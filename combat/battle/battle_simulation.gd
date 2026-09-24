@@ -525,7 +525,7 @@ static func _choose_intentions(state: BattleState) -> void:
 			actor.effect_state["direct_order"] = false
 			continue
 		if bool(state.policies.get("auto_battle", true)):
-			_choose_squad_intention(state, actor)
+			_choose_squad_intention(state, actor, previous_target_id)
 
 
 static func _move_actors(state: BattleState) -> void:
@@ -1333,11 +1333,17 @@ static func _rule_aim(state: BattleState, actor: BattleActor, skill: AbilityDefi
 			if target != null and _living_in_radius(state, actor.faction, actor.position, skill.ai_radius).size() >= skill.ai_count:
 				return target
 		"enemy_on_weaker_ally":
+			# ig-uu7.2: the covered threat first: this hero's own target, in range and on a back-row ally.
+			var covered: BattleActor = _actor_by_id(state, actor.order_target_id)
+			if covered != null and covered.faction != actor.faction and covered.life == BattleActor.LIFE_ALIVE and covered.position.distance_to(actor.position) <= skill.range_units:
+				var covered_victim: BattleActor = _actor_by_id(state, covered.order_target_id)
+				if covered_victim != null and covered_victim.faction == actor.faction and covered_victim.life == BattleActor.LIFE_ALIVE and covered_victim.archetype in BACK_ROW:
+					return covered
 			for enemy: BattleActor in state.actors:
 				if enemy.faction == actor.faction or enemy.life != BattleActor.LIFE_ALIVE or enemy.position.distance_to(actor.position) > skill.range_units:
 					continue
 				var victim: BattleActor = _actor_by_id(state, enemy.order_target_id)
-				if victim != null and victim != actor and victim.faction == actor.faction and victim.life == BattleActor.LIFE_ALIVE and victim.hp / victim.max_hp < actor.hp / actor.max_hp:
+				if victim != null and victim != actor and victim.faction == actor.faction and victim.life == BattleActor.LIFE_ALIVE and (victim.archetype in BACK_ROW or victim.hp / victim.max_hp < actor.hp / actor.max_hp):
 					return enemy
 		"ally_below_heal_below":
 			var hurt: BattleActor = _lowest_ally(state, actor, skill)
@@ -1730,6 +1736,12 @@ static func _damage(
 		if not rear.is_empty() and _is_behind(attacker, target):
 			damage *= 1.0 + float(rear["magnitude"])
 	_take_damage(state, attacker, target, damage, critical)
+	# ig-uu7.2: any direct Knight hit, auto or not, pulls an enemy that is on a back-row ally. Bleed and
+	# burn ticks go straight to _take_damage and never get here.
+	if attacker.faction == "ally" and attacker.archetype == "knight" and target.life == BattleActor.LIFE_ALIVE:
+		var victim: BattleActor = _actor_by_id(state, target.order_target_id)
+		if victim != null and victim.faction == "ally" and victim.life == BattleActor.LIFE_ALIVE and victim.archetype in BACK_ROW:
+			_add_status(target, "knight_cover", "taunt", attacker.id, BALANCE.battle_cover_taunt_seconds, 1.0)
 
 
 ## Damage after every reduction: shields soak it first, then HP. Downs an ally or kills an enemy at 0.
@@ -1998,11 +2010,14 @@ static func _choose_enemy_intention(state: BattleState, actor: BattleActor) -> v
 	actor.effect_state["direct_order"] = false
 
 
-static func _choose_squad_intention(state: BattleState, actor: BattleActor) -> void:
+static func _choose_squad_intention(state: BattleState, actor: BattleActor, previous_target_id: String = "") -> void:
 	var squad: Dictionary = _squad_for(state, actor.squad_id)
 	var stance: String = str(squad.get("stance", state.policies.get("default_stance", "stay_together")))
 	var objective: Vector2 = _assigned_objective_point(state, actor)
 	var target: BattleActor = null
+	# The stance's zone, where a Knight looks for a threat to cover (ig-uu7.2).
+	var zone_center: Vector2 = actor.position
+	var zone_radius: float = BALANCE.battle_detection_range
 	match stance:
 		"stay_together":
 			var leader: BattleActor = _squad_leader(state, actor.squad_id)
@@ -2014,6 +2029,8 @@ static func _choose_squad_intention(state: BattleState, actor: BattleActor) -> v
 					_set_auto_order(actor, COMMAND_MOVE, "", leader.position)
 					return
 				target = _nearest_enemy_near_point(state, actor.position, leader.position, BALANCE.battle_cohesion_wait_distance)
+				zone_center = leader.position
+				zone_radius = BALANCE.battle_cohesion_wait_distance
 		"defend":
 			var anchor: Vector2 = _array_vector(squad.get("stance_anchor"), _squad_centroid(state, actor.squad_id))
 			objective = anchor
@@ -2021,6 +2038,8 @@ static func _choose_squad_intention(state: BattleState, actor: BattleActor) -> v
 				_set_auto_order(actor, COMMAND_MOVE, "", anchor)
 				return
 			target = _nearest_enemy_near_point(state, actor.position, anchor, BALANCE.battle_guard_radius)
+			zone_center = anchor
+			zone_radius = BALANCE.battle_guard_radius
 		"protect":
 			var protected: BattleActor = _protected_actor(state, squad)
 			if protected != null:
@@ -2030,14 +2049,67 @@ static func _choose_squad_intention(state: BattleState, actor: BattleActor) -> v
 				return
 			var protect_center: Vector2 = protected.position if protected != null else objective
 			target = _nearest_enemy_near_point(state, actor.position, protect_center, BALANCE.battle_guard_radius)
+			zone_center = protect_center
+			zone_radius = BALANCE.battle_guard_radius
 		_:
 			target = _assigned_objective_enemy(state, actor, objective)
+	if actor.archetype == "knight":
+		var threat: BattleActor = _cover_threat(state, actor, previous_target_id, zone_center, zone_radius)
+		if threat != null:
+			target = threat
 	if (stance == "advance" or stance == "stay_together") and actor.archetype in BACK_ROW and _formation_order(state, actor, target.position if target != null else objective):
 		return
 	if target != null:
 		_set_auto_order(actor, COMMAND_ATTACK, target.id, target.position)
 	else:
 		_set_auto_order(actor, COMMAND_MOVE, "", objective)
+
+
+# ponytail: static scratch for _cover_threat, cleared at the end of every call. Assumes a single-threaded
+# sim (nothing re-enters advance mid-tick); switch to per-state scratch if a sim ever runs off the main thread.
+static var _cover_victims: Dictionary = {}
+static var _cover_claims: Dictionary = {}
+static var _cover_nearby: Array[BattleActor] = []
+
+
+## ig-uu7.2 Cover (SYSTEMS.md § Hero AI on auto): the enemy in the stance zone that is on a back-row
+## ally of this Knight's squad and that no other living Knight targets (auto or piloted). It keeps its
+## previous threat while that stays one; a new pick takes the lowest victim HP fraction, then the
+## nearest, then state.actors order. Worst case: one pass over state.actors (80 at frontier_march
+## 50v30) per Knight per tick, then a filter over the enemies inside the zone.
+static func _cover_threat(state: BattleState, knight: BattleActor, previous_target_id: String, center: Vector2, radius: float) -> BattleActor:
+	for other: BattleActor in state.actors:
+		if other == knight or other.life != BattleActor.LIFE_ALIVE:
+			continue
+		if other.faction == "enemy":
+			if other.position.distance_to(center) <= radius:
+				_cover_nearby.append(other)
+		elif other.faction == "ally":
+			if other.squad_id == knight.squad_id and other.archetype in BACK_ROW:
+				_cover_victims[other.id] = other
+			if other.archetype == "knight" and not other.order_target_id.is_empty():
+				_cover_claims[other.order_target_id] = true
+	var kept: BattleActor = null
+	var best: BattleActor = null
+	var best_fraction: float = INF
+	var best_distance: float = INF
+	for enemy: BattleActor in _cover_nearby:
+		var victim: BattleActor = _cover_victims.get(enemy.order_target_id) as BattleActor
+		if victim == null or _cover_claims.has(enemy.id):
+			continue
+		if enemy.id == previous_target_id:
+			kept = enemy
+			break
+		var fraction: float = victim.hp / victim.max_hp
+		var distance: float = enemy.position.distance_to(knight.position)
+		if fraction < best_fraction or (fraction == best_fraction and distance < best_distance):
+			best = enemy
+			best_fraction = fraction
+			best_distance = distance
+	_cover_victims.clear()
+	_cover_claims.clear()
+	_cover_nearby.clear()
+	return kept if kept != null else best
 
 
 ## ig-uu7.1 Formation (SYSTEMS.md § Hero AI on auto): before contact, a back-row hero stays one
