@@ -58,6 +58,9 @@ until the player reviews them; parallel returns and time with the game closed do
 a roguelite.
 
 - An **expedition** succeeds, retreats, or wipes. That's the only win/loss the player meets.
+- Since 2026-09-23 the town can also kill: a housed hero can starve to death if food stays at 0.
+  It is warned, one death at a time, and never while the game is closed (§ Heroes eat, and can
+  starve to death).
 - A **session** ends when the player stops playing. State is fully persistent.
 - The only real failure mode is attrition you can't dig out of. Gear recovery runs exist
   specifically so that a wipe is a setback, not a dead save.
@@ -69,8 +72,9 @@ you don't keep into one target takes ~327 — about 15× cheaper, which is what 
 don't pray" needs to be true to hold up as a claim rather than flavor text. The Summoning
 Circle (base building, `SYSTEMS.md`) erodes this ratio as it levels up, but by design not past
 ~12× even at its cap — checked so the claim holds at every stage of the game, not just before
-any buildings are built. Since 2026-09-23 the last step, SS→SSS, also needs a born master priest
-at the Sanctum (§ Heroes staff the buildings). That changes when you can finish, not what it costs.
+any buildings are built. Since 2026-09-23 the last step, SS→SSS, also needs a master priest at
+the Sanctum: a hero with a Rites passion, trained to skill 5 (§ Heroes staff the buildings). That
+changes when you can finish, not what it costs.
 
 > ⚠️ **PROVISIONAL** — the ~327-pull and ~12×/~15× ratios are arithmetically verified
 > (`SYSTEMS.md`) but unvalidatable against real play time: there is no Summon Stone income rate
@@ -105,6 +109,10 @@ These are non-negotiable and shape architecture. Changing one requires a `DECISI
   already-dispatched run once, then starts its next run at full duration if its order continues.
   There is no chain of offline farming. This supersedes the original no-clock rule by owner
   approval on 2026-09-22 (`DECISIONS.md`, `ig-6l4`).
+- **The town never kills while the game is closed.** Hunger runs only on the live clock, and its
+  death clock waits for you to look (§ Heroes eat, and can starve to death). A sent expedition's
+  own risk is the only death that can resolve on reopen, and you chose it when you sent the run.
+  Owner ruling 2026-09-23 (`ig-6m2`).
 
 ---
 
@@ -251,21 +259,23 @@ The numbers are in `SYSTEMS.md` § Keepers and professions.
 immense xp boost, like the progression system in rim world. Also only the ones with calling can make
 masterwork(the final tier) equips/food/etc".
 
-- **Born: a calling, rolled once.** Every hero is born with one calling: one of the five
-  professions, picked at random when the hero is created. The roll ignores rank and archetype, on
-  purpose. An F-rank Knight can be a born smith, and an SS Mage can be useless at the Forge. Dupes
-  of one definition roll their callings separately, so two copies of the same hero are not
+- **Born: two passions, rolled once.** Owner, 2026-09-23: "I like the rimworld inspired multi
+  passion idea." Every hero is born with two passions: two different professions out of the eight
+  (the five hall professions plus the town builder's woodcutting, mining and farming), picked at
+  random when the hero is created. This replaces the single calling. The roll ignores rank and
+  archetype, on purpose. An F-rank Knight can be a born smith, and an SS Mage can be useless at the
+  Forge. Dupes of one definition roll separately, so two copies of the same hero are not
   interchangeable.
-- **Practice: XP from working.** A keeper earns XP in its building's profession by working there
-  while you play. XP only builds up during live play, on the same clock that ages recovery caches.
-  It never builds up while the game is closed (§ Hard constraints).
-- **The calling is a huge XP boost,** like a RimWorld passion. A hero learns its calling several
-  times faster than anything else. Every hero can reach the top skill level in every profession;
-  a born smith just gets there in a fraction of the time.
+- **Practice: XP from working.** A hero earns XP in its job's profession by working there while you
+  play. XP only builds up during live play, on the same clock that ages recovery caches. It never
+  builds up while the game is closed (§ Hard constraints).
+- **A passion is a huge XP boost,** as in RimWorld. A hero learns its two passions several times
+  faster than anything else. Every hero can reach the top skill level in every profession; a born
+  smith just gets there in a fraction of the time.
 - **Only a born master makes masterwork.** Masterwork is the top tier of a profession's output
-  (below). It needs a keeper whose calling *is* that profession and whose skill is at the top
-  level. A hero who learned the trade without the calling gets the full skill bonus, but never
-  masterwork.
+  (below). It needs a hero with a passion for that profession, at the top skill level. A hero who
+  learned the trade without the passion gets the full skill bonus, but never masterwork. A hero can
+  master both of its passions.
 - **Skill lasts the hero's life.** A hero keeps what it learned when you move it to another building,
   and when it ranks up. Death and sacrifice erase it. Skill cannot be passed on, recovered or
   inherited. What a master already made stays made.
@@ -293,6 +303,7 @@ here adds a recipe or a crafting tree.
 | Rites | Rank-ups, F→D through SS→SSS | The final rank-up, SS→SSS. Only a born master priest who is stationed at the Sanctum and home can perform it. | Nothing new. It gates a step that exists today. |
 | Drill | Expedition XP. It makes nothing. | None. Skill bonus only. | — |
 | Tracking | Longer lost-gear and rescue windows. It makes nothing. | None. Skill bonus only. | — |
+| Woodcutting, mining, farming | Wood, stone and food for the town (`ig-6m2`) | None. Skill bonus only. | — |
 
 The Forge row changes today's game. A level-5 Forge enhances to +15 on its own today. After this, it
 stops at +12 unless a born master smith is home at the Forge. Gear already past +12 keeps its
@@ -301,14 +312,14 @@ one output tier the Forge has.
 
 **The Rites gate touches the spine, and the owner chose it knowingly (2026-09-23).** The designer
 and the director both recommended against it. An SSS hero is the game's long-term goal (§ Win and
-loss). From now on, the last step to it needs a born master priest: a hero whose calling is Rites,
+loss). From now on, the last step to it needs a born master priest: a hero with a Rites passion,
 at skill 5, stationed at the Sanctum and home when you press rank-up. Heroes already at SSS keep
 their rank.
 
 - **The risk.** Your master priest can die on an expedition, or you can feed away every hero born
   for Rites. Either way, your SS hero cannot finish until you raise another master. The essence you
   saved is not lost, but the goal is on hold.
-- **The way out is a delay, never a dead end.** One hero in five is born for Rites, whatever its
+- **The way out is a delay, never a dead end.** One hero in four has a Rites passion, whatever its
   rank. You can always pull again: expeditions pay Summon Stones, and an empty roster gets a free
   pull (`SYSTEMS.md` § Roster-wipe recovery floor). Once a Rites-born hero works at the Sanctum, it
   reaches master in 75 minutes of live play. `SYSTEMS.md` § Keepers and professions has the odds
@@ -329,7 +340,7 @@ their rank.
   body. You unassign it first, as a separate, deliberate act. Feeding a born smith to another hero
   should be a choice, not a bulk-select accident.
 - **Fodder gets a second job.** The spine says to feed every hero you don't keep, at any rank. A
-  calling pulls the other way. That F-rank Knight is 10 Essence in the Sanctum, or your Forge's
+  passion pulls the other way. That F-rank Knight is 10 Essence in the Sanctum, or your Forge's
   future master. Both answers should hurt.
 
 **A keeper can be your body.** Walking as a keeper does not stop its work, because the body is at
@@ -337,7 +348,7 @@ home. While you are that hero, its counter stands empty. The body rules still ap
 dispatch the hero you are in.
 
 **Any hero can run any shop.** The owner, 2026-09-23: "It can be anyone. I intend any hero to be
-able to be able to run any shop pretty much." Stationing checks no calling. The calling only makes a hero learn
+able to be able to run any shop pretty much." Stationing checks no passion. A passion only makes a hero learn
 four times faster and lets it make masterwork. The two places where "anyone" stops are the ones the
 owner ruled the same day: masterwork (including the Forge's +13 to +15 and SS→SSS) needs a born
 master, and the Summoning Circle and the Town Gate take no keeper.
@@ -349,7 +360,7 @@ same field. The town still has no NPCs: every worker is a roster hero.
 **Owner rulings on staffing, 2026-09-23.**
 
 - Keepers can be sent out, and death erases the skill.
-- Skill is born + practice, and masterwork is reserved to the calling.
+- Skill is born + practice, and masterwork is reserved to a passion (two passions per hero, ruled later the same day).
 - The Forge's +13 to +15 band needs a master smith who is home.
 - Masterwork draughts are built now, after the keeper bonuses (`DECISIONS.md` 2026-09-23,
   masterwork draughts).
@@ -391,21 +402,26 @@ you pulled and can lose.
 - **You place everything else.** First the House and the Lumbermill. A stone workplace and a farm
   come in later slices.
 - **Houses.** A house holds one hero. A hero needs a house to work at a workplace. Fighters and
-  fodder need none. Whether a hall keeper needs one too is an owner question.
+  fodder need none. Hall keepers need none for now (owner ruling, 2026-09-23). A house is also
+  what makes a hero eat (below).
 - **Work.** A workplace has worker slots, and you assign housed heroes to them. A hero has one job:
   a hall station or a workplace slot. Any hero can do any job. A worker is protected like a keeper,
   not busy: you can still send it out, and its job pauses while it is away.
 - **What the town makes, and what it pays for.**
   - Wood and stone build houses and workplaces. Later they also help pay for hall upgrades (the
     numbers are not set).
-  - Food makes draughts, and maybe feeds workers (owner question).
+  - Food feeds housed heroes, and makes draughts. Farms make it.
   - **No iron.** Its only use would be making gear, which is a crafting tree, and § Scope boundaries
     excludes those. Gear stays loot plus parts.
   - **The town never makes Summon Stones, Essence or parts.** Expedition income and the ~327-pull
     claim in § Win and loss stay where they are.
-- **Only while you play.** The town works on the same live clock as profession XP. Nothing is made
-  while the game is closed (§ Hard constraints). Changing that needs a `DECISIONS.md` entry, not a
-  ticket.
+- **Job skills.** The new jobs are professions too: woodcutting (Lumbermill), mining (Mine) and
+  farming (Farm) join the five hall professions, so there are eight. A worker earns XP in its job
+  like a keeper does, and a skilled worker makes more. Every hero is born with two passions out of
+  the eight (§ Heroes staff the buildings).
+- **Only while you play** (owner ruling, 2026-09-23). The town works on the same live clock as
+  profession XP. Nothing is made, eaten or lost while the game is closed (§ Hard constraints).
+  Changing that needs a `DECISIONS.md` entry, not a ticket.
 
 **What we take from Banished, and what we skip.**
 
@@ -416,24 +432,51 @@ you pulled and can lose.
 | Workplaces with worker slots | Hauling and storage distance: one shared stockpile |
 | A house for each worker | Roads as a requirement: roads are decoration |
 | A stockpile and production rates | Health, happiness and disease: § Scope boundaries excludes morale and injuries |
-| Food as the thing to manage (owner question) | Trade, nomads, schools, and tool or clothing chains |
+| Food as the thing to manage, and starving to death | Trade, nomads, schools, and tool or clothing chains |
 
-**Flagged, not decided: can the town kill a hero?** Banished kills people with hunger and cold. Cold
-is gone with the seasons. Hunger is open. If heroes can starve, the town becomes a second way to die.
-Today only a failed expedition kills (`ARCHITECTURE.md` rule 8). `kill_hero()` would stay the only
-writer either way, but a death you get by forgetting a farm is a different game from a death you
-risk on a run. This is the owner's call. No food slice is built before it.
+### Heroes eat, and can starve to death — owner ruling 2026-09-23
 
-**The fodder tension grows.** Every worker is a hero you did not feed. An F-rank worker costs about
-0.13 of a pull (`SYSTEMS.md` § Town builder). That is the point: junk heroes now have a job, and
-feeding them has a price.
+> "They eat and can starve to death." — the owner, choosing this over our recommendation (hunger
+> only slows work) knowingly.
+
+So the town is a second way to lose a hero. The rules below keep that fair: a starvation death is
+never a surprise, and never happens while you are not looking.
+
+- **Who eats.** Only housed heroes, and only while they are home. A hero away on an expedition, or
+  busy in a battle, does not eat. Fighters and fodder have no house, so they never eat.
+- **The escape hatch.** Unhousing a hero stops it eating. You can always shrink the town to fit the
+  food.
+- **The warning ladder.**
+  1. **Food low** — under 10 minutes of eating left. The HUD shows a warning.
+  2. **Starving** — food is 0. Work runs at half speed. The HUD names who dies next, and when.
+  3. **Last warning** — 5 minutes before a death, the game stops the death clock and asks you to
+     look. It does not start again until you do. Nobody starves while you are away from the keys.
+  4. **A death** — one hero at a time. The first dies after 20 minutes of starving, then one every
+     10 minutes while food stays at 0.
+- **Who dies first.** The lowest rank, then the lowest level, then the newest in the roster.
+- **Getting out resets the clock.** Once food climbs back above the "food low" line, the town
+  starts over. Between 0 and that line the clock waits, so a farm that makes a little less than the
+  town eats cannot hold the danger off forever.
+- **The death is a real death.** It goes through `kill_hero()`, the one place a hero leaves the
+  roster (`ARCHITECTURE.md` rule 8). Its gear goes back to your inventory first, so no Lost Cache
+  appears in the town.
+- **Never while the game is closed** (§ Hard constraints). The town runs only on the live clock.
+
+> ⚠️ **PROVISIONAL** — the ladder's minutes, the eating rate and the farm rate are unfelt ·
+> **Settled by:** a played build of the food slice (`ig-6m2.5`)
+
+**The fodder tension grows.** Every worker is a hero you did not sacrifice. An F-rank worker costs
+about 0.13 of a pull (`SYSTEMS.md` § Town builder), and now it eats too. That is the point: junk
+heroes now have a job, and keeping them has a price.
 
 "Defend the town against attack" (the old town bullet) stays later. It has no slice.
 
-> ⚠️ **PROVISIONAL** — undefined: what a house does beyond allowing a job, whether heroes eat,
-> whether the new jobs get their own skills, whether the town ever runs while closed, and every
-> town number. · **Settled by:** the owner's answers to the questions in `ig-6m2`, then a played
-> build of its first slice.
+**Owner rulings, 2026-09-23 (`ig-6m2`).** A house is needed for a workplace job; fighters, fodder
+and hall keepers need none. Heroes eat and can starve to death (above). Heroes have several
+passions, RimWorld-style: two each, out of eight professions. The town runs only while you play.
+
+> ⚠️ **PROVISIONAL** — every town number is unfelt · **Settled by:** a played build of the first
+> slice (`ig-6m2.1`), and of the food slice (`ig-6m2.5`) for the hunger numbers.
 
 ### Earlier direction, recorded 2026-08-11
 

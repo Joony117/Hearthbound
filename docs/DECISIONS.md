@@ -9,10 +9,10 @@ Newest first.
 
 ## 2026-09-23: The town builder — placed buildings are profile state, `station` is a hero's one job, `home` is its house, and the town runs only on the live tick
 
-**PROPOSED, 2026-09-23. Waiting for the director.** Drafted for `ig-6m2`. The owner, 2026-09-23:
+**ACCEPTED by the director, 2026-09-23,** on the owner's answers (houses gate workplace jobs; heroes eat and can starve; multi-passion job skills; live play only). Drafted for `ig-6m2`. The owner, 2026-09-23:
 "build their own town, manage work, have the heros have their own house, city management like the
 game banished". `GAME_SPEC.md` § The town builder has the design. `SYSTEMS.md` § Town builder has
-the numbers.
+the numbers. The owner answered its four questions the same day; items 5, 11 and 12 fold them in.
 
 **What moves.**
 
@@ -41,7 +41,7 @@ the numbers.
    is cleared with a `push_warning`, and the first hero in roster order wins.
 5. **A hero's house is `Hero.home`,** a placed House id, saved as the additive key `home`. A house
    holds `house_capacity` heroes, enforced by the mutator and on load. A workplace job needs a home.
-   Whether a hall keeper needs one is an owner question, and until the owner answers, it does not.
+   A hall keeper does not, for now (owner ruling, 2026-09-23).
 6. **Permadeath keeps one writer.** `home` and `station` live on the `Hero`, so a death takes them
    away. There is no building-to-hero map to clean (rule 8, and the same reasoning as 2026-09-23
    item 5). Demolishing a building, when it exists, clears its residents and workers in its own
@@ -55,6 +55,45 @@ the numbers.
    (`_advance_orders_in_memory`) makes nothing (`GAME_SPEC.md` § Hard constraints).
 9. **The town makes no Summon Stones, Essence or parts,** and `combat/` never reads town state.
 10. **No fourth autoload.**
+11. **Starvation is a third caller of `kill_hero()`, not a second writer** (owner ruling,
+    2026-09-23: "They eat and can starve to death"). Rule 8 is amended to match: `kill_hero()` is
+    the only code that removes a hero from the roster, and its callers are the expedition resolver,
+    sacrifice and starvation.
+    - The pure town script computes the tick: food made, food eaten, the starving clock, and which
+      hero is due to die (lowest rank, then lowest level, then newest). It returns an
+      `instance_id` or nothing. It never touches the roster.
+    - `GameSession`'s live tick applies it: every equipped item goes back to inventory through the
+      existing `unequip_item`, then `kill_hero(hero, &"", balance)`. With nothing equipped,
+      `kill_hero()` makes no Lost Cache. Its embodied-hero and empty-roster rules apply unchanged.
+    - Only housed heroes who are home eat. Away and busy heroes do not, so nothing a hero does on a
+      run moves food.
+    - One global clock, not one per hero. Three additive keys: `town_resources.food`,
+      `town_starving_seconds` and `town_starve_acked`. The clock stops at each death's last
+      warning until `acknowledge_starvation()` sets `town_starve_acked`. It resets only once food
+      climbs back above the food-low line, so a farm that makes slightly less than the town eats
+      cannot hold it off forever (`SYSTEMS.md` § Food and starvation).
+    - Like all town state, it runs only in `_advance_clocks_in_memory`. The offline catch-up never
+      moves food or the clock. A new hard constraint says so: the town never kills while the game
+      is closed (`GAME_SPEC.md` § Hard constraints).
+12. **Passions replace the calling** (owner ruling, 2026-09-23: "I like the rimworld inspired multi
+    passion idea"). This amends the calling bullet of 2026-09-23 item 5, below.
+    - `Hero.passions` holds `passions_per_hero = 2` different professions, saved as the additive
+      key `passions` (a list of strings). `SAVE_VERSION` is not bumped. It crosses save boundary
+      #1, so it needs a real disk round-trip and a `verifier`.
+    - The roll uses a fixed list of eight: the five hall professions in today's order, then
+      `woodcutting`, `mining` and `farming`. `Hero.PROFESSIONS` (profession → hall id) stays the
+      five halls, because `station` validation reads it. The three workplace professions map to
+      workplace types in the town script.
+    - The roll is still a stable hash of `instance_id`, with no summon RNG draw: the first passion
+      is `ALL[hash(id) mod 8]`, the second is from the other seven by a second hash
+      (`hash(id + "#2") mod 7`). New heroes get it at creation.
+    - **Migration.** A save with `calling` and no `passions` keeps the calling as the first
+      passion, and the second comes from the second hash. A save with neither derives both. On the
+      next save, `passions` is written and `calling` is not.
+    - A master is a hero whose passions include the profession, at skill 5. Both passions can be
+      mastered. The ×4 XP applies to either passion; the balance row `calling_xp_multiplier` is
+      renamed `passion_xp_multiplier` in the same change as `balance.tres`, since a row renamed in
+      the script but not the resource falls back to its default silently.
 
 **Rejected.**
 
@@ -73,10 +112,19 @@ the numbers.
   § Scope boundaries excludes. Stones or parts would move every income number and the ~327-pull
   spine.
 
-**Left open on purpose.** Whether a hall keeper needs a house. Whether heroes eat, and whether
-hunger can kill (a second death path, flagged in `GAME_SPEC.md`). Whether the new jobs get their
-own skills: adding professions would make each calling rarer, and a Rites-born hero would drop from
-1 in 5. The numbers for stone, construction time, hall upgrade costs and food.
+- *Hunger that only slows work.* It was the recommendation. The owner chose death knowingly.
+- *A hunger meter per hero.* Deaths come one at a time, so one clock carries the same information,
+  and it is one saved number instead of one per hero.
+- *A Lost Cache for a hero who starves.* A cache is gear lost out on a run. In the town the gear is
+  right there, so it goes to inventory.
+- *Removing a starving hero anywhere except `kill_hero()`.* That is a second writer (rule 8).
+- *One passion from eight.* A Rites passion would drop from 1 in 5 to 1 in 8, and the SS→SSS wait
+  would grow from 5 pulls to 8.
+- *Three passions.* 37.5% of heroes would have any given passion. A passion stops being special.
+- *A `calling` field kept next to `passions`.* Two fields for one idea, which drift.
+
+**Left open on purpose.** Whether a hall keeper ever needs a house (the ruling says "for now"). The
+numbers for stone, construction time and hall upgrade costs. Every food number is set but unfelt.
 
 ---
 
@@ -224,7 +272,9 @@ buildings have the design. `SYSTEMS.md` § Keepers and professions has the numbe
    - **One keeper per building.** The `GameSession` stationing mutator enforces it. On load, if
      two heroes claim one building, the first in roster order keeps it and the others are cleared
      with a `push_warning`. Unknown building or profession ids are dropped the same way.
-   - **The calling comes from a stable hash of `instance_id`.** New heroes get it at creation.
+   - **The calling comes from a stable hash of `instance_id`.** *Amended 2026-09-23: passions
+     replace the calling; see the town builder entry, item 12. The stable hash stays.* New heroes
+     get it at creation.
      Legacy heroes get it on load, and it is written at the next save. `instance_id` is 16 random
      bytes, so the hash is uniform. No summon RNG draw is added, so seeded summons and their tests
      do not shift.

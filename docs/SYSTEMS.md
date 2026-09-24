@@ -4194,16 +4194,30 @@ level from 0 to 5. The scale is the same for every hero and every profession (ow
 | XP minutes for this level | 20 | 40 | 60 | 80 | 100 |
 | Total XP minutes | 20 | 60 | 120 | 200 | 300 |
 
-**XP.** Only a keeper who is home earns XP, and only in its own building's profession:
+**Passions (owner ruling, 2026-09-23: "I like the rimworld inspired multi passion idea").** Every
+hero is born with `passions_per_hero = 2` different professions out of the eight, picked uniformly.
+This replaces the single calling out of five. Two is the smallest count that keeps a Rites passion
+at least as common as the old calling:
+
+| Passions from 8 | Chance a new hero has Rites | Pulls to find one, on average |
+|---|---|---|
+| Old rule: 1 calling from 5 | 20% | 5 |
+| 1 from 8 | 12.5% | 8 |
+| **2 from 8 (ruled)** | **25%** | **4** |
+| 3 from 8 | 37.5% | 2.7 |
+
+Three would make a passion ordinary: a hero would be passionate about three of eight jobs.
+
+**XP.** Only a hero working its job while home earns XP, and only in that job's profession:
 
 ```
-xp_seconds += work_seconds * (calling_xp_multiplier if profession == hero.calling else 1.0)
-calling_xp_multiplier = 4.0
+xp_seconds += work_seconds * (passion_xp_multiplier if profession in hero.passions else 1.0)
+passion_xp_multiplier = 4.0
 ```
 
 | Real minutes of work to reach skill | 1 | 3 | 5 |
 |---|---|---|---|
-| In its calling (×4) | 5 | 30 | 75 |
+| In one of its passions (×4) | 5 | 30 | 75 |
 | Any other profession (×1) | 20 | 120 | 300 |
 
 ×4 is the owner's "immense XP boost". It sits close to a RimWorld major passion against no passion
@@ -4213,8 +4227,8 @@ XP builds up on the live tick, the same pass that ages the recovery clock
 (`GameSession._advance_clocks_in_memory`). It never builds up in the catch-up that resolves orders
 after the game was closed. XP persists the same way `recovery_clock_seconds` does.
 
-**Masterwork.** A hero is a master of a profession when that profession is its calling *and* its
-skill there is 5. A building's masterwork tier is open only while its keeper is home and is a master
+**Masterwork.** A hero is a master of a profession when that profession is one of its passions
+*and* its skill there is 5. A hero can master both of its passions. A building's masterwork tier is open only while its keeper is home and is a master
 of the building's profession.
 
 - **Forge.** This amends the Forge row of § Base buildings:
@@ -4243,7 +4257,7 @@ of the building's profession.
   that run's regular stock of the same kind is gone. Manual use can pick either.
 - **Rites** (owner ruling, 2026-09-23, against the designer's and the director's advice).
   `rank_up_hero` refuses SS→SSS unless the Sanctum's keeper is home and is a master priest
-  (calling Rites, skill 5). Every other rank-up is unchanged. Heroes already at SSS keep their rank.
+  (a Rites passion, skill 5). Every other rank-up is unchanged. Heroes already at SSS keep their rank.
   The target may be the priest itself: it is stationed and home.
 - **Drill, Tracking.** No masterwork. Skill bonus only.
 
@@ -4254,14 +4268,15 @@ finish.
   per pull, that costs at most about one pull; an F-rank priest costs 10 Essence, about 0.13 pull.
   The figures below become ~327 → ~328, ~219 → ~220 and ~188 → ~189. The ~188 case already has a
   skill-5 Rites keeper, so a Rites-born one meets the gate for free.
-- **Finding a Rites-born hero.** The calling is uniform over five professions, whatever the rank, so
-  each new hero has a 1 in 5 chance. The chance of at least one in `n` new heroes is `1 − 0.8^n`:
+- **Finding a Rites-born hero.** Passions are uniform, whatever the rank. With two passions from
+  eight, each new hero has a 1 in 4 chance of a Rites passion (it was 1 in 5 under the old single
+  calling). The chance of at least one in `n` new heroes is `1 − 0.75^n`:
 
-  | New heroes | 5 | 10 | 14 | 21 |
+  | New heroes | 4 | 8 | 11 | 16 |
   |---|---|---|---|---|
-  | At least one Rites-born | 67% | 89% | 96% | 99% |
+  | At least one Rites-born | 68% | 90% | 96% | 99% |
 
-  That is 5 pulls on average: 500 stones, or about 20 Verdant, 7 Ashfall or 2.5 Sundered clears at
+  That is 4 pulls on average: 400 stones, or about 16 Verdant, 5.3 Ashfall or 2 Sundered clears at
   § Summon Stones' income (1,308 / 436 / 164 clears per ~327 pulls). Pulls are always possible:
   expeditions pay stones, and § Roster-wipe recovery floor covers an empty roster. A lost priest is
   a delay, never a dead end.
@@ -4271,7 +4286,7 @@ finish.
   floor. So a priest stationed early is ready long before the final rank-up, and the gate costs no
   time.
 - **Worst case.** You lose your only master at SS and no Rites-born hero is left on the roster. The
-  wait is about 5 pulls plus 75 minutes of live play.
+  wait is about 4 pulls plus 75 minutes of live play.
 
 **Bonus.** Each skill level is worth half a building level of that building's own effect. It is
 added inside the building's existing term:
@@ -4287,6 +4302,18 @@ effect = 1.0 + per_level_bonus * (building_level + 0.5 * keeper_skill)
 | Drill | Training Hall | Expedition XP +7.5% | +37.5% | `training_hall_xp_bonus` 0.15/level |
 | Tracking | Reliquary | Cache and rescue lifetime +150 s | +750 s | `recovery_duration_seconds_per_level` 300 s/level |
 | Alchemy | Apothecary | Draught parts cost −10% | −50% | none: the Apothecary has no level |
+
+**Workers (town builder, `ig-6m2`).** Woodcutting, mining and farming are professions too, so a
+worker earns XP in its job like a keeper, with the same ×4 for a passion. A workplace has no level,
+so a worker's skill is a flat multiplier on its own output:
+
+```
+worker_output_per_minute = base_rate * (1.0 + worker_skill_bonus_per_level * worker_skill)
+worker_skill_bonus_per_level = 0.10      # skill 5 = x1.5
+```
+
+> ⚠️ **PROVISIONAL** — `worker_skill_bonus_per_level` is unfelt · **Settled by:** a played build
+> of the worker job-skills slice.
 
 A skill-5 keeper is worth 2.5 building levels, and a skill-3 keeper 1.5. A keeper stacks past the
 building cap on purpose: a maxed Forge with a skill-5 smith reads as level 7.5 for salvage.
@@ -4322,7 +4349,7 @@ figures are before Circle effects and before levelling fodder.
 > last ~110 clears in under 75 minutes, and then the gate is a real wait. · **Settled by:** a played
 > build that reaches SS→SSS, timing the live play from the first stationed priest to the rank-up.
 
-> ⚠️ **PROVISIONAL** — every number in this section is unfelt: the 20-minute level, the ×4 calling
+> ⚠️ **PROVISIONAL** — every number in this section is unfelt: the 20-minute level, the ×4 passion
 > multiplier, the +12 masterwork floor, the half-level bonus, Alchemy's 10% and the masterwork
 > draughts. The ~219, ~188 and Rites-gate figures are single-pass arithmetic and have not been
 > cross-checked. · **Settled by:** a played build with two or more
@@ -4362,7 +4389,7 @@ stops when you run out of heroes worth keeping.
 **The town makes no Summon Stones, Essence or parts.** No income number in § Summon Stones moves,
 and neither does ~327 → ~219 → ~188 in § Keepers and professions.
 
-The only cost is the heroes you keep as workers instead of feeding them. At the average of
+The only cost is the heroes you keep as workers instead of sacrificing them. At the average of
 78.38 Essence per pull:
 
 | Worker's rank | F | D | C |
@@ -4374,12 +4401,65 @@ Ten F-rank workers cost about 1.3 pulls: ~327 → ~328. F is 40% of pulls, so a 
 the town with F-rank heroes pays almost nothing. A player who keeps better heroes as workers pays
 more. That is a choice, not a trap.
 
+### Food and starvation (`ig-6m2.5`, owner ruling 2026-09-23)
+
+Design: `GAME_SPEC.md` § Heroes eat, and can starve to death.
+
+| Row | Value | Why |
+|---|---|---|
+| `town_start_food` | 30 | Five housed heroes eat it in 30 minutes. Old saves get it once, when the key is missing |
+| `food_per_housed_hero_minute` | 0.2 | One farmer feeds five |
+| `farm_wood_cost` | 20 | Same as a Lumbermill |
+| `farm_worker_slots` | 2 | |
+| `food_per_worker_minute` | 1.0 | Live play only, and only while the worker is home |
+| `food_low_warning_minutes` | 10 | "Food low" shows when food < 10 minutes of the current eating |
+| `starving_work_multiplier` | 0.5 | Every workplace, farms included, while starving |
+| `starve_first_death_minutes` | 20 | Minutes of starving before the first death |
+| `starve_next_death_minutes` | 10 | Minutes between later deaths |
+| `starve_last_warning_minutes` | 5 | The death clock stops this long before each death until the player acknowledges |
+
+**Who eats.** Housed heroes who are home. A hero away on an expedition or busy in a battle does
+not eat. Unhoused heroes (fighters, fodder, hall keepers without a house) never eat.
+
+**One clock, per live tick.** Food and the clock move only in `_advance_clocks_in_memory`, never in
+the catch-up that resolves orders after the game was closed.
+
+```
+food += production(dt)            # halved while starving
+food -= eaters * food_per_housed_hero_minute * dt_minutes
+if food < 0:                      # demand not met: starving
+    food = 0
+    town_starving_seconds += dt   # unless stopped at a last warning
+elif food >= food_low_warning_minutes * current_eating_per_minute:
+    town_starving_seconds = 0     # out of the ladder: start over
+# otherwise (0 < food < the food-low line) the clock holds
+```
+
+The reset needs food back above the food-low line, not just above 0. Otherwise a farm making less
+than the town eats would tick food above 0 each tick, reset the clock forever, and nobody would
+ever starve.
+
+**Deaths.** Death `n` (from 1) is due at `starve_first_death_minutes + (n - 1) *
+starve_next_death_minutes` of starving: 20, 30, 40 minutes. At `due - starve_last_warning_minutes`
+(15, 25, 35) the clock stops and the HUD asks the player to look. It runs again only after they
+acknowledge. The victim is the eater with the lowest rank, then the lowest level, then the newest
+in the roster. Its gear goes to inventory, then `GameSession.kill_hero()` removes it, so no Lost
+Cache appears. Saved: `town_resources.food`, `town_starving_seconds`, and whether the current
+warning was acknowledged.
+
+**Pacing check.** Five housed heroes and no farm: food low at 20 minutes, starving at 30, the
+first last warning at 45, and the first death at 50, but only if the player acknowledged that
+warning and still did nothing. A Farm costs 20 wood, 10 minutes of two woodcutters. With production at half
+speed while starving, the way out is to unhouse heroes until the farms outrun the eating; one
+starving farmer at 0.5 food a minute still feeds two.
+
+> ⚠️ **PROVISIONAL** — every row above is unfelt · **Settled by:** a played build of `ig-6m2.5`.
+
 ### Later slices: not set
 
-> ⚠️ **PROVISIONAL** — undefined: stone costs and rates, construction time, how much wood and
-> stone a hall upgrade costs on top of its parts, and everything about food. · **Settled by:** the
-> `game-designer`, when each slice is next (`ig-6m2.3` to `ig-6m2.5`); food also needs the owner's
-> hunger ruling first.
+> ⚠️ **PROVISIONAL** — undefined: stone costs and rates, construction time, and how much wood and
+> stone a hall upgrade costs on top of its parts. · **Settled by:** the `game-designer`, when each
+> slice is next (`ig-6m2.3`, `ig-6m2.4`).
 
 ---
 

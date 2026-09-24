@@ -34,10 +34,14 @@ These are the rules this game will actually violate if left unstated.
    `BattleOutcome`. `BattleView` may observe snapshots and submit validated commands through
    `GameSession`, as a UI adapter under rule 1. It never applies rewards or removes heroes.
 
-8. **Permadeath is applied in exactly one place — the expedition resolver.**
+8. **Permadeath is applied in exactly one place — `GameSession.kill_hero()`.**
    This one matters more than it looks. A roster that can be mutated from three places is
    how this specific game rots: a hero half-deleted from the party but still in the roster,
    gear duplicated into a cache *and* left equipped. One writer, one code path.
+   *Amended 2026-09-23, accepted (`DECISIONS.md`, the town builder, item 11):* the one writer
+   is `GameSession.kill_hero()`. Its callers are the expedition resolver, sacrifice and
+   starvation. A caller decides that a hero dies; only `kill_hero()` removes it. (Sacrifice has
+   called it since before this entry, so the old wording was already narrower than the code.)
 
 9. **Shared balance numbers live in `balance.tres`, not in code.** Per-zone authored values
    (recommended power, wave ramp, rewards, and expedition durations) live on their
@@ -238,11 +242,12 @@ scene still holds, and so do rules 1, 5 and 8.
   `is_hero_protected()` covers sacrifice and bulk sacrifice, and every dispatch entry point refuses
   it. It is **not** folded into `is_hero_busy()`. That would also block equipping and ranking up
   the body you are in.
-- **A keeper's station and skills are hero state.** `station`, `calling` and `profession_xp`
+- **A keeper's station and skills are hero state.** `station`, `passions` (was `calling`, see
+  the town builder entry, item 12) and `profession_xp`
   are `Hero` fields, saved in `Hero.to_dict/from_dict` (save boundary #1). `station` holds a
   hall id (a building node name from `hub/town/town.tscn`) or, once the town builder lands, a placed
   workplace id. Renaming a hall is a save change.
-  Masterwork (calling + skill 5) is a gate `GameSession` checks inside the action it gates:
+  Masterwork (a passion + skill 5) is a gate `GameSession` checks inside the action it gates:
   `enhance_item` past +12, `rank_up_hero` for SS→SSS, and the masterwork draught craft. The UI only
   reflects it. A station counts in
   `is_hero_protected()`, but not in `is_hero_busy()` and not at the dispatch entry points: keepers
@@ -277,8 +282,8 @@ scene still holds, and so do rules 1, 5 and 8.
 - **Town rules are pure functions in one script under `hub/town/`,** following `ExpeditionOrders`:
   hex math, whether a hex is free, and production per tick. `GameSession` mutators call them and
   refuse there. The view only reflects the result.
-- **Production runs only on the live tick,** never in the offline catch-up (`GAME_SPEC.md`
-  § Hard constraints).
+- **Production, eating and starvation run only on the live tick,** never in the offline catch-up
+  (`GAME_SPEC.md` § Hard constraints). A starvation death goes through `kill_hero()` (rule 8).
 - **The halls stay unique,** so a hall's id is its type name and `building_levels` keeps its
   indexes.
 
