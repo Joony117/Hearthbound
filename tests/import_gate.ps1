@@ -2,7 +2,7 @@
 # This gate rewrites .godot/, which is not safe to race against another engine process.
 if (Get-NetTCPConnection -LocalPort 6005 -State Listen -ErrorAction SilentlyContinue) {
 	Write-Host "GATE ABORTED: Godot LSP on 127.0.0.1:6005 - another engine process is live."
-	Write-Host "Stop it first:  Get-Process Godot* | Stop-Process -Force"
+	Write-Host "Stop it first:  Get-Process Godot_v4* | Stop-Process -Force"
 	exit 1
 }
 
@@ -20,7 +20,7 @@ if ($strays) {
 	$p = $strays | Select-Object -First 1
 	Write-Host "GATE ABORTED: PID $($p.ProcessId) ($($p.Name)) is already running this repo's engine binary ($godotDir)."
 	Write-Host "Command line: $($p.CommandLine)"
-	Write-Host "Stop it first:  Get-Process Godot* | Stop-Process -Force"
+	Write-Host "Stop it first:  Get-Process Godot_v4* | Stop-Process -Force"
 	exit 1
 }
 

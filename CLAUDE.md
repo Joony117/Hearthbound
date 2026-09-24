@@ -34,7 +34,7 @@ Export: `mkdir -p export && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe 
 
 - Never run two Godot processes against this repo. Gates break the tree on purpose mid-run, so a
   second process sees a broken tree and reports it green.
-- Whoever starts Godot reaps it: `Get-Process Godot* | Stop-Process -Force`, then check that the count is 0.
+- Whoever starts Godot reaps it: `Get-Process Godot_v4* | Stop-Process -Force`, then check that the count is 0. Not `Godot*`: that also kills the godot-ai MCP server (`godot-ai.exe`).
   A leaked process turns the next gate red. An open editor (port 6005) also blocks the gate.
 - The worktree is shared. Parallel writers are safe only if at most one runs the engine and the
   other's edits can't break the import.
