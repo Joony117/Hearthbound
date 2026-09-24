@@ -13,13 +13,13 @@ magnitude = 0.04
 [sub_resource type="Resource" id="TraitDefinition_stalwart"]
 script = ExtResource("2_trait")
 id = &"knight_stalwart"
-display_name = "Stalwart"
+display_name = "Ox Shoulders"
 magnitude = 0.05
 
 [sub_resource type="Resource" id="TraitDefinition_iron_wall"]
 script = ExtResource("2_trait")
 id = &"knight_iron_wall"
-display_name = "Iron Wall"
+display_name = "Last Rampart"
 stat = 2
 magnitude = 0.08
 

@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 skill_id = &"general_tumble"
-display_name = "Tumble"
+display_name = "Dust Roll"
 kind = "ability"
 archetype = "general"
 tier = 2
