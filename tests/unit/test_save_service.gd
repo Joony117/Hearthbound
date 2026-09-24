@@ -707,6 +707,42 @@ func test_a_failed_save_rolls_back_embody_and_step_out() -> void:
 	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
 
 
+func test_a_failed_save_rolls_back_hero_and_item_favorites() -> void:
+	var hero := Hero.new("Keeper", 0)
+	GameSession.add_hero(hero)
+	var item := Item.new(&"head", 2)
+	GameSession.add_item(item)
+	assert_true(SaveService.save())
+	var before: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
+	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
+	assert_false(GameSession.set_hero_favorite(hero, true))
+	assert_push_error("Save failed")
+	assert_ne(GameSession.last_action_error, "")
+	assert_false(GameSession.set_item_favorite(GameSession.inventory[0], true))
+	assert_push_error("Save failed")
+	assert_ne(GameSession.last_action_error, "")
+	assert_false(GameSession.hero_by_id(hero.instance_id).favorite, "the failed hero favorite is undone")
+	assert_false(GameSession.inventory[0].favorite, "the failed item favorite is undone")
+	assert_eq(_read_file_bytes(SaveService.SAVE_PATH), before)
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+
+	SaveService.load_blocked = true
+	SaveService.load_block_reason = "Blocked for the test."
+	assert_false(GameSession.set_hero_favorite(GameSession.hero_by_id(hero.instance_id), true))
+	assert_eq(GameSession.last_action_error, "Blocked for the test.")
+	assert_false(GameSession.set_item_favorite(GameSession.inventory[0], false), "even a no-op is refused")
+	SaveService.load_blocked = false
+	SaveService.load_block_reason = ""
+
+	assert_true(GameSession.set_hero_favorite(GameSession.hero_by_id(hero.instance_id), true))
+	assert_true(GameSession.set_item_favorite(GameSession.inventory[0], true))
+	_reload_from_disk()
+	assert_true(GameSession.hero_by_id(hero.instance_id).favorite, "a saved hero favorite survives reload")
+	assert_true(GameSession.inventory[0].favorite, "a saved item favorite survives reload")
+	assert_false(GameSession.set_item_favorite(Item.new(&"head", 2), true), "a stranger item is refused")
+	assert_ne(GameSession.last_action_error, "")
+
+
 ## Clearing the session autosaves over the file, so the saved bytes are put back before loading.
 func _reload_from_disk() -> void:
 	var saved_bytes: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)

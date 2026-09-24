@@ -2130,14 +2130,19 @@ func _on_favorite_item_toggled(enabled: bool) -> void:
 	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
 	if item == null:
 		return
-	GameSession.set_item_favorite(item, enabled)
+	if not GameSession.set_item_favorite(item, enabled):
+		_status.text = GameSession.last_action_error
+		# An early refusal fires no roster refresh, so the box is put back to the live item here.
+		_refresh_favorite_item_control()
 
 
 func _on_favorite_hero_toggled(enabled: bool) -> void:
 	var hero: Hero = _selected_hero()
 	if hero == null:
 		return
-	GameSession.set_hero_favorite(hero, enabled)
+	if not GameSession.set_hero_favorite(hero, enabled):
+		_status.text = GameSession.last_action_error
+		_refresh_hero_detail()
 
 
 func _on_start_recovery_window_pressed() -> void:

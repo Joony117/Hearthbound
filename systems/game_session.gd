@@ -553,25 +553,44 @@ func is_item_protected(item: Item) -> bool:
 	return false
 
 
-func set_hero_favorite(hero: Hero, value: bool) -> void:
-	if hero == null or not roster.has(hero) or hero.favorite == value or SaveService.load_blocked:
-		return
-	hero.favorite = value
-	_notify_roster_changed()
+## False, with last_action_error, when the load is blocked, the hero is unknown or the save fails
+## (nothing changes then). Favorites guard sacrifice and salvage, so the write is checked.
+func set_hero_favorite(hero: Hero, value: bool) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
+	if hero.favorite == value:
+		return true
+	return _commit_profile_mutation(_set_favorite_in_memory.bind(hero, value))
 
 
-func set_item_favorite(item: Item, value: bool) -> void:
-	if item == null or item.favorite == value or SaveService.load_blocked:
-		return
-	var known_item: bool = inventory.has(item)
-	if not known_item:
+## Same contract as set_hero_favorite, for an item in the inventory or on a hero.
+func set_item_favorite(item: Item, value: bool) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	var known_item: bool = item != null and inventory.has(item)
+	if item != null and not known_item:
 		for hero: Hero in roster:
 			if item in hero.equipped.values():
 				known_item = true
 				break
 	if not known_item:
-		return
-	item.favorite = value
+		last_action_error = "That item is not in the inventory or on a hero."
+		return false
+	if item.favorite == value:
+		return true
+	return _commit_profile_mutation(_set_favorite_in_memory.bind(item, value))
+
+
+## Checked path only. target is a Hero or an Item; both carry favorite.
+func _set_favorite_in_memory(target: Object, value: bool) -> void:
+	target.set(&"favorite", value)
 	_notify_roster_changed()
 
 

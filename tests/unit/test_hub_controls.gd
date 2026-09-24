@@ -290,6 +290,52 @@ func test_favorite_item_toggle_updates_protection_and_favorites_filter() -> void
 	assert_eq(inventory.item_count, 0)
 
 
+func test_a_favorite_that_fails_to_save_says_so_and_unticks() -> void:
+	var item := Item.new(&"ring", 2)
+	GameSession.add_item(item)
+	var hub: Node3D = _instantiate_hub()
+	var inventory: ItemList = hub.get_node("%InventoryList") as ItemList
+	var favorite: CheckBox = hub.get_node("%FavoriteItem") as CheckBox
+	inventory.select(0)
+	inventory.multi_selected.emit(0, true)
+	assert_true(SaveService.save())
+	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
+	favorite.set_pressed_no_signal(true)
+	favorite.toggled.emit(true)
+	assert_push_error("Save failed")
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+	assert_false(GameSession.inventory[0].favorite)
+	assert_false(favorite.button_pressed, "the box shows the real state")
+	assert_ne((hub.get_node("%Status") as Label).text, "")
+	assert_eq((hub.get_node("%Status") as Label).text, GameSession.last_action_error)
+
+
+func test_a_favorite_refused_while_the_load_is_blocked_stays_unticked() -> void:
+	var hero := Hero.new("Mira", 2)
+	GameSession.add_hero(hero)
+	GameSession.add_item(Item.new(&"ring", 2))
+	var hub: Node3D = _instantiate_hub()
+	var roster: ItemList = hub.get_node("%RosterList") as ItemList
+	var inventory: ItemList = hub.get_node("%InventoryList") as ItemList
+	roster.select(0)
+	roster.multi_selected.emit(0, true)
+	inventory.select(0)
+	inventory.multi_selected.emit(0, true)
+	SaveService.load_blocked = true
+	SaveService.load_block_reason = "Blocked for the test."
+	for box_name: String in ["FavoriteHero", "FavoriteItem"]:
+		var box: CheckBox = hub.get_node("%" + box_name) as CheckBox
+		assert_false(box.disabled, box_name)
+		box.set_pressed_no_signal(true)
+		box.toggled.emit(true)
+		assert_false(box.button_pressed, "%s shows the refused state" % box_name)
+		assert_eq((hub.get_node("%Status") as Label).text, "Blocked for the test.")
+	SaveService.load_blocked = false
+	SaveService.load_block_reason = ""
+	assert_false(hero.favorite)
+	assert_false(GameSession.inventory[0].favorite)
+
+
 func test_future_save_blocks_main_menu_play_without_changing_canonical_bytes() -> void:
 	var future_bytes: PackedByteArray = '{"version":999,"roster":[]}'.to_utf8_buffer()
 	var save_file: FileAccess = FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
