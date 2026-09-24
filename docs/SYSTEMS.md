@@ -4797,15 +4797,18 @@ stops when you run out of heroes worth keeping.
 ### The first of each producer is free
 
 **A producer type you have none of costs nothing.** The producers are the Lumbermill, the Mine and
-the Farm. A building still under construction counts as having one, so only one can be free at a
-time. The second one costs full price.
+the Farm. A House counts too: a worker needs one, so producers with no House make nothing
+(deadlock check, 2026-09-24, `ig-6m2.3`). A building still under construction counts as having
+one, so only one of each type can be free at a time. The second one costs full price.
 
 It is a restart rule. Without it, a player who spends the starting wood on Houses before placing a
-Lumbermill can never make wood again. The same goes for a starving town with no wood and no Farm.
-Nothing can be demolished, so there would be no way back. With the rule, a town can never lock
-itself out. The price is one free building per type, once.
+Lumbermill can never make wood again. The mirror case locks too: a free Lumbermill and two more at
+20 spend all 40, and nobody can work them without a House. So does a starving town with no wood
+and no Farm. Nothing can be demolished, so there would be no way back. With the rule, a town can
+never lock itself out. The price is one free building per type, once.
 
-The start stock of 40 now buys four Houses, or a second Lumbermill and two Houses.
+The start stock of 40 now buys five Houses (the first is free), or a second Lumbermill and three
+Houses.
 
 ### Moving a building (`ig-6m2.2`)
 
@@ -4871,6 +4874,10 @@ The reset needs food back above the food-low line, not just above 0. Otherwise a
 than the town eats would tick food above 0 each tick, reset the clock forever, and nobody would
 ever starve.
 
+**Starving** means the clock is above 0. It starts the first time demand goes unmet and ends only
+at the reset, so work does not flicker between half and full speed (tech-lead, 2026-09-24,
+`ig-6m2.5`).
+
 **Deaths.** Death `n` (from 1) is due at `starve_first_death_minutes + (n - 1) *
 starve_next_death_minutes` of starving: 20, 30, 40 minutes. At `due - starve_last_warning_minutes`
 (15, 25, 35) the clock stops and the HUD asks the player to look. It runs again only after they
@@ -4919,6 +4926,11 @@ Food feeds the town. Houses and workplaces cost wood only.
 This replaces the slice's first scope, where houses and workplaces cost stone too. The problem was
 a loop: a House that costs stone needs a Mine first, and the Mine's workers need Houses. A fresh
 town would need a start stock of stone just to begin. There is no `town_start_stone`.
+
+**Deadlock check** (2026-09-24). Stone cannot lock the town: no building costs stone, and stone
+buys only hall upgrades. The first Mine is free, and its workers' Houses are paid in wood, which
+§ The first of each producer is free keeps coming. Construction cannot lock it either. It needs no
+input, only live play time, so the worst case is waiting for a free producer to finish.
 
 **Construction.**
 - A new building shows `building_scaffolding`, then `building_stage_A`, `_B` and `_C`, each for a

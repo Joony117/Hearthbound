@@ -1122,8 +1122,8 @@ you pulled and can lose.
     stone is the town's link to the hero game (`SYSTEMS.md` § Town builder).
   - Food feeds housed heroes. Farms make it. In v1 it does not make draughts: they keep their parts
     cost, so a hungry town never also cuts the supplies that rescue heroes.
-  - The first of each producer (Lumbermill, Mine, Farm) is free, so a town can never lock itself
-    out of wood, stone or food.
+  - The first of each producer (Lumbermill, Mine, Farm) is free, and so is the first House, so a
+    town can never lock itself out of wood, stone or food.
   - **No iron.** Its only use would be making gear, which is a crafting tree, and § Scope boundaries
     excludes those. Gear stays loot plus parts.
   - **The town never makes Summon Stones, Essence or parts.** Expedition income and the ~327-pull
