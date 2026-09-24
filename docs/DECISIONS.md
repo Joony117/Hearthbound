@@ -19,11 +19,29 @@ that is not recorded when it happens can never be told later, so the record come
 
 **What moves.**
 
-1. **The Ledger is `GameSession` state.** There are two additive keys: `ledger` (a list of
-   records) and `ledger_next_seq` (an int that starts at 1 and is never reused). `SAVE_VERSION` is
-   not bumped (the `P2-23` precedent). A save without the keys loads an empty ledger. Nothing is
-   backfilled. This crosses save boundary #1, so it needs a real disk round-trip, a legacy-save
-   load and a `verifier`.
+1. **The Ledger is `GameSession` state, split across two files.** Records live in an
+   append-only JSON Lines side file, `user://ledger.jsonl` (one record per line, not
+   indented), written by `SaveService`. The main save keeps one additive key:
+   `ledger_next_seq` (an int that starts at 1 and is never reused), the high-water mark for
+   the side file. `SAVE_VERSION` is not bumped (the `P2-23` precedent). A save without the key
+   loads an empty ledger. Nothing is backfilled. This crosses save boundary #1, so it needs a
+   real disk round-trip, a legacy-save load and a `verifier`. *Amended 2026-09-24 (`ig-m6o.9`,
+   save budget): a real save at the 10,000-record cap cost 108 ms and 3.9 MB, growing about
+   11 µs per record on every profile commit and every 15 s periodic save
+   (`.agent-results/ig-m6o.1/gut_ledger2.log`). That crosses one 60 FPS frame near 1,500
+   records. The side file keeps a commit's write cost independent of ledger size: a commit
+   appends only its new lines, then writes the main save as before. On load, lines with
+   `seq >= ledger_next_seq` are dropped: they were appended, but the main save that would have
+   advanced the mark never landed. That keeps item 4 ("never one without the other") across
+   two files instead of one. A failed append fails the mutation, the same as a failed save
+   today. An orphan line must never collide with a later `seq`: the loader either truncates the
+   file back to the last committed length, or leaves the gap and never reuses the `seq`. A
+   legacy save with an embedded `ledger` key migrates its records to the file once on load and
+   stops writing the key. A missing or unreadable side file loads as an empty ledger with a
+   `push_warning`. Acceptance for this amendment adds two crash cases through a real disk
+   reload: an append that lands with a main save that fails (the orphan lines are dropped, and
+   the next `seq` does not collide), and a missing side file (the ledger loads empty and the
+   game plays on).
 2. **A record is `{seq, time, kind, ...fields}`.** `time` is unix seconds when the event settles,
    and `seq` orders records. Heroes are named by `instance_id`. Enemies have no identity yet, so
    they appear as `enemy:<archetype>` plus the zone. Only `summoned` and `died` carry a name.
@@ -34,18 +52,22 @@ that is not recorded when it happens can never be told later, so the record come
 5. **One writer per kind.**
    - `summoned`: `summon_hero`.
    - `battle`: `_settle_battle_order` and `_settle_rescue_order`, one record per settled battle.
-     It names its `team`: the `instance_id` of every hero who fought, downed or not. The team is
-     the battle's witness list, so a later per-hero-knowledge reader (a hero knows what they saw)
-     needs no backfill. *Director amendment.*
+     It names its `team`: the `instance_id` of every hero who fought, downed or not. That is
+     every allied actor in the battle, so a rescue's team includes the stranded heroes it found.
+     The team is the battle's witness list, so a later per-hero-knowledge reader (a hero knows
+     what they saw) needs no backfill. *Director amendment.* A rescue's record also names its
+     `rescuers`, the rescue order's own heroes, next to `rescued`, so a reader can tell who came
+     from who was found. It is additive: a record without it reads neutrally, with no "by".
+     *Director amendment (Sol, `ig-m6o.1`): the team alone made every witness read as a rescuer.*
    - `died`: `kill_hero`, and only there. An `expedition` death carries `battle_order`: the id
-     of the order whose battle stranded the hero. The stranded incident already holds it
-     (`source_order_id`) and hands it to `kill_hero()` at abandon, expiry or a failed rescue. A
-     reader finds the `battle` record whose `order` matches. It is the first causal link between
-     records. *Director amendment; corrected twice on 2026-09-24.* Most expedition deaths settle
-     after the stranding battle, not in it. A total wipe captures its incident when the fight
-     ends, before the order settles, so the player can abandon it before the `battle` record
-     exists and the stranding battle's `seq` is not known yet. The order id always is, and
-     legacy incidents carry it too.
+     of the order whose battle stranded that hero. A reader finds the `battle` record whose
+     `order` matches. Most expedition deaths settle later than that battle (abandon, expiry or
+     a failed rescue), so the stranded incident carries the link: its `source_order_id` for the
+     heroes the first battle stranded, and the additive incident key `battle_orders` (hero id to
+     order id) for a rescuer that a failed rescue stranded, whose link is the rescue's order. A
+     legacy incident falls back to `source_order_id`. It is the first causal link between
+     records. *Director amendment, corrected 2026-09-24.* It is an order id, not a `seq`,
+     because the incident already holds one and legacy incidents do too.
    - `ranked_up`: `rank_up_hero`.
    - `meal` is reserved for step 2. Eating ticks are not events.
 6. **Permadeath keeps one writer.** `kill_hero()` gains optional `cause` (`expedition`,
@@ -60,8 +82,10 @@ that is not recorded when it happens can never be told later, so the record come
      (boundary #1). `BattleOutcome` gains `moments` as a copy, and `GameSession` writes them into
      the `battle` record at settle.
    - Moments draw no RNG and change no result. The forecast still predicts the same battle.
-   - The `legacy_v2` backend reports an empty list (boundary #4: both paths still hand back one
-     `BattleOutcome` type).
+   - The `legacy_v2` backend writes no `battle` record, and its deaths carry no `battle_order`.
+     Its orders exist only in saves from before `ig-544` and resolve through `QuickResolve`,
+     which never builds a `BattleOutcome`. *Corrected 2026-09-24: this line first said the path
+     reports an empty `moments` list (Sol, `ig-m6o.1`).*
 8. **Bounded size.**
    - `ledger_max_records` caps the list, and `battle_max_moments` caps each battle; past it,
      `moments_truncated` is set.
@@ -74,6 +98,18 @@ that is not recorded when it happens can never be told later, so the record come
      *Director amendment.*
    - Every reader tolerates gaps ("arrived before the records begin"). Legacy saves need that
      anyway.
+   - *Amended 2026-09-24 (`ig-m6o.9`, save budget): eviction stays in-memory, on the list held
+     during play, exactly as above. It never touches the side file mid-play. The file is
+     compacted — rewritten to match the capped, evicted list — only at load, behind the load
+     screen. The rollback snapshot in `_commit_profile_mutation` excludes the records: a
+     rollback truncates the in-memory list back to its old length instead of deep-copying up to
+     10,000 dicts on every commit. Eviction must not break that truncate, so eviction runs only
+     after a mutation commits; the list sits above the cap for at most one mutation. Compaction
+     writes a temporary file and renames it over the side file, the way `SaveService` already
+     replaces the main save, so an interrupted compaction leaves the old file whole. A torn last
+     line (a crash mid-append) is dropped at load, because its main save never landed. The
+     budget this meets: at most 2 ms added to any save or profile action, at any ledger size up
+     to the cap (`SYSTEMS.md` § The Ledger, the save budget row).*
 9. **Rules are pure static functions in one script,** following `ExpeditionOrders`: append with
    cap and eviction, records for a hero, and history lines. `GameSession` calls it. The first
    visible reader is the hero detail panel.
@@ -86,8 +122,23 @@ that is not recorded when it happens can never be told later, so the record come
   change a migration.
 - *A history array on each `Hero`.* A dead hero leaves the roster and would take its history with
   it. A battle shared by five heroes would be stored five times.
-- *A `Ledger` autoload, or a separate save file.* The cap is three autoloads. A second file could
-  be written without the main save, which breaks item 4's "never one without the other".
+- *A `Ledger` autoload.* The cap is three autoloads; `SaveService` already owns file I/O.
+- *A separate save file.* *Amended 2026-09-24 (`ig-m6o.9`, save budget): this line first
+  rejected any second file, reasoning that it "could be written without the main save, which
+  breaks item 4's `never one without the other`." That is now the accepted shape (item 1): a
+  second file only breaks item 4 if there is no way to tell an orphan write from a committed
+  one, and `ledger_next_seq` as a high-water mark in the main save is that tell. What stays
+  rejected, and why:*
+  - *A lower cap, to fit one save-cost frame.* About 1,500 records would fit, but that throws
+    away the history Nemesis, the Guest and the Chronicle exist to read.
+  - *One compact file, written whole each time, with the rollback deep-copy dropped.* Roughly
+    halves the cost but is still O(history) on every commit and every periodic save; it still
+    crosses one frame at the cap.
+  - *Caching the serialized ledger text and only appending to the cache.* The bytes written on
+    each save still grow with history; caching moves where the cost is paid, not whether it
+    grows.
+  - *A save thread.* The snapshot is still built on the main thread before handoff, so it adds
+    concurrency to the save boundary for no removed cost, and the save path has no thread today.
 - *Recording every hit or kill.* It would flood the log. A per-battle kill count carries what a
   history needs.
 - *Mutable records or saved tallies ("battles won: 37").* A tally is a second source of truth

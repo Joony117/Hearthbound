@@ -58,7 +58,7 @@ These are the rules this game will actually violate if left unstated.
 | Autoload | Owns | Does not own |
 |---|---|---|
 | `SceneRouter` | Main-scene transitions, transition state | Anything about the game |
-| `SaveService` | Serialization to/from `user://save.json`, version field | Game rules |
+| `SaveService` | Serialization to/from `user://save.json` and the append-only `user://ledger.jsonl`, version field | Game rules |
 | `GameSession` | Persistent player profile, supplies, dispatch battle checkpoints and stranded incidents; transaction/tick coordination | Combat rules, UI, scene objects or level nodes |
 
 `GameSession` exists because the player profile must outlive scene changes (menu → hub →

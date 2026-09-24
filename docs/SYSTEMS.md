@@ -510,14 +510,28 @@ The record of settled events that every history reader derives from. The ADR is 
 | `ledger_max_records` | 10,000 | A routine battle record is a few hundred bytes, so the cap holds the save to roughly 3 MB (an estimate) |
 | `battle_max_moments` | 64 | A five-hero battle with every hero downed and revived three times needs 30 moments. A 50-hero region can exceed it; past the cap, `moments_truncated` is set |
 | History lines in hero detail | 10 | Newest first. Routine victories at one zone collapse into one line |
+| Ledger save budget | ≤ 2 ms | What the ledger may add to any save or profile action, at any size up to the cap. A save's cost must not grow with history |
 
 The eviction order is tiered, oldest first within each tier: routine victory `battle` records (no
 moments, no rescued heroes), then other `battle` records, then `ranked_up`, then `summoned`, and
 `died` last (`DECISIONS.md` 2026-09-24, director amendment).
 
-> ⚠️ **PROVISIONAL** — both caps are estimates. No one has counted records per hour of real play,
-> or timed a save with a full ledger · **Settled by:** the `ig-m6o.1` acceptance test that fills
-> the ledger to the cap and times a real save, plus a played build that counts records per hour
+**Measured 2026-09-24 (`ig-m6o.1` acceptance, `.agent-results/ig-m6o.1/gut_ledger2.log`).** At
+10,000 records, a real save takes 108 ms and a load takes 197 ms. The file is 3.88 MB, about 390
+bytes a record.
+- Every profile action and every 15 s periodic save rewrites the whole ledger, so the hitch grows
+  by about 11 µs per record.
+- It passes one 60 FPS frame at about 1,500 records.
+- So the cap is not the problem. The write pattern is. The cap stays 10,000, because that is
+  history the direction needs.
+- `ig-m6o.9` moves the records to an append-only side file, so a save writes only what is new.
+- Until it lands, the hitch is real but slow to arrive: a new save starts empty, and it takes
+  about 25 hours of play at the guessed rate to reach one frame.
+
+> ⚠️ **PROVISIONAL** — the 10,000 cap and the 64-moment cap. The save-cost half is measured
+> (above), and the answer is a new save shape, not a lower cap. Records per hour of real play is
+> still a desk guess (about 60) · **Settled by:** a played build that counts records per hour,
+> after `ig-m6o.9`
 
 ---
 
