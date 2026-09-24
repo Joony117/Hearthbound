@@ -59,8 +59,12 @@ static func create_run(
 	state.supplies_remaining = _normalized_supplies(supply_escrow)
 	state.objective_state = _initial_objective_state(zone)
 	var has_enemy_snapshot: bool = false
+	# Heroes placed fresh (no saved facing) turn to the enemy once it has spawned.
+	var fresh: Array[BattleActor] = []
 	for snapshot: Dictionary in team_snapshots:
 		var actor: BattleActor = _actor_from_team_snapshot(snapshot, state.actors.size(), zone)
+		if not snapshot.has("facing") and not (snapshot.has("max_hp") and snapshot.has("effect_state")):
+			fresh.append(actor)
 		# Timestamps are relative to this battle's tick, which starts at 0; carried ones would sit ahead of it.
 		for key: String in ["last_hit_tick", "last_skill_tick", "last_crit_tick"]:
 			actor.effect_state[key] = 0
@@ -68,6 +72,8 @@ static func create_run(
 		has_enemy_snapshot = has_enemy_snapshot or actor.faction == "enemy"
 	if not has_enemy_snapshot and kind != "rescue":
 		_spawn_initial_enemies(state, zone)
+	for actor: BattleActor in fresh:
+		actor.facing = _facing_toward_opponents(state, actor.faction, actor.position, actor.facing)
 	_initialize_squads(state)
 	return state
 
@@ -726,6 +732,7 @@ static func _spawn_group(
 	assert(zone != null)
 	var scaled_power: float = wave_power * float(deployed_count) / float(maxi(zone.reference_force_size, 1))
 	var budget: float = scaled_power / float(maxi(count, 1))
+	var facing: Vector2 = _facing_toward_opponents(state, "enemy", center, Vector2.DOWN)
 	for index: int in count:
 		var actor := BattleActor.new()
 		actor.spawn_index = state.actors.size()
@@ -734,7 +741,7 @@ static func _spawn_group(
 		actor.faction = "enemy"
 		actor.squad_id = "enemy"
 		actor.position = center + _grid_offset(index, count, BALANCE.battle_formation_spacing)
-		actor.facing = Vector2.DOWN
+		actor.facing = facing
 		actor.max_hp = budget * BALANCE.battle_enemy_hp_budget_multiplier
 		actor.hp = actor.max_hp
 		actor.atk = budget * BALANCE.battle_enemy_atk_budget_multiplier
@@ -749,6 +756,22 @@ static func _spawn_group(
 		actor.effect_state["home_position"] = [actor.position.x, actor.position.y]
 		actor.effect_state["objective_id"] = objective_id
 		state.actors.append(actor)
+
+
+## Spawn facing: toward the other side's living centre, so an unengaged unit never shows its back
+## to the fight and a Rogue earns its rear bonus by flanking (SYSTEMS.md, director ruling
+## 2026-09-23). fallback when the other side is empty or sits on top of from.
+static func _facing_toward_opponents(state: BattleState, faction: String, from: Vector2, fallback: Vector2) -> Vector2:
+	var total := Vector2.ZERO
+	var count: int = 0
+	for other: BattleActor in state.actors:
+		if other.faction != faction and other.life == BattleActor.LIFE_ALIVE:
+			total += other.position
+			count += 1
+	if count == 0:
+		return fallback
+	var toward: Vector2 = total / float(count) - from
+	return fallback if toward.is_zero_approx() else toward.normalized()
 
 
 static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zone: ZoneDefinition) -> BattleActor:

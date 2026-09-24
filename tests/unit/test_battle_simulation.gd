@@ -249,6 +249,21 @@ func test_rogue_rear_passive_applies_to_basic_hit_but_not_signature() -> void:
 	assert_almost_eq(basic_target.hp, 875.0, 0.0001)
 
 
+func test_a_fresh_spawn_faces_the_other_side_so_no_front_hit_counts_as_behind() -> void:
+	var state: BattleState = BattleSimulation.create_run("order:spawn-facing", [_hero("hero:rogue", "rogue")], _zone(20), _squads(["hero:rogue"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
+	var hero: BattleActor = state.actors[0]
+	var enemy: BattleActor = state.actors[1]
+	assert_gt(hero.facing.dot(enemy.position - hero.position), 0.0, "the hero faces the enemy")
+	assert_gt(enemy.facing.dot(hero.position - enemy.position), 0.0, "the enemy faces the hero")
+	assert_false(BattleSimulation._is_behind(hero, enemy), "a Rogue in front gets no rear bonus")
+	assert_false(BattleSimulation._is_behind(enemy, hero))
+	# A saved facing is kept: only fresh heroes turn.
+	var saved: Dictionary = _hero("hero:saved", "knight")
+	saved["facing"] = [1.0, 0.0]
+	var kept: BattleState = BattleSimulation.create_run("order:kept-facing", [saved], _zone(20), _squads(["hero:saved"]), {}, {"healing": 0, "revival": 0}, 5)
+	assert_eq(kept.actors[0].facing, Vector2.RIGHT)
+
+
 func test_stationary_attackers_turn_to_face_their_targets() -> void:
 	var state: BattleState = BattleSimulation.create_run("order:face", [_hero("hero:knight", "knight")], _zone(20), _squads(["hero:knight"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
 	var hero: BattleActor = state.actors[0]
