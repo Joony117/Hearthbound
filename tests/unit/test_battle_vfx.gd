@@ -241,13 +241,13 @@ func test_view_drops_all_units_when_a_retried_run_restarts_the_tick() -> void:
 	var dead_enemy: Dictionary = _actor("enemy:o:0:1", "enemy", "knight", {}, {"hp": 0.0, "life": "dead"})
 	view._render_snapshot({"tick": 500, "actors": [_actor("a1", "ally", "knight", {}, {"hp": 30.0}), dead_enemy]})
 	var corpse: BattleUnitView = view._unit_views["enemy:o:0:1"]
-	assert_almost_eq(corpse._pivot.rotation.z, BattleUnitView.DEAD_TILT, 0.001)
+	assert_eq(corpse._animator.assigned_animation, &"Skeletons_Death")
 
 	view._render_snapshot({"tick": 2, "actors": [_actor("a1", "ally", "knight"), _actor("enemy:o:0:1", "enemy", "knight")]})
 
 	var fresh: BattleUnitView = view._unit_views["enemy:o:0:1"]
 	assert_ne(fresh, corpse, "retried run gets a fresh unit view")
-	assert_eq(fresh._pivot.rotation.z, 0.0)
+	assert_eq(fresh._animator.assigned_animation, &"Skeletons_Idle")
 	assert_eq(view._vfx.get_child_count(), 0, "no heal or other effect diffs across runs")
 	await wait_process_frames(1)
 	assert_false(is_instance_valid(corpse), "dropped unit views are freed, not orphaned")
@@ -358,13 +358,13 @@ func test_live_render_spreads_its_ticks_out_instead_of_one_frame() -> void:
 	assert_eq(view._vfx.get_child_count(), 1, "the first tick's hit plays with the render")
 	assert_eq(view._pending_events.size(), 1, "the last tick's hit waits for its own moment")
 	var late: BattleUnitView = view._unit_views["e2"]
-	assert_null(late._squash_tween, "its unit has not flinched yet")
+	assert_ne(late._animator.assigned_animation, &"Hit_A", "its unit has not flinched yet")
 	view._process(step * 2.0 - 0.01)
 	assert_eq(view._vfx.get_child_count(), 1)
 	view._process(0.02)
 	assert_eq(view._vfx.get_child_count(), 2, "it plays two ticks in")
 	late._process(step * 2.0)
-	assert_not_null(late._squash_tween, "and the unit flinches with it")
+	assert_eq(late._animator.assigned_animation, &"Hit_A", "and the unit flinches with it")
 
 
 func test_tick_offsets_fit_inside_one_render_interval() -> void:

@@ -1,15 +1,37 @@
 class_name BattleUnitView
 extends Node3D
 
-const ALLY_COLOR: Color = Color("a8c9a8")
-const ENEMY_COLOR: Color = Color("e87b68")
-const KNIGHT_TRIM: Color = Color("c59b49")
-const MAGE_TRIM: Color = Color("8d88d8")
-const RANGER_TRIM: Color = Color("7eb6b0")
-const ROGUE_TRIM: Color = Color("766f75")
-const DEAD_COLOR: Color = Color("4a4440")
-const DEAD_TILT: float = PI * 0.5
-const DEAD_LIFT: float = 0.25
+const MODEL_DIR: String = "res://combat/battle/models/kaykit/"
+# Scales the 2.5-unit KayKit knight to the old unit's height, under the bar.
+const MODEL_SCALE: float = 0.75
+# Per archetype: [character, {hand bone: weapon}, attack clip].
+const ALLY_LOOKS: Dictionary = {
+	"knight": ["Knight", {"handslot.r": "sword_1handed", "handslot.l": "shield_round"}, "Melee_1H_Attack_Chop"],
+	"mage": ["Mage", {"handslot.r": "staff"}, "Ranged_Magic_Shoot"],
+	"ranger": ["Ranger", {"handslot.l": "bow_withString"}, "Ranged_Bow_Release"],
+	"rogue": ["Rogue", {"handslot.r": "dagger", "handslot.l": "dagger"}, "Melee_Dualwield_Attack_Stab"],
+	"cleric": ["Mage", {"handslot.r": "wand"}, "Ranged_Magic_Shoot"],
+}
+const ENEMY_LOOKS: Dictionary = {
+	"knight": ["Skeleton_Warrior", {"handslot.r": "Skeleton_Blade", "handslot.l": "Skeleton_Shield_Small_A"}, "Melee_1H_Attack_Chop"],
+	"rogue": ["Skeleton_Rogue", {"handslot.r": "Skeleton_Blade"}, "Melee_Dualwield_Attack_Stab"],
+	"mage": ["Skeleton_Mage", {"handslot.r": "Skeleton_Staff"}, "Ranged_Magic_Shoot"],
+	"ranger": ["Skeleton_Rogue", {"handslot.r": "Skeleton_Crossbow"}, "Ranged_1H_Shoot"],
+}
+const ALLY_CLIPS: Dictionary = {"idle": "Idle_A", "move": "Running_A", "dead": "Death_A", "downed": "Death_B"}
+const ENEMY_CLIPS: Dictionary = {"idle": "Skeletons_Idle", "move": "Skeletons_Walking", "dead": "Skeletons_Death", "downed": "Death_B"}
+const LOOPED_CLIPS: Array[String] = ["Idle_A", "Running_A", "Skeletons_Idle", "Skeletons_Walking"]
+# Clip file under animations/Rig_Medium_<file>.glb for every clip this view plays.
+const CLIP_FILES: Dictionary = {
+	"Idle_A": "General", "Hit_A": "General", "Hit_B": "General", "Death_A": "General", "Death_B": "General",
+	"Running_A": "MovementBasic",
+	"Melee_1H_Attack_Chop": "CombatMelee", "Melee_Dualwield_Attack_Stab": "CombatMelee",
+	"Ranged_Bow_Release": "CombatRanged", "Ranged_1H_Shoot": "CombatRanged", "Ranged_Magic_Shoot": "CombatRanged",
+	"Skeletons_Idle": "Special", "Skeletons_Walking": "Special", "Skeletons_Death": "Special",
+}
+# Matches battle_vfx: these attacks fly as projectiles, so battle_view never lunges them.
+const PROJECTILE_ARCHETYPES: Array[String] = ["ranger", "mage"]
+const CLIP_BLEND_SECONDS: float = 0.15
 const DEAD_TWEEN_SECONDS: float = 0.35
 const RECOIL_DISTANCE: float = 0.35
 const RECOIL_CRIT_DISTANCE: float = 0.55
@@ -20,9 +42,6 @@ const HIT_STOP_SECONDS: float = 0.1
 const LUNGE_DISTANCE: float = 0.5
 const LUNGE_OUT_SECONDS: float = 0.07
 const LUNGE_BACK_SECONDS: float = 0.2
-const SQUASH_SCALE: Vector3 = Vector3(1.15, 0.85, 1.15)
-const SQUASH_CRIT_SCALE: Vector3 = Vector3(1.25, 0.75, 1.25)
-const SQUASH_SECONDS: float = 0.12
 const FLING_DISTANCE: float = 0.25
 const FLING_CRIT_DISTANCE: float = 0.8
 const FLING_ARC_HEIGHT: float = 0.3
@@ -43,6 +62,8 @@ static var _bar_back_material: StandardMaterial3D = _bar_material(BAR_BACK_COLOR
 static var _bar_chip_material: StandardMaterial3D = _bar_material(BAR_CHIP_COLOR)
 static var _bar_ally_material: StandardMaterial3D = _bar_material(BAR_ALLY_COLOR)
 static var _bar_enemy_material: StandardMaterial3D = _bar_material(BAR_ENEMY_COLOR)
+# Built once on first use and shared by every unit.
+static var _clip_library: AnimationLibrary
 
 var actor_id: String = ""
 var hero_id: String = ""
@@ -55,15 +76,18 @@ var max_hp: float = 1.0
 var target_position: Vector3 = Vector3.ZERO
 var selected: bool = false
 
-# Every visual hangs off this pivot so death can tip it; set_actor owns the root's rotation.y.
+# Every visual hangs off this pivot so recoil, lunge and fling move it; set_actor owns the root's rotation.y.
 var _pivot: Node3D
-var _body_parts: Array[MeshInstance3D] = []
+var _animator: AnimationPlayer
+var _clips: Dictionary = ALLY_CLIPS
+var _attack_clip: String = ""
+# An attack or hit clip is playing; the idle, move and death clips wait for it.
+var _one_shot: bool = false
+var _attack_cooldown: float = 0.0
 var _dead_posed: bool = false
 var _animate_death: bool = false
-var _body: MeshInstance3D
-var _head: MeshInstance3D
 var _selection_ring: MeshInstance3D
-# The health bar sits on the root, not the pivot, so squash, recoil and the death tip never move it.
+# The health bar sits on the root, not the pivot, so recoil and the death fling never move it.
 var _hp_bar: Node3D
 var _hp_back: MeshInstance3D
 var _hp_chip: MeshInstance3D
@@ -84,7 +108,6 @@ var _last_skill_tick: int = -1
 var _last_crit_tick: int = -1
 var _recoil_tween: Tween
 var _lunge_tween: Tween
-var _squash_tween: Tween
 # Pivot offsets live in world space, one per effect; _apply_pivot is the only writer of _pivot.position.
 var _recoil_offset: Vector3 = Vector3.ZERO:
 	set(value):
@@ -102,18 +125,12 @@ var _fling_arc: float = 0.0:
 	set(value):
 		_fling_arc = value
 		_apply_pivot()
-var _death_lift: float = 0.0:
-	set(value):
-		_death_lift = value
-		_apply_pivot()
 var _facing_world: Vector3 = Vector3.RIGHT
 var _fling_distance: float = FLING_DISTANCE
 # Every tween this view starts, so slow-mo and hit-stop can rescale them together.
 var _tweens: Array[Tween] = []
 var _view_time_scale: float = 1.0
 var _freeze_remaining: float = 0.0
-var _hit_flash_remaining: float = 0.0
-var _skill_flash_remaining: float = 0.0
 var _effects: Dictionary = {}
 # Linear playback between snapshots: from where the unit is drawn to the new sim position over one render interval.
 var _placed: bool = false
@@ -158,6 +175,12 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 	_last_hit_tick = hit_tick
 	_last_skill_tick = skill_tick
 	_last_crit_tick = crit_tick
+	# A cooldown that went up means this unit just attacked; projectile attackers get no lunge to show it.
+	# ponytail: misses an attack whose fresh cooldown ends below the old one inside one render; an attack event would fix it.
+	var attack_cooldown: float = float(actor.get("attack_cooldown", 0.0))
+	if _placed and attack_cooldown > _attack_cooldown and archetype in PROJECTILE_ARCHETYPES:
+		_play_attack()
+	_attack_cooldown = attack_cooldown
 	selected = is_selected
 	var destination: Vector3 = _world_position(actor.get("position", [0.0, 0.0]))
 	if not _placed or glide_seconds <= 0.0:
@@ -172,13 +195,14 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 	_placed = true
 	var facing: Vector2 = _vector2(actor.get("facing", [1.0, 0.0]))
 	_facing_world = Vector3(facing.x, 0.0, facing.y).normalized()
-	rotation.y = atan2(facing.x, -facing.y)
+	# +Z along the facing: KayKit models look down their own +Z.
+	rotation.y = atan2(facing.x, facing.y)
 	if reaction_delay > 0.0 and (reaction["hit"] or reaction["skill"]):
 		_pending_reaction = reaction
 		_reaction_remaining = reaction_delay
 	else:
 		_react(reaction)
-	if _body != null:
+	if _animator != null:
 		_track_chip(hp_before)
 		_update_status()
 	_apply_pivot()
@@ -204,6 +228,7 @@ func lunge(toward: Vector3) -> void:
 	_lunge_tween = _track(create_tween())
 	_lunge_tween.tween_property(self, "_lunge_offset", direction * LUNGE_DISTANCE, LUNGE_OUT_SECONDS)
 	_lunge_tween.tween_property(self, "_lunge_offset", Vector3.ZERO, LUNGE_BACK_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_play_attack()
 
 
 func set_selected(value: bool) -> void:
@@ -224,23 +249,17 @@ func _process(delta: float) -> void:
 	var scaled: float = delta * _time_scale()
 	_glide_elapsed += scaled
 	position = _glide_from.lerp(target_position, 1.0 if _glide_seconds <= 0.0 else minf(_glide_elapsed / _glide_seconds, 1.0))
-	_hit_flash_remaining = maxf(0.0, _hit_flash_remaining - scaled)
-	_skill_flash_remaining = maxf(0.0, _skill_flash_remaining - scaled)
-	_update_effects()
+	_update_status()
 
 
 func _react(reaction: Dictionary) -> void:
 	var critical: bool = reaction["critical"]
-	if reaction["hit"]:
-		_hit_flash_remaining = 0.12
-	if reaction["skill"]:
-		_skill_flash_remaining = 0.16
 	_fling_distance = FLING_CRIT_DISTANCE if critical else FLING_DISTANCE
-	# A killing hit skips recoil and squash so the death tip-over reads cleanly.
+	# A killing hit skips recoil and the hit clip so the death clip reads cleanly.
 	if (critical or reaction["heavy"]) and life != "dead" and _pivot != null:
 		_recoil(critical)
-	if reaction["hit"] and life != "dead" and not _dead_posed and _pivot != null:
-		_squash(critical)
+	if reaction["hit"]:
+		_play_once("Hit_B" if critical else "Hit_A")
 
 
 func _flush_reaction() -> void:
@@ -258,6 +277,8 @@ func _time_scale() -> float:
 
 
 func _apply_time_scale() -> void:
+	if _animator != null:
+		_animator.speed_scale = _time_scale()
 	var live: Array[Tween] = []
 	for tween: Tween in _tweens:
 		if tween.is_valid():
@@ -276,21 +297,33 @@ func _apply_pivot() -> void:
 	if _pivot == null:
 		return
 	var offset: Vector3 = basis.inverse() * (_recoil_offset + _lunge_offset + _fling_offset)
-	_pivot.position = Vector3(offset.x, _death_lift + _fling_arc, offset.z)
+	_pivot.position = Vector3(offset.x, _fling_arc, offset.z)
 
 
 func _build_visual() -> void:
 	_pivot = Node3D.new()
 	add_child(_pivot)
-	_body = _mesh(CapsuleMesh.new(), Vector3(0.0, 0.68, 0.0), Vector3(0.34, 0.50, 0.34), _faction_material())
-	var head_mesh := SphereMesh.new()
-	head_mesh.radius = 0.34
-	_head = _mesh(head_mesh, Vector3(0.0, 1.35, 0.0), Vector3.ONE, _trim_material())
-	_mesh(CapsuleMesh.new(), Vector3(-0.14, 0.18, 0.0), Vector3(0.13, 0.34, 0.14), _faction_material())
-	_mesh(CapsuleMesh.new(), Vector3(0.14, 0.18, 0.0), Vector3(0.13, 0.34, 0.14), _faction_material())
-	_add_archetype_silhouette()
-	for part: Node in _pivot.get_children():
-		_body_parts.append(part as MeshInstance3D)
+	var looks: Dictionary = ALLY_LOOKS if faction == "ally" else ENEMY_LOOKS
+	if not looks.has(archetype):
+		push_warning("No %s look for archetype '%s'; drawing the knight." % [faction, archetype])
+	var look: Array = looks.get(archetype, looks["knight"])
+	_clips = ALLY_CLIPS if faction == "ally" else ENEMY_CLIPS
+	_attack_clip = look[2]
+	var model: Node3D = (load(MODEL_DIR + "characters/%s.glb" % look[0]) as PackedScene).instantiate() as Node3D
+	model.scale = Vector3.ONE * MODEL_SCALE
+	_pivot.add_child(model)
+	var skeleton: Skeleton3D = model.get_node("Rig_Medium/Skeleton3D") as Skeleton3D
+	var weapons: Dictionary = look[1]
+	for bone: String in weapons:
+		var slot := BoneAttachment3D.new()
+		slot.bone_name = bone
+		skeleton.add_child(slot)
+		slot.add_child((load(MODEL_DIR + "weapons/%s.gltf" % weapons[bone]) as PackedScene).instantiate())
+	_animator = AnimationPlayer.new()
+	model.add_child(_animator)
+	_animator.root_node = NodePath("..")
+	_animator.add_animation_library("", _shared_clips())
+	_animator.animation_finished.connect(_on_clip_finished)
 	var ring_mesh := TorusMesh.new()
 	ring_mesh.inner_radius = 0.48
 	ring_mesh.outer_radius = 0.57
@@ -319,56 +352,29 @@ func _build_visual() -> void:
 	_state_label.modulate = Color("e8a974")
 	_pivot.add_child(_state_label)
 	var telegraph_mesh := TorusMesh.new()
-	# Telegraphs hang off the root, not the pivot, so squash and recoil never resize a danger zone.
+	# Telegraphs hang off the root, not the pivot, so recoil never moves a danger zone.
 	_telegraph_ring = _mesh(telegraph_mesh, Vector3(0.0, 0.07, 0.0), Vector3.ONE, _transparent_material(Color(0.91, 0.36, 0.31, 0.42)), self)
 	_telegraph_line = _mesh(BoxMesh.new(), Vector3.ZERO, Vector3.ONE, _transparent_material(Color(0.91, 0.36, 0.31, 0.42)), self)
 	_telegraph_ring.visible = false
 	_telegraph_line.visible = false
-	# A unit first seen already dead (mid-battle load) snaps; later deaths animate.
+	# A unit first seen already dead or downed (mid-battle load) snaps; later falls animate.
+	_apply_time_scale()
 	_update_status()
 	_animate_death = true
 
 
-func _add_archetype_silhouette() -> void:
-	if faction != "ally":
-		return
-	var trim: StandardMaterial3D = _trim_material()
-	match archetype:
-		"knight":
-			_mesh(BoxMesh.new(), Vector3(0.50, 0.63, -0.03), Vector3(0.16, 0.48, 0.36), trim)
-			_mesh(CylinderMesh.new(), Vector3(0.0, 1.67, 0.0), Vector3(0.55, 0.24, 0.55), trim)
-		"ranger":
-			var bow := TorusMesh.new()
-			bow.inner_radius = 0.20
-			bow.outer_radius = 0.25
-			var bow_visual: MeshInstance3D = _mesh(bow, Vector3(0.42, 0.85, 0.0), Vector3.ONE, trim)
-			bow_visual.rotation.x = PI * 0.5
-		"mage":
-			_mesh(CylinderMesh.new(), Vector3(0.5, 0.57, 0.0), Vector3(0.055, 1.05, 0.055), trim)
-			_mesh(SphereMesh.new(), Vector3(0.5, 1.12, 0.0), Vector3(0.15, 0.15, 0.15), _material(Color("c2b7ff")))
-			var hat := CylinderMesh.new()
-			hat.top_radius = 0.0
-			hat.bottom_radius = 0.32
-			hat.height = 0.45
-			_mesh(hat, Vector3(0.0, 1.85, 0.0), Vector3.ONE, trim)
-		"rogue":
-			_mesh(BoxMesh.new(), Vector3(-0.37, 0.83, 0.0), Vector3(0.06, 0.35, 0.06), trim)
-			_mesh(BoxMesh.new(), Vector3(0.37, 0.83, 0.0), Vector3(0.06, 0.35, 0.06), trim)
-
-
 func _update_status() -> void:
-	if _body == null:
+	if _animator == null:
 		return
 	var downed: bool = life == "downed"
 	var dead: bool = life == "dead"
 	# The death waits for the killing hit's reaction, so the corpse never tips before the blow lands.
 	if dead and not _dead_posed and _reaction_remaining <= 0.0:
 		_pose_dead()
+	_update_clip()
 	_hp_bar.visible = life == "alive" and (hp < max_hp or selected)
 	_layout_bar()
 	_state_label.visible = not dead
-	_body.scale.y = 0.21 if downed else 0.50
-	_head.visible = not downed
 	_downed_marker.visible = downed
 	_selection_ring.visible = selected and life == "alive"
 	_elite_ring.visible = bool(_effects.get("elite", false)) and life == "alive"
@@ -395,7 +401,8 @@ func _update_status() -> void:
 		var local_point: Vector3 = to_local(Vector3(point.x, 0.0, point.y))
 		var line_vector: Vector2 = Vector2(local_point.x - local_origin.x, local_point.z - local_origin.z)
 		_telegraph_line.position = (local_origin + local_point) * 0.5 + Vector3(0.0, 0.08, 0.0)
-		_telegraph_line.rotation.y = atan2(line_vector.x, -line_vector.y)
+		# The box's length runs along its local +Z.
+		_telegraph_line.rotation.y = atan2(line_vector.x, line_vector.y)
 		var line_mesh: BoxMesh = _telegraph_line.mesh as BoxMesh
 		var line_size: Vector3 = Vector3(0.14, 0.03, maxf(line_vector.length(), 0.1))
 		if line_mesh.size != line_size:
@@ -410,15 +417,6 @@ func _recoil(critical: bool) -> void:
 	_recoil_tween = _track(create_tween())
 	_recoil_tween.tween_property(self, "_recoil_offset", -_facing_world * (RECOIL_CRIT_DISTANCE if critical else RECOIL_DISTANCE), RECOIL_OUT_SECONDS)
 	_recoil_tween.tween_property(self, "_recoil_offset", Vector3.ZERO, RECOIL_BACK_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-
-
-# _squash is the only writer of _pivot.scale.
-func _squash(critical: bool) -> void:
-	if _squash_tween != null:
-		_squash_tween.kill()
-	_pivot.scale = SQUASH_CRIT_SCALE if critical else SQUASH_SCALE
-	_squash_tween = _track(create_tween())
-	_squash_tween.tween_property(_pivot, "scale", Vector3.ONE, SQUASH_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 # The chip trails a hit and snaps on a heal, so only damage leaves a pale tail behind the fill.
@@ -438,20 +436,14 @@ func _track_chip(hp_before: float) -> void:
 # Death is one-way in the sim, so the pose is applied once and never undone.
 func _pose_dead() -> void:
 	_dead_posed = true
-	for part: MeshInstance3D in _body_parts:
-		(part.material_override as StandardMaterial3D).albedo_color = DEAD_COLOR
 	if not _animate_death:
-		_pivot.rotation.z = DEAD_TILT
-		_death_lift = DEAD_LIFT
 		return
 	var tween: Tween = _track(create_tween().set_parallel())
-	tween.tween_property(_pivot, "rotation:z", DEAD_TILT, DEAD_TWEEN_SECONDS).set_ease(Tween.EASE_IN)
-	tween.tween_property(self, "_death_lift", DEAD_LIFT, DEAD_TWEEN_SECONDS)
 	tween.tween_property(self, "_fling_offset", -_facing_world * _fling_distance, DEAD_TWEEN_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_method(_set_fling_phase, 0.0, 1.0, DEAD_TWEEN_SECONDS)
 
 
-# The arc rises and lands inside the tip-over, so the corpse ends at rest on the ground.
+# The arc rises and lands inside the fling, so the corpse ends at rest on the ground.
 func _set_fling_phase(phase: float) -> void:
 	_fling_arc = sin(phase * PI) * FLING_ARC_HEIGHT if phase < 1.0 else 0.0
 
@@ -524,23 +516,6 @@ func _mesh(mesh_resource: Mesh, offset: Vector3, mesh_scale: Vector3, material: 
 	return instance
 
 
-func _faction_material() -> StandardMaterial3D:
-	return _material(ALLY_COLOR if faction == "ally" else ENEMY_COLOR)
-
-
-func _trim_material() -> StandardMaterial3D:
-	match archetype:
-		"knight":
-			return _material(KNIGHT_TRIM)
-		"ranger":
-			return _material(RANGER_TRIM)
-		"mage":
-			return _material(MAGE_TRIM)
-		"rogue":
-			return _material(ROGUE_TRIM)
-	return _material(Color("9ea19c"))
-
-
 func _material(color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
@@ -554,27 +529,65 @@ func _transparent_material(color: Color) -> StandardMaterial3D:
 	return material
 
 
-func _update_effects() -> void:
-	if _body == null:
+# Idle, move, downed and dead are the base clips; attack and hit play once over them.
+func _update_clip() -> void:
+	if _one_shot and life == "alive":
 		return
+	_one_shot = false
+	var clip: String
 	if life == "dead":
-		_update_status()
+		# The fall waits for _pose_dead, which waits for the killing hit.
+		if not _dead_posed:
+			return
+		clip = _clips["dead"]
+	elif life == "downed":
+		clip = _clips["downed"]
+	elif _glide_seconds > 0.0 and _glide_elapsed < _glide_seconds:
+		clip = _clips["move"]
+	else:
+		clip = _clips["idle"]
+	if _animator.assigned_animation == clip:
 		return
-	var body_material: StandardMaterial3D = _body.material_override as StandardMaterial3D
-	body_material.albedo_color = Color.WHITE if _hit_flash_remaining > 0.0 else ALLY_COLOR if faction == "ally" else ENEMY_COLOR
-	var head_material: StandardMaterial3D = _head.material_override as StandardMaterial3D
-	head_material.albedo_color = Color("fff0b6") if _skill_flash_remaining > 0.0 else _trim_color()
-	_update_status()
+	# Falls hold their last frame; a unit first seen fallen starts on it.
+	_animator.play(clip, CLIP_BLEND_SECONDS if _animate_death else 0.0)
+	if not _animate_death and not clip in LOOPED_CLIPS:
+		_animator.seek(_animator.current_animation_length, true)
 
 
-func _trim_color() -> Color:
-	match archetype:
-		"knight":
-			return KNIGHT_TRIM
-		"ranger":
-			return RANGER_TRIM
-		"mage":
-			return MAGE_TRIM
-		"rogue":
-			return ROGUE_TRIM
-	return Color("9ea19c")
+func _play_attack() -> void:
+	_play_once(_attack_clip)
+
+
+func _play_once(clip: String) -> void:
+	if _animator == null or life != "alive":
+		return
+	_one_shot = true
+	_animator.play(clip, CLIP_BLEND_SECONDS)
+	_animator.seek(0.0)
+
+
+func _on_clip_finished(_clip: StringName) -> void:
+	_one_shot = false
+
+
+# Clips are copied out of the Rig_Medium files once: loops set, root motion pinned.
+static func _shared_clips() -> AnimationLibrary:
+	if _clip_library != null:
+		return _clip_library
+	_clip_library = AnimationLibrary.new()
+	var sources: Dictionary = {}
+	for clip: String in CLIP_FILES:
+		var file: String = CLIP_FILES[clip]
+		if not sources.has(file):
+			sources[file] = (load(MODEL_DIR + "animations/Rig_Medium_%s.glb" % file) as PackedScene).instantiate()
+		var player: AnimationPlayer = (sources[file] as Node).find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer
+		var animation: Animation = player.get_animation(clip).duplicate(true) as Animation
+		animation.loop_mode = Animation.LOOP_LINEAR if clip in LOOPED_CLIPS else Animation.LOOP_NONE
+		# Skeletons_Death slides the root bone 0.7 back; the fling already moves the corpse.
+		var root_track: int = animation.find_track(NodePath("Rig_Medium/Skeleton3D:root"), Animation.TYPE_POSITION_3D)
+		if root_track >= 0:
+			animation.remove_track(root_track)
+		_clip_library.add_animation(clip, animation)
+	for scene: Node in sources.values():
+		scene.free()
+	return _clip_library

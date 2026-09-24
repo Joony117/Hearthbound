@@ -1,25 +1,34 @@
 extends GutTest
 
 
-func test_enemy_that_dies_tips_over_greys_out_and_hides_overlays() -> void:
+func test_enemy_that_dies_plays_its_death_clip_and_hides_overlays() -> void:
 	var unit: BattleUnitView = _unit({"life": "alive", "effect_state": _live_effects()})
 	unit.set_selected(true)
 	assert_true(unit._hp_bar.visible, "a hurt enemy shows its HP bar")
 	assert_true(unit._elite_ring.visible, "alive elite shows its ring")
-	assert_eq(unit._pivot.rotation.z, 0.0)
+	assert_eq(unit._animator.assigned_animation, &"Skeletons_Idle")
 
 	unit.set_actor(_actor({"life": "dead", "effect_state": _live_effects()}), true)
-	assert_lt(unit._pivot.rotation.z, 0.1, "death animates rather than snapping")
+	assert_eq(unit._animator.assigned_animation, &"Skeletons_Death")
+	assert_lt(unit._animator.current_animation_position, 0.1, "death animates rather than snapping")
 	await wait_seconds(0.5)
 
-	assert_almost_eq(unit._pivot.rotation.z, BattleUnitView.DEAD_TILT, 0.01)
 	_assert_dead_look(unit)
+
+
+func test_death_clip_holds_its_last_frame() -> void:
+	var unit: BattleUnitView = _unit({"life": "alive"})
+	unit.set_actor(_actor({"life": "dead"}), false)
+	unit._animator.advance(5.0)
+	unit._process(0.1)
+	assert_eq(unit._animator.assigned_animation, &"Skeletons_Death", "the finished fall is not replaced")
+	assert_false(unit._animator.is_playing(), "it stops on the last frame instead of looping")
 
 
 func test_unit_first_seen_dead_snaps_to_final_pose() -> void:
 	var unit: BattleUnitView = _unit({"life": "dead", "effect_state": _live_effects()})
-	assert_almost_eq(unit._pivot.rotation.z, BattleUnitView.DEAD_TILT, 0.001)
-	assert_almost_eq(unit._pivot.position.y, BattleUnitView.DEAD_LIFT, 0.001)
+	assert_almost_eq(unit._animator.current_animation_position, unit._animator.current_animation_length, 0.001)
+	assert_almost_eq(unit._pivot.position.y, 0.0, 0.001)
 	_assert_dead_look(unit)
 
 
@@ -31,21 +40,26 @@ func test_dead_unit_hides_a_line_telegraph() -> void:
 	_assert_dead_look(unit)
 
 
-func test_hit_and_skill_flash_do_not_repaint_a_corpse() -> void:
+func test_hits_and_skills_do_not_reanimate_a_corpse() -> void:
 	var unit: BattleUnitView = _unit({"life": "alive", "effect_state": {"last_hit_tick": 1, "last_skill_tick": 1}})
 	unit.set_actor(_actor({"life": "dead", "effect_state": {"last_hit_tick": 2, "last_skill_tick": 2}}), false)
+	unit.set_actor(_actor({"life": "dead", "effect_state": {"last_hit_tick": 3, "last_skill_tick": 3, "last_crit_tick": 3}}), false)
+	unit.lunge(Vector3(0.0, 0.0, 4.0))
 	await wait_process_frames(2)
-	assert_eq((unit._body.material_override as StandardMaterial3D).albedo_color, BattleUnitView.DEAD_COLOR)
-	assert_eq((unit._head.material_override as StandardMaterial3D).albedo_color, BattleUnitView.DEAD_COLOR)
+	assert_eq(unit._animator.assigned_animation, &"Skeletons_Death")
 
 
-func test_downed_ally_keeps_its_downed_look() -> void:
+func test_downed_ally_holds_death_b_and_revives_to_idle() -> void:
 	var unit: BattleUnitView = _unit({"faction": "ally", "archetype": "knight", "life": "downed"})
-	assert_eq(unit._pivot.rotation.z, 0.0)
+	assert_eq(unit._animator.assigned_animation, &"Death_B")
 	assert_true(unit._downed_marker.visible)
-	assert_false(unit._head.visible)
 	assert_false(unit._hp_bar.visible, "downed hides the HP bar")
-	assert_ne((unit._body.material_override as StandardMaterial3D).albedo_color, BattleUnitView.DEAD_COLOR)
+	unit.set_actor(_actor({"faction": "ally", "archetype": "knight", "life": "alive"}), false)
+	assert_eq(unit._animator.assigned_animation, &"Idle_A", "revive goes back to idle")
+	assert_false(unit._downed_marker.visible)
+	unit.set_actor(_actor({"faction": "ally", "archetype": "knight", "life": "downed"}), false)
+	assert_eq(unit._animator.assigned_animation, &"Death_B")
+	assert_lt(unit._animator.current_animation_position, 0.1, "a live fall animates")
 
 
 func test_crit_recoils_further_back_along_facing_then_springs_home() -> void:
@@ -79,33 +93,33 @@ func test_killing_crit_skips_recoil_and_in_flight_recoil_does_not_fight_death() 
 	staggered.set_actor(_actor({"hp": 0.0, "life": "dead", "effect_state": {"last_hit_tick": 3, "last_crit_tick": 2}}), false)
 	await wait_seconds(0.5)
 	assert_almost_eq(staggered._recoil_offset, Vector3.ZERO, Vector3.ONE * 0.01, "the recoil springs home under the death fling")
-	assert_almost_eq(staggered._pivot.rotation.z, BattleUnitView.DEAD_TILT, 0.01)
-	assert_almost_eq(staggered._pivot.position.y, BattleUnitView.DEAD_LIFT, 0.01)
+	assert_eq(staggered._animator.assigned_animation, &"Skeletons_Death")
+	assert_almost_eq(staggered._pivot.position.y, 0.0, 0.01)
 
 
-func test_hit_squashes_and_crit_squashes_harder() -> void:
+func test_hit_plays_hit_a_and_crit_plays_hit_b_then_back_to_idle() -> void:
 	var hit: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1}})
 	hit.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 2}}), false)
-	assert_almost_eq(hit._pivot.scale, BattleUnitView.SQUASH_SCALE, Vector3.ONE * 0.001)
-	hit._squash_tween.custom_step(BattleUnitView.SQUASH_SECONDS)
-	assert_almost_eq(hit._pivot.scale, Vector3.ONE, Vector3.ONE * 0.001, "springs back")
+	assert_eq(hit._animator.assigned_animation, &"Hit_A")
+	hit._animator.advance(1.0)
+	hit._process(0.01)
+	assert_eq(hit._animator.assigned_animation, &"Skeletons_Idle", "the hit plays once")
 
 	var crit: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0}})
 	crit.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 2, "last_crit_tick": 2}}), false)
-	assert_almost_eq(crit._pivot.scale, BattleUnitView.SQUASH_CRIT_SCALE, Vector3.ONE * 0.001)
+	assert_eq(crit._animator.assigned_animation, &"Hit_B")
 
 	var idle: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1}})
 	idle.set_actor(_actor({"hp": 20.0, "effect_state": {"last_hit_tick": 1}}), false)
-	assert_null(idle._squash_tween, "no hit, no squash")
+	assert_eq(idle._animator.assigned_animation, &"Skeletons_Idle", "no hit, no hit clip")
 
 
-func test_killing_hit_and_corpse_hits_do_not_squash() -> void:
+func test_killing_hit_plays_the_death_clip_not_a_hit() -> void:
 	var killed: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1}})
 	killed.set_actor(_actor({"hp": 0.0, "life": "dead", "effect_state": {"last_hit_tick": 2}}), false)
-	assert_null(killed._squash_tween)
+	assert_eq(killed._animator.assigned_animation, &"Skeletons_Death")
 	killed.set_actor(_actor({"hp": 0.0, "life": "dead", "effect_state": {"last_hit_tick": 3}}), false)
-	assert_null(killed._squash_tween)
-	assert_eq(killed._pivot.scale, Vector3.ONE)
+	assert_eq(killed._animator.assigned_animation, &"Skeletons_Death")
 
 
 func test_crit_kill_flings_the_corpse_further_and_it_lands_at_rest() -> void:
@@ -120,7 +134,7 @@ func test_crit_kill_flings_the_corpse_further_and_it_lands_at_rest() -> void:
 	assert_almost_eq(_pivot_offset(crit), Vector3(-BattleUnitView.FLING_CRIT_DISTANCE, 0.0, 0.0), Vector3.ONE * 0.01)
 	assert_almost_eq(_pivot_offset(plain), Vector3(-BattleUnitView.FLING_DISTANCE, 0.0, 0.0), Vector3.ONE * 0.01)
 	assert_almost_eq(crit._fling_arc, 0.0, 0.001, "the arc lands")
-	assert_almost_eq(crit._pivot.position.y, BattleUnitView.DEAD_LIFT, 0.01)
+	assert_almost_eq(crit._pivot.position.y, 0.0, 0.01)
 
 
 func test_unit_first_seen_dead_is_not_flung() -> void:
@@ -132,6 +146,7 @@ func test_unit_first_seen_dead_is_not_flung() -> void:
 func test_lunge_moves_toward_the_target_and_returns() -> void:
 	var unit: BattleUnitView = _unit({"hp": 20.0})
 	unit.lunge(Vector3(0.0, 0.0, 4.0))
+	assert_eq(unit._animator.assigned_animation, &"Melee_1H_Attack_Chop", "the lunge plays the attack clip")
 	unit._lunge_tween.custom_step(BattleUnitView.LUNGE_OUT_SECONDS)
 	assert_almost_eq(_pivot_offset(unit), Vector3(0.0, 0.0, BattleUnitView.LUNGE_DISTANCE), Vector3.ONE * 0.01)
 	unit._lunge_tween.custom_step(BattleUnitView.LUNGE_BACK_SECONDS)
@@ -174,6 +189,18 @@ func test_time_scale_reaches_live_tweens() -> void:
 	assert_between(unit._lunge_offset.length(), 0.05, BattleUnitView.LUNGE_DISTANCE * 0.5, "a slowed lunge covers well under full distance")
 
 
+func test_clip_speed_follows_time_scale_and_hit_stop() -> void:
+	var unit: BattleUnitView = BattleUnitView.new()
+	unit.set_actor(_actor({}), false)
+	unit.set_time_scale(0.25)
+	add_child_autofree(unit)
+	assert_almost_eq(unit._animator.speed_scale, 0.25, 0.001, "a scale set before the model exists still reaches it")
+	unit.hit_stop()
+	assert_eq(unit._animator.speed_scale, 0.0, "hit-stop freezes the clip")
+	unit._process(BattleUnitView.HIT_STOP_SECONDS)
+	assert_almost_eq(unit._animator.speed_scale, 0.25, 0.001)
+
+
 func test_hp_bar_shows_when_hurt_or_selected_and_hides_at_full_or_dead() -> void:
 	var full: BattleUnitView = _unit({"hp": 20.0})
 	assert_false(full._hp_bar.visible, "full HP hides the bar")
@@ -205,10 +232,10 @@ func test_chip_trails_damage_and_snaps_on_heal() -> void:
 	assert_almost_eq((unit._hp_fill.mesh as QuadMesh).size.x, BattleUnitView.BAR_WIDTH * 0.75, 0.001, "fill rises at once")
 
 
-func test_squash_does_not_resize_telegraphs() -> void:
+func test_hit_reaction_does_not_resize_telegraphs() -> void:
 	var unit: BattleUnitView = _unit({"hp": 20.0, "effect_state": _hit_effects(1)})
 	unit.set_actor(_actor({"hp": 19.0, "effect_state": _hit_effects(2)}), false)
-	assert_ne(unit._pivot.scale, Vector3.ONE, "squash is in flight")
+	assert_eq(unit._animator.assigned_animation, &"Hit_A", "the hit is in flight")
 	assert_eq(unit._telegraph_ring.get_parent(), unit)
 	assert_almost_eq(unit._telegraph_ring.global_basis.get_scale(), Vector3.ONE, Vector3.ONE * 0.001)
 	assert_almost_eq(unit._telegraph_line.global_basis.get_scale(), Vector3.ONE, Vector3.ONE * 0.001)
@@ -259,6 +286,19 @@ func test_glide_moves_at_a_steady_speed_and_keeps_moving_when_retargeted() -> vo
 	assert_almost_eq(unit.position, Vector3(8.0, 0.0, 0.0), Vector3.ONE * 0.001, "an unchanged render does not restart the glide")
 
 
+func test_gliding_plays_the_move_clip_and_arriving_plays_idle() -> void:
+	var ally: BattleUnitView = _unit({"faction": "ally", "archetype": "mage"})
+	ally.set_actor(_actor({"faction": "ally", "archetype": "mage", "position": [4.0, 0.0]}), false, 0.25)
+	ally._process(0.1)
+	assert_eq(ally._animator.assigned_animation, &"Running_A")
+	ally._process(0.2)
+	assert_eq(ally._animator.assigned_animation, &"Idle_A")
+	var enemy: BattleUnitView = _unit({})
+	enemy.set_actor(_actor({"position": [4.0, 0.0]}), false, 0.25)
+	enemy._process(0.1)
+	assert_eq(enemy._animator.assigned_animation, &"Skeletons_Walking")
+
+
 func test_zero_glide_snaps() -> void:
 	var unit: BattleUnitView = _unit({})
 	unit.set_actor(_actor({"position": [4.0, 0.0]}), false, 0.0)
@@ -269,15 +309,94 @@ func test_delayed_reaction_waits_then_flinches_and_a_delayed_kill_tips_over_afte
 	var unit: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0}})
 	unit.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 2, "last_crit_tick": 2}}), false, 0.25, 0.1)
 	assert_null(unit._recoil_tween, "no recoil before its tick")
-	assert_eq(unit._hit_flash_remaining, 0.0)
+	assert_eq(unit._animator.assigned_animation, &"Skeletons_Idle", "no hit clip before its tick")
 	unit._process(0.1)
 	assert_not_null(unit._recoil_tween, "the crit recoils on its tick")
+	assert_eq(unit._animator.assigned_animation, &"Hit_B")
 
 	var killed: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1}})
 	killed.set_actor(_actor({"hp": 0.0, "life": "dead", "effect_state": {"last_hit_tick": 2}}), false, 0.25, 0.1)
 	assert_false(killed._dead_posed, "the corpse waits for its killing hit")
 	killed._process(0.1)
 	assert_true(killed._dead_posed)
+
+
+func test_each_archetype_wears_its_model_weapons_and_attack_clip() -> void:
+	var expected: Array = [
+		["ally", "knight", "Knight", {"handslot.r": "sword_1handed", "handslot.l": "shield_round"}, &"Melee_1H_Attack_Chop"],
+		["ally", "mage", "Mage", {"handslot.r": "staff"}, &"Ranged_Magic_Shoot"],
+		["ally", "ranger", "Ranger", {"handslot.l": "bow_withString"}, &"Ranged_Bow_Release"],
+		["ally", "rogue", "Rogue", {"handslot.r": "dagger", "handslot.l": "dagger"}, &"Melee_Dualwield_Attack_Stab"],
+		["ally", "cleric", "Mage", {"handslot.r": "wand"}, &"Ranged_Magic_Shoot"],
+		["enemy", "knight", "Skeleton_Warrior", {"handslot.r": "Skeleton_Blade", "handslot.l": "Skeleton_Shield_Small_A"}, &"Melee_1H_Attack_Chop"],
+		["enemy", "rogue", "Skeleton_Rogue", {"handslot.r": "Skeleton_Blade"}, &"Melee_Dualwield_Attack_Stab"],
+		["enemy", "mage", "Skeleton_Mage", {"handslot.r": "Skeleton_Staff"}, &"Ranged_Magic_Shoot"],
+		["enemy", "ranger", "Skeleton_Rogue", {"handslot.r": "Skeleton_Crossbow"}, &"Ranged_1H_Shoot"],
+	]
+	for row: Array in expected:
+		var unit: BattleUnitView = _unit({"faction": row[0], "archetype": row[1], "hp": 20.0})
+		var model: Node3D = unit._animator.get_parent() as Node3D
+		assert_eq(model.scene_file_path, "%scharacters/%s.glb" % [BattleUnitView.MODEL_DIR, row[2]], "%s %s model" % [row[0], row[1]])
+		var held: Dictionary = {}
+		for slot: Node in model.find_children("*", "BoneAttachment3D", true, false):
+			var weapon: Node = slot.get_child(0) if slot.get_child_count() > 0 else null
+			if weapon != null and not weapon.scene_file_path.is_empty():
+				assert_gt((slot as BoneAttachment3D).bone_idx, -1, "%s %s %s resolves to a real bone" % [row[0], row[1], (slot as BoneAttachment3D).bone_name])
+				held[(slot as BoneAttachment3D).bone_name] = weapon.scene_file_path.get_file().get_basename()
+		var weapons: Dictionary = row[3]
+		for bone: String in weapons:
+			assert_eq(held.get(bone, ""), weapons[bone], "%s %s holds %s in %s" % [row[0], row[1], weapons[bone], bone])
+		assert_eq(held.size(), weapons.size(), "%s %s holds nothing else" % [row[0], row[1]])
+		unit.lunge(Vector3(0.0, 0.0, 4.0))
+		assert_eq(unit._animator.assigned_animation, row[4], "%s %s attack clip" % [row[0], row[1]])
+
+
+func test_a_projectile_attacker_plays_its_attack_when_its_cooldown_restarts() -> void:
+	var ranger: BattleUnitView = _unit({"faction": "ally", "archetype": "ranger", "hp": 20.0, "attack_cooldown": 0.0})
+	ranger.set_actor(_actor({"faction": "ally", "archetype": "ranger", "hp": 20.0, "attack_cooldown": 0.7}), false)
+	assert_eq(ranger._animator.assigned_animation, &"Ranged_Bow_Release")
+	var knight: BattleUnitView = _unit({"faction": "ally", "archetype": "knight", "hp": 20.0, "attack_cooldown": 0.0})
+	knight.set_actor(_actor({"faction": "ally", "archetype": "knight", "hp": 20.0, "attack_cooldown": 0.7}), false)
+	assert_eq(knight._animator.assigned_animation, &"Idle_A", "melee attacks wait for the lunge")
+
+
+func test_units_share_one_clip_library_with_loops_set_and_root_motion_pinned() -> void:
+	var source: Node = (load(BattleUnitView.MODEL_DIR + "animations/Rig_Medium_Special.glb") as PackedScene).instantiate()
+	var source_player: AnimationPlayer = source.find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer
+	assert_gt(source_player.get_animation(&"Skeletons_Death").find_track(NodePath("Rig_Medium/Skeleton3D:root"), Animation.TYPE_POSITION_3D), -1, "the source clip has the root track the pin removes")
+	source.free()
+	var first: BattleUnitView = _unit({})
+	var second: BattleUnitView = _unit({"faction": "ally", "archetype": "rogue"})
+	assert_same(first._animator.get_animation_library(&""), second._animator.get_animation_library(&""))
+	var library: AnimationLibrary = first._animator.get_animation_library(&"")
+	for clip: String in BattleUnitView.CLIP_FILES:
+		var animation: Animation = library.get_animation(clip)
+		assert_eq(animation.loop_mode == Animation.LOOP_LINEAR, clip in BattleUnitView.LOOPED_CLIPS, "%s loop mode" % clip)
+		assert_eq(animation.find_track(NodePath("Rig_Medium/Skeleton3D:root"), Animation.TYPE_POSITION_3D), -1, "%s root is pinned" % clip)
+
+
+func test_clips_drive_the_skeleton() -> void:
+	var unit: BattleUnitView = _unit({"faction": "ally", "archetype": "knight", "hp": 20.0})
+	var skeleton: Skeleton3D = unit._animator.get_parent().get_node("Rig_Medium/Skeleton3D") as Skeleton3D
+	var spine: int = skeleton.find_bone("spine")
+	unit.lunge(Vector3(0.0, 0.0, 4.0))
+	# Frame-sized steps: one 0.4 s jump lands on the pending seek and barely moves the pose.
+	for step: int in 4:
+		unit._animator.advance(0.1)
+	var rest: Quaternion = skeleton.get_bone_rest(spine).basis.get_rotation_quaternion()
+	assert_gt(skeleton.get_bone_pose_rotation(spine).angle_to(rest), 0.1, "the chop twists the spine away from the rest pose")
+
+
+func test_telegraph_line_points_along_its_aim() -> void:
+	for facing: Array in [[1.0, 0.0], [0.6, 0.8]]:
+		var effects: Dictionary = _live_effects()
+		effects["telegraph_kind"] = "line"
+		effects["telegraph_origin"] = [0.0, 0.0]
+		effects["telegraph_point"] = [4.0, 4.0]
+		var unit: BattleUnitView = _unit({"facing": facing, "effect_state": effects})
+		var aim: Vector3 = Vector3(4.0, 0.0, 4.0).normalized()
+		assert_true(unit._telegraph_line.visible)
+		assert_almost_eq(absf(unit._telegraph_line.global_basis.z.normalized().dot(aim)), 1.0, 0.001, "facing %s" % str(facing))
 
 
 func _pivot_offset(unit: BattleUnitView) -> Vector3:
@@ -293,8 +412,7 @@ func _recoil_offset(unit: BattleUnitView) -> Vector3:
 
 
 func _assert_dead_look(unit: BattleUnitView) -> void:
-	for part: MeshInstance3D in unit._body_parts:
-		assert_eq((part.material_override as StandardMaterial3D).albedo_color, BattleUnitView.DEAD_COLOR)
+	assert_eq(unit._animator.assigned_animation, &"Skeletons_Death")
 	assert_false(unit._hp_bar.visible, "HP bar hidden")
 	assert_false(unit._elite_ring.visible, "elite ring hidden")
 	assert_false(unit._state_label.visible, "state label hidden")
@@ -317,6 +435,7 @@ func _actor(overrides: Dictionary) -> Dictionary:
 	var actor: Dictionary = {
 		"id": "enemy-1",
 		"faction": "enemy",
+		"archetype": "knight",
 		"life": "alive",
 		"hp": 10.0,
 		"max_hp": 20.0,
