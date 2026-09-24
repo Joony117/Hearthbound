@@ -5,8 +5,8 @@ const BALANCE: BalanceTable = preload("res://balance.tres")
 const KEEPER_ROW_HEIGHT: float = 76.0
 ## The town's buildings in building-list order; number key N opens entry N. Ids are town.tscn node names.
 const BUILDINGS: Array = [
-	[&"SummoningCircle", "Circle"], [&"Forge", "Forge"], [&"TrainingHall", "Training Hall"], [&"Sanctum", "Sanctum"],
-	[&"Reliquary", "Reliquary"], [&"TownGate", "Town Gate"], [&"Apothecary", "Apothecary"],
+	[&"SummoningCircle", "Circle"], [&"Forge", "Forge"], [&"TrainingHall", "Teams"], [&"Sanctum", "Sanctum"],
+	[&"Reliquary", "Reliquary"], [&"TownGate", "Expeditions"], [&"Apothecary", "Apothecary"],
 ]
 
 
@@ -125,8 +125,10 @@ static func _build_expeditions(content: Control) -> void:
 	_add(left, presets, "PresetDispatchList", true)
 	presets.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	presets.select_mode = ItemList.SELECT_MULTI
+	# Hidden until a team exists (hub.gd), so the Gate shows only the next step.
+	var block := _vbox(left, "DispatchBlock", true)
 	var runs_row := HBoxContainer.new()
-	_add(left, runs_row, "RunsRow")
+	_add(block, runs_row, "RunsRow")
 	var runs_label := _label(runs_row, "Runs per team", "Label")
 	runs_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var runs := SpinBox.new()
@@ -135,11 +137,11 @@ static func _build_expeditions(content: Control) -> void:
 	runs.min_value = 1
 	runs.max_value = 999
 	runs.value = 1
-	_button(left, "Combine selected teams", "CombineTeams", true, true)
-	_add_option(left, "CombinedZone")
-	_button(left, "Repeat until stopped", "RepeatUntilStopped", true, true)
-	_button(left, "Battle settings", "BattleSettingsToggle", true)
-	var settings := _panel(left, "BattleSettings", true)
+	_button(block, "Combine selected teams", "CombineTeams", true, true)
+	_add_option(block, "CombinedZone")
+	_button(block, "Repeat until stopped", "RepeatUntilStopped", true, true)
+	_button(block, "Battle settings", "BattleSettingsToggle", true)
+	var settings := _panel(block, "BattleSettings", true)
 	settings.visible = false
 	var settings_scroll := ScrollContainer.new()
 	_add(settings, settings_scroll, "SettingsScroll")
@@ -161,11 +163,11 @@ static func _build_expeditions(content: Control) -> void:
 		_add_spin(settings_box, kind.to_pascal_case() + "Floor", 0, 9999, 0).prefix = "Keep " + supply_name.to_lower() + " "
 	_button(settings_box, "Fill suggested allocations", "SuggestedAllocations", true)
 	var summary := RichTextLabel.new()
-	_add(left, summary, "DispatchSummary", true)
-	summary.custom_minimum_size.y = 108.0
-	_button(left, "Dispatch selected teams", "DispatchSelected", true).theme_type_variation = &"PrimaryButton"
+	_add(block, summary, "DispatchSummary", true)
+	summary.custom_minimum_size.y = 124.0
+	_button(block, "Dispatch selected teams", "DispatchSelected", true).theme_type_variation = &"PrimaryButton"
 	_button(left, "Manage teams", "ManageTeams", true)
-	_button(left, "Go to Summoning Circle", "GoToHall", true)
+	_button(left, "Go to Summoning Circle", "GoToHall", true).theme_type_variation = &"PrimaryButton"
 	var activity := _panel(view, "ActivityPanel")
 	activity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var right := _vbox(activity, "VBox")
@@ -232,13 +234,20 @@ static func _build_teams(content: Control) -> void:
 	var preset_panel := _panel(view, "PresetPanel", true)
 	preset_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var box := _vbox(preset_panel, "VBox")
-	_heading(box, "TEAM PRESETS")
-	_add_option(box, "PresetSelector")
+	# The heading shares a row with the picker, name with zone, and the practice pickers below: at 720
+	# the column is full, and PresetMembers (the picked heroes and the how-to-pick hint) needs the height.
+	var head_row := HBoxContainer.new()
+	_add(box, head_row, "HeadRow")
+	_heading(head_row, "TEAM PRESETS")
+	_add_option(head_row, "PresetSelector").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var name_row := HBoxContainer.new()
+	_add(box, name_row, "NameRow")
 	var name := LineEdit.new()
-	_add(box, name, "PresetName", true)
+	_add(name_row, name, "PresetName", true)
 	name.placeholder_text = "Team name"
 	name.max_length = 48
-	_add_option(box, "ZoneOption")
+	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_add_option(name_row, "ZoneOption").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var members := RichTextLabel.new()
 	_add(box, members, "PresetMembers", true)
 	members.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -246,14 +255,16 @@ static func _build_teams(content: Control) -> void:
 	_add(box, buttons, "PresetButtons")
 	var save := _button(buttons, "Save team", "SavePreset", true)
 	save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	save.theme_type_variation = &"PrimaryButton"
 	var delete := _button(buttons, "Delete preset", "DeletePreset", true)
 	delete.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_button(box, "Save and go to Expeditions", "SaveAndGo", true).theme_type_variation = &"PrimaryButton"
 	var training := _panel(view, "TrainingPanel", true)
 	var practice := _vbox(training, "VBox")
 	_heading(practice, "PRACTICE")
-	_add_option(practice, "PracticePreset")
-	_add_option(practice, "PracticeZone")
+	var practice_row := HBoxContainer.new()
+	_add(practice, practice_row, "PracticeRow")
+	_add_option(practice_row, "PracticePreset").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_add_option(practice_row, "PracticeZone").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_button(practice, "Practice RTS battle", "EnterArena", true)
 	_upgrade_row(practice, "TrainingHallLevel", "Training Hall", "UpgradeTrainingHall")
 	var advance := _panel(view, "AdvancementPanel", true)

@@ -264,6 +264,7 @@ func _connect_ui_signals() -> void:
 	_runs_per_team.value_changed.connect(_on_runs_per_team_changed)
 	_preset_selector.item_selected.connect(_on_preset_selector_selected)
 	%SavePreset.pressed.connect(_on_save_preset_pressed)
+	%SaveAndGo.pressed.connect(_on_save_and_go_pressed)
 	%DeletePreset.pressed.connect(_on_delete_preset_pressed)
 	_roster_availability_filter.item_selected.connect(_on_availability_filter_selected)
 	_roster_favorites_only.toggled.connect(_on_favorites_only_toggled)
@@ -905,6 +906,8 @@ func _open(building_id: StringName) -> void:
 	_sync_town_walk()
 	_refresh_keeper()
 	_refresh_placed_panel()
+	if _open_building == &"TrainingHall" and _editing_preset_id.is_empty() and _preset_name.text.strip_edges().is_empty():
+		_preset_name.text = _next_team_name()
 	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
 
@@ -1738,7 +1741,7 @@ func _refresh_director_ui() -> void:
 
 
 func _disable_mutating_controls() -> void:
-	for control: BaseButton in [%AssignKeeper, %UnassignKeeper, %DispatchSelected, %SavePreset, %DeletePreset, %Sacrifice, %RankUp, %Equip, %Salvage, %Enhance, %Convert, %Summon, %Recover, %StartRecoveryWindow, %UpgradeCircle, %UpgradeForge, %UpgradeTrainingHall, %UpgradeSanctum, %UpgradeReliquary]:
+	for control: BaseButton in [%AssignKeeper, %UnassignKeeper, %DispatchSelected, %SavePreset, %SaveAndGo, %DeletePreset, %Sacrifice, %RankUp, %Equip, %Salvage, %Enhance, %Convert, %Summon, %Recover, %StartRecoveryWindow, %UpgradeCircle, %UpgradeForge, %UpgradeTrainingHall, %UpgradeSanctum, %UpgradeReliquary]:
 		control.disabled = true
 		control.tooltip_text = SaveService.load_block_reason
 
@@ -1766,11 +1769,24 @@ func _refresh_preset_lists() -> void:
 		_preset_selector.set_item_metadata(_preset_selector.item_count - 1, str(preset.get("id", "")))
 		if str(preset.get("id", "")) == _editing_preset_id:
 			_preset_selector.select(_preset_selector.item_count - 1)
+	# One primary button per state, the next step: summon, make a team, or dispatch. No heroes means
+	# summon even when saved teams outlived their members: nothing on the list could go out.
 	var no_heroes: bool = GameSession.roster.is_empty()
-	_dispatch_empty.text = "Summon heroes at the Summoning Circle to form your first team." if no_heroes else "Save a team to start an expedition."
-	_dispatch_empty.visible = GameSession.team_presets.is_empty()
+	var no_team: bool = GameSession.team_presets.is_empty()
+	_dispatch_empty.text = "Summon heroes at the Summoning Circle to form your first team." if no_heroes else "Make a team first: pick heroes at the Training Hall, then send them out from here."
+	_dispatch_empty.visible = no_team or no_heroes
+	%DispatchBlock.visible = not no_team and not no_heroes
 	%GoToHall.visible = no_heroes
+	# Every saved team lost its members (permadeath, then a new summon): fixing a team is the next step,
+	# not a Dispatch that cannot fire. A team Away or In town only needs waiting, so it keeps Dispatch.
+	var needs_fix: bool = not no_heroes and not no_team
+	for preset: Dictionary in GameSession.team_presets:
+		if _preset_status(preset) != "Missing" and not _string_array(preset.get("hero_ids", [])).is_empty():
+			needs_fix = false
 	%ManageTeams.visible = not no_heroes
+	%ManageTeams.text = "Make a team" if no_team else "Fix a team" if needs_fix else "Manage teams"
+	%ManageTeams.theme_type_variation = &"PrimaryButton" if no_team or needs_fix else &""
+	_dispatch_selected.theme_type_variation = &"" if needs_fix else &"PrimaryButton"
 	_dispatch_selected.disabled = GameSession.team_presets.is_empty() or SaveService.load_blocked
 	_refresh_dispatch_summary()
 
@@ -1810,7 +1826,7 @@ func _refresh_preset_editor() -> void:
 		var hero: Hero = GameSession.hero_by_id(hero_id)
 		lines.append("• Missing (%s)" % hero_id if hero == null else "• %s — %s" % [hero.hero_name, _hero_state_text(hero)])
 	if lines.is_empty():
-		lines.append("Select 1–5 unique roster members.")
+		lines.append("Click a hero in the roster to add it. Ctrl- or Shift-click adds more, up to 5.")
 	var zone: ZoneDefinition = _zone_option.get_selected_metadata() as ZoneDefinition if _zone_option.selected >= 0 else null
 	var team: Array[Hero] = _heroes_for_ids(_selected_hero_ids)
 	var valid_definitions: bool = true
@@ -1822,13 +1838,15 @@ func _refresh_preset_editor() -> void:
 		var duration: float = ExpeditionOrders.duration_seconds(team, zone, BALANCE)
 		var forecast: Dictionary = ExpeditionOrders.safety_forecast(team, zone, BALANCE)
 		lines.append("Power forecast: %s · ETA %s" % [str(forecast.get("reason", "Unknown")), _format_duration(duration)])
+	if not _selected_hero_ids.is_empty() and _selected_hero_ids.size() < MAX_TEAM_SIZE:
+		lines.append("Ctrl- or Shift-click the roster to add more (up to 5).")
 	_preset_members.text = "\n".join(lines)
 
 
 func _on_preset_selector_selected(index: int) -> void:
 	_editing_preset_id = str(_preset_selector.get_item_metadata(index))
 	if _editing_preset_id.is_empty():
-		_preset_name.text = ""
+		_preset_name.text = _next_team_name()
 		_selected_hero_ids.clear()
 		_roster_list.deselect_all()
 		_refresh_preset_editor()
@@ -1845,20 +1863,47 @@ func _on_preset_selector_selected(index: int) -> void:
 	_refresh_preset_editor()
 
 
-func _on_save_preset_pressed() -> void:
+## The lowest "Team N" (N >= 1) that no saved team uses, so a new team never starts nameless.
+func _next_team_name() -> String:
+	var taken: Dictionary[String, bool] = {}
+	for preset: Dictionary in GameSession.team_presets:
+		taken[str(preset.get("name", ""))] = true
+	var number: int = 1
+	while taken.has("Team %d" % number):
+		number += 1
+	return "Team %d" % number
+
+
+## Returns whether the team saved; a refusal goes on the status line.
+func _on_save_preset_pressed() -> bool:
 	if SaveService.load_blocked:
 		_status.text = SaveService.load_block_reason
-		return
+		return false
 	var zone: ZoneDefinition = _zone_option.get_selected_metadata() as ZoneDefinition if _zone_option.selected >= 0 else null
 	if zone == null:
 		_status.text = "Choose a valid preferred zone."
-		return
+		return false
 	var result_id: String = GameSession.save_team_preset(_editing_preset_id, _preset_name.text.strip_edges(), _selected_hero_ids.duplicate(), str(zone.zone_id))
 	if result_id.is_empty():
 		_status.text = GameSession.last_action_error
-		return
+		return false
 	_editing_preset_id = result_id
 	_status.text = "Saved team %s." % _preset_name.text.strip_edges()
+	return true
+
+
+## Saves, then opens the Gate with only that team picked. It never dispatches: the player still
+## sees the runs, policies and forecast, and presses Dispatch.
+func _on_save_and_go_pressed() -> void:
+	if not _on_save_preset_pressed():
+		return
+	_open(&"TownGate")
+	_preset_dispatch_list.deselect_all()
+	for row: int in _preset_dispatch_list.item_count:
+		if str((_preset_dispatch_list.get_item_metadata(row) as Dictionary).get("id", "")) == _editing_preset_id:
+			_preset_dispatch_list.select(row, false)
+	_refresh_dispatch_summary()
+	_dispatch_selected.grab_focus()
 
 
 func _on_delete_preset_pressed() -> void:
@@ -1872,6 +1917,7 @@ func _on_delete_preset_pressed() -> void:
 func _do_delete_preset(preset_id: String) -> void:
 	if GameSession.delete_team_preset(preset_id):
 		_editing_preset_id = ""
+		_preset_name.text = _next_team_name()
 		_status.text = "Deleted team preset."
 	else:
 		_status.text = GameSession.last_action_error

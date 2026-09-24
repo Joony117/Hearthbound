@@ -470,6 +470,11 @@ func test_no_panel_is_open_by_default_so_the_town_shows() -> void:
 
 
 func test_every_building_opens_the_panel_holding_its_actions() -> void:
+	# The Gate's dispatch controls show only once a team exists (ig-4pr).
+	var hero := Hero.new("Mira", 7)
+	hero.def_id = &"knight"
+	GameSession.add_hero(hero)
+	assert_ne(GameSession.save_team_preset("", "Team 1", [hero.instance_id], "verdant_outskirts"), "")
 	var hub: Node3D = _instantiate_hub()
 	var town: TownView = hub.get_node("%Town") as TownView
 	for building_id: StringName in BUILDING_ACTIONS:
