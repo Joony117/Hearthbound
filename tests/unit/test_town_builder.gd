@@ -464,8 +464,7 @@ func test_the_hub_builds_on_a_clicked_hex_and_staffs_the_building() -> void:
 	assert_eq(town.building_at(camera.unproject_position(placed.global_position + Vector3(0.0, 1.0, 0.0))), &"House_1", "it is clickable")
 	town.building_selected.emit(&"House_1")
 	assert_true((hub.get_node("%PlacedBuildingPanel") as Control).visible)
-	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Under construction: 1:00 left
-Resident 0/1: none")
+	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Under construction: 1:00 left\nResident 0/1: none")
 	assert_true((hub.get_node("%PlacedAssign") as Button).disabled, "no resident until it is built")
 	GameSession.tick_expeditions(BALANCE.house_build_seconds)
 	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Resident 0/1: none", "the plain live tick refreshes the panel")

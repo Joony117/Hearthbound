@@ -331,31 +331,45 @@ func enhance_item(item: Item, balance: BalanceTable) -> bool:
 	return true
 
 
+## What upgrade_building would do, exactly: {valid, current_level, next_level, part_rank, part_cost,
+## wood_cost, stone_cost, error}.
 func preview_building_upgrade(index: int) -> Dictionary:
-	return _building_upgrade_plan(
-		index,
-		building_levels,
-		parts,
-		preload("res://balance.tres"),
-	)
+	var plan: Dictionary = _building_upgrade_plan(index, building_levels, parts, town_resources, preload("res://balance.tres"))
+	if SaveService.load_blocked:
+		plan["valid"] = false
+		plan["error"] = SaveService.load_block_reason
+	return plan
 
 
+## Spends the parts, wood and stone, or nothing. A refusal (last_action_error) spends nothing.
 func upgrade_building(index: int, balance: BalanceTable) -> bool:
-	var plan: Dictionary = _building_upgrade_plan(index, building_levels, parts, balance)
-	if not bool(plan.get("valid", false)):
+	last_action_error = ""
+	# Before the plan, so a blocked load says so even when something is short, as the preview does.
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
 		return false
-	var rank_index: int = Item.int_field(plan, "part_rank", 0, "building upgrade plan")
-	var cost: int = Item.int_field(plan, "part_cost", 0, "building upgrade plan")
-	parts[rank_index] -= cost
-	building_levels[index] = Item.int_field(plan, "next_level", 0, "building upgrade plan")
+	var plan: Dictionary = _building_upgrade_plan(index, building_levels, parts, town_resources, balance)
+	if not bool(plan["valid"]):
+		last_action_error = str(plan["error"])
+		return false
+	return _commit_profile_mutation(_upgrade_building_in_memory.bind(index, plan))
+
+
+## Checked path only (_commit_profile_mutation), after _building_upgrade_plan found everything there.
+func _upgrade_building_in_memory(index: int, plan: Dictionary) -> void:
+	parts[int(plan["part_rank"])] -= int(plan["part_cost"])
+	town_resources["wood"] = float(town_resources["wood"]) - int(plan["wood_cost"])
+	town_resources["stone"] = float(town_resources["stone"]) - int(plan["stone_cost"])
+	building_levels[index] = int(plan["next_level"])
 	_notify_roster_changed()
-	return true
 
 
+## The only place a hall upgrade's cost is derived (SYSTEMS.md § Hall upgrades cost wood and stone).
 static func _building_upgrade_plan(
 	index: int,
 	levels: Array[int],
 	available_parts: Array[int],
+	resources: Dictionary,
 	balance: BalanceTable,
 ) -> Dictionary:
 	var plan: Dictionary = {
@@ -364,6 +378,8 @@ static func _building_upgrade_plan(
 		"next_level": -1,
 		"part_rank": -1,
 		"part_cost": 0,
+		"wood_cost": 0,
+		"stone_cost": 0,
 		"error": "",
 	}
 	if index < 0 or index >= levels.size():
@@ -376,14 +392,24 @@ static func _building_upgrade_plan(
 		plan["error"] = "That building is already at the maximum level."
 		return plan
 	var rank_index: int = clampi(level, 0, available_parts.size() - 1)
-	var cost: int = 10 * (level + 2)
 	plan["next_level"] = level + 1
 	plan["part_rank"] = rank_index
-	plan["part_cost"] = cost
-	if available_parts[rank_index] < cost:
-		plan["error"] = "Need %d rank-%d parts." % [cost, rank_index]
-		return plan
-	plan["valid"] = true
+	plan["part_cost"] = 10 * (level + 2)
+	plan["wood_cost"] = balance.hall_upgrade_wood_per_level * (level + 1)
+	plan["stone_cost"] = balance.hall_upgrade_stone_per_level * (level + 1)
+	var short: PackedStringArray = []
+	if available_parts[rank_index] < int(plan["part_cost"]):
+		short.append("%d %s parts (have %d)" % [plan["part_cost"], balance.rank_names[rank_index], available_parts[rank_index]])
+	for resource: String in ["wood", "stone"]:
+		var have: float = float(resources.get(resource, 0.0))
+		if have < int(plan[resource + "_cost"]):
+			short.append("%d %s (have %d)" % [plan[resource + "_cost"], resource, floori(have)])
+	if short.is_empty():
+		plan["valid"] = true
+	elif short.size() == 1:
+		plan["error"] = "Need %s." % short[0]
+	else:
+		plan["error"] = "Need %s and %s." % [", ".join(short.slice(0, short.size() - 1)), short[short.size() - 1]]
 	return plan
 
 

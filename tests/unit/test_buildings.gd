@@ -3,6 +3,9 @@ extends GutTest
 
 func before_each() -> void:
 	GameSession.from_dict({"roster": []})
+	# Wood and stone are ig-6m2.4's; these tests are about the parts.
+	GameSession.town_resources["wood"] = 1000.0
+	GameSession.town_resources["stone"] = 1000.0
 
 
 func test_upgrade_uses_the_cost_ladder() -> void:
@@ -187,8 +190,8 @@ func test_training_hall_upgrade_updates_hub() -> void:
 	upgrade_button.pressed.emit()
 	assert_eq(GameSession.building_levels[2], 1)
 	assert_eq(GameSession.parts[0], 0)
-	assert_eq(status.text, "Upgraded Training Hall to Lv 1 for 20 F parts.")
-	assert_eq(training_hall_level.text, "Training Hall — Lv 1 · Next 30 D parts")
+	assert_eq(status.text, "Upgraded Training Hall to Lv 1 for 20 F parts, 20 wood and 10 stone.")
+	assert_eq(training_hall_level.text, "Training Hall — Lv 1 · Next 30 D parts · 40 wood · 20 stone")
 
 
 func test_reliquary_upgrade_updates_hub() -> void:
@@ -204,8 +207,8 @@ func test_reliquary_upgrade_updates_hub() -> void:
 	upgrade_button.pressed.emit()
 	assert_eq(GameSession.building_levels[4], 1)
 	assert_eq(GameSession.parts[0], 0)
-	assert_eq(status.text, "Upgraded Reliquary to Lv 1 for 20 F parts.")
-	assert_eq(reliquary_level.text, "Reliquary — Lv 1 · Next 30 D parts")
+	assert_eq(status.text, "Upgraded Reliquary to Lv 1 for 20 F parts, 20 wood and 10 stone.")
+	assert_eq(reliquary_level.text, "Reliquary — Lv 1 · Next 30 D parts · 40 wood · 20 stone")
 
 
 func test_reliquary_upgrade_refuses_without_parts() -> void:
@@ -220,8 +223,8 @@ func test_reliquary_upgrade_refuses_without_parts() -> void:
 	upgrade_button.pressed.emit()
 	assert_eq(GameSession.building_levels[4], 0)
 	assert_eq(GameSession.parts[0], 19)
-	assert_eq(status.text, "Cannot upgrade Reliquary: need 20 F parts.")
-	assert_eq(reliquary_level.text, "Reliquary — Lv 0 · Next 20 F parts")
+	assert_eq(status.text, "Cannot upgrade Reliquary. Need 20 F parts (have 19).")
+	assert_eq(reliquary_level.text, "Reliquary — Lv 0 · Next 20 F parts · 20 wood · 10 stone")
 
 
 ## The point of P2-24 is the wiring, not the formulas - both already read building_levels[4]

@@ -178,6 +178,8 @@ func test_supply_craft_max_preview_preserves_reserve_and_commits_exact_snapshot(
 
 
 func test_building_preview_and_mutation_share_the_existing_cost_ladder() -> void:
+	GameSession.town_resources["wood"] = 20.0
+	GameSession.town_resources["stone"] = 10.0
 	GameSession.parts[0] = 19
 	var short_plan: Dictionary = GameSession.preview_building_upgrade(0)
 	assert_false(bool(short_plan["valid"]))

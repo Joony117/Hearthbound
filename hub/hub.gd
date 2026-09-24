@@ -585,7 +585,7 @@ func _building_level_text(building_name: String, index: int) -> String:
 	var part_cost: int = int(preview.get("part_cost", 0))
 	if next_level == current_level or part_rank < 0 or part_rank >= BALANCE.rank_names.size():
 		return "%s — Lv %d · MAX" % [building_name, current_level]
-	return "%s — Lv %d · Next %d %s parts" % [building_name, current_level, part_cost, BALANCE.rank_names[part_rank]]
+	return "%s — Lv %d · Next %d %s parts · %d wood · %d stone" % [building_name, current_level, part_cost, BALANCE.rank_names[part_rank], int(preview["wood_cost"]), int(preview["stone_cost"])]
 
 
 func _refresh_equipped() -> void:
@@ -1060,8 +1060,7 @@ func _refresh_placed_panel() -> void:
 		%PlacedInfo.text = "Workers %d/%d: %s\nMakes %s a minute" % [people.size(), TownRules.worker_slots(type, BALANCE), who, made]
 	var building: Dictionary = GameSession.town_building(_open_building)
 	if building.has("build_remaining"):
-		%PlacedInfo.text = "Under construction: %s left
-%s" % [_format_duration(float(building["build_remaining"])), %PlacedInfo.text]
+		%PlacedInfo.text = "Under construction: %s left\n%s" % [_format_duration(float(building["build_remaining"])), %PlacedInfo.text]
 	%PlacedAssign.text = "Assign resident" if house else "Assign worker"
 	%PlacedClear.text = "Move out" if house else "Unassign"
 	%PlacedAssign.disabled = SaveService.load_blocked or building.has("build_remaining")
@@ -1606,36 +1605,32 @@ func _on_enhance_dialog_confirmed() -> void:
 
 
 func _on_upgrade_circle_pressed() -> void:
-	_upgrade_building(0, "Summoning Circle", GameSession.upgrade_building(0, BALANCE))
+	_upgrade_building(0, "Summoning Circle")
 
 
 func _on_upgrade_forge_pressed() -> void:
-	_upgrade_building(1, "Forge", GameSession.upgrade_building(1, BALANCE))
+	_upgrade_building(1, "Forge")
 
 
 func _on_upgrade_training_hall_pressed() -> void:
-	_upgrade_building(2, "Training Hall", GameSession.upgrade_building(2, BALANCE))
+	_upgrade_building(2, "Training Hall")
 
 
 func _on_upgrade_sanctum_pressed() -> void:
-	_upgrade_building(3, "Sanctum", GameSession.upgrade_building(3, BALANCE))
+	_upgrade_building(3, "Sanctum")
 
 
 func _on_upgrade_reliquary_pressed() -> void:
-	_upgrade_building(4, "Reliquary", GameSession.upgrade_building(4, BALANCE))
+	_upgrade_building(4, "Reliquary")
 
 
-func _upgrade_building(index: int, building_name: String, upgraded: bool) -> void:
-	var level: int = clampi(GameSession.building_levels[index], 0, BALANCE.summoning_circle_level_cap)
-	if upgraded:
-		_status.text = "Upgraded %s to Lv %d for %d %s parts." % [building_name, level, 10 * (level + 1), BALANCE.rank_names[clampi(level - 1, 0, GameSession.parts.size() - 1)]]
+## The costs come from the preview, which is the plan upgrade_building spends.
+func _upgrade_building(index: int, building_name: String) -> void:
+	var plan: Dictionary = GameSession.preview_building_upgrade(index)
+	if not GameSession.upgrade_building(index, BALANCE):
+		_status.text = "Cannot upgrade %s. %s" % [building_name, GameSession.last_action_error]
 		return
-	if level >= BALANCE.summoning_circle_level_cap:
-		_status.text = "%s is already at the Lv %d cap." % [building_name, BALANCE.summoning_circle_level_cap]
-		return
-	var rank_index: int = clampi(level, 0, GameSession.parts.size() - 1)
-	var cost: int = 10 * (level + 2)
-	_status.text = "Cannot upgrade %s: need %d %s parts." % [building_name, cost, BALANCE.rank_names[rank_index]]
+	_status.text = "Upgraded %s to Lv %d for %d %s parts, %d wood and %d stone." % [building_name, plan["next_level"], plan["part_cost"], BALANCE.rank_names[int(plan["part_rank"])], plan["wood_cost"], plan["stone_cost"]]
 
 
 func _on_unequip_pressed() -> void:

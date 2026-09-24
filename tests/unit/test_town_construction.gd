@@ -184,7 +184,7 @@ func test_a_loaded_claim_on_an_unfinished_building_is_cleared() -> void:
 	for building: Dictionary in saved["town_buildings"]:
 		if building["id"] in [String(house), String(mill)]:
 			building["build_remaining"] = 10.0
-	_write(JSON.stringify(saved, "	").to_utf8_buffer())
+	_write(JSON.stringify(saved, "\t").to_utf8_buffer())
 	assert_true(SaveService.load_game())
 	assert_eq(GameSession.hero_by_id(ada.instance_id).home, Hero.NO_HOME, "not in a House still going up")
 	assert_eq(GameSession.hero_by_id(bo.instance_id).home, other_house, "the finished House keeps its resident")

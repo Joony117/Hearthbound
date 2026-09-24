@@ -621,6 +621,10 @@ func _check_buildings_round_trip() -> int:
 	_parts().fill(0)
 	_parts()[0] = 60
 	_parts()[1] = 30
+	# Hall upgrades also cost wood and stone (ig-6m2.4): 20+40+20+20 wood, 10+20+10+10 stone.
+	var town_resources: Dictionary = _game_session.get("town_resources")
+	town_resources["wood"] = 100.0
+	town_resources["stone"] = 50.0
 	# Three buildings at two different levels, one of them the array's **last** index, so a save
 	# that persists only the first index — or collapses the array to one value, or truncates its
 	# tail — fails here rather than passing on an all-zero remainder.
@@ -658,12 +662,17 @@ func _check_buildings_round_trip() -> int:
 
 	building_levels.fill(0)
 	_parts().fill(0)
+	town_resources["wood"] = 999.0
+	town_resources["stone"] = 999.0
 	if not _save_service.call("load_game"):
 		return _fail("building levels disk reload", "load_game() == true", "load_game() == false")
 	for building_index: int in building_levels.size():
 		var expected_level: int = expected_levels[building_index]
 		if building_levels[building_index] != expected_level:
 			return _fail("building level after disk reload at index %d" % building_index, str(expected_level), str(building_levels[building_index]))
+	var loaded_resources: Dictionary = _game_session.get("town_resources")
+	if [loaded_resources["wood"], loaded_resources["stone"]] != [0.0, 0.0]:
+		return _fail("wood and stone after upgrades and disk reload", "[0.0, 0.0]", str([loaded_resources["wood"], loaded_resources["stone"]]))
 	var salvaged_item := Item.new(DOOMED_ITEM_DEF_ID, SALVAGED_ITEM_RANK)
 	_game_session.call("add_item", salvaged_item)
 	_game_session.call("salvage_item", salvaged_item, balance)

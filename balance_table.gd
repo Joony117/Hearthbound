@@ -177,6 +177,9 @@ extends Resource
 # Construction (SYSTEMS.md § Stone and construction): live-play seconds to go up.
 @export var house_build_seconds: float = 60.0
 @export var workplace_build_seconds: float = 120.0
+# Hall upgrades (SYSTEMS.md § Hall upgrades cost wood and stone): level n to n+1 costs this times n+1.
+@export var hall_upgrade_wood_per_level: int = 20
+@export var hall_upgrade_stone_per_level: int = 10
 # Farms and food (SYSTEMS.md § Food and starvation; every row PROVISIONAL).
 @export var town_start_food: float = 30.0
 @export var food_per_housed_hero_minute: float = 0.2
