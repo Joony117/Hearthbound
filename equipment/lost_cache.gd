@@ -15,6 +15,9 @@ var items: Array[Item] = []
 ## timing uses recovery_created_at on GameSession's active recovery clock.
 var turn_lost: int = 0
 var recovery_created_at: float = 0.0
+## The longest lifetime this cache has had (ig-wgj.10: a window never shrinks when the Tracking keeper
+## leaves). GameSession raises it on every live tick; 0 until then, and in a save from before it.
+var lifetime_seconds: float = 0.0
 
 
 func _init(
@@ -29,18 +32,23 @@ func _init(
 	recovery_created_at = p_recovery_created_at
 
 
+## A cache's and a rescue window's lifetime now. keeper_skill is the Reliquary keeper's Tracking
+## (GameSession.keeper_skill); it stacks past the level cap.
+static func lifetime_for(reliquary_level: int, keeper_skill: int, balance: BalanceTable) -> float:
+	var level: int = clampi(reliquary_level, 0, balance.summoning_circle_level_cap)
+	return balance.recovery_base_duration_seconds + balance.recovery_duration_seconds_per_level * (level + balance.keeper_skill_bonus_levels * keeper_skill)
+
+
+## Uses the longest of the cache's own lifetime and the live one, so it never shrinks.
 static func seconds_remaining(
 	cache: LostCache,
 	current_clock_seconds: float,
 	reliquary_level: int,
+	keeper_skill: int,
 	balance: BalanceTable,
 ) -> float:
-	var level: int = clampi(reliquary_level, 0, balance.summoning_circle_level_cap)
-	var lifetime_seconds: float = (
-		balance.recovery_base_duration_seconds
-		+ balance.recovery_duration_seconds_per_level * level
-	)
-	return cache.recovery_created_at + lifetime_seconds - current_clock_seconds
+	var lifetime: float = maxf(cache.lifetime_seconds, lifetime_for(reliquary_level, keeper_skill, balance))
+	return cache.recovery_created_at + lifetime - current_clock_seconds
 
 
 static func compute_damage_chance(
@@ -83,6 +91,7 @@ func to_dict() -> Dictionary:
 		"items": item_entries,
 		"turn_lost": turn_lost,
 		"recovery_created_at": recovery_created_at,
+		"lifetime_seconds": lifetime_seconds,
 	}
 
 
@@ -107,6 +116,8 @@ static func from_dict(data: Dictionary) -> LostCache:
 		Item.float_field(data, "recovery_created_at", 0.0, "lost cache"),
 		0.0,
 	)
+	# Additive (ig-wgj.10): absent in an older save, which reads the live lifetime until the next tick.
+	cache.lifetime_seconds = maxf(Item.float_field(data, "lifetime_seconds", 0.0, "lost cache"), 0.0)
 	# Save-file fields remain Variant until their types are validated.
 	var raw_items: Variant = data.get("items")
 	if not raw_items is Array:

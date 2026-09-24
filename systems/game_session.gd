@@ -111,7 +111,7 @@ func _process(delta: float) -> void:
 	_periodic_save_accumulator += elapsed_seconds
 	if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 		_periodic_save_accumulator = 0.0
-		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _lumbermill_workers_home() > 0:
+		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _lumbermill_workers_home() > 0 or not _working_keepers().is_empty():
 			if not SaveService.save():
 				_checkpoint_save_failed = true
 				_checkpoint_error = SaveService.last_write_error
@@ -300,13 +300,13 @@ func unequip_item(hero: Hero, slot: int) -> void:
 func salvage_item(item: Item, balance: BalanceTable) -> void:
 	if not inventory.has(item) or is_item_protected(item):
 		return
-	var salvage_yield: int = Item.compute_salvage_yield(item, building_levels[1], balance)
+	var gain: int = salvage_yield(item)
 	inventory.erase(item)
 	# item.rank arrives from an untrusted save and is never validated by Item.from_dict, so clamp
 	# before indexing, same as Item.rank_label and Hero.compute_final_stats. assert() cannot guard
 	# this - it is stripped in release, where a corrupt rank would crash after the erase (positive)
 	# or credit the wrong rank (negative, since GDScript indexes arrays from the end).
-	parts[clampi(item.rank, 0, parts.size() - 1)] += salvage_yield
+	parts[clampi(item.rank, 0, parts.size() - 1)] += gain
 	_notify_roster_changed()
 
 
@@ -411,7 +411,7 @@ func sacrifice_hero(fodder: Hero, target: Hero, balance: BalanceTable) -> bool:
 	):
 		return false
 	var sanctum_level: int = clampi(building_levels[3], 0, balance.summoning_circle_level_cap)
-	essence += Hero.compute_essence_yield(fodder, target, balance, sanctum_level)
+	essence += Hero.compute_essence_yield(fodder, target, balance, sanctum_level, keeper_skill(&"Sanctum"))
 	if fodder.def_id == target.def_id and fodder.def_id != Hero.NO_ARCHETYPE_DEF_ID:
 		target.resonance += 1
 	kill_hero(fodder, &"", balance, "sacrifice", target.instance_id)
@@ -553,6 +553,59 @@ func keeper_for(building_id: StringName) -> Hero:
 		if hero.station == building_id:
 			return hero
 	return null
+
+
+## The skill of the building's keeper in its profession; 0 with no keeper, a busy keeper, or a building
+## that takes none (SYSTEMS.md § Keepers and professions). Every bonus and its preview read this.
+func keeper_skill(building_id: StringName) -> int:
+	var keeper: Hero = _home_keeper(building_id)
+	return 0 if keeper == null else Hero.profession_skill(keeper, Hero.profession_for_building(building_id), preload("res://balance.tres"))
+
+
+## A keeper who is home and a master of the building's profession (a passion, at the top skill).
+func keeper_is_master(building_id: StringName) -> bool:
+	var keeper: Hero = _home_keeper(building_id)
+	return keeper != null and Hero.is_profession_master(keeper, Hero.profession_for_building(building_id), preload("res://balance.tres"))
+
+
+func _home_keeper(building_id: StringName) -> Hero:
+	if not Hero.is_staffable(building_id):
+		return null
+	var keeper: Hero = keeper_for(building_id)
+	return null if keeper == null or is_hero_busy(keeper) else keeper
+
+
+## Parts salvaging item pays now; the salvage and every preview of it read this.
+func salvage_yield(item: Item) -> int:
+	return Item.compute_salvage_yield(item, building_levels[1], keeper_skill(&"Forge"), preload("res://balance.tres"))
+
+
+## Expedition XP multiplier from the Training Hall and its Drill keeper.
+func training_xp_multiplier() -> float:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var level: int = clampi(building_levels[2], 0, balance.summoning_circle_level_cap)
+	return 1.0 + balance.training_hall_xp_bonus * (level + balance.keeper_skill_bonus_levels * keeper_skill(&"TrainingHall"))
+
+
+## A cache's or rescue window's lifetime now, from the Reliquary and its Tracking keeper. A running
+## one never gets shorter than the longest it has had (cache_seconds_remaining, _incident_remaining_seconds).
+func recovery_lifetime_seconds() -> float:
+	return LostCache.lifetime_for(building_levels[4], keeper_skill(&"Reliquary"), preload("res://balance.tres"))
+
+
+## The cache's remaining active time at clock_seconds; the expiry checks and the hub timers read this.
+func cache_seconds_remaining(cache: LostCache, clock_seconds: float) -> float:
+	return LostCache.seconds_remaining(cache, clock_seconds, building_levels[4], keeper_skill(&"Reliquary"), preload("res://balance.tres"))
+
+
+## Every home keeper as [keeper, profession]: who earns XP on the live tick.
+func _working_keepers() -> Array[Array]:
+	var working: Array[Array] = []
+	for profession: StringName in Hero.PROFESSIONS:
+		var keeper: Hero = _home_keeper(Hero.PROFESSIONS[profession])
+		if keeper != null:
+			working.append([keeper, profession])
+	return working
 
 
 ## Checked path only (_commit_profile_mutation). Clearing a hall's old keeper keeps one per hall; a
@@ -1231,12 +1284,15 @@ func abandon_stranded(id: String) -> bool:
 
 
 func _start_rescue_window_in_memory(index: int) -> void:
+	_raise_incident_lifetime(stranded_incidents[index])
 	stranded_incidents[index]["paused"] = false
 	stranded_incidents[index]["created_recovery_seconds"] = rescue_clock_seconds
 	_notify_expeditions_changed()
 
 
 func _append_rescue_order_in_memory(order: Dictionary, incident_index: int) -> bool:
+	# First: the Tracker may be on the rescue team, and the order makes it busy.
+	_raise_incident_lifetime(stranded_incidents[incident_index])
 	if not _append_battle_order_in_memory(order):
 		return false
 	if bool(stranded_incidents[incident_index].get("paused", true)):
@@ -1254,13 +1310,24 @@ func _abandon_incident_in_memory(index: int) -> void:
 	_notify_expeditions_changed()
 
 
+## Every read (the settle, the expiry checks, the dispatch check, the hub) comes here. A running
+## window uses the longest lifetime it has had (director ruling 2026-09-24, ig-wgj.10), so a Tracker
+## who leaves never cuts it; a save from before the mark reads the live lifetime.
 func _incident_remaining_seconds(incident: Dictionary) -> float:
-	var balance: BalanceTable = preload("res://balance.tres")
-	var level: int = clampi(building_levels[4], 0, balance.summoning_circle_level_cap)
-	var lifetime: float = balance.recovery_base_duration_seconds + balance.recovery_duration_seconds_per_level * float(level)
+	var lifetime: float = _incident_lifetime(incident)
 	if bool(incident.get("paused", true)):
 		return lifetime
 	return maxf(lifetime - (rescue_clock_seconds - Item.float_field(incident, "created_recovery_seconds", rescue_clock_seconds, "stranded incident")), 0.0)
+
+
+func _incident_lifetime(incident: Dictionary) -> float:
+	return maxf(Item.float_field(incident, "lifetime_seconds", 0.0, "stranded incident"), recovery_lifetime_seconds())
+
+
+## Raises a window's high-water mark to the live lifetime. The live tick calls it on every running
+## window, and a window's start before its rescue order makes the Tracker busy.
+func _raise_incident_lifetime(incident: Dictionary) -> void:
+	incident["lifetime_seconds"] = _incident_lifetime(incident)
 
 
 func _incident_index(id: String) -> int:
@@ -1279,6 +1346,7 @@ func preview_bulk_salvage(item_ids: Array[String], quantity: int) -> Dictionary:
 		_item_name_map(),
 		_item_protection_reasons(),
 		building_levels[1],
+		keeper_skill(&"Forge"),
 		balance,
 	)
 
@@ -1302,6 +1370,7 @@ func preview_bulk_sacrifice(
 		_hero_map(),
 		_hero_protection_reasons(),
 		sanctum_level,
+		keeper_skill(&"Sanctum"),
 		balance,
 	)
 	if target != null and is_hero_busy(target):
@@ -1332,7 +1401,7 @@ func preview_bulk_conversion(rank: int, quantity: int, reserve: int) -> Dictiona
 
 
 func preview_bulk_supplies(kind: String, quantity: int, reserve: int) -> Dictionary:
-	return BulkOperations.preview_supplies(kind, quantity, reserve, parts, supplies, preload("res://balance.tres"))
+	return BulkOperations.preview_supplies(kind, quantity, reserve, parts, supplies, keeper_skill(&"Apothecary"), preload("res://balance.tres"))
 
 
 func commit_bulk_plan(plan: Dictionary) -> bool:
@@ -1531,9 +1600,8 @@ func tick_expeditions(delta_seconds: float) -> void:
 	var has_expiring_cache: bool = false
 	if not recovery_clock_paused:
 		var next_clock: float = recovery_clock_seconds + delta_seconds
-		var reliquary_level: int = clampi(building_levels[4], 0, preload("res://balance.tres").summoning_circle_level_cap)
 		for cache: LostCache in lost_caches:
-			if LostCache.seconds_remaining(cache, next_clock, reliquary_level, preload("res://balance.tres")) < 0.0:
+			if cache_seconds_remaining(cache, next_clock) < 0.0:
 				has_expiring_cache = true
 				break
 	var has_expiring_incident: bool = false
@@ -1642,6 +1710,16 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 		if not bool(incident.get("paused", true)):
 			rescue_clock_seconds += delta_seconds
 			break
+	# A window never shrinks: every running one keeps the longest lifetime it has had (ig-wgj.10).
+	var lifetime: float = recovery_lifetime_seconds()
+	for cache: LostCache in lost_caches:
+		cache.lifetime_seconds = maxf(cache.lifetime_seconds, lifetime)
+	for incident: Dictionary in stranded_incidents:
+		if not bool(incident.get("paused", true)):
+			_raise_incident_lifetime(incident)
+	# Live tick only, like the wood: home keepers learn by working (SYSTEMS.md § Keepers and professions).
+	for working: Array in _working_keepers():
+		Hero.add_profession_xp(working[0] as Hero, working[1] as StringName, delta_seconds, preload("res://balance.tres"))
 
 
 func _resolve_due_orders_in_memory() -> void:
@@ -1795,7 +1873,7 @@ func _settle_battle_order(order_index: int) -> void:
 		if hero != null:
 			secured.append(hero)
 	var balance: BalanceTable = preload("res://balance.tres")
-	var xp_multiplier: float = 1.0 + balance.training_hall_xp_bonus * float(clampi(building_levels[2], 0, balance.summoning_circle_level_cap))
+	var xp_multiplier: float = training_xp_multiplier()
 	var xp_amount: int = roundi(float(balance.xp_per_wave * outcome.completed_waves) * xp_multiplier)
 	var stones_earned: int = 0
 	var items_earned: int = 0
@@ -2003,10 +2081,8 @@ func _append_report(
 func _expire_recovery_caches_in_memory() -> void:
 	if recovery_clock_paused:
 		return
-	var balance: BalanceTable = preload("res://balance.tres")
-	var reliquary_level: int = clampi(building_levels[4], 0, balance.summoning_circle_level_cap)
 	for cache_index: int in range(lost_caches.size() - 1, -1, -1):
-		if LostCache.seconds_remaining(lost_caches[cache_index], recovery_clock_seconds, reliquary_level, balance) < 0.0:
+		if cache_seconds_remaining(lost_caches[cache_index], recovery_clock_seconds) < 0.0:
 			lost_caches.remove_at(cache_index)
 
 
@@ -2605,6 +2681,9 @@ static func validate_saved_state(data: Dictionary, version: int) -> String:
 			return "Lost-cache recovery_created_at must be finite and non-negative."
 		if float(cache_data.get("recovery_created_at")) > recovery_clock:
 			return "Lost-cache recovery_created_at cannot be ahead of the recovery clock."
+		# Additive (ig-wgj.10): absent on an older cache.
+		if cache_data.has("lifetime_seconds") and not _is_nonnegative_number(cache_data.get("lifetime_seconds")):
+			return "Lost-cache lifetime_seconds must be finite and non-negative."
 		if not cache_data.get("items") is Array:
 			return "Lost-cache items must be an Array."
 		for raw_item: Variant in cache_data.get("items") as Array:
@@ -2722,6 +2801,9 @@ static func validate_saved_state(data: Dictionary, version: int) -> String:
 				return "Stranded incident timer state is invalid."
 			if float(incident.get("created_recovery_seconds")) > float(data.get("rescue_clock_seconds")):
 				return "Stranded incident age cannot begin ahead of the rescue clock."
+			# Additive (ig-wgj.10): absent on an older incident.
+			if incident.has("lifetime_seconds") and not _is_nonnegative_number(incident.get("lifetime_seconds")):
+				return "Stranded incident lifetime_seconds must be finite and non-negative."
 			if not str(incident.get("zone_id")) in KNOWN_ZONE_IDS:
 				return "A stranded incident references an unknown zone."
 			# Additive (ig-m6o.1): absent on legacy incidents.

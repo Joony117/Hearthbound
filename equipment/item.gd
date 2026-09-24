@@ -31,10 +31,11 @@ func rank_label(balance: BalanceTable) -> String:
 
 ## Parts a salvage pays, per docs/SYSTEMS.md, Base buildings. roundi(), never int() - truncation
 ## makes the Forge bonus yield literally zero on an unenhanced drop, the commonest salvage there is.
-static func compute_salvage_yield(item: Item, forge_level: int, balance: BalanceTable) -> int:
+## keeper_skill is the Forge keeper's Smithing (GameSession.keeper_skill); it stacks past the level cap.
+static func compute_salvage_yield(item: Item, forge_level: int, keeper_skill: int, balance: BalanceTable) -> int:
 	var enhance_level: int = clamped_enhance_level(item, balance)
 	var clamped_forge_level: int = clampi(forge_level, 0, balance.summoning_circle_level_cap)
-	return roundi((3 + enhance_level) * (1.0 + balance.forge_salvage_yield_bonus * clamped_forge_level))
+	return roundi((3 + enhance_level) * (1.0 + balance.forge_salvage_yield_bonus * (clamped_forge_level + balance.keeper_skill_bonus_levels * keeper_skill)))
 
 
 ## The highest enhance_level a Forge at this level permits (docs/SYSTEMS.md, Enhancement). Level 0

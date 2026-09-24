@@ -2,7 +2,7 @@ class_name HubUiBuilder
 extends RefCounted
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
-const KEEPER_ROW_HEIGHT: float = 52.0
+const KEEPER_ROW_HEIGHT: float = 76.0
 ## The town's buildings in building-list order; number key N opens entry N. Ids are town.tscn node names.
 const BUILDINGS: Array = [
 	[&"SummoningCircle", "Circle"], [&"Forge", "Forge"], [&"TrainingHall", "Training Hall"], [&"Sanctum", "Sanctum"],
@@ -406,7 +406,8 @@ static func _build_hall(content: Control) -> void:
 
 
 ## Each levelled building shows its own level and upgrade button in its own panel.
-## Under the middle column of every staffable building: who keeps it, and the assign/unassign pair.
+## Under the middle column of every staffable building: who keeps it, the assign/unassign pair, and
+## below them what the keeper adds now.
 static func _build_keeper(content: Control) -> void:
 	var panel := _panel(content, "KeeperPanel", true)
 	panel.visible = false
@@ -417,8 +418,10 @@ static func _build_keeper(content: Control) -> void:
 	panel.offset_left = 316.0
 	panel.offset_top = -KEEPER_ROW_HEIGHT + 8.0
 	panel.offset_right = -412.0
+	var column := VBoxContainer.new()
+	_add(panel, column, "Column")
 	var row := HBoxContainer.new()
-	_add(panel, row, "Row")
+	_add(column, row, "Row")
 	_heading(row, "KEEPER")
 	var keeper := _label(row, "No keeper", "KeeperName", true)
 	keeper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -426,6 +429,9 @@ static func _build_keeper(content: Control) -> void:
 	keeper.mouse_filter = Control.MOUSE_FILTER_PASS
 	_button(row, "Assign keeper", "AssignKeeper", true)
 	_button(row, "Unassign", "UnassignKeeper", true)
+	var bonus := _label(column, "", "KeeperBonus", true)
+	bonus.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	bonus.mouse_filter = Control.MOUSE_FILTER_PASS
 	var picker := PopupMenu.new()
 	_add(panel, picker, "KeeperPicker", true)
 

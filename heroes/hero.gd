@@ -115,6 +115,17 @@ static func is_staffable(building_id: StringName) -> bool:
 	return building_id != NO_STATION and profession_for_building(building_id) != &""
 
 
+## Plain XP seconds left to the next skill level; 0 at the cap.
+static func profession_xp_to_next(hero: Hero, profession: StringName, balance: BalanceTable) -> float:
+	var skill: int = profession_skill(hero, profession, balance)
+	if skill >= balance.profession_skill_cap:
+		return 0.0
+	var needed_minutes: float = 0.0
+	for level: int in range(1, skill + 2):
+		needed_minutes += balance.profession_xp_minutes_per_level * level
+	return needed_minutes * 60.0 - hero.profession_xp.get(profession, 0.0)
+
+
 ## Only a born master makes masterwork: a passion, at the top skill. Both passions can be mastered.
 static func is_profession_master(hero: Hero, profession: StringName, balance: BalanceTable) -> bool:
 	return profession in hero.passions and profession_skill(hero, profession, balance) >= balance.profession_skill_cap
@@ -239,6 +250,7 @@ static func compute_essence_yield(
 	target: Hero,
 	balance: BalanceTable,
 	sanctum_level: int,
+	keeper_skill: int,
 ) -> int:
 	var essence_yield: float = balance.essence_bases[
 		clampi(fodder.rank, 0, balance.essence_bases.size() - 1)
@@ -249,7 +261,8 @@ static func compute_essence_yield(
 	essence_yield *= 1.0 + float(level_for(fodder, balance)) / float(level_cap)
 	if fodder.def_id == target.def_id and fodder.def_id != NO_ARCHETYPE_DEF_ID:
 		essence_yield *= 3.0
-	return roundi(essence_yield * (1.0 + balance.sanctum_essence_yield_bonus * sanctum_level))
+	# keeper_skill is the Sanctum keeper's Rites (GameSession.keeper_skill); it stacks past the level cap.
+	return roundi(essence_yield * (1.0 + balance.sanctum_essence_yield_bonus * (sanctum_level + balance.keeper_skill_bonus_levels * keeper_skill)))
 
 
 static func compute_rank_up_cost(hero: Hero, balance: BalanceTable) -> int:

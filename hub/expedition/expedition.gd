@@ -48,12 +48,7 @@ func _resolve(
 	# expedition became, so an immediate recovery run reads turns_elapsed == 0 rather than -1
 	# (docs/SYSTEMS.md, Turns).
 	GameSession.advance_turn(BALANCE)
-	var training_hall_level: int = clampi(
-		GameSession.building_levels[2],
-		0,
-		BALANCE.summoning_circle_level_cap,
-	)
-	var xp_multiplier: float = 1.0 + BALANCE.training_hall_xp_bonus * training_hall_level
+	var xp_multiplier: float = GameSession.training_xp_multiplier()
 
 	# The boss index is trash_wave_count, so this bound remains safe in release builds.
 	var boss_loot_seed: int = 0

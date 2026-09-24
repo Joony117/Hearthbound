@@ -159,7 +159,7 @@ func test_hub_rows_carry_hover_detail() -> void:
 	assert_string_contains(tooltip, "Slot: Ring")
 	assert_string_contains(tooltip, "CRIT_DMG: +%.1f%%" % (Item.compute_stat_magnitude(ring, Item.definition_for(ring.def_id), BALANCE) * 100.0))
 	assert_string_contains(tooltip, "Enhance: +1 / %d" % Item.compute_enhance_cap(GameSession.building_levels[1], BALANCE))
-	assert_string_contains(tooltip, "Salvage: %d B parts" % Item.compute_salvage_yield(ring, GameSession.building_levels[1], BALANCE))
+	assert_string_contains(tooltip, "Salvage: %d B parts" % Item.compute_salvage_yield(ring, GameSession.building_levels[1], 0, BALANCE))
 
 	# The null-definition branch, without rendering one: an unresolvable def_id would push_error on
 	# every refresh, and GUT fails a test that leaves one unconsumed.
@@ -289,14 +289,14 @@ func test_item_compute_salvage_yield_clamps_enhance_and_forge_levels() -> void:
 	unbonused_item.enhance_level = 4
 
 	assert_eq(
-		Item.compute_salvage_yield(capped_item, 999, BALANCE),
-		Item.compute_salvage_yield(max_item, 5, BALANCE)
+		Item.compute_salvage_yield(capped_item, 999, 0, BALANCE),
+		Item.compute_salvage_yield(max_item, 5, 0, BALANCE)
 	)
 	assert_eq(
-		Item.compute_salvage_yield(negative_item, 0, BALANCE),
-		Item.compute_salvage_yield(Item.new(&"ring", 3), 0, BALANCE)
+		Item.compute_salvage_yield(negative_item, 0, 0, BALANCE),
+		Item.compute_salvage_yield(Item.new(&"ring", 3), 0, 0, BALANCE)
 	)
-	assert_eq(Item.compute_salvage_yield(unbonused_item, 0, BALANCE), 7)
+	assert_eq(Item.compute_salvage_yield(unbonused_item, 0, 0, BALANCE), 7)
 
 
 func test_item_compute_enhance_cap_clamps_forge_level() -> void:

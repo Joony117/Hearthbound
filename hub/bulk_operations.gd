@@ -10,12 +10,14 @@ static func preview_salvage(
 	names: Dictionary[String, String],
 	protected_reasons: Dictionary[String, String],
 	forge_level: int,
+	keeper_skill: int,
 	balance: BalanceTable,
 ) -> Dictionary:
 	var plan: Dictionary = _empty_plan("salvage", {
 		"item_ids": item_ids.duplicate(),
 		"quantity": quantity,
 		"forge_level": forge_level,
+		"keeper_skill": keeper_skill,
 	})
 	var selection_error: String = _selection_error(item_ids)
 	if not selection_error.is_empty():
@@ -33,7 +35,7 @@ static func preview_salvage(
 		if protected_reasons.has(item_id):
 			plan["excluded"].append(_excluded(item_id, str(names.get(item_id, item_id)), protected_reasons[item_id]))
 			continue
-		var gain: int = Item.compute_salvage_yield(item, forge_level, balance)
+		var gain: int = Item.compute_salvage_yield(item, forge_level, keeper_skill, balance)
 		var rank: int = clampi(item.rank, 0, balance.rank_names.size() - 1)
 		plan["entries"].append({"id": item_id, "name": str(names.get(item_id, item_id)), "rank": rank, "gain": gain})
 		plan["gain_parts"][rank] += gain
@@ -50,6 +52,7 @@ static func preview_sacrifice(
 	heroes: Dictionary[String, Hero],
 	protected_reasons: Dictionary[String, String],
 	sanctum_level: int,
+	keeper_skill: int,
 	balance: BalanceTable,
 ) -> Dictionary:
 	var plan: Dictionary = _empty_plan("sacrifice", {
@@ -57,6 +60,7 @@ static func preview_sacrifice(
 		"target_id": target.instance_id if target != null else "",
 		"quantity": quantity,
 		"sanctum_level": sanctum_level,
+		"keeper_skill": keeper_skill,
 	})
 	var selection_error: String = _selection_error(hero_ids)
 	if not selection_error.is_empty():
@@ -82,7 +86,7 @@ static func preview_sacrifice(
 		if not hero.equipped.is_empty():
 			plan["excluded"].append(_excluded(hero_id, hero.hero_name, "equipped"))
 			continue
-		var essence_gain: int = Hero.compute_essence_yield(hero, target, balance, sanctum_level)
+		var essence_gain: int = Hero.compute_essence_yield(hero, target, balance, sanctum_level, keeper_skill)
 		var resonance_gain: int = 1 if hero.def_id == target.def_id and hero.def_id != Hero.NO_ARCHETYPE_DEF_ID else 0
 		plan["entries"].append({
 			"id": hero_id,
@@ -206,18 +210,26 @@ static func preview_conversion(
 	return plan
 
 
+## F parts one draught costs: the base, cut by the Apothecary keeper's Alchemy, never below 1.
+static func supply_parts_cost(supply_kind: String, alchemy_skill: int, balance: BalanceTable) -> int:
+	var base: int = balance.healing_supply_parts_cost if supply_kind == "healing" else balance.revival_supply_parts_cost
+	return maxi(1, roundi(base * (1.0 - balance.alchemy_cost_cut_per_skill * alchemy_skill)))
+
+
 static func preview_supplies(
 	supply_kind: String,
 	quantity: int,
 	reserve: int,
 	parts: Array[int],
 	supplies: Dictionary,
+	alchemy_skill: int,
 	balance: BalanceTable,
 ) -> Dictionary:
 	var plan: Dictionary = _empty_plan("supplies", {
 		"supply_kind": supply_kind,
 		"quantity": quantity,
 		"reserve": reserve,
+		"alchemy_skill": alchemy_skill,
 		"parts_snapshot": parts.duplicate(),
 		"supplies_snapshot": supplies.duplicate(true),
 	})
@@ -225,7 +237,7 @@ static func preview_supplies(
 		return _invalid(plan, "Choose healing or revival supplies.")
 	if quantity < 0 or reserve < 0:
 		return _invalid(plan, "Quantity and reserve cannot be negative.")
-	var cost: int = balance.healing_supply_parts_cost if supply_kind == "healing" else balance.revival_supply_parts_cost
+	var cost: int = supply_parts_cost(supply_kind, alchemy_skill, balance)
 	var available: int = maxi(parts[0] - reserve, 0)
 	var maximum: int = available / cost
 	var units: int = maximum if quantity == 0 else quantity

@@ -114,6 +114,10 @@ extends Resource
 @export var profession_skill_cap: int = 5
 # XP from working in either of a hero's passions; the owner's "immense XP boost", near a RimWorld major passion.
 @export var passion_xp_multiplier: float = 4.0
+# A home keeper's skill counts as this many building levels each, past the building cap (SYSTEMS.md § Keepers and professions).
+@export var keeper_skill_bonus_levels: float = 0.5
+# The Apothecary has no level: each Alchemy skill level cuts the draught parts cost by this share.
+@export var alchemy_cost_cut_per_skill: float = 0.10
 
 @export var battle_tick_seconds: float = 0.1
 @export var battle_damage_defense_scale: float = 100.0

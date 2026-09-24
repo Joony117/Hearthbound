@@ -411,13 +411,12 @@ func _refresh_lost_caches() -> void:
 		0,
 		BALANCE.summoning_circle_level_cap,
 	)
-	var reliquary_bonus: float = BALANCE.recovery_duration_seconds_per_level * reliquary_level
+	# The live bonus from the level and the Tracking keeper; a running cache keeps its longest lifetime.
+	var reliquary_bonus: float = GameSession.recovery_lifetime_seconds() - BALANCE.recovery_base_duration_seconds
 	if GameSession.lost_caches.is_empty():
 		_recovery_clock_status.text = "No lost gear is waiting."
 	elif GameSession.recovery_clock_paused:
-		var first_remaining: float = LostCache.seconds_remaining(
-			GameSession.lost_caches[0], GameSession.recovery_clock_seconds, reliquary_level, BALANCE
-		)
+		var first_remaining: float = GameSession.cache_seconds_remaining(GameSession.lost_caches[0], GameSession.recovery_clock_seconds)
 		_recovery_clock_status.text = "Clock paused for review · %s active time remains · Reliquary +%s" % [
 			_format_duration(first_remaining), _format_duration(reliquary_bonus)
 		]
@@ -430,19 +429,14 @@ func _refresh_lost_caches() -> void:
 			if zone != null
 			else "[Missing definition: %s]" % cache.zone_id
 		)
-		var seconds_remaining: float = LostCache.seconds_remaining(
-			cache,
-			GameSession.recovery_clock_seconds,
-			reliquary_level,
-			BALANCE,
-		)
+		var seconds_remaining: float = GameSession.cache_seconds_remaining(cache, GameSession.recovery_clock_seconds)
 		var time_text: String = "Paused until reviewed" if GameSession.recovery_clock_paused else "%s active remaining" % _format_duration(seconds_remaining)
 		_lost_cache_list.add_item("%s — %s — %s" % [
 			cache.hero_name,
 			zone_name,
 			time_text,
 		])
-		_lost_cache_list.set_item_tooltip(_lost_cache_list.item_count - 1, "%d lost item(s) · %s · Reliquary Lv %d adds %s." % [cache.items.size(), time_text, reliquary_level, _format_duration(reliquary_bonus)])
+		_lost_cache_list.set_item_tooltip(_lost_cache_list.item_count - 1, "%d lost item(s) · %s · Reliquary Lv %d and its keeper add %s." % [cache.items.size(), time_text, reliquary_level, _format_duration(reliquary_bonus)])
 		var item_index: int = _lost_cache_list.item_count - 1
 		_lost_cache_list.set_item_metadata(item_index, cache)
 		if cache == selected_cache:
@@ -505,7 +499,7 @@ func _inventory_tooltip_text(item: Item, definition: EquipmentDefinition) -> Str
 	var forge_level: int = GameSession.building_levels[1]
 	var enhance_level: int = Item.clamped_enhance_level(item, BALANCE)
 	var enhance_cap: int = Item.compute_enhance_cap(forge_level, BALANCE)
-	var salvage_yield: int = Item.compute_salvage_yield(item, forge_level, BALANCE)
+	var salvage_yield: int = GameSession.salvage_yield(item)
 	if definition == null:
 		return "Definition: Missing (%s)\nEnhance: +%d / %d\nSalvage: %d %s parts" % [
 			item.def_id,
@@ -1022,10 +1016,12 @@ func _refresh_keeper() -> void:
 	var keeper: Hero = GameSession.keeper_for(_open_building)
 	%AssignKeeper.disabled = SaveService.load_blocked
 	%UnassignKeeper.disabled = keeper == null or SaveService.load_blocked
+	%KeeperBonus.text = ""
 	if keeper == null:
 		%KeeperName.text = "No keeper"
 	elif GameSession.is_hero_busy(keeper):
 		%KeeperName.text = "%s · Away" % keeper.hero_name
+		%KeeperBonus.text = "Away: no bonus and no XP until home"
 	else:
 		# Short enough for the row; a long name trims, and the tooltip keeps the whole line.
 		%KeeperName.text = "%s · %s %d · %s" % [
@@ -1034,7 +1030,32 @@ func _refresh_keeper() -> void:
 			Hero.profession_skill(keeper, profession, BALANCE),
 			"passions %s" % _passions_text(keeper),
 		]
+		var to_next: float = Hero.profession_xp_to_next(keeper, profession, BALANCE)
+		%KeeperBonus.text = "%s: %s · %s%s" % [
+			keeper.hero_name,
+			_keeper_bonus_text(_open_building, GameSession.keeper_skill(_open_building)),
+			"max skill" if to_next <= 0.0 else "%d XP min to %s %d" % [ceili(to_next / 60.0), str(profession).capitalize(), Hero.profession_skill(keeper, profession, BALANCE) + 1],
+			" · MASTER" if GameSession.keeper_is_master(_open_building) else "",
+		]
 	%KeeperName.tooltip_text = %KeeperName.text
+	%KeeperBonus.tooltip_text = %KeeperBonus.text
+
+
+## What a keeper at this skill adds to its building (SYSTEMS.md § Keepers and professions).
+func _keeper_bonus_text(building_id: StringName, skill: int) -> String:
+	var levels: float = BALANCE.keeper_skill_bonus_levels * skill
+	match building_id:
+		&"Forge":
+			return "salvage +%s%%" % String.num(BALANCE.forge_salvage_yield_bonus * levels * 100.0, 1).trim_suffix(".0")
+		&"Sanctum":
+			return "essence +%s%%" % String.num(BALANCE.sanctum_essence_yield_bonus * levels * 100.0, 1).trim_suffix(".0")
+		&"TrainingHall":
+			return "expedition XP +%s%%" % String.num(BALANCE.training_hall_xp_bonus * levels * 100.0, 1).trim_suffix(".0")
+		&"Reliquary":
+			return "cache and rescue time +%s" % _format_duration(BALANCE.recovery_duration_seconds_per_level * levels)
+		&"Apothecary":
+			return "draughts %d/%d F parts" % [BulkOperations.supply_parts_cost("healing", skill, BALANCE), BulkOperations.supply_parts_cost("revival", skill, BALANCE)]
+	return ""
 
 
 ## The shared roster picker: every hero with its skill here, a passion for it marked. Rows hold ids, not
