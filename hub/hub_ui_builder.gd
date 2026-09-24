@@ -1,18 +1,20 @@
 class_name HubUiBuilder
 extends RefCounted
 
-const INK: Color = Color("101917")
 const BALANCE: BalanceTable = preload("res://balance.tres")
+## The town's buildings in building-list order; number key N opens entry N. Ids are town.tscn node names.
+const BUILDINGS: Array = [
+	[&"SummoningCircle", "Circle"], [&"Forge", "Forge"], [&"TrainingHall", "Training Hall"], [&"Sanctum", "Sanctum"],
+	[&"Reliquary", "Reliquary"], [&"TownGate", "Town Gate"], [&"Apothecary", "Apothecary"],
+]
 
 
 static func build(root: Control, confirm_dialog: ConfirmationDialog, enhance_dialog: ConfirmationDialog) -> void:
-	if root.has_node("Background"):
+	if root.has_node("Header"):
 		return
-	var background := ColorRect.new()
-	_add(root, background, "Background")
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	background.color = INK
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# No backdrop: the 3D town is the screen. Full-rect holders ignore the mouse so a click only
+	# reaches the town where no panel is; every panel root stops it (_stop_clicks).
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_header(root)
 	_build_nav(root)
 	var content := Control.new()
@@ -22,6 +24,7 @@ static func build(root: Control, confirm_dialog: ConfirmationDialog, enhance_dia
 	content.offset_top = 112.0
 	content.offset_right = -20.0
 	content.offset_bottom = -70.0
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_expeditions(content)
 	_build_shared_roster(content)
 	_build_teams(content)
@@ -70,6 +73,8 @@ static func _build_header(root: Control) -> void:
 	separator.theme_type_variation = &"SectionHeading"
 	var essence := _label(header, "Essence: 0", "Essence", true)
 	essence.theme_type_variation = &"SectionHeading"
+	_label(header, "·", "TurnSeparator").theme_type_variation = &"SectionHeading"
+	_label(header, "Turn 0", "Turns", true).theme_type_variation = &"SectionHeading"
 
 
 static func _build_nav(root: Control) -> void:
@@ -77,15 +82,21 @@ static func _build_nav(root: Control) -> void:
 	_add(root, nav, "Nav")
 	_anchor_top(nav, 20.0, 60.0, -20.0, 98.0)
 	nav.add_theme_constant_override("separation", 8)
-	for data: Array in [["ExpeditionsTab", "Expeditions"], ["TeamsTab", "Teams"], ["ArmoryTab", "Armory"], ["HallTab", "Hall"]]:
-		var button := _button(nav, data[1], data[0], true)
+	for index: int in BUILDINGS.size():
+		var button := _button(nav, "%d · %s" % [index + 1, BUILDINGS[index][1]], "%sButton" % BUILDINGS[index][0], true)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.theme_type_variation = &"ActiveNavButton" if data[0] == "ExpeditionsTab" else &""
+		var key := InputEventKey.new()
+		key.physical_keycode = (KEY_1 + index) as Key
+		button.shortcut = Shortcut.new()
+		button.shortcut.events = [key]
+	_button(nav, "Close · Esc", "ClosePanel", true).visible = false
 
 
 static func _build_expeditions(content: Control) -> void:
 	var view := HBoxContainer.new()
 	_add(content, view, "ExpeditionsView", true)
+	view.visible = false
+	_stop_clicks(view)
 	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	view.add_theme_constant_override("separation", 16)
 	var dispatch := _panel(view, "DispatchPanel")
@@ -143,7 +154,7 @@ static func _build_expeditions(content: Control) -> void:
 	summary.custom_minimum_size.y = 108.0
 	_button(left, "Dispatch selected teams", "DispatchSelected", true).theme_type_variation = &"PrimaryButton"
 	_button(left, "Manage teams", "ManageTeams", true)
-	_button(left, "Go to Hall", "GoToHall", true)
+	_button(left, "Go to Summoning Circle", "GoToHall", true)
 	var activity := _panel(view, "ActivityPanel")
 	activity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var right := _vbox(activity, "VBox")
@@ -183,6 +194,7 @@ static func _build_expeditions(content: Control) -> void:
 static func _build_shared_roster(content: Control) -> void:
 	var panel := _panel(content, "SharedRosterPanel", true)
 	panel.visible = false
+	_stop_clicks(panel)
 	panel.anchor_bottom = 1.0
 	panel.offset_right = 300.0
 	var box := _vbox(panel, "VBox")
@@ -203,9 +215,10 @@ static func _build_teams(content: Control) -> void:
 	var view := VBoxContainer.new()
 	_add(content, view, "TeamsView", true)
 	view.visible = false
+	_stop_clicks(view)
 	_anchor_fill(view, 316.0, 0.0, -412.0, 0.0)
 	view.add_theme_constant_override("separation", 12)
-	var preset_panel := _panel(view, "PresetPanel")
+	var preset_panel := _panel(view, "PresetPanel", true)
 	preset_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var box := _vbox(preset_panel, "VBox")
 	_heading(box, "TEAM PRESETS")
@@ -225,7 +238,14 @@ static func _build_teams(content: Control) -> void:
 	save.theme_type_variation = &"PrimaryButton"
 	var delete := _button(buttons, "Delete preset", "DeletePreset", true)
 	delete.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var advance := _panel(view, "AdvancementPanel")
+	var training := _panel(view, "TrainingPanel", true)
+	var practice := _vbox(training, "VBox")
+	_heading(practice, "PRACTICE")
+	_add_option(practice, "PracticePreset")
+	_add_option(practice, "PracticeZone")
+	_button(practice, "Practice RTS battle", "EnterArena", true)
+	_upgrade_row(practice, "TrainingHallLevel", "Training Hall", "UpgradeTrainingHall")
+	var advance := _panel(view, "AdvancementPanel", true)
 	var lower := _vbox(advance, "VBox")
 	_heading(lower, "HERO ADVANCEMENT")
 	_add_option(lower, "TargetOption")
@@ -236,11 +256,13 @@ static func _build_teams(content: Control) -> void:
 	sacrifice.theme_type_variation = &"DangerButton"
 	var rank_up := _button(actions, "Rank up selected", "RankUp", true)
 	rank_up.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_upgrade_row(lower, "SanctumLevel", "Sanctum", "UpgradeSanctum")
 
 
 static func _build_armory(content: Control) -> void:
 	var view := _panel(content, "ArmoryView", true)
 	view.visible = false
+	_stop_clicks(view)
 	_anchor_fill(view, 316.0, 0.0, -412.0, 0.0)
 	var box := _vbox(view, "Inventory")
 	_heading(box, "ARMORY")
@@ -272,11 +294,13 @@ static func _build_armory(content: Control) -> void:
 	reserve.prefix = "Keep "
 	_button(conversion, "Max", "ConvertMax", true)
 	_button(conversion, "Convert", "Convert", true)
+	_upgrade_row(box, "ForgeLevel", "Forge", "UpgradeForge")
 
 
 static func _build_selected_hero(content: Control) -> void:
 	var panel := _panel(content, "SelectedHeroPanel", true)
 	panel.visible = false
+	_stop_clicks(panel)
 	panel.anchor_left = 1.0
 	panel.anchor_right = 1.0
 	panel.anchor_bottom = 1.0
@@ -301,60 +325,63 @@ static func _build_selected_hero(content: Control) -> void:
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
+## The Circle, Reliquary and Apothecary panels: one centred column that shows one section at a time.
 static func _build_hall(content: Control) -> void:
-	var view := HBoxContainer.new()
-	_add(content, view, "HallView", true)
+	var view := _panel(content, "HallView", true)
 	view.visible = false
-	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	view.add_theme_constant_override("separation", 16)
-	var upgrades_scroll := ScrollContainer.new()
-	_add(view, upgrades_scroll, "UpgradesScroll")
-	upgrades_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	upgrades_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	var buildings := _panel(upgrades_scroll, "BuildingsPanel")
-	buildings.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var box := _vbox(buildings, "VBox")
-	_heading(box, "HALL UPGRADES")
-	var turns := _label(box, "Turn 0", "Turns", true)
-	turns.theme_type_variation = &"MutedLabel"
-	for data: Array in [["CircleLevel", "Summoning Circle", "UpgradeCircle"], ["ForgeLevel", "Forge", "UpgradeForge"], ["TrainingHallLevel", "Training Hall", "UpgradeTrainingHall"], ["SanctumLevel", "Sanctum", "UpgradeSanctum"], ["ReliquaryLevel", "Reliquary", "UpgradeReliquary"]]:
-		_label(box, "%s — Lv 0" % data[1], data[0], true)
-		_button(box, "Upgrade %s" % data[1], data[2], true)
-	var hall_scroll := ScrollContainer.new()
-	_add(view, hall_scroll, "HallRight")
-	hall_scroll.custom_minimum_size.x = 396.0
-	hall_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	var right := _vbox(hall_scroll, "VBox")
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_heading(right, "SUMMONING")
-	_button(right, "Summon hero", "Summon", true).theme_type_variation = &"PrimaryButton"
-	_heading(right, "RECOVERY")
-	var recovery_status := _label(right, "No lost gear is waiting.", "RecoveryClockStatus", true)
+	_stop_clicks(view)
+	view.anchor_left = 0.5
+	view.anchor_right = 0.5
+	view.anchor_bottom = 1.0
+	view.offset_left = -240.0
+	view.offset_right = 240.0
+	var scroll := ScrollContainer.new()
+	_add(view, scroll, "Scroll")
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var column := _vbox(scroll, "VBox")
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var circle := _vbox(column, "CircleSection", true)
+	_heading(circle, "SUMMONING")
+	_button(circle, "Summon hero", "Summon", true).theme_type_variation = &"PrimaryButton"
+	_upgrade_row(circle, "CircleLevel", "Summoning Circle", "UpgradeCircle")
+	var reliquary := _vbox(column, "ReliquarySection", true)
+	_heading(reliquary, "RECOVERY")
+	var recovery_status := _label(reliquary, "No lost gear is waiting.", "RecoveryClockStatus", true)
 	recovery_status.theme_type_variation = &"MutedLabel"
 	recovery_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var caches := ItemList.new()
-	_add(right, caches, "LostCacheList", true)
+	_add(reliquary, caches, "LostCacheList", true)
 	caches.custom_minimum_size.y = 132.0
 	caches.select_mode = ItemList.SELECT_SINGLE
-	_add_option(right, "RecoveryTeamOption")
-	_button(right, "Recover selected cache", "Recover", true)
-	_button(right, "Start recovery window", "StartRecoveryWindow", true)
-	_heading(right, "PRACTICE")
-	_add_option(right, "PracticePreset")
-	_add_option(right, "PracticeZone")
-	_button(right, "Practice RTS battle", "EnterArena", true)
-	_heading(right, "SUPPLY STOCK")
-	var stock := _label(right, "Healing 0 · Revival 0", "SupplyStock", true)
+	_add_option(reliquary, "RecoveryTeamOption")
+	_button(reliquary, "Recover selected cache", "Recover", true)
+	_button(reliquary, "Start recovery window", "StartRecoveryWindow", true)
+	_upgrade_row(reliquary, "ReliquaryLevel", "Reliquary", "UpgradeReliquary")
+	var supply := _vbox(column, "SupplySection", true)
+	_heading(supply, "SUPPLY STOCK")
+	var stock := _label(supply, "Healing 0 · Revival 0", "SupplyStock", true)
 	stock.theme_type_variation = &"MutedLabel"
-	_add_option(right, "SupplyKind")
-	var supply_quantity := _add_spin(right, "SupplyQuantity", 0, 9999, 0)
+	_add_option(supply, "SupplyKind")
+	var supply_quantity := _add_spin(supply, "SupplyQuantity", 0, 9999, 0)
 	supply_quantity.prefix = "Quantity (0 = max) "
-	var supply_reserve := _add_spin(right, "SupplyReserve", 0, 9999, 0)
+	var supply_reserve := _add_spin(supply, "SupplyReserve", 0, 9999, 0)
 	supply_reserve.prefix = "Keep F-parts "
-	_button(right, "Preview craft", "PreviewSupply", true)
-	_button(right, "Confirm craft", "ConfirmSupply", true)
-	var supply_preview := _label(right, "", "SupplyPreview", true)
+	_button(supply, "Preview craft", "PreviewSupply", true)
+	_button(supply, "Confirm craft", "ConfirmSupply", true)
+	var supply_preview := _label(supply, "", "SupplyPreview", true)
 	supply_preview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+
+## Each levelled building shows its own level and upgrade button in its own panel.
+static func _upgrade_row(parent: Node, level_name: String, building_name: String, button_name: String) -> void:
+	_heading(parent, "UPGRADE")
+	_label(parent, "%s — Lv 0" % building_name, level_name, true)
+	_button(parent, "Upgrade %s" % building_name, button_name, true)
+
+
+## A panel root takes every click inside its rect, so a click on its padding or gaps never reaches the town.
+static func _stop_clicks(panel: Control) -> void:
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 
 
 static func _build_footer(root: Control) -> void:
@@ -371,7 +398,7 @@ static func _build_footer(root: Control) -> void:
 	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status.theme_type_variation = &"MutedLabel"
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var hint := _label(footer, "Esc · Pause", "Hint")
+	var hint := _label(footer, "1–7 · Buildings   Esc · Close / Pause", "Hint")
 	hint.theme_type_variation = &"MutedLabel"
 
 

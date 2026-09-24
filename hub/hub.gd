@@ -3,10 +3,18 @@ extends Node3D
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const UI_BUILDER := preload("res://hub/hub_ui_builder.gd")
 const MAX_TEAM_SIZE: int = 5
-const VIEW_EXPEDITIONS: int = 0
-const VIEW_TEAMS: int = 1
-const VIEW_ARMORY: int = 2
-const VIEW_HALL: int = 3
+const NO_BUILDING: StringName = &""
+## What each building opens (GAME_SPEC.md § The town hub). Every node named here is hidden unless
+## the open building lists it.
+const BUILDING_PANELS: Dictionary = {
+	&"SummoningCircle": [&"HallView", &"CircleSection"],
+	&"Forge": [&"ArmoryView", &"SharedRosterPanel", &"SelectedHeroPanel"],
+	&"TrainingHall": [&"TeamsView", &"PresetPanel", &"TrainingPanel", &"SharedRosterPanel", &"SelectedHeroPanel"],
+	&"Sanctum": [&"TeamsView", &"AdvancementPanel", &"SharedRosterPanel", &"SelectedHeroPanel"],
+	&"Reliquary": [&"HallView", &"ReliquarySection"],
+	&"TownGate": [&"ExpeditionsView"],
+	&"Apothecary": [&"HallView", &"SupplySection"],
+}
 const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 	preload("res://zones/defs/verdant_outskirts.tres"),
 	preload("res://zones/defs/ashfall_reaches.tres"),
@@ -42,13 +50,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _pause_menu: CanvasLayer = %PauseMenu
 @onready var _confirm_dialog: ConfirmationDialog = %ConfirmDialog
 @onready var _enhance_dialog: ConfirmationDialog = %EnhanceDialog
-@onready var _expeditions_view: Control = %ExpeditionsView
-@onready var _teams_view: Control = %TeamsView
-@onready var _armory_view: Control = %ArmoryView
-@onready var _hall_view: Control = %HallView
-@onready var _shared_roster_panel: Control = %SharedRosterPanel
-@onready var _selected_hero_panel: Control = %SelectedHeroPanel
-@onready var _view_tabs: Array[Button] = [%ExpeditionsTab, %TeamsTab, %ArmoryTab, %HallTab]
+@onready var _close_panel: Button = %ClosePanel
 @onready var _roster_availability_filter: OptionButton = %RosterAvailabilityFilter
 @onready var _roster_favorites_only: CheckBox = %RosterFavoritesOnly
 @onready var _favorite_hero: CheckBox = %FavoriteHero
@@ -104,7 +106,7 @@ var _inventory_protection_filter_index: int = 0
 var _selected_hero_ids: Array[String] = []
 var _selected_item_ids: Array[String] = []
 var _editing_preset_id: String = ""
-var _active_view: int = VIEW_EXPEDITIONS
+var _open_building: StringName = NO_BUILDING
 var _order_structure_key: String = ""
 
 
@@ -149,16 +151,17 @@ func _ready() -> void:
 	%ConfirmSupply.disabled = true
 	_refresh_zone_unlocks()
 	_refresh_director_ui()
-	_show_view(VIEW_EXPEDITIONS)
+	_open(NO_BUILDING)
 	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
 	_show_pending_arena_result()
 
 
 func _connect_ui_signals() -> void:
-	_view_tabs[VIEW_EXPEDITIONS].pressed.connect(_show_view.bind(VIEW_EXPEDITIONS))
-	_view_tabs[VIEW_TEAMS].pressed.connect(_show_view.bind(VIEW_TEAMS))
-	_view_tabs[VIEW_ARMORY].pressed.connect(_show_view.bind(VIEW_ARMORY))
-	_view_tabs[VIEW_HALL].pressed.connect(_show_view.bind(VIEW_HALL))
+	%Town.building_selected.connect(_open)
+	for building_id: StringName in BUILDING_PANELS:
+		_building_button(building_id).pressed.connect(_open.bind(building_id))
+	_close_panel.pressed.connect(_open.bind(NO_BUILDING))
+	_pause_menu.visibility_changed.connect(_on_pause_menu_visibility_changed)
 	_roster_list.multi_selected.connect(_on_roster_list_multi_selected)
 	_roster_rank_filter.item_selected.connect(_on_roster_rank_filter_item_selected)
 	_roster_exact_rank.toggled.connect(_on_roster_exact_rank_toggled)
@@ -187,9 +190,9 @@ func _connect_ui_signals() -> void:
 	%Summon.pressed.connect(_on_summon_pressed)
 	%Recover.pressed.connect(_on_recover_pressed)
 	%EnterArena.pressed.connect(_on_enter_arena_pressed)
-	%ManageTeams.pressed.connect(_show_view.bind(VIEW_TEAMS))
-	%GoToHall.pressed.connect(_show_view.bind(VIEW_HALL))
-	%ReviewLosses.pressed.connect(_show_view.bind(VIEW_HALL))
+	%ManageTeams.pressed.connect(_open.bind(&"TrainingHall"))
+	%GoToHall.pressed.connect(_open.bind(&"SummoningCircle"))
+	%ReviewLosses.pressed.connect(_open.bind(&"Reliquary"))
 	%DispatchSelected.pressed.connect(_on_dispatch_selected_pressed)
 	_preset_dispatch_list.multi_selected.connect(_on_dispatch_selection_changed)
 	_combine_teams.toggled.connect(_on_combine_teams_toggled)
@@ -241,7 +244,11 @@ func _connect_ui_signals() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		_pause_menu.visible = not _pause_menu.visible
+		# Esc closes the open building first; only an empty town opens the pause menu.
+		if _open_building != NO_BUILDING and not _pause_menu.visible:
+			_open(NO_BUILDING)
+		else:
+			_pause_menu.visible = not _pause_menu.visible
 		get_viewport().set_input_as_handled()
 
 
@@ -694,19 +701,36 @@ func _populate_protection_filter() -> void:
 		_inventory_protection_filter.add_item(label)
 
 
-func _show_view(view_index: int) -> void:
-	_active_view = clampi(view_index, VIEW_EXPEDITIONS, VIEW_HALL)
-	_expeditions_view.visible = _active_view == VIEW_EXPEDITIONS
-	_teams_view.visible = _active_view == VIEW_TEAMS
-	_armory_view.visible = _active_view == VIEW_ARMORY
-	_hall_view.visible = _active_view == VIEW_HALL
-	_shared_roster_panel.visible = _active_view == VIEW_TEAMS or _active_view == VIEW_ARMORY
-	_selected_hero_panel.visible = _shared_roster_panel.visible
-	for index: int in _view_tabs.size():
-		_view_tabs[index].theme_type_variation = &"ActiveNavButton" if index == _active_view else &""
-	_view_tabs[_active_view].grab_focus()
-	if _active_view == VIEW_HALL:
+## Opens one building's panel, or none (NO_BUILDING) so the town shows.
+func _open(building_id: StringName) -> void:
+	var closing: StringName = _open_building
+	_open_building = building_id if BUILDING_PANELS.has(building_id) else NO_BUILDING
+	var shown: Array = BUILDING_PANELS.get(_open_building, [])
+	for panels: Array in BUILDING_PANELS.values():
+		for panel_name: StringName in panels:
+			(get_node("%%%s" % panel_name) as Control).visible = shown.has(panel_name)
+	for other: StringName in BUILDING_PANELS:
+		_building_button(other).theme_type_variation = &"ActiveNavButton" if other == _open_building else &""
+	_close_panel.visible = _open_building != NO_BUILDING
+	# An open building owns the whole screen: a click in a gap between its panels must not pick
+	# the building behind it. Children still get their clicks first.
+	($UI/Root as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE if _open_building == NO_BUILDING else Control.MOUSE_FILTER_STOP
+	# Focus stays on the building list, so every panel is reachable without a mouse.
+	var focus: StringName = _open_building if _open_building != NO_BUILDING else closing
+	if focus != NO_BUILDING:
+		_building_button(focus).grab_focus()
+	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
+
+
+## The pause dim stops clicks; the building list's number keys are shortcuts, so they are disabled too.
+func _on_pause_menu_visibility_changed() -> void:
+	for building_id: StringName in BUILDING_PANELS:
+		_building_button(building_id).disabled = _pause_menu.visible
+
+
+func _building_button(building_id: StringName) -> Button:
+	return get_node("%%%sButton" % building_id) as Button
 
 
 func _refresh_zone_unlocks() -> void:
@@ -1227,7 +1251,7 @@ func _refresh_preset_lists() -> void:
 		if str(preset.get("id", "")) == _editing_preset_id:
 			_preset_selector.select(_preset_selector.item_count - 1)
 	var no_heroes: bool = GameSession.roster.is_empty()
-	_dispatch_empty.text = "Summon heroes in the Hall to form your first team." if no_heroes else "Save a team to start an expedition."
+	_dispatch_empty.text = "Summon heroes at the Summoning Circle to form your first team." if no_heroes else "Save a team to start an expedition."
 	_dispatch_empty.visible = GameSession.team_presets.is_empty()
 	%GoToHall.visible = no_heroes
 	%ManageTeams.visible = not no_heroes
@@ -1564,7 +1588,7 @@ func _do_dispatch_presets(presets: Array[Dictionary], total_runs: int, combined:
 func _on_expeditions_changed() -> void:
 	_refresh_expeditions(false)
 	_refresh_practice_options()
-	if _active_view == VIEW_HALL:
+	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
 
 

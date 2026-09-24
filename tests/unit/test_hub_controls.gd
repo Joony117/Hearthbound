@@ -180,21 +180,20 @@ func test_screen_shake_signal_writes_the_setting() -> void:
 	assert_eq(Settings.screen_shake_enabled(), enabled)
 
 
-func test_tabs_switch_views_without_clearing_shared_roster_selection() -> void:
+func test_buildings_switch_panels_without_clearing_shared_roster_selection() -> void:
 	var hero := Hero.new("Tab Keeper", 2)
 	hero.def_id = &"knight"
 	GameSession.add_hero(hero)
 	var hub: Node3D = _instantiate_hub()
 	var roster: ItemList = hub.get_node("%RosterList") as ItemList
-	var teams_tab: Button = hub.get_node("%TeamsTab") as Button
-	var armory_tab: Button = hub.get_node("%ArmoryTab") as Button
+	var town: TownView = hub.get_node("%Town") as TownView
 	var teams_view: Control = hub.get_node("%TeamsView") as Control
 	var armory_view: Control = hub.get_node("%ArmoryView") as Control
 
-	teams_tab.pressed.emit()
+	town.building_selected.emit(&"TrainingHall")
 	roster.select(0)
 	roster.multi_selected.emit(0, true)
-	armory_tab.pressed.emit()
+	town.building_selected.emit(&"Forge")
 
 	assert_false(teams_view.visible)
 	assert_true(armory_view.visible)
@@ -346,7 +345,7 @@ func test_hall_expedition_pulse_refreshes_recovery_time_without_losing_selection
 	var cache := LostCache.new("Clock Keeper", &"verdant_outskirts", 0, 0.0)
 	GameSession.lost_caches.append(cache)
 	var hub: Node3D = _instantiate_hub()
-	(hub.get_node("%HallTab") as Button).pressed.emit()
+	(hub.get_node("%Town") as TownView).building_selected.emit(&"Reliquary")
 	var caches: ItemList = hub.get_node("%LostCacheList") as ItemList
 	caches.select(0)
 	var before: String = caches.get_item_text(0)
@@ -400,6 +399,235 @@ func test_enhance_budget_labels_follow_balance_rank_names() -> void:
 		var budget: SpinBox = hub.get_node("%%%sBudget" % rank_name) as SpinBox
 		assert_not_null(budget)
 		assert_eq(budget.prefix, "%s " % rank_name)
+
+
+const BUILDING_ACTIONS: Dictionary = {
+	&"SummoningCircle": ["Summon", "UpgradeCircle"],
+	&"Forge": ["InventoryList", "Equip", "Unequip", "UnequipAll", "Salvage", "Enhance", "Convert", "FavoriteItem", "FavoriteHero", "RosterList", "UpgradeForge"],
+	&"TrainingHall": ["PresetSelector", "SavePreset", "DeletePreset", "RosterList", "EnterArena", "UpgradeTrainingHall"],
+	&"Sanctum": ["RosterList", "TargetOption", "Sacrifice", "RankUp", "FavoriteHero", "UpgradeSanctum"],
+	&"Reliquary": ["LostCacheList", "Recover", "StartRecoveryWindow", "UpgradeReliquary"],
+	&"TownGate": ["PresetDispatchList", "CombineTeams", "RepeatUntilStopped", "BattleSettingsToggle", "DispatchSelected", "OrderCards", "IncidentCards", "RecentReturns"],
+	&"Apothecary": ["SupplyKind", "PreviewSupply", "ConfirmSupply"],
+}
+
+
+func test_no_panel_is_open_by_default_so_the_town_shows() -> void:
+	var hub: Node3D = _instantiate_hub()
+	assert_false(hub.has_node("UI/Root/Background"), "no opaque backdrop hides the town")
+	for building_id: StringName in BUILDING_ACTIONS:
+		for action: String in BUILDING_ACTIONS[building_id]:
+			assert_false((hub.get_node("%" + action) as Control).is_visible_in_tree(), "%s is closed" % action)
+	assert_true((hub.get_node("%Stones") as Control).is_visible_in_tree(), "currencies stay as a HUD")
+	assert_true((hub.get_node("%Status") as Control).is_visible_in_tree(), "status stays as a HUD")
+
+
+func test_every_building_opens_the_panel_holding_its_actions() -> void:
+	var hub: Node3D = _instantiate_hub()
+	var town: TownView = hub.get_node("%Town") as TownView
+	for building_id: StringName in BUILDING_ACTIONS:
+		assert_true(town.has_node(NodePath(building_id)), "%s stands in the town" % building_id)
+		town.building_selected.emit(building_id)
+		for action: String in BUILDING_ACTIONS[building_id]:
+			assert_true((hub.get_node("%" + action) as Control).is_visible_in_tree(), "%s opens %s" % [building_id, action])
+	# Each building shows only its own upgrade.
+	town.building_selected.emit(&"Forge")
+	for other: String in ["UpgradeCircle", "UpgradeTrainingHall", "UpgradeSanctum", "UpgradeReliquary", "Summon", "Sacrifice", "PreviewSupply"]:
+		assert_false((hub.get_node("%" + other) as Control).is_visible_in_tree(), "the Forge does not show %s" % other)
+
+
+func test_building_list_and_number_keys_open_the_same_panels() -> void:
+	var hub: Node3D = _instantiate_hub()
+	var ids: Array = BUILDING_ACTIONS.keys()
+	for index: int in ids.size():
+		var building_id: StringName = ids[index]
+		var action: Control = hub.get_node("%" + str(BUILDING_ACTIONS[building_id][0])) as Control
+		(hub.get_node("%%%sButton" % building_id) as Button).pressed.emit()
+		assert_true(action.is_visible_in_tree(), "the %s list entry opens it" % building_id)
+		(hub.get_node("%ClosePanel") as Button).pressed.emit()
+		assert_false(action.is_visible_in_tree(), "Close shuts %s" % building_id)
+		var key := InputEventKey.new()
+		key.keycode = (KEY_1 + index) as Key
+		key.physical_keycode = key.keycode
+		key.pressed = true
+		hub.get_viewport().push_input(key)
+		assert_true(action.is_visible_in_tree(), "key %d opens %s" % [index + 1, building_id])
+
+
+func test_escape_closes_the_open_building_before_it_pauses() -> void:
+	var hub: Node3D = _instantiate_hub()
+	var pause_menu: CanvasLayer = hub.get_node("%PauseMenu") as CanvasLayer
+	var armory: Control = hub.get_node("%ArmoryView") as Control
+	(hub.get_node("%ForgeButton") as Button).pressed.emit()
+	_press_key(hub, KEY_ESCAPE)
+	assert_false(armory.visible)
+	assert_false(pause_menu.visible, "the first Esc only closed the Forge")
+	_press_key(hub, KEY_ESCAPE)
+	assert_true(pause_menu.visible, "Esc with no panel open pauses")
+	_press_key(hub, KEY_ESCAPE)
+	assert_false(pause_menu.visible, "Esc again resumes")
+
+
+func test_a_click_on_a_building_opens_it_and_a_click_on_a_panel_does_not_fall_through() -> void:
+	var hub: Node3D = _instantiate_hub()
+	var town: TownView = hub.get_node("%Town") as TownView
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var camera: Camera3D = hub.get_viewport().get_camera_3d()
+	var forge_at: Vector2 = camera.unproject_position((town.get_node("Forge") as Node3D).global_position)
+	var hall_at: Vector2 = camera.unproject_position((town.get_node("TrainingHall") as Node3D).global_position)
+	assert_eq(town.building_at(hall_at), &"TrainingHall")
+	_click(hub, forge_at)
+	var armory: Control = hub.get_node("%ArmoryView") as Control
+	assert_true(armory.visible, "clicking the Forge opened it")
+	assert_true(armory.get_global_rect().has_point(hall_at), "the Forge panel covers the Training Hall")
+	_click(hub, hall_at)
+	assert_true(armory.visible, "the click stayed on the panel")
+	assert_false((hub.get_node("%TeamsView") as Control).visible, "and never reached the Training Hall")
+
+
+func test_clicks_on_an_open_building_never_reach_the_town_behind_it() -> void:
+	var hub: Node3D = _instantiate_hub()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	# The two layout roots the builder turned from PASS containers into click stoppers.
+	for case: Array in [[&"TownGate", &"ExpeditionsView"], [&"TrainingHall", &"TeamsView"]]:
+		hub._open(case[0])
+		var view: Control = hub.get_node("%" + str(case[1])) as Control
+		# The view itself is what the pointer is on, so only its own filter can stop the click.
+		var behind: Vector2 = _town_point(hub, case[0], func(at: Vector2) -> bool:
+			return view.get_global_rect().has_point(at) and _hovered(hub, at) == view)
+		assert_ne(behind, Vector2(-1, -1), "a building shows behind %s" % case[1])
+		_click(hub, behind)
+		assert_eq(hub._open_building, case[0], "a click on %s stayed on it" % case[1])
+
+
+func test_a_click_in_a_gap_between_panels_does_not_open_the_building_behind() -> void:
+	var hub: Node3D = _instantiate_hub()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	hub._open(&"Forge")
+	var shown: Array[Control] = []
+	for panel_name: StringName in hub.BUILDING_PANELS[&"Forge"]:
+		shown.append(hub.get_node("%" + str(panel_name)) as Control)
+	var content: Control = hub.get_node("UI/Root/Content") as Control
+	var gap: Vector2 = _town_point(hub, &"Forge", func(at: Vector2) -> bool:
+		return content.get_global_rect().has_point(at) and shown.all(func(panel: Control) -> bool: return not panel.get_global_rect().has_point(at)))
+	assert_ne(gap, Vector2(-1, -1), "the Forge layout has a gap over another building")
+	_click(hub, gap)
+	assert_eq(hub._open_building, &"Forge")
+
+
+func test_while_paused_the_town_ignores_clicks_and_number_keys() -> void:
+	var hub: Node3D = _instantiate_hub()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var camera: Camera3D = hub.get_viewport().get_camera_3d()
+	var forge_at: Vector2 = camera.unproject_position((hub.get_node("%Town/Forge") as Node3D).global_position)
+	_press_key(hub, KEY_ESCAPE)
+	assert_true((hub.get_node("%PauseMenu") as CanvasLayer).visible)
+	_click(hub, forge_at)
+	assert_eq(hub._open_building, hub.NO_BUILDING, "a town click does nothing while paused")
+	_press_key(hub, KEY_2)
+	assert_eq(hub._open_building, hub.NO_BUILDING, "a number key does nothing while paused")
+	_press_key(hub, KEY_ESCAPE)
+	_press_key(hub, KEY_2)
+	assert_eq(hub._open_building, &"Forge", "unpaused, the key works again")
+
+
+func test_town_buildings_list_and_panels_name_the_same_ids() -> void:
+	var town: Node = (load("res://hub/town/town.tscn") as PackedScene).instantiate()
+	var in_town: Array = town.get_children().filter(func(node: Node) -> bool: return node.has_node("Pick")).map(func(node: Node) -> StringName: return node.name)
+	town.free()
+	var in_list: Array = HubUiBuilder.BUILDINGS.map(func(entry: Array) -> StringName: return entry[0])
+	var in_panels: Array = (load("res://hub/hub.gd") as GDScript).get_script_constant_map()["BUILDING_PANELS"].keys()
+	for ids: Array in [in_town, in_list, in_panels]:
+		ids.sort_custom(func(a: StringName, b: StringName) -> bool: return str(a) < str(b))
+	assert_eq(in_town.size(), 7)
+	assert_eq(in_list, in_town, "the building list matches town.tscn")
+	assert_eq(in_panels, in_town, "BUILDING_PANELS matches town.tscn")
+
+
+func test_only_the_towns_own_bodies_can_name_a_building() -> void:
+	var hub: Node3D = _instantiate_hub()
+	var town: TownView = hub.get_node("%Town") as TownView
+	var forge: Node3D = town.get_node("Forge") as Node3D
+	var camera: Camera3D = hub.get_viewport().get_camera_3d()
+	# A body on the default layer, standing between the camera and the Forge (the avatar, later).
+	var blocker := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	shape.shape = BoxShape3D.new()
+	(shape.shape as BoxShape3D).size = Vector3(4, 4, 4)
+	blocker.add_child(shape)
+	hub.add_child(blocker)
+	blocker.global_position = forge.global_position.lerp(camera.global_position, 0.3)
+	# A foreign body on the pick layer, standing where no building is.
+	var stray := StaticBody3D.new()
+	stray.collision_layer = TownView.PICK_LAYER
+	stray.add_child(shape.duplicate())
+	hub.add_child(stray)
+	stray.global_position = Vector3(0, 1.5, 6)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	assert_eq(town.building_at(camera.unproject_position(forge.global_position)), &"Forge", "the ray passes the blocker")
+	assert_eq(town.building_at(camera.unproject_position(stray.global_position)), &"", "a body outside the town names nothing")
+
+
+func test_opening_every_building_does_not_change_the_save() -> void:
+	var before: Dictionary = GameSession.to_dict()
+	var hub: Node3D = _instantiate_hub()
+	for building_id: StringName in BUILDING_ACTIONS:
+		(hub.get_node("%Town") as TownView).building_selected.emit(building_id)
+	(hub.get_node("%ClosePanel") as Button).pressed.emit()
+	assert_eq(JSON.stringify(GameSession.to_dict(), "", true), JSON.stringify(before, "", true))
+
+
+func _click(hub: Node3D, at: Vector2) -> void:
+	for pressed: bool in [true, false]:
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.position = at
+		click.global_position = at
+		click.pressed = pressed
+		# In viewport coordinates: the headless window is smaller than the viewport it stretches.
+		hub.get_viewport().push_input(click, true)
+
+
+## A screen point over a building other than `open`, that `where` accepts; (-1, -1) if none.
+func _town_point(hub: Node3D, open: StringName, where: Callable) -> Vector2:
+	var town: TownView = hub.get_node("%Town") as TownView
+	var size: Vector2 = hub.get_viewport().get_visible_rect().size
+	for y: int in range(0, int(size.y), 16):
+		for x: int in range(0, int(size.x), 16):
+			var at := Vector2(x, y)
+			var building: StringName = town.building_at(at)
+			if building != &"" and building != open and where.call(at) and _reachable(hub, at):
+				return at
+	return Vector2(-1, -1)
+
+
+## GUT's own output panel overlays part of the viewport and eats clicks there, which would pass
+## a no-fall-through test for the wrong reason; a usable point is under the hub or nothing.
+func _reachable(hub: Node3D, at: Vector2) -> bool:
+	var hovered: Control = _hovered(hub, at)
+	return hovered == null or hub.is_ancestor_of(hovered)
+
+
+func _hovered(hub: Node3D, at: Vector2) -> Control:
+	var motion := InputEventMouseMotion.new()
+	motion.position = at
+	motion.global_position = at
+	hub.get_viewport().push_input(motion, true)
+	return hub.get_viewport().gui_get_hovered_control()
+
+
+func _press_key(hub: Node3D, keycode: Key) -> void:
+	for pressed: bool in [true, false]:
+		var key := InputEventKey.new()
+		key.keycode = keycode
+		key.physical_keycode = keycode
+		key.pressed = pressed
+		hub.get_viewport().push_input(key)
 
 
 func _instantiate_hub() -> Node3D:
