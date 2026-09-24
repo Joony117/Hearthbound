@@ -132,6 +132,30 @@ or a played build — whichever comes first.
 
 ## Environment
 
+### Our tools see Claude's private copy of the owner's save folder, not the real one
+The Claude desktop app is an MSIX package (`Claude_pzs8sxrjxfjjc`), and every shell or engine it
+starts sees `%APPDATA%` through an overlay: Claude's private copy in
+`%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\`, merged over the real folder.
+The owner plays from Explorer, outside the package, so the game only ever touches the real folder.
+Measured on throwaway folders on 2026-09-24:
+- A read gets the private file when both exist.
+- A write or a new file goes to the private copy when the private folder exists, and to the real
+  folder when it does not.
+- A delete removes the private file first. With no private file, it deletes the real one.
+
+So `%APPDATA%\Godot\app_userdata\Infinite Gacha\save.json` read from any tool is Claude's private
+copy (an empty roster written by a GUT run on 2026-09-23), while files that only the game wrote
+(`ledger.jsonl`, the rotated logs) show through from the real folder. On 2026-09-24 that mix looked
+like "the ledger was written but the save never landed" (ig-7is). It was not a game bug: the real
+save was 18 KB, saved at 15:41, with all six heroes.
+
+Read the real folder through the loopback share, which bypasses the overlay:
+`\\localhost\C$\Users\Joony\AppData\Roaming\Godot\app_userdata\Infinite Gacha`. Copy files out;
+never write there. The overlay is no shield: an engine run that forgets the temp `APPDATA` can
+still delete the owner's real files, and its writes hide them from every later read. The real
+save.json was created fresh on 2026-09-23 at 16:14, after that day's GUT runs without a temp
+`APPDATA`, which suggests one of them deleted it.
+
 ### The exporter does not create its own output directory
 `--export-release` fails with `Prepare Template: The given export path doesn't exist.` and exit 1
 if `export/` is absent. `export/` is gitignored, so **every** clean checkout hits this, not just
