@@ -108,9 +108,9 @@ Evidence: `.agent-results/ig-gy0.1/golden_before.json`, captured before any `ig-
 | Hero kit | Signature | Passive |
 |---|---|---|
 | Knight | Stand Fast: 16s cooldown; revive a downed ally within 3 to 25% HP, otherwise guard allies within radius 3 for 4s with 30% damage reduction | 10% damage reduction within 3 of another living ally; multiplicative with one Stand Fast effect |
-| Ranger | Piercing Shot: 10s cooldown, range 10, line width 1, 1.8× attack damage | +20% basic range |
+| Ranger | Threadneedle: 10s cooldown, range 10, line width 1, 1.8× attack damage | +20% basic range |
 | Mage | Arcane Bloom: 12s cooldown, range 8, radius 2.5, 1.5× attack damage; auto prefers at least 3 enemies or an elite | Signature cooldown reduced by 10% |
-| Rogue | Flank/Interrupt: 10s cooldown, range 6, moves to an available rear slot, interrupts windup with 0.3s stagger, 1.6× attack damage | +25% basic damage from behind |
+| Rogue | Turncoat Cut: 10s cooldown, range 6, moves to an available rear slot, interrupts windup with 0.3s stagger, 1.6× attack damage | +25% basic damage from behind |
 
 **Spawn facing (director ruling, 2026-09-23):** both sides spawn facing the other side's centre; "behind" reads actual facing, so a Rogue earns the rear bonus by flanking a unit turned toward someone else, never from spawn orientation.
 > ⚠️ **PROVISIONAL** — how often an idle-flank bonus now lands is unmeasured · **Settled by:** a played build
@@ -118,8 +118,8 @@ Evidence: `.agent-results/ig-gy0.1/golden_before.json`, captured before any `ig-
 The four kits add effects and decision rules, not a seventh hero stat. Multiple Stand Fast effects
 do not stack their reduction; use the strongest active effect. Knight's ally-proximity
 passive requires another actor, not the Knight itself.
-Flank tests the rear center and then rear ±45-degree positions against actor separation; when
-all are occupied, it refuses without spending cooldown. Ranger's fixed enemy telegraph spans
+Turncoat Cut tests the rear center and then rear ±45-degree positions against actor separation;
+when all are occupied, it refuses without spending cooldown. Ranger's fixed enemy telegraph spans
 its full authored range along the chosen direction.
 
 ### Knockback — *ig-n9r, proposed 2026-09-23*
@@ -132,9 +132,9 @@ save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_i
 | Hit (either faction) | Push | Away from |
 |---|---|---|
 | Basic attack that crits | 1.0 units, crit gate below | the attacker |
-| Ranger Piercing Shot, each target | 1.0 units | along the shot line |
+| Ranger Threadneedle, each target | 1.0 units | along the shot line |
 | Mage Arcane Bloom, each target | 1.5 units | the burst center |
-| Knight Stand Fast, Rogue Flank/Interrupt, Cleric | none | — |
+| Knight Stand Fast, Rogue Turncoat Cut, Cleric | none | — |
 
 > ⚠️ **PROVISIONAL** — the three push distances and the 1.0 s crit gate are arithmetic only (sustained crit pushes stay under the 1.5 u/s every enemy walks at), never seen on screen · **Settled by:** a played build plus the ig-544 starter re-measure below
 
@@ -150,7 +150,7 @@ save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_i
 - **No interrupt.** A push never cancels a windup, telegraph or carry; stagger stays Rogue's
   job. A telegraph stays where it was drawn. An attacker whose target was pushed out of range
   holds its finished windup and strikes on reaching range again.
-- **Area hits resolve, then push.** Piercing Shot and Arcane Bloom compute every hit at pre-push
+- **Area hits resolve, then push.** Threadneedle and Arcane Bloom compute every hit at pre-push
   positions, then apply all pushes, so Knight proximity reduction never depends on actor order.
 - **Bounds:** clamp the landing point to the battlefield square; a wall shortens the push. No
   bounce, no impact damage. Overlaps resolve through normal separation next tick.
@@ -175,8 +175,8 @@ because elites are immune and clustered trash is meant to fall.
 Rejected: velocity or a knockback timer, and a per-target push cooldown field (new saved state,
 boundary #1; the `last_crit_tick` gate replaces the cooldown); interrupting pushes (steal
 Rogue's role, and crit-heavy teams would erase enemy signatures); a Stand Fast pulse (shoves enemies
-off the Knight holding them); a Flank push (throws the target out of the rear slot Flank just
-took); pushing on the killing hit (moves bodies rescue depends on).
+off the Knight holding them); a Turncoat Cut push (throws the target out of the rear slot Turncoat
+Cut just took); pushing on the killing hit (moves bodies rescue depends on).
 
 ### Supplies and automation
 
@@ -348,11 +348,10 @@ inside it with a dodge uses it. Everyone else in it walks out, as today. Among a
 counters it picks the shortest cooldown. One claim per telegraph.
 
 **Amended 2026-09-24 (director ruling): shields and self damage reduction sit in the heal band.**
-Brace, Anvilheart, Sheltering Word and Warding Glyph answer a low ally, in the picker's heal band
-(`DECISIONS.md` 2026-09-23, item 7: counter, revive, heal, chain, buff, attack). The low-HP half
-of each one's "AI uses it when" cell is that rule. A tie with a heal goes by bar order, so the
-player's order decides. The telegraph half of each cell arrives with the counters slice,
-`ig-gy0.4`.
+Stone Posture, Anvilheart, Sheltering Word and Warding Glyph answer a low ally, in the picker's heal
+band (`DECISIONS.md` 2026-09-23, item 7: counter, revive, heal, chain, buff, attack). The low-HP
+half of each one's "AI uses it when" cell is that rule. A tie with a heal goes by bar order, so the
+player's order decides. The telegraph half of each cell arrives with the counters slice, `ig-gy0.4`.
 
 ### Learning
 
@@ -400,22 +399,28 @@ slice can prove that nothing changed. Multipliers are on the basic damage formul
 means ATK times 3.0. The counter column is the tag.
 
 **Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10: no Square Enix skill name,
-no close copy).** Display names only. Older text that says Burst, Bulwark or Rally means these
-skills.
+no close copy).** Display names only. Older text that says Burst, Bulwark, Rally or Flank means
+these skills. The last five rows come from the one-time web-checked sweep, `ig-x8g` (evidence:
+`.agent-results/ig-x8g/names.md`).
 
 | Old name | New name | Id |
 |---|---|---|
 | Bulwark | Close Ranks | `knight_bulwark` (kept: saves may hold it) |
 | Rally | Stand Fast | `knight_rally` (kept: saves may hold it) |
-| Challenge | Gauntlet Toss | new id from `ig-gy0.2` |
-| Last Stand | Anvilheart | new id from `ig-gy0.2` |
+| Challenge | Gauntlet Toss | `knight_gauntlet_toss` |
+| Last Stand | Anvilheart | `knight_anvilheart` |
 | Blindside | Knave's Angle | `rogue_blindside` (kept: saves may hold it) |
-| Steady Shot | Heron Shot | new id from `ig-gy0.2` |
+| Steady Shot | Heron Shot | `ranger_heron_shot` |
 | Burst | Arcane Bloom | `mage_burst` (kept: saves may hold it) |
-| Blaze | Tinder Hex | new id from `ig-gy0.2` |
-| Skyfall | Hanging Star | new id from `ig-gy0.2` |
-| Smite | Censer Swing | new id from `ig-gy0.2` |
-| Rekindle | Hearthcall | new id from `ig-gy0.2` |
+| Blaze | Tinder Hex | `mage_tinder_hex` |
+| Skyfall | Hanging Star | `mage_hanging_star` |
+| Smite | Censer Swing | `cleric_censer_swing` |
+| Rekindle | Hearthcall | `cleric_hearthcall` |
+| Flank/Interrupt | Turncoat Cut | `rogue_flank_interrupt` (kept) |
+| Piercing Shot | Threadneedle | `ranger_piercing_shot` (kept) |
+| Pinning Shot | Burr Arrow | `ranger_pinning_shot` (kept) |
+| Brace | Stone Posture | `general_brace` (kept) |
+| Disrupt | Break Cadence | `general_disrupt` (kept) |
 
 **Knight** (tank)
 
@@ -435,7 +440,7 @@ skills.
 | Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
 |---|---|---|---|---|---|---|
 | Knave's Angle | Passive | 1 | — | Today's: +25% basic damage from behind | always | — |
-| Flank/Interrupt | Ability | 1 | 10 s | Today's: move to a rear slot, 0.3 s stun, 1.6× | today's rule; also a telegraph in range | `interrupt` |
+| Turncoat Cut | Ability | 1 | 10 s | Today's: move to a rear slot, 0.3 s stun, 1.6× | today's rule; also a telegraph in range | `interrupt` |
 | Quick Cut | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
 | Gutting Strike | Weaponskill | 5 | — | After Quick Cut: 1.5× and bleed 0.2 ATK/s for 6 s, else 1.0× | after Quick Cut | — |
 | Slip | Ability | 5 | 12 s | Self: dodge (see Counters), dash 2 out of the danger | the Rogue is inside a telegraph | `dodge` |
@@ -448,10 +453,10 @@ skills.
 | Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
 |---|---|---|---|---|---|---|
 | Long Sight | Passive | 1 | — | Today's: +20% basic range | always | — |
-| Piercing Shot | Ability | 1 | 10 s | Today's: range 10, line width 1, 1.8× | today's rule | — |
+| Threadneedle | Ability | 1 | 10 s | Today's: range 10, line width 1, 1.8× | today's rule | — |
 | Heron Shot | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
 | True Mark | Weaponskill | 5 | — | 1.7× right after Heron Shot, else 1.1× | after Heron Shot | — |
-| Pinning Shot | Ability | 5 | 15 s | Range 10: 0.5×, interrupt, 1 s root | a telegraph in range | `interrupt` |
+| Burr Arrow | Ability | 5 | 15 s | Range 10: 0.5×, interrupt, 1 s root | a telegraph in range | `interrupt` |
 | Barbed Arrow | Weaponskill | 15 | — | 1.0× and bleed 0.15 ATK/s for 8 s | target not bleeding | — |
 | Hail of Arrows | Ability | 25 | 20 s | Range 10, radius 3: 0.8× each | 3+ enemies in the circle | — |
 | Hunter's Focus | Ability | book | 60 s | Self: SPD +40% for 8 s, which shortens only the swing interval | a fight is on | — |
@@ -496,13 +501,13 @@ general one as the backup.
 |---|---|---|---|---|---|
 | Catch Breath | 1 | 60 s | Self: heal 20% of max HP | own HP below 40% | — |
 | Field Dressing | 1 | 45 s | Range 2: heal 1.5 ATK to one ally | an ally below 35% and none of the hero's own heals is ready | — |
-| Brace | 2 | 40 s | Self: 25% less damage for 4 s | a telegraph on this hero, or HP below 30% | `shield` |
+| Stone Posture | 2 | 40 s | Self: 25% less damage for 4 s | a telegraph on this hero, or HP below 30% | `shield` |
 | Tumble | 2 | 40 s | Self: dodge, dash 2 out of the danger | the hero is inside a telegraph | `dodge` |
-| Disrupt | 3 | 45 s | Range 1.6: interrupt, no damage | a telegraph in range | `interrupt` |
+| Break Cadence | 3 | 45 s | Range 1.6: interrupt, no damage | a telegraph in range | `interrupt` |
 | Hearten | 3 | 60 s | Allies within 4: DEF +10% for 10 s | a fight is on and 3+ allies are within 4 | — |
 
-Brace's reduction follows the damage-reduction rule: the strongest one applies, so it never stacks
-with Stand Fast or Anvilheart. Hearten from two heroes refreshes, never stacks.
+Stone Posture's reduction follows the damage-reduction rule: the strongest one applies, so it
+never stacks with Stand Fast or Anvilheart. Hearten from two heroes refreshes, never stacks.
 
 **Enemies** (owner ruling, 2026-09-23). Enemies keep today's signatures and telegraphs,
 and gain their class's starter weaponskill. Enemy Knights gain **Crushing Blow**: a 1.2 s
@@ -856,10 +861,10 @@ catches CRIT_RATE overflow even though the arithmetic below shows no archetype c
 | Archetype | T1 (resonance 1) | T2 (resonance 3) | T3 (resonance 6) |
 |---|---|---|---|
 | Knight | Oaken Guard — DEF +4% | Stalwart — HP +5% | Iron Wall — DEF +8% |
-| Rogue | Opening Strike — CRIT_RATE +1.5pp | Killer Instinct — ATK +5% | Executioner — CRIT_DMG +0.08 |
-| Ranger | Fleet String — SPD +4% | Marksman — ATK +5% | Deadeye — CRIT_RATE +1.5pp |
-| Mage | Arcane Focus — ATK +5% | Overload — CRIT_DMG +0.06 | Archmage — ATK +6% |
-| Cleric | Lantern Vow — HP +5% | Sanctuary — DEF +4% | Guardian Light — HP +6% |
+| Rogue | Opening Strike — CRIT_RATE +1.5pp | Sharp Hunger — ATK +5% | Grim Tally — CRIT_DMG +0.08 |
+| Ranger | Fleet String — SPD +4% | Bowyer's Pride — ATK +5% | Cold Squint — CRIT_RATE +1.5pp |
+| Mage | Arcane Focus — ATK +5% | Cracked Vessel — CRIT_DMG +0.06 | Spire Scholar — ATK +6% |
+| Cleric | Lantern Vow — HP +5% | Quiet Nave — DEF +4% | Guardian Light — HP +6% |
 
 **Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10).** The Knight's T1 trait was
 Bulwark, a Square Enix skill name, and it shared that name with the Knight's passive skill (now
@@ -867,6 +872,19 @@ Close Ranks, § Skills). It is now **Oaken Guard**. The Cleric's T1 trait was De
 Summoner action; it is now **Lantern Vow**. The Ranger's T1 trait Quickdraw is now **Fleet
 String**. Display names only: the ids stay `knight_bulwark`, `cleric_devotion` and
 `ranger_quickdraw`.
+
+**Renamed 2026-09-24 (`ig-x8g`, the one-time web-checked sweep; evidence:
+`.agent-results/ig-x8g/names.md`).** Display names only; every id stays.
+
+| Old name | New name | Id |
+|---|---|---|
+| Killer Instinct | Sharp Hunger | `rogue_killer_instinct` |
+| Executioner | Grim Tally | `rogue_executioner` |
+| Marksman | Bowyer's Pride | `ranger_marksman` |
+| Deadeye | Cold Squint | `ranger_deadeye` |
+| Overload | Cracked Vessel | `mage_overload` |
+| Archmage | Spire Scholar | `mage_archmage` |
+| Sanctuary | Quiet Nave | `cleric_sanctuary` |
 
 Traits accumulate: at resonance 6 all three of an archetype's traits are simultaneously active
 (T1+T2+T3), not the most-recent one alone — the reward for the 6th dupe is the full stack, not a
@@ -1190,14 +1208,19 @@ ahead of `equip_crit_rate_cap`.
 |---|---|---|---|
 | Knight | Shield Drill — DEF +3% | Iron Discipline — HP +4% | Veteran's Bastion — DEF +5% |
 | Rogue | Quick Hands — ATK +3% | Wrong Foot — CRIT_RATE +1pp | Velvet Knife — CRIT_DMG +0.05 |
-| Ranger | Light Step — SPD +3% | Steady Aim — ATK +3% | Trueshot — CRIT_RATE +1pp |
+| Ranger | Soft Tread — SPD +3% | Steady Aim — ATK +3% | Split Feather — CRIT_RATE +1pp |
 | Mage | Apprentice Rites — ATK +3% | Mana Burn — CRIT_DMG +0.04 | Spellweaving — ATK +5% |
-| Cleric | Novice Prayer — HP +3% | Ward — DEF +3% | Evensong — HP +5% |
+| Cleric | Novice Prayer — HP +3% | Chapel Stone — DEF +3% | Evensong — HP +5% |
 
 **Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10).** Feint (a melee role
 action) is now **Wrong Foot**, Benediction (a White Mage action) is now **Evensong**, and Coup de
 Grace is now **Velvet Knife**. Display names only: the ids stay `rogue_feint`,
 `cleric_benediction` and `rogue_coup_de_grace`.
+
+**Renamed 2026-09-24 (`ig-x8g`, the one-time web-checked sweep; evidence:
+`.agent-results/ig-x8g/names.md`).** Light Step is now **Soft Tread**, Trueshot is now **Split
+Feather**, and Ward is now **Chapel Stone**. Display names only: the ids stay `ranger_light_step`,
+`ranger_trueshot` and `cleric_ward`.
 
 Same identity split § Traits §3 already used for resonance, held here too: Knight/Cleric lean
 DEF/HP, Rogue leans ATK/CRIT, Mage leans ATK/CRIT_DMG, Ranger splits SPD/ATK/CRIT_RATE — no new
@@ -1216,14 +1239,14 @@ its archetype's smallest trait, for the reachability reason worked out below.
 | Rogue | 0 | `rogue_quick_hands` | Quick Hands | ATK (1) | 0.03 |
 | Rogue | 1 | `rogue_feint` | Wrong Foot | CRIT_RATE (4) | 0.01 |
 | Rogue | 2 | `rogue_coup_de_grace` | Velvet Knife | CRIT_DMG (5) | 0.05 |
-| Ranger | 0 | `ranger_light_step` | Light Step | SPD (3) | 0.03 |
+| Ranger | 0 | `ranger_light_step` | Soft Tread | SPD (3) | 0.03 |
 | Ranger | 1 | `ranger_steady_aim` | Steady Aim | ATK (1) | 0.03 |
-| Ranger | 2 | `ranger_trueshot` | Trueshot | CRIT_RATE (4) | 0.01 |
+| Ranger | 2 | `ranger_trueshot` | Split Feather | CRIT_RATE (4) | 0.01 |
 | Mage | 0 | `mage_apprentice_rites` | Apprentice Rites | ATK (1) | 0.03 |
 | Mage | 1 | `mage_mana_burn` | Mana Burn | CRIT_DMG (5) | 0.04 |
 | Mage | 2 | `mage_spellweaving` | Spellweaving | ATK (1) | 0.05 |
 | Cleric | 0 | `cleric_novice_prayer` | Novice Prayer | HP (0) | 0.03 |
-| Cleric | 1 | `cleric_ward` | Ward | DEF (2) | 0.03 |
+| Cleric | 1 | `cleric_ward` | Chapel Stone | DEF (2) | 0.03 |
 | Cleric | 2 | `cleric_benediction` | Evensong | HP (0) | 0.05 |
 
 None of these fifteen `id`s collide with the fifteen resonance `id`s already authored in
@@ -1264,8 +1287,8 @@ array (`heroes/hero.gd:99-122`) on the same hero.
    the game."
 
 2. **Worst-case CRIT_RATE, with the instructor trait folded in.** Rogue's `Wrong Foot` (+1pp) and
-   Ranger's `Trueshot` (+1pp) are the only instructor traits on the crit channel — added to the
-   already-published worst cases: Rogue `43.46%` (base 15% + max-enhanced SSS necklace 26.96pp +
+   Ranger's `Split Feather` (+1pp) are the only instructor traits on the crit channel — added to
+   the already-published worst cases: Rogue `43.46%` (base 15% + max-enhanced SSS necklace 26.96pp +
    resonance 1.5pp) `+ 1pp = 44.46%`, `30.54pp` of margin left under the `75%` cap. Ranger
    `38.472%` (base 10% + max-enhanced SSS necklace 26.972pp + resonance 1.5pp) `+ 1pp = 39.472%`,
    `35.528pp` remaining. Both instructor CRIT_RATE magnitudes were sized well under the resonance
