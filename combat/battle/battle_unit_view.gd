@@ -107,11 +107,15 @@ var _downed_marker: MeshInstance3D
 var _elite_ring: MeshInstance3D
 var _guard_bubble: MeshInstance3D
 var _state_label: Label3D
+## "<counter>!" over a hero that just answered a telegraph (ig-gy0.4).
+var _counter_label: Label3D
+var _counter_tween: Tween
 var _telegraph_ring: MeshInstance3D
 var _telegraph_line: MeshInstance3D
 var _last_hit_tick: int = -1
 var _last_skill_tick: int = -1
 var _last_crit_tick: int = -1
+var _last_counter_tick: int = -1
 var _recoil_tween: Tween
 var _lunge_tween: Tween
 # Pivot offsets live in world space, one per effect; _apply_pivot is the only writer of _pivot.position.
@@ -189,6 +193,10 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 	_last_hit_tick = hit_tick
 	_last_skill_tick = skill_tick
 	_last_crit_tick = crit_tick
+	var counter_tick: int = int(_effects.get("last_counter_tick", 0))
+	if _last_counter_tick >= 0 and counter_tick > _last_counter_tick:
+		_show_counter(str(_effects.get("last_skill_id", "")))
+	_last_counter_tick = counter_tick
 	# A cooldown that went up means this unit just attacked; projectile attackers get no lunge to show it.
 	# ponytail: misses an attack whose fresh cooldown ends below the old one inside one render; an attack event would fix it.
 	var attack_cooldown: float = float(actor.get("attack_cooldown", 0.0))
@@ -264,6 +272,20 @@ func _process(delta: float) -> void:
 	_glide_elapsed += scaled
 	position = _glide_from.lerp(target_position, 1.0 if _glide_seconds <= 0.0 else minf(_glide_elapsed / _glide_seconds, 1.0))
 	_update_status()
+
+
+## Names the counter that answered, then fades out.
+func _show_counter(skill_id: String) -> void:
+	var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition
+	if _counter_label == null or skill == null:
+		return
+	_counter_label.text = "%s!" % skill.display_name
+	_counter_label.modulate.a = 1.0
+	if _counter_tween != null:
+		_counter_tween.kill()
+	_counter_tween = _track(create_tween())
+	_counter_tween.tween_interval(0.6)
+	_counter_tween.tween_property(_counter_label, "modulate:a", 0.0, 0.6)
 
 
 func _react(reaction: Dictionary) -> void:
@@ -364,6 +386,13 @@ func _build_visual() -> void:
 	_state_label.outline_size = 8
 	_state_label.modulate = Color("e8a974")
 	_pivot.add_child(_state_label)
+	_counter_label = Label3D.new()
+	_counter_label.position = Vector3(0.0, 2.85, 0.0)
+	_counter_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_counter_label.font_size = 40
+	_counter_label.outline_size = 8
+	_counter_label.modulate = Color(ALLY_COLOR, 0.0)
+	_pivot.add_child(_counter_label)
 	var telegraph_mesh := TorusMesh.new()
 	# Telegraphs hang off the root, not the pivot, so recoil never moves a danger zone. Red is danger;
 	# an ally's own delayed area (Hanging Star) marks in the ally colour.

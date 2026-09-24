@@ -51,6 +51,7 @@ const ABILITIES: Dictionary[String, AbilityDefinition] = {
 	"general_tumble": preload("res://combat/abilities/general_tumble.tres"),
 	"general_disrupt": preload("res://combat/abilities/general_disrupt.tres"),
 	"general_hearten": preload("res://combat/abilities/general_hearten.tres"),
+	"enemy_knight_crushing_blow": preload("res://combat/abilities/enemy_knight_crushing_blow.tres"),
 }
 const ROLE_CYCLE: Array[String] = ["knight", "knight", "ranger", "mage", "rogue"]
 const STANCES: Array[String] = ["advance", "stay_together", "defend", "protect"]
@@ -417,6 +418,7 @@ static func _tick(state: BattleState, rng: RandomNumberGenerator) -> void:
 	state.tick += 1
 	state.elapsed_seconds = minf(state.elapsed_seconds + BALANCE.battle_tick_seconds, state.max_seconds)
 	_expire_effects_and_cooldowns(state)
+	_answer_telegraphs(state, rng)
 	_choose_intentions(state)
 	_move_actors(state)
 	_support_actions(state)
@@ -800,7 +802,8 @@ static func _spawn_group(
 		actor.speed = BALANCE.battle_enemy_speed
 		actor.crit_rate = BALANCE.battle_enemy_crit_rate
 		actor.crit_damage = BALANCE.battle_enemy_crit_damage
-		actor.set_default_kit()
+		for skill: AbilityDefinition in enemy_kit(actor.archetype):
+			actor.add_skill(skill)
 		actor.attack_range = _attack_range(actor)
 		actor.move_speed = clampf(actor.speed * BALANCE.battle_move_speed_per_stat, BALANCE.battle_move_speed_min, BALANCE.battle_move_speed_max)
 		actor.effect_state = _default_effect_state(boss and index == 0)
@@ -850,7 +853,7 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 		# are left out, every ability ready. A kit left with no ability falls back to the default.
 		for entry: Variant in snapshot.get("skills") as Array:
 			var skill_id: String = str((entry as Dictionary).get("id", "")) if entry is Dictionary else ""
-			if ABILITIES.has(skill_id) and ABILITIES[skill_id].archetype in [actor.archetype, "general"] and not actor.skills.any(func(kept: Dictionary) -> bool: return kept["id"] == skill_id):
+			if ABILITIES.has(skill_id) and ABILITIES[skill_id].archetype in BattleActor.kit_archetypes(actor.archetype, actor.faction) and not actor.skills.any(func(kept: Dictionary) -> bool: return kept["id"] == skill_id):
 				actor.add_skill(ABILITIES[skill_id], str((entry as Dictionary).get("mode", "auto")))
 		if actor.skill_cooldowns.is_empty():
 			actor.set_default_kit(bool(snapshot.get("ability_auto", true)))
@@ -1233,7 +1236,9 @@ static func _auto_cast(state: BattleState, actor: BattleActor, target: BattleAct
 			if aim == null:
 				continue
 			if actor.faction == "enemy" and not _telegraph_kind(skill).is_empty():
-				_start_telegraph(state, actor, skill, aim.position, BALANCE.battle_enemy_telegraph_seconds)
+				# Its own delay when it has one (Crushing Blow), else the shared enemy telegraph.
+				var seconds: float = float(_effect_of(skill, "damage").get("delay_seconds", BALANCE.battle_enemy_telegraph_seconds))
+				_start_telegraph(state, actor, skill, aim.position, seconds)
 				_spend_ability(state, actor, skill)
 				return true
 			var point: Vector2 = actor.position if skill.self_centered and band != "revive" else aim.position
@@ -1360,6 +1365,16 @@ static func default_kit(archetype: String) -> Array[AbilityDefinition]:
 	return kit
 
 
+## An enemy's kit (SYSTEMS.md § Skills, Enemies): its class's level-1 skills (the passive, the
+## signature and the starter weaponskill), then its enemy-only skills. No chains, no general pool.
+static func enemy_kit(archetype: String) -> Array[AbilityDefinition]:
+	var kit: Array[AbilityDefinition] = known_kit(archetype, 1)
+	for skill: AbilityDefinition in ABILITIES.values():
+		if skill.archetype == "enemy_" + archetype:
+			kit.append(skill)
+	return kit
+
+
 ## The class skills a hero of level knows without a book, in kit order (SYSTEMS.md § The v1 kits).
 static func known_kit(archetype: String, level: int) -> Array[AbilityDefinition]:
 	var kit: Array[AbilityDefinition] = []
@@ -1407,15 +1422,13 @@ static func _start_telegraph(state: BattleState, actor: BattleActor, skill: Abil
 	actor.effect_state["telegraph_radius"] = skill.radius_units
 	actor.effect_state["telegraph_remaining"] = seconds
 	actor.effect_state["telegraph_total"] = seconds
+	actor.effect_state["telegraph_claimed_by"] = ""
 
 
 static func _resolve_telegraph(state: BattleState, actor: BattleActor, rng: RandomNumberGenerator) -> void:
 	var kind: String = str(actor.effect_state.get("telegraph_kind", ""))
 	if kind.is_empty():
 		return
-	var origin: Vector2 = _array_vector(actor.effect_state.get("telegraph_origin"))
-	var point: Vector2 = _array_vector(actor.effect_state.get("telegraph_point"))
-	var radius: float = float(actor.effect_state.get("telegraph_radius", 0.0))
 	var skill: AbilityDefinition = ABILITIES.get(str(actor.effect_state.get("telegraph_skill", ""))) as AbilityDefinition
 	if skill == null:
 		# A checkpoint from before ig-gy0.2: the actor's first ability of that shape.
@@ -1425,14 +1438,104 @@ static func _resolve_telegraph(state: BattleState, actor: BattleActor, rng: Rand
 				break
 	var multiplier: float = float(_effect_of(skill, "damage").get("multiplier", 0.0)) if skill != null else 0.0
 	for candidate: BattleActor in state.actors:
-		if candidate.faction == actor.faction or candidate.life != BattleActor.LIFE_ALIVE or _has_status(candidate, "dodge"):
-			continue
-		var hit: bool = candidate.position.distance_to(point) <= radius
-		if kind == "line":
-			hit = _distance_to_segment(candidate.position, origin, point) <= radius * 0.5
-		if hit:
+		if candidate.faction != actor.faction and candidate.life == BattleActor.LIFE_ALIVE and not _has_status(candidate, "dodge") and _in_telegraph(actor, candidate.position):
 			_damage(state, actor, candidate, multiplier, rng)
 	_cancel_telegraph(actor)
+
+
+## position is inside actor's marked line or circle.
+static func _in_telegraph(actor: BattleActor, position: Vector2) -> bool:
+	var point: Vector2 = _array_vector(actor.effect_state.get("telegraph_point"))
+	var radius: float = float(actor.effect_state.get("telegraph_radius", 0.0))
+	if str(actor.effect_state.get("telegraph_kind", "")) == "line":
+		return _distance_to_segment(position, _array_vector(actor.effect_state.get("telegraph_origin")), point) <= radius * 0.5
+	return position.distance_to(point) <= radius
+
+
+## The AI's answer to enemy telegraphs (SYSTEMS.md § Skills, Counters and The AI's answer;
+## DECISIONS.md 2026-09-23, Skills, item 8). Runs before the picker each tick, so a counter outranks
+## every band. Once a telegraph has run skill_reaction_delay_seconds, one hero claims it: the first
+## in spawn order with a stun or interrupt that reaches the caster; else the first whose shield
+## covers someone inside it; else every hero inside it with a dodge (the first holds the claim).
+## Only Auto counters, the shortest cooldown first. The claim is saved on the caster
+## (telegraph_claimed_by), so a reload never answers twice. Everyone else inside walks out
+## (_danger_safe_point). Enemies never counter.
+static func _answer_telegraphs(state: BattleState, rng: RandomNumberGenerator) -> void:
+	for caster: BattleActor in state.actors:
+		if caster.faction != "enemy" or caster.life != BattleActor.LIFE_ALIVE or str(caster.effect_state.get("telegraph_kind", "")).is_empty():
+			continue
+		var run: float = float(caster.effect_state.get("telegraph_total", 0.0)) - float(caster.effect_state.get("telegraph_remaining", 0.0))
+		if not str(caster.effect_state.get("telegraph_claimed_by", "")).is_empty() or run < BALANCE.skill_reaction_delay_seconds - TICK_EPSILON:
+			continue
+		var claimer: BattleActor = _answer(state, caster, rng)
+		if claimer != null:
+			caster.effect_state["telegraph_claimed_by"] = claimer.id
+
+
+## Fires the answer to caster's telegraph and returns the hero that claimed it, or null.
+static func _answer(state: BattleState, caster: BattleActor, rng: RandomNumberGenerator) -> BattleActor:
+	var inside: Array[BattleActor] = []
+	for ally: BattleActor in state.actors:
+		if ally.faction == "ally" and ally.life == BattleActor.LIFE_ALIVE and _in_telegraph(caster, ally.position):
+			inside.append(ally)
+	if inside.is_empty():
+		return null
+	var first_dodge: BattleActor = null
+	for tags: Array in [["stun", "interrupt"], ["shield"], ["dodge"]]:
+		for hero: BattleActor in state.actors:
+			if hero.faction != "ally":
+				continue
+			for skill: AbilityDefinition in _counters(hero, tags):
+				var aim: BattleActor = caster
+				if tags[0] == "shield":
+					aim = _shield_aim(caster, hero, skill, inside)
+				elif tags[0] == "dodge" and not hero in inside:
+					aim = null
+				if aim != null and _use_skill(state, hero, skill, aim, hero.position if skill.self_centered else aim.position, rng):
+					hero.effect_state["last_counter_tick"] = state.tick
+					if tags[0] != "dodge":
+						return hero
+					# Every hero inside dodges; the first holds the claim.
+					first_dodge = hero if first_dodge == null else first_dodge
+					break
+	return first_dodge
+
+
+## hero's ready Auto counters with one of tags, shortest cooldown first, then bar order. Manual and
+## Off skills are never counters.
+static func _counters(hero: BattleActor, tags: Array) -> Array[AbilityDefinition]:
+	var found: Array[AbilityDefinition] = []
+	var order: Dictionary = {}
+	for entry: Dictionary in hero.skills:
+		var skill: AbilityDefinition = ABILITIES[entry["id"]]
+		if skill.counter_tag in tags and str(entry["mode"]) == "auto" and float(hero.skill_cooldowns.get(entry["id"], 0.0)) <= 0.0:
+			order[skill] = found.size()
+			found.append(skill)
+	found.sort_custom(func(a: AbilityDefinition, b: AbilityDefinition) -> bool:
+		var a_cooldown: float = _skill_cooldown(hero, a)
+		var b_cooldown: float = _skill_cooldown(hero, b)
+		return a_cooldown < b_cooldown or (a_cooldown == b_cooldown and order[a] < order[b]))
+	return found
+
+
+## Whom hero's shield counter is cast at to cover someone inside the telegraph, or null. A shield,
+## or a status on its target, goes to the ally inside within its range nearest a circle's centre
+## (the first in a line); a self status needs hero inside; an aura needs someone inside within it.
+static func _shield_aim(caster: BattleActor, hero: BattleActor, skill: AbilityDefinition, inside: Array[BattleActor]) -> BattleActor:
+	var status: Dictionary = _effect_of(skill, "status")
+	var reach: String = "target" if not _effect_of(skill, "shield").is_empty() else str(status.get("target", ""))
+	if reach == "self":
+		return hero if hero in inside else null
+	if reach == "allies_near_caster":
+		var radius: float = float(status.get("radius", skill.radius_units))
+		return hero if inside.any(func(ally: BattleActor) -> bool: return ally.position.distance_to(hero.position) <= radius) else null
+	var center: Vector2 = _array_vector(caster.effect_state.get("telegraph_point"))
+	var line: bool = str(caster.effect_state.get("telegraph_kind", "")) == "line"
+	var best: BattleActor = null
+	for ally: BattleActor in inside:
+		if hero.position.distance_to(ally.position) <= skill.range_units and (best == null or (not line and ally.position.distance_to(center) < best.position.distance_to(center))):
+			best = ally
+	return best
 
 
 static func _cancel_pending_action(actor: BattleActor) -> void:

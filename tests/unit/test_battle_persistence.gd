@@ -98,8 +98,11 @@ func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
 
 
 ## ig-gy0.1: a v3 profile saved by SaveService before skills were data (ability_cooldown and
-## ability_auto on each actor, the Mage set to manual) loads, migrates and finishes exactly as it
-## did before the change. The expected finish was recorded by the pre-change build.
+## ability_auto on each actor, the Mage set to manual) loads, migrates and finishes deterministically.
+## The pre-change build recorded the expected finish. It was re-recorded at ig-gy0.4
+## (.agent-results/ig-gy0.4/regen_pre_skills_expected.gd), because counters and enemy kits change
+## this fight on purpose. The match with the old build is proven by a run with both switched off,
+## which finished as the old build did (.agent-results/ig-gy0.4/experiment_off.log).
 func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> void:
 	var fixture_path: String = "res://tests/fixtures/battle_checkpoint_pre_skills.json"
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fixture_path)) as Dictionary
@@ -167,6 +170,9 @@ func _pre_skills_shape(state: BattleState, rallied: Dictionary = {}) -> Dictiona
 			actor_data.erase(key)
 		(actor_data["effect_state"] as Dictionary).erase("last_skill_id")
 		(actor_data["effect_state"] as Dictionary).erase("telegraph_skill")
+		# ig-gy0.4 bookkeeping: the telegraph claim and the answer tick.
+		(actor_data["effect_state"] as Dictionary).erase("telegraph_claimed_by")
+		(actor_data["effect_state"] as Dictionary).erase("last_counter_tick")
 		# The old guard keys: Stand Fast's time left, and the largest reduction it ever gave.
 		var guard_remaining: float = 0.0
 		for status: Dictionary in actor.statuses:

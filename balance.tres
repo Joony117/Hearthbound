@@ -152,6 +152,7 @@ ledger_max_records = 10000
 battle_max_moments = 64
 skill_ability_lock_seconds = 1.0
 skill_combo_window_seconds = 6.0
+skill_reaction_delay_seconds = 0.2
 skill_status_tick_seconds = 1.0
 bond_points_hard_battle = 1
 bond_points_saved = 3

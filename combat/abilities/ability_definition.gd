@@ -5,7 +5,9 @@ extends Resource
 ## through one function; nothing branches on which skill it is.
 
 const KINDS: Array[String] = ["passive", "weaponskill", "ability"]
-const ARCHETYPES: Array[String] = ["knight", "ranger", "mage", "rogue", "cleric", "general"]
+## "enemy_<class>": carried only by enemies of that class (SYSTEMS.md § Skills, Enemies); no hero
+## kit, bar or save lists it, since each of those takes only its own class or "general".
+const ARCHETYPES: Array[String] = ["knight", "ranger", "mage", "rogue", "cleric", "general", "enemy_knight"]
 const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ## The AI rule: when the picker (BattleSimulation._auto_cast) wants the skill. Its band is the
 ## picker's priority: revive, then heal, then buff, then attack (SYSTEMS.md § Skills).
@@ -26,7 +28,9 @@ const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ##   only while none of the hero's own class heals is ready (Field Dressing).
 ## revive band: "downed_ally": the nearest downed ally. ai_revive_first adds the revive band to a
 ##   skill whose rule is in another band.
-## "telegraph": only as a counter, which ig-gy0.4 adds; the picker never fires it.
+## "telegraph": only as a counter (BattleSimulation._answer_telegraphs); the picker never fires it.
+## Counters sit above every band: the answer runs before the picker each tick. A counter with
+## another rule (Warding Glyph) is also picked by that rule.
 const AI_RULES: Array[String] = [
 	"always", "default", "combo", "enemies_near_target", "enemies_near_self", "target_below", "target_lacks_status",
 	"allies_near", "fight_on", "enemy_on_weaker_ally",

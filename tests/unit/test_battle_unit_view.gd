@@ -535,6 +535,16 @@ func _assert_dead_look(unit: BattleUnitView) -> void:
 		assert_same(mesh.material_overlay, BattleUnitView._corpse_material, "the corpse is dimmed")
 
 
+func test_a_hero_that_answers_a_telegraph_names_its_counter() -> void:
+	var unit: BattleUnitView = _unit({"faction": "ally", "effect_state": {"last_skill_tick": 3, "last_skill_id": "knight_rally"}})
+	assert_eq(unit._counter_label.modulate.a, 0.0, "a skill cast before the view saw it is no answer")
+	unit.set_actor(_actor({"faction": "ally", "effect_state": {"last_skill_tick": 9, "last_skill_id": "knight_buckler_blow", "last_counter_tick": 9}}), false)
+	assert_eq(unit._counter_label.text, "Buckler Blow!")
+	assert_eq(unit._counter_label.modulate.a, 1.0)
+	unit.set_actor(_actor({"faction": "ally", "effect_state": {"last_skill_tick": 12, "last_skill_id": "knight_rally", "last_counter_tick": 9}}), false)
+	assert_eq(unit._counter_label.text, "Buckler Blow!", "a picked skill is not an answer")
+
+
 # Mirrors battle_view: set_actor runs before the node enters the tree.
 func _unit(overrides: Dictionary) -> BattleUnitView:
 	var unit := BattleUnitView.new()

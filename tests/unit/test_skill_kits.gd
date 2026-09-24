@@ -16,7 +16,7 @@ func after_each() -> void:
 
 
 func test_every_skill_validates_and_the_kits_open_by_level() -> void:
-	assert_eq(SIM.ABILITIES.size(), 46)
+	assert_eq(SIM.ABILITIES.size(), 47)
 	for skill_id: String in SIM.ABILITIES:
 		assert_eq(SIM.ABILITIES[skill_id].validate(), "", skill_id)
 		assert_eq(str(SIM.ABILITIES[skill_id].skill_id), skill_id)
@@ -401,7 +401,176 @@ func test_a_checkpoint_from_before_statuses_loads_with_its_guard_as_rally() -> v
 	assert_ne(state.status, "active")
 
 
+## ---- ig-gy0.4: the AI's answer to enemy telegraphs, and enemy kits
+
+func test_enemies_carry_their_starter_kit_and_knights_crushing_blow() -> void:
+	assert_eq(_ids(SIM.enemy_kit("knight")), ["knight_bulwark", "knight_rally", "knight_iron_cut", "enemy_knight_crushing_blow"])
+	assert_eq(_ids(SIM.enemy_kit("ranger")), _ids(SIM.known_kit("ranger", 1)), "no enemy-only skill yet")
+	var snapshots: Array[Dictionary] = [_unit("hero:k", "knight", "ally", Vector2(0, -16))]
+	var state: BattleState = SIM.create_run("kits:enemies", snapshots, ZoneDefinition.definition_for(&"verdant_outskirts"), _squads(snapshots), {}, {"healing": 0, "revival": 0}, 3)
+	var enemies: Array[BattleActor] = state.actors.filter(func(actor: BattleActor) -> bool: return actor.faction == "enemy")
+	assert_false(enemies.is_empty())
+	for enemy: BattleActor in enemies:
+		assert_eq(_kit(enemy), _ids(SIM.enemy_kit(enemy.archetype)), enemy.id)
+	# A hero snapshot never keeps an enemy-only skill; an enemy one does.
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
+	var hero: BattleActor = SIM._actor_from_team_snapshot(_unit("hero:x", "knight", "ally", Vector2.ZERO, {"skills": [{"id": "enemy_knight_crushing_blow"}, {"id": "knight_rally"}]}), 0, zone)
+	assert_eq(_kit(hero), ["knight_rally"])
+	var enemy_knight: BattleActor = SIM._actor_from_team_snapshot(_unit("enemy:x", "knight", "enemy", Vector2.ZERO, {"skills": [{"id": "enemy_knight_crushing_blow"}]}), 0, zone)
+	assert_eq(_kit(enemy_knight), ["enemy_knight_crushing_blow"])
+
+
+func test_a_buckler_blow_stuns_a_crushing_blow_after_the_reaction_delay() -> void:
+	var state: BattleState = _crushing_blow_on("knight", [])
+	var knight: BattleActor = state.actors[0]
+	var enemy: BattleActor = state.actors[1]
+	_give(knight, ["knight_buckler_blow"])
+	assert_eq(enemy.effect_state["telegraph_remaining"], 1.2, "Crushing Blow's own delay")
+	SIM.advance(state, 0.1)
+	assert_eq(knight.skill_cooldowns["knight_buckler_blow"], 0.0, "not before the reaction delay")
+	assert_eq(enemy.effect_state["telegraph_claimed_by"], "")
+	SIM.advance(state, 0.1)
+	assert_gt(knight.skill_cooldowns["knight_buckler_blow"], 0.0, "answered at the reaction delay")
+	assert_eq(enemy.effect_state["telegraph_claimed_by"], knight.id)
+	assert_eq(knight.effect_state["last_counter_tick"], state.tick)
+	assert_eq(enemy.effect_state["telegraph_kind"], "", "the telegraph is cut")
+	SIM.advance(state, 1.2)
+	assert_eq(knight.hp, 100.0, "it never lands")
+
+
+func test_two_heroes_with_stuns_spend_only_one() -> void:
+	var state: BattleState = _crushing_blow_on("knight", [_unit("hero:m", "mage", "ally", Vector2(-3, -16))])
+	_give(state.actors[0], ["knight_buckler_blow"])
+	_give(state.actors[2], ["mage_frost_bind"])
+	SIM.advance(state, 0.3)
+	assert_gt(state.actors[0].skill_cooldowns["knight_buckler_blow"], 0.0, "the first in spawn order answers")
+	assert_eq(state.actors[2].skill_cooldowns["mage_frost_bind"], 0.0, "the other stun is kept")
+
+
+func test_with_no_stun_in_range_a_shield_lands_on_the_target() -> void:
+	var state: BattleState = _crushing_blow_on("knight", [_unit("hero:m", "mage", "ally", Vector2(0, -30)), _unit("hero:c", "cleric", "ally", Vector2(0, -12))])
+	var knight: BattleActor = state.actors[0]
+	var mage: BattleActor = state.actors[2]
+	var cleric: BattleActor = state.actors[3]
+	_give(mage, ["mage_frost_bind"])
+	_give(cleric, ["cleric_sheltering_word"])
+	SIM.advance(state, 0.2)
+	assert_eq(mage.skill_cooldowns["mage_frost_bind"], 0.0, "out of range")
+	assert_eq(state.actors[1].effect_state["telegraph_claimed_by"], cleric.id)
+	assert_true(SIM._has_status(knight, "shield"), "the shield is on the Knight inside the circle")
+
+
+func test_a_rogue_inside_the_circle_slips_it_and_takes_no_damage() -> void:
+	var state: BattleState = _crushing_blow_on("rogue", [])
+	var rogue: BattleActor = state.actors[0]
+	_give(rogue, ["rogue_slip"])
+	SIM.advance(state, 1.3)  # the countdown lands on tick 13
+	assert_gt(rogue.skill_cooldowns["rogue_slip"], 0.0)
+	assert_eq(state.actors[1].effect_state["telegraph_kind"], "", "the blow landed")
+	assert_eq(rogue.hp, 100.0, "on nobody")
+
+
+func test_with_no_stun_or_shield_every_hero_inside_dodges() -> void:
+	var state: BattleState = _crushing_blow_on("rogue", [_unit("hero:r2", "rogue", "ally", Vector2(0, -15)), _unit("hero:r3", "rogue", "ally", Vector2(0, -10))])
+	for hero: BattleActor in [state.actors[0], state.actors[2], state.actors[3]]:
+		_give(hero, ["rogue_slip"])
+	SIM.advance(state, 0.2)
+	assert_gt(state.actors[0].skill_cooldowns["rogue_slip"], 0.0)
+	assert_gt(state.actors[2].skill_cooldowns["rogue_slip"], 0.0, "both inside dodge")
+	assert_eq(state.actors[3].skill_cooldowns["rogue_slip"], 0.0, "outside: no dodge")
+	assert_eq(state.actors[1].effect_state["telegraph_claimed_by"], state.actors[0].id, "the first holds the claim")
+
+
+func test_a_manual_counter_is_never_auto_fired() -> void:
+	var state: BattleState = _crushing_blow_on("knight", [])
+	var knight: BattleActor = state.actors[0]
+	knight.add_skill(SIM.ABILITIES["knight_buckler_blow"], "manual")
+	SIM.advance(state, 1.3)
+	assert_eq(knight.skill_cooldowns["knight_buckler_blow"], 0.0)
+	assert_eq(state.actors[1].effect_state["telegraph_claimed_by"], "")
+	assert_lt(knight.hp, 100.0, "the blow lands")
+
+
+func test_the_shortest_cooldown_counter_answers_first() -> void:
+	var state: BattleState = _crushing_blow_on("knight", [])
+	var knight: BattleActor = state.actors[0]
+	_give(knight, ["general_disrupt", "knight_buckler_blow"])
+	SIM.advance(state, 0.2)
+	assert_gt(knight.skill_cooldowns["knight_buckler_blow"], 0.0, "Buckler Blow (20 s) before Break Cadence (45 s)")
+	assert_eq(knight.skill_cooldowns["general_disrupt"], 0.0)
+
+
+func test_a_claim_saved_mid_telegraph_reloads_without_a_second_answer() -> void:
+	_dispatch_knights()
+	var state := BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
+	var knight: BattleActor = state.actors[0]
+	var enemy: BattleActor = state.actors.filter(func(actor: BattleActor) -> bool: return actor.faction == "enemy")[0]
+	var enemy_id: String = enemy.id
+	enemy.position = knight.position + Vector2(1, 0)
+	for hero: BattleActor in _heroes(state):
+		hero.skill_cooldowns["knight_buckler_blow"] = 5.0
+	SIM._start_telegraph(state, enemy, SIM.ABILITIES["enemy_knight_crushing_blow"], knight.position, 1.2)
+
+	# A battle saved before ig-gy0.4, mid-telegraph: no claim key. It loads and is answered once.
+	var legacy: Dictionary = JSON.parse_string(JSON.stringify(GameSession.to_dict())) as Dictionary
+	var legacy_battle: Dictionary = JSON.parse_string(JSON.stringify(state.to_dict())) as Dictionary
+	for actor: Dictionary in legacy_battle["actors"]:
+		(actor["effect_state"] as Dictionary).erase("telegraph_claimed_by")
+	legacy["expedition_orders"][0]["battle"] = legacy_battle
+	assert_eq(SIM.validate_snapshot(legacy_battle), "", "the old shape validates")
+	assert_true(_through_disk(legacy), SaveService.load_block_reason)
+	state = BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
+	SIM.advance(state, 0.2)
+	var claimer: String = str(_actor(state, enemy_id).effect_state.get("telegraph_claimed_by", ""))
+	assert_ne(claimer, "", "answered with Stand Fast (the stuns are cooling)")
+	assert_eq(_actor(state, enemy_id).effect_state["telegraph_kind"], "circle", "a shield leaves the telegraph live")
+
+	# Every counter ready again, then saved and reloaded through disk: the claim holds.
+	for hero: BattleActor in _heroes(state):
+		for skill_id: String in hero.skill_cooldowns:
+			hero.skill_cooldowns[skill_id] = 0.0
+		hero.ability_lock = 0.0
+	GameSession.expedition_orders[0]["battle"] = state.to_dict()
+	var reference := BattleState.from_dict(JSON.parse_string(JSON.stringify(state.to_dict())) as Dictionary)
+	var unclaimed := BattleState.from_dict(JSON.parse_string(JSON.stringify(state.to_dict())) as Dictionary)
+	_actor(unclaimed, enemy_id).effect_state["telegraph_claimed_by"] = ""
+	assert_true(_through_disk(GameSession.to_dict()), SaveService.load_block_reason)
+	var loaded := BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
+	assert_eq(str(_actor(loaded, enemy_id).effect_state["telegraph_claimed_by"]), claimer)
+	for battle: BattleState in [reference, loaded, unclaimed]:
+		SIM.advance(battle, 0.1)
+	assert_false(_answered(loaded), "no second answer after the reload")
+	assert_eq(_exact_json(loaded.to_dict()), _exact_json(reference.to_dict()))
+	assert_true(_answered(unclaimed), "control: without the claim a ready counter answers again")
+
+
 ## ---- helpers
+
+## hero:<archetype> at (0, -16) and an enemy Knight at (1, -16) whose Crushing Blow (1.2 s) is marked
+## on the hero, then extra; every kit empty but the enemy's.
+func _crushing_blow_on(archetype: String, extra: Array[Dictionary]) -> BattleState:
+	var snapshots: Array[Dictionary] = [_unit("hero:" + archetype, archetype, "ally", Vector2(0, -16)), _unit("enemy:1", "knight", "enemy", Vector2(1, -16))]
+	snapshots.append_array(extra)
+	var state: BattleState = _battle(snapshots)
+	_give(state.actors[1], ["enemy_knight_crushing_blow"])
+	assert_true(SIM._auto_cast(state, state.actors[1], state.actors[0], ["attack"], null))
+	return state
+
+
+func _actor(state: BattleState, id: String) -> BattleActor:
+	return state.actors.filter(func(actor: BattleActor) -> bool: return actor.id == id)[0]
+
+
+func _heroes(state: BattleState) -> Array[BattleActor]:
+	var heroes: Array[BattleActor] = []
+	heroes.assign(state.actors.filter(func(actor: BattleActor) -> bool: return actor.faction == "ally"))
+	return heroes
+
+
+## Some hero answered a telegraph on the battle's last tick.
+func _answered(state: BattleState) -> bool:
+	return state.actors.any(func(actor: BattleActor) -> bool: return int(actor.effect_state.get("last_counter_tick", -1)) == state.tick)
+
 
 func _unit(id: String, archetype: String, faction: String, position: Vector2, extra: Dictionary = {}) -> Dictionary:
 	var snapshot: Dictionary = {"archetype": archetype, "faction": faction, "hp": 100.0, "atk": 10.0, "defense": 0.0, "speed": 100.0, "crit_rate": 0.0, "crit_damage": 1.5, "position": [position.x, position.y]}

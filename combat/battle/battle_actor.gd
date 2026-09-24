@@ -207,7 +207,7 @@ static func validate_dict(data: Dictionary) -> String:
 			return "Battle actor effect %s must be finite and non-negative." % key
 	if float(effects.get("guard_reduction", 0.0)) > 1.0:
 		return "Battle actor guard_reduction cannot exceed one."
-	for key: String in ["telegraph_skill", "last_skill_id"]:
+	for key: String in ["telegraph_skill", "last_skill_id", "telegraph_claimed_by"]:
 		if effects.has(key) and not effects.get(key) is String:
 			return "Battle actor effect %s must be a String." % key
 	var status_error: String = _validate_skill_state(data)
@@ -216,6 +216,9 @@ static func validate_dict(data: Dictionary) -> String:
 	for key: String in ["last_hit_tick", "last_skill_tick"]:
 		if not _valid_nonnegative_integer(effects.get(key)):
 			return "Battle actor effect %s must be a non-negative integer." % key
+	# Optional: saves written before counters (ig-gy0.4) have no key.
+	if effects.has("last_counter_tick") and not _valid_nonnegative_integer(effects.get("last_counter_tick")):
+		return "Battle actor effect last_counter_tick must be a non-negative integer."
 	# Optional: saves written before crits were recorded have no key.
 	if effects.has("last_crit_tick") and not _valid_nonnegative_integer(effects.get("last_crit_tick")):
 		return "Battle actor effect last_crit_tick must be a non-negative integer."
@@ -232,6 +235,12 @@ static func validate_dict(data: Dictionary) -> String:
 	if effects.has("carry_progress") and (not _valid_number(effects.get("carry_progress")) or float(effects.get("carry_progress")) < 0.0):
 		return "Battle actor carry_progress must be finite and non-negative."
 	return ""
+
+
+## The skill archetypes an actor of archetype and faction may carry: its class, then the general
+## pool for a hero or the enemy-only skills for an enemy (enemies never use the general pool).
+static func kit_archetypes(archetype: String, faction: String) -> Array[String]:
+	return [archetype, "enemy_" + archetype] if faction == "enemy" else [archetype, "general"]
 
 
 ## The archetype's kit (BattleSimulation.default_kit), every ability ready. auto sets the
@@ -275,7 +284,7 @@ static func _validate_skills(data: Dictionary) -> String:
 		if not entry is Dictionary or (entry as Dictionary).size() != 2 or not (entry as Dictionary).get("id") is String or not (entry as Dictionary).get("mode") is String:
 			return "Every battle actor skill must be {id, mode} Strings."
 		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((entry as Dictionary)["id"])) as AbilityDefinition
-		if skill == null or not skill.archetype in [str(data.get("archetype")), "general"]:
+		if skill == null or not skill.archetype in kit_archetypes(str(data.get("archetype")), str(data.get("faction"))):
 			return "Battle actor skill %s is unknown or from another class." % str((entry as Dictionary)["id"])
 		if not str((entry as Dictionary)["mode"]) in SKILL_MODES or (skill.kind == "passive" and str((entry as Dictionary)["mode"]) != "auto"):
 			return "Battle actor skill %s mode is invalid." % str((entry as Dictionary)["id"])

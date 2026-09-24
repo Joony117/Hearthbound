@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"enemy_knight_crushing_blow"
+display_name = "Crushing Blow"
+kind = "ability"
+archetype = "enemy_knight"
+cooldown_seconds = 14.0
+range_units = 1.6
+radius_units = 1.5
+effects = Array[Dictionary]([{
+"type": "damage",
+"area": "circle",
+"multiplier": 2.5,
+"delay_seconds": 1.2
+}])
