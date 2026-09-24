@@ -37,13 +37,15 @@ that is not recorded when it happens can never be told later, so the record come
      It names its `team`: the `instance_id` of every hero who fought, downed or not. The team is
      the battle's witness list, so a later per-hero-knowledge reader (a hero knows what they saw)
      needs no backfill. *Director amendment.*
-   - `died`: `kill_hero`, and only there. An `expedition` death carries `battle_seq`, the `seq`
-     of the battle that stranded the hero. The stranded incident stores it at capture (an
-     additive incident key) and hands it to `kill_hero()` at abandon, expiry or a failed rescue,
-     so the link survives the gap between the battle and the death. A legacy incident has none,
-     and readers tolerate that. It is the first causal link between records. *Director
-     amendment; wording corrected 2026-09-24: most expedition deaths settle after the stranding
-     battle, not in it.*
+   - `died`: `kill_hero`, and only there. An `expedition` death carries `battle_order`: the id
+     of the order whose battle stranded the hero. The stranded incident already holds it
+     (`source_order_id`) and hands it to `kill_hero()` at abandon, expiry or a failed rescue. A
+     reader finds the `battle` record whose `order` matches. It is the first causal link between
+     records. *Director amendment; corrected twice on 2026-09-24.* Most expedition deaths settle
+     after the stranding battle, not in it. A total wipe captures its incident when the fight
+     ends, before the order settles, so the player can abandon it before the `battle` record
+     exists and the stranding battle's `seq` is not known yet. The order id always is, and
+     legacy incidents carry it too.
    - `ranked_up`: `rank_up_hero`.
    - `meal` is reserved for step 2. Eating ticks are not events.
 6. **Permadeath keeps one writer.** `kill_hero()` gains optional `cause` (`expedition`,
