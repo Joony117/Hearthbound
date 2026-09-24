@@ -287,6 +287,18 @@ scene still holds, and so do rules 1, 5 and 8.
 - **The halls stay unique,** so a hall's id is its type name and `building_levels` keeps its
   indexes.
 
+**Skills (`ig-gy0`, accepted 2026-09-23)** move these boundaries. Details: `DECISIONS.md`
+2026-09-23, skills.
+
+- **Skills are `AbilityDefinition` data, applied only in `combat/battle/`.** A closed set of
+  effect primitives, one picker, no script per skill. Skill logic anywhere else is a bug.
+- **The forecast stays the simulation** (seam #4). `ExpeditionOrders.safety_forecast` and
+  `QuickResolve` are skill-blind by rule and never gate a `battle_v1` order.
+- **Bars, chains and learned skills are `Hero` fields** (save boundary #1), fixed into the team
+  snapshot at dispatch. A death takes them away (rule 8).
+- **Piloting one hero is watched-view state,** like tactical pause: never saved, never in an
+  unwatched run or a forecast.
+
 ---
 
 ## Project layout

@@ -7,6 +7,122 @@ Newest first.
 
 ---
 
+## 2026-09-23: Skills are data the one simulation reads — bars and chains are profile state, the forecast stays the simulation, and one hero can be piloted inside it
+
+**ACCEPTED by the director, 2026-09-23,** on the owner's four answers. Item 11's no-damage line is
+scoped to v1. Drafted for `ig-gy0`. The owner, 2026-09-23:
+"I want each hero to have customizable skill bar, I want them to be able to have 30+ skills if I
+wanted." `GAME_SPEC.md` § Skills has the design. `SYSTEMS.md` § Skills has the numbers and the v1
+kits. The owner answered its four questions the same day: class skills plus a shared general pool,
+skills die with the hero, click and number keys first, enemies get skills.
+
+**What moves.**
+
+1. **A skill is an `AbilityDefinition` Resource.** The class that holds today's four signatures
+   grows the fields a skill needs: kind (passive, weaponskill, ability), archetype (one of the five,
+   or `general` for the shared pool), unlock level or general tier, book-only, counter tag, combo
+   predecessor, the AI rule, and a list of effects. There is no new
+   base class and no script per skill.
+   - Effects are a closed set of primitives (damage, heal, shield, status, revive, interrupt,
+     move, taunt). One function in `BattleSimulation` applies them. It replaces
+     `match actor.archetype` in `_use_ability`.
+   - `BattleSimulation.ABILITIES`, keyed by archetype, becomes a const dict keyed by skill id.
+     `HeroDefinition.battle_ability` duplicates it today and is removed, so there is one source.
+   - A test loads every skill `.tres` and fails on an unknown primitive or field.
+2. **The forecast stays the simulation. No second implementation is written.** A `battle_v1`
+   order's safe check is already `BattleSimulation.forecast`: two real runs. Skills live only in
+   `combat/battle/`, so the forecast sees every skill for free. Two paths are skill-blind, and stay
+   that way by rule:
+   - `ExpeditionOrders.safety_forecast`, the closed-form estimate. It feeds the dispatch preview's
+     "Power forecast" line in `hub.gd` and `GameSession`'s repeat of `legacy_v2` orders. It
+     already ignores abilities. It is never the unlimited-repeat gate for a `battle_v1` order.
+   - `QuickResolve`. It resolves only `legacy_v2` orders saved before `ig-544`.
+   Skill logic anywhere outside `combat/battle/` is a bug. The cost that is real is speed: every
+   skill slice keeps forecast wall time within 2× the first slice's baseline (`SYSTEMS.md`).
+3. **A hero's skills are profile state** (save boundary #1). Three additive `Hero` keys, saved in
+   `Hero.to_dict/from_dict`:
+   - `learned_skills`: skills from books and the Training Hall only. Level skills are derived
+     from level and archetype, never saved, so they cannot fall out of step.
+   - `skill_bar`: `[{id, mode}]`, where order is priority and mode is `auto`, `manual` or `off`.
+     A hero without one gets a derived default: every known skill, `auto`, in kit order.
+   - `skill_chains`: `[{trigger, then: [ids]}]`, at most `skill_chain_max_steps` after the trigger.
+   Plus `GameSession.skill_books`, `{skill_id: count}`. `SAVE_VERSION` is not bumped (the `P2-23`
+   precedent). On load, unknown ids, ids from another class, skills the hero does not know and bad
+   modes are dropped with a `push_warning`. A `general` id is valid on every class. All of it lives on the `Hero`, so a death takes it
+   away and `kill_hero()` stays the only writer (rule 8).
+4. **The dispatch snapshot carries the kit.** A team snapshot gains `skills` (known skills in bar
+   order, with modes) and `chains`, fixed at dispatch like gear. A snapshot without them derives
+   the archetype's signature and passive, which is exactly today's battle.
+5. **Battle checkpoints migrate** (dispatch-order profile data, boundary #1). A `BattleActor` gains
+   per-skill cooldowns, the ability lock, a status list, combo state and chain state. An old
+   checkpoint loads like this:
+   - `ability_cooldown` becomes the signature's cooldown.
+   - The per-order `ability_auto` policy becomes the signature's mode. New orders stop writing it.
+   - `guard_remaining`/`guard_reduction` become a damage-reduction status, in the slice that adds
+     statuses. `stun_remaining` stays as it is.
+   `validate_snapshot` accepts both shapes.
+6. **A chain is an AI preference, not an order queue.** "A new direct movement/target order
+   replaces the previous one; no custom queue" (`SYSTEMS.md`) stands. A chain only changes which
+   skill is picked next. Its step and deadline are saved in the checkpoint like a cooldown. A
+   Manual skill inside a chain fires: programming it counts as firing it by hand (director ruling,
+   2026-09-23).
+7. **One generic picker.** Counter, then revive, heal, chain, buff and attack, with ties broken by
+   bar order. Each skill's rule is data. Enemies use the same picker with their own kits and no
+   chains.
+8. **Counters read the telegraph state that exists** (`telegraph_kind`, `_origin`, `_point`,
+   `_radius`, `_remaining`). There is no new telegraph system. The claim is saved on the
+   telegraphing actor (`telegraph_claimed_by`), so a reload mid-telegraph does not answer twice.
+9. **Piloting is a view mode of the same simulation.** This amends 2026-09-22 ("`ig-yzc` now means
+   observing and commanding an existing expedition, not piloting one hero"): piloting one hero is
+   one more way to command, not a separate arena or simulation.
+   - The battle view marks one ally as piloted. The simulation then skips that actor's skill and
+     target choice. It still auto-attacks its current target.
+   - The view sends `use_skill {actor_id, skill_id, target_id or point}`, validated like today's
+     commands, plus today's move and attack commands.
+   - Piloted is watched-view state, like tactical pause: cleared on leaving and on reload, never
+     saved in the checkpoint, never set in an unwatched run or a forecast.
+   - WASD later needs a held movement direction on the actor, read each tick. That is state, not
+     a queue, and it gets its own amendment when it comes.
+10. **FFXIV is inspiration only.** Names, numbers, icons, effects and text are ours. A skill whose
+    name matches a Square Enix skill name, or closely copies one, is refused in review. Effects
+    are one generic visual per primitive, tinted per skill. Icons are our own glyphs.
+11. **Skills touch no Summon Stone, Essence or parts formula, and add no seventh stat.** A book is
+    an extra roll in `Expedition.roll_loot` (`hub/expedition/expedition.gd`), either a class book or
+    a general book. Teaching is a `GameSession` mutator that spends parts and checks the Training
+    Hall's level: class skills ahead of level, general skills by tier. General skills never open by
+    level. In v1, none deals damage or raises ATK, SPD or crit, so the v1 pool cannot raise a
+    hero's damage (`SYSTEMS.md` § The v1 general pool). That is a balance choice, not part of this
+    ADR. A later damage-dealing general skill needs a `SYSTEMS.md` balance check, not an amendment.
+12. **No fourth autoload.**
+
+**Rejected.**
+
+- *A closed-form skill model for the forecast.* It would drift from the simulation, which is the
+  exact failure the combat seam exists to prevent.
+- *A script or a subclass per skill.* Forty skills now and more later. Data plus a closed set of
+  primitives scales, and keeps the seam free of a registry of behaviors.
+- *Mana or another skill resource.* A second thing to balance and show. The swing timer, cooldowns
+  and the ability lock already bound output.
+- *Weaponskills on their own cooldowns.* Thirty of them would multiply damage by the size of the
+  bar.
+- *A bar slot limit.* The owner ruled there is none.
+- *Chains as a command queue.* It breaks the replace-order rule and the synchronous command model.
+- *Saving level skills.* They are derivable, and a saved copy can disagree with the level.
+- *Piloting as its own arena or simulation.* That is a second implementation of a battle.
+- *Piloting in unwatched runs.* There is no view to take input from.
+- *Square Enix names, icons or effects.*
+- *Learning another class's skills.* The owner chose class plus a shared general pool instead. It
+  keeps each class's identity and still gives the 30+ a road.
+- *General skills by level.* Every hero would carry the whole pool for free, and the pool would
+  flatten the classes.
+
+**Left open on purpose.** Whether `legacy_v2` and `QuickResolve` get retired: skills widen how far
+the two `resolve()` paths disagree, but they already disagreed on abilities. The director files it
+separately if skills make the disagreement real. Whether the preview's "Power forecast" line gets replaced by a
+simulation forecast. The WASD input model.
+
+---
+
 ## 2026-09-23: The town builder — placed buildings are profile state, `station` is a hero's one job, `home` is its house, and the town runs only on the live tick
 
 **ACCEPTED by the director, 2026-09-23,** on the owner's answers (houses gate workplace jobs; heroes eat and can starve; multi-passion job skills; live play only). Drafted for `ig-6m2`. The owner, 2026-09-23:

@@ -271,6 +271,216 @@ not advance offline. These timings and the new combat economy require separate p
 
 ---
 
+## Skills — *ig-gy0, accepted 2026-09-23*
+
+Design: `GAME_SPEC.md` § Skills. Boundaries: `DECISIONS.md` 2026-09-23, skills. Each skill is an
+`AbilityDefinition` Resource (rule 9: kit values live there). The shared numbers below are
+`balance.tres` rows.
+
+> ⚠️ **PROVISIONAL** — every number in this section is a desk guess. None has been played.
+> · **Settled by:** a played build of the kit slice, then the balance pass (both in `ig-gy0`).
+
+### Shared rules
+
+| Row | Value | What it does |
+|---|---|---|
+| `skill_ability_lock_seconds` | 1.0 | After any ability, the hero waits this long before the next ability |
+| `skill_combo_window_seconds` | 6.0 | A combo step gets its bonus only this soon after the step before it |
+| `skill_reaction_delay_seconds` | 0.2 | How long after a telegraph starts before a hero may answer it |
+| `skill_chain_step_timeout_seconds` | 3.0 | A chain step that cannot fire within this is skipped |
+| `skill_chain_max_steps` | 8 | Skills after the trigger, per chain |
+| `skill_status_tick_seconds` | 1.0 | Bleed, burn and heal-over-time tick once a second |
+| `skill_book_drop_chance` | 0.02 / 0.04 / 0.06 | Per clear, Verdant / Ashfall / Sundered (a `ZoneDefinition` value) |
+| `training_hall_teach_levels_per_level` | 5 | A hall at level `L` teaches skills up to `hero.level + 5 * L` |
+| `training_hall_teach_parts_per_unlock_level` | 3 | F parts per unlock level: a level-25 skill costs 75 |
+| `skill_book_general_share` | 0.5 | Share of book drops that are general books |
+| `training_hall_general_parts` | 20 / 40 / 80 | F parts to teach a general skill of tier 1 / 2 / 3 |
+
+**Weaponskills ride the swing.** A weaponskill fires in place of a basic attack. It uses the same
+0.3 s windup and resets the same `clamp(100 / SPD, 0.3, 3.0)` interval. So the number of
+weaponskills never changes how often a hero hits, only how hard.
+
+**Abilities have their own cooldown,** plus the shared ability lock. Today's signatures fire
+between swings without touching the swing timer. That stays.
+
+**Statuses.** Stun, shield, damage reduction, stat changes, bleed, burn, heal over time, root,
+silence and taunt. Damage reduction does not stack: the strongest one applies (today's Rally
+rule). A shield absorbs damage before HP. The same status from any source refreshes, never
+stacks. Stat changes read and change the six stats only.
+
+**Counters.** A counter is an ability with one tag:
+
+| Tag | What it does to a telegraph |
+|---|---|
+| `stun` | Stuns the caster. A stun already cancels a pending action today, so the telegraph is gone |
+| `interrupt` | Cancels the caster's windup or telegraph, with no stun |
+| `shield` | Shields or protects the ally or allies inside the telegraph |
+| `dodge` | The user steps out, and the telegraph misses it if it resolves within 1 s |
+
+**The AI's answer.** When an enemy telegraph has run `skill_reaction_delay_seconds`, each hero in
+stable spawn order may claim it. The first hero with a stun or interrupt in range claims it and
+fires. If none, the first with a shield covering someone inside it does. If none, each hero
+inside it with a dodge uses it. Everyone else in it walks out, as today. Among a hero's usable
+counters it picks the shortest cooldown. One claim per telegraph.
+
+### Learning
+
+| Opens at | Slot in every kit |
+|---|---|
+| Level 1 | The passive, the signature and a starter weaponskill |
+| Level 5 | A combo step and a counter |
+| Level 15 | A sixth skill |
+| Level 25 | A seventh skill |
+| Book only | An eighth skill, at any level |
+
+Level caps by rank (§ Ranks) set how many class skills a hero can reach: F (cap 10) five, D (cap
+20) six, C and above (cap 30+) seven, plus its class book skill. General skills come on top (below).
+With the v1 pools, a hero can know at most 8 class + 6 general = 14 skills. A Training Hall teaches ahead of level for parts, up to
+`hero.level + 5 * hall level`. Taught and book skills are saved on the hero. Level skills are
+derived from level and archetype, so they cannot fall out of step with it.
+
+**The general pool: tiers and gating** (owner ruling, 2026-09-23: class plus a shared pool).
+General skills never open by level. Each has a tier:
+
+| Tier | Minimum hero level | Training Hall level to teach it | Hall cost |
+|---|---|---|---|
+| 1 | 1 | 1 | 20 F parts |
+| 2 | 10 (F's cap) | 2 | 40 F parts |
+| 3 | 20 (D's cap) | 3 | 80 F parts |
+
+A general book teaches its one skill to any hero at or above the minimum level, whatever the hall
+level. Half of all book drops are general books (`skill_book_general_share`), picked uniformly
+from the pool. The other half are class books, as before. Tiers 4 and 5 are left for later pools,
+since the hall caps at level 5.
+
+**Skill books and the spine.** A book drop is an extra roll on a clear. It never replaces Summon
+Stones, parts or Essence, and no Essence formula reads skills (`compute_essence_yield` reads rank
+and level). Books cannot be salvaged or sold. So ~327 → ~219 → ~188 does not move. A book teaches
+one skill. Its class is picked at random, weighted by your roster's archetypes.
+
+### The v1 kits
+
+Five kits of eight. The four signatures and passives keep today's numbers exactly, so the first
+slice can prove that nothing changed. Multipliers are on the basic damage formula. "Heal 3.0 ATK"
+means ATK times 3.0. The counter column is the tag.
+
+**Knight** (tank)
+
+| Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
+|---|---|---|---|---|---|---|
+| Bulwark | Passive | 1 | — | Today's: 10% less damage within 3 of another living ally | always | — |
+| Rally | Ability | 1 | 16 s | Today's: revive a downed ally within 3 to 25% HP, else allies within 3 take 30% less damage for 4 s | revive first; else 2+ allies within 3 | `shield` |
+| Iron Cut | Weaponskill | 1 | — | 1.3×, starts the combo | default | — |
+| Follow-Through | Weaponskill | 5 | — | 1.8× right after Iron Cut, else 1.1× | after Iron Cut | — |
+| Buckler Blow | Ability | 5 | 20 s | Range 1.6: 0.8×, 1.5 s stun | a telegraph in range | `stun` |
+| Challenge | Ability | 15 | 15 s | Range 6: the enemy attacks the Knight for 4 s | an enemy hitting a lower-HP ally | — |
+| Sweeping Blow | Weaponskill | 25 | — | 0.9× to every enemy within 2 | 3+ enemies within 2 | — |
+| Last Stand | Ability | book | 60 s | Self: 60% less damage for 5 s | a telegraph on the Knight, or HP below 30% | `shield` |
+
+**Rogue** (melee damage)
+
+| Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
+|---|---|---|---|---|---|---|
+| Blindside | Passive | 1 | — | Today's: +25% basic damage from behind | always | — |
+| Flank/Interrupt | Ability | 1 | 10 s | Today's: move to a rear slot, 0.3 s stun, 1.6× | today's rule; also a telegraph in range | `interrupt` |
+| Quick Cut | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
+| Gutting Strike | Weaponskill | 5 | — | After Quick Cut: 1.5× and bleed 0.2 ATK/s for 6 s, else 1.0× | after Quick Cut | — |
+| Slip | Ability | 5 | 12 s | Self: dodge (see Counters), dash 2 out of the danger | the Rogue is inside a telegraph | `dodge` |
+| Venom Edge | Ability | 15 | 30 s | Self: ATK +15% for 10 s | a fight is on | — |
+| Knife Flurry | Weaponskill | 25 | — | 0.8× to every enemy within 2.5 | 3+ enemies within 2.5 | — |
+| Deathmark | Ability | book | 45 s | 3.0× to a target below 30% HP | target below 30% | — |
+
+**Ranger** (ranged damage)
+
+| Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
+|---|---|---|---|---|---|---|
+| Long Sight | Passive | 1 | — | Today's: +20% basic range | always | — |
+| Piercing Shot | Ability | 1 | 10 s | Today's: range 10, line width 1, 1.8× | today's rule | — |
+| Steady Shot | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
+| True Mark | Weaponskill | 5 | — | 1.7× right after Steady Shot, else 1.1× | after Steady Shot | — |
+| Pinning Shot | Ability | 5 | 15 s | Range 10: 0.5×, interrupt, 1 s root | a telegraph in range | `interrupt` |
+| Barbed Arrow | Weaponskill | 15 | — | 1.0× and bleed 0.15 ATK/s for 8 s | target not bleeding | — |
+| Hail of Arrows | Ability | 25 | 20 s | Range 10, radius 3: 0.8× each | 3+ enemies in the circle | — |
+| Hunter's Focus | Ability | book | 60 s | Self: SPD +40% for 8 s | a fight is on | — |
+
+**Mage** (caster damage)
+
+| Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
+|---|---|---|---|---|---|---|
+| Arcane Flow | Passive | 1 | — | Today's: Burst cooldown −10%. From the kit slice, every Mage ability | always | — |
+| Burst | Ability | 1 | 12 s | Today's: range 8, radius 2.5, 1.5× | today's rule: 3+ enemies or an elite | — |
+| Ember Bolt | Weaponskill | 1 | — | 1.3×, starts the combo | default | — |
+| Blaze | Weaponskill | 5 | — | After Ember Bolt: 1.6× and burn 0.2 ATK/s for 6 s, else 1.1× | after Ember Bolt | — |
+| Frost Bind | Ability | 5 | 18 s | Range 8: 0.5×, 1.5 s stun | a telegraph in range | `stun` |
+| Chain Spark | Weaponskill | 15 | — | 1.0×, then jumps to 2 more enemies within 3 at 0.6× | 2+ enemies within 3 | — |
+| Warding Glyph | Ability | 25 | 25 s | Range 8: shield 2.0 ATK on an ally for 6 s | an ally inside a telegraph, else an ally below 50% | `shield` |
+| Skyfall | Ability | book | 45 s | Range 8, radius 3: 2.5× after a 1.0 s delay | 3+ enemies or an elite | — |
+
+**Cleric** (healer; today it has nothing, `ig-4if`)
+
+| Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
+|---|---|---|---|---|---|---|
+| Grace | Passive | 1 | — | +20% to the Cleric's own heals and shields | always | — |
+| Mend | Ability | 1 | 8 s | Range 6: heal 3.0 ATK to one ally | an ally below `heal_below` (35%) | — |
+| Smite | Weaponskill | 1 | — | 1.1× | default | — |
+| Hush | Ability | 5 | 20 s | Range 8: interrupt, 1.5 s silence (no skills) | a telegraph in range | `interrupt` |
+| Sheltering Word | Ability | 5 | 20 s | Range 6: shield 2.5 ATK for 8 s | an ally inside a telegraph, else the tank below 50% | `shield` |
+| Wellspring | Ability | 15 | 12 s | Range 6: heal 0.3 ATK a second for 10 s | an ally below 70% without it | — |
+| Prayer Circle | Ability | 25 | 30 s | Heal 1.5 ATK to every ally within 4 | 3+ allies below 70% | — |
+| Rekindle | Ability | book | 60 s | Range 4: revive a downed ally to 30% HP | a downed ally | — |
+
+The Cleric has no combo, so its level-5 slot is a second counter. Mend's 3.0 ATK is 48 HP at the
+Cleric's base ATK of 16: about a third of a base Knight.
+
+### The v1 general pool
+
+Six skills, any class. All are abilities. None is a weaponskill, none deals damage, and none
+raises ATK, SPD or crit, so class + general never raises a hero's damage. The general counters
+have long cooldowns, so the AI's shortest-cooldown rule reaches for a class counter first and a
+general one as the backup.
+
+| Skill | Tier | Cooldown | Effect | AI uses it when | Counter |
+|---|---|---|---|---|---|
+| Catch Breath | 1 | 60 s | Self: heal 20% of max HP | own HP below 40% | — |
+| Field Dressing | 1 | 45 s | Range 2: heal 1.5 ATK to one ally | an ally below 35% and none of the hero's own heals is ready | — |
+| Brace | 2 | 40 s | Self: 25% less damage for 4 s | a telegraph on this hero, or HP below 30% | `shield` |
+| Tumble | 2 | 40 s | Self: dodge, dash 2 out of the danger | the hero is inside a telegraph | `dodge` |
+| Disrupt | 3 | 45 s | Range 1.6: interrupt, no damage | a telegraph in range | `interrupt` |
+| Hearten | 3 | 60 s | Allies within 4: DEF +10% for 10 s | a fight is on and 3+ allies are within 4 | — |
+
+Brace's reduction follows the damage-reduction rule: the strongest one applies, so it never stacks
+with Rally or Last Stand. Hearten from two heroes refreshes, never stacks.
+
+**Enemies** (owner ruling, 2026-09-23). Enemies keep today's signatures and telegraphs,
+and gain their class's starter weaponskill. Enemy Knights gain **Crushing Blow**: a 1.2 s
+telegraph, radius 1.5 on its target, 2.5×, 14 s cooldown. It is the heavy hit that the owner's
+example answers with a stun. Enemies do not use chains or the general pool.
+
+### What the kits cost the balance
+
+The combos raise a hero's sustained single-target damage to about 1.4–1.6× its basic swings, and
+the new abilities add more. That is a large buff. Enemies with skills only offset part of it.
+
+**Class + general.** The general pool adds no damage. It adds survival: a hero with all six gets
+back about 20% of its HP a minute, cuts one telegraph a minute by a quarter or dodges it, and can
+patch an ally. That is roughly +20–30% effective HP over a one-minute fight. Its risk is not clear
+time but the forecast: `safe` means no downings, so more survival means more orders qualify for
+unlimited repeats, sooner.
+
+> ⚠️ **PROVISIONAL** — the kits' effect on clear time is unmeasured · **Settled by:** the balance
+> pass, which retunes skill multipliers (not the six stats, not zone power) until five mixed
+> F-rank level-1 heroes clear Verdant in the `ig-544` measured band again (60–66 s over seeds 1
+> and 2). General skills get their own check: a C-rank level-30 team of all five classes with
+> full class kits, run at Sundered with and without all six general skills each. With them, clear
+> time may fall by at most 10%, and any change in the `safe` verdict is reported to the director.
+
+**Forecast cost.** `BattleSimulation.forecast` runs two full battles per commit, and more skills
+mean more work per tick. The first slice measures forecast wall time for a five-hero Verdant
+order and a 50-hero Frontier March order. Every later skill slice must stay within 2× that
+baseline. A hero with 32 skills is part of that test, because the owner wants 30+ to work.
+
+---
+
 ## Ranks — *Phase 2*
 
 `F D C B A S SS SSS` → int `0..7`. Applies to heroes and equipment alike.

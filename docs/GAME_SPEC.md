@@ -123,14 +123,16 @@ These are non-negotiable and shape architecture. Changing one requires a `DECISI
 Heroes handle basic attacks and role positioning themselves. Auto Battle advances authored
 objectives, while per-ability/item Auto or Manual preferences remain authoritative. Players
 select heroes/squads, move, attack-move, hold, guard, retreat, target abilities/items and pause
-the watched battle for orders. There is no direct hero-piloting requirement.
+the watched battle for orders. There is no direct hero-piloting requirement. Since 2026-09-23
+you *may* take direct control of one hero in a watched battle (§ Skills). It stays optional.
 
 The first visual style is chibi, using readable class silhouettes, selection rings, HP/downed
 indicators and restrained effects. Standard encounters prove five-hero play; a 30-hero raid
 uses simultaneous objectives and a 50-hero region uses camps, patrols and an escort route.
 These are authored bounded maps, not a seamless world or procedural generation.
 
-The four existing archetypes get signature abilities and passives. Supplies have explicit
+The four existing archetypes get signature abilities and passives. § Skills grows each into a
+full kit, and gives the Cleric one. Supplies have explicit
 per-run allocations and stockpile reserves. A repeat cannot silently drain protected supplies.
 The same deterministic battle rules run whether a view is open or closed. Rendering and
 observing grant no extra rewards; return timers remain the minimum reward-arrival gate.
@@ -140,6 +142,137 @@ active. Victory secures the downed; retreat secures bodies actually brought out.
 incident has its own reviewed active-play rescue window, never an offline countdown. Rescue
 can succeed partially or fail; failed rescuers join that incident without resetting its age.
 An attempt dispatched before expiry can finish before any remaining losses are finalized.
+
+### Skills — owner direction 2026-09-23 (`ig-gy0`, accepted)
+
+> "I want each hero to have customizable skill bar, I want them to be able to have 30+ skills if
+> I wanted. We can bulk up the skills list by poaching skills from final fantasy 14, the mmo"
+>
+> "I want AI to intelligently pick skills, but players can also take control basically play an
+> mmo character. I think players should be able to program skill order too, as in theres one
+> trigger skill and the player can choose what skills come after it. Also the heros AI should be
+> able correctly respond to enemie skills too. As in enemie telegraphed heavy attack/skill ->
+> hero uses available stun skill etc etc" — the owner
+
+The owner also ruled: skills are learned three ways (level and rank-ups, skill books, the
+Training Hall), and there is no bar limit. Every learned skill is usable.
+
+**Inspired by FFXIV, owned by us.** FFXIV is where the ideas come from: weaponskills on a shared
+swing, abilities woven between them, two-step combos, tank interrupts, healer shields,
+telegraphed big hits. Nothing else comes from it. Every name, number, icon, effect and line of
+text is ours. No Square Enix skill names, icons or VFX, and no names that are close copies.
+
+**What a skill is.** Four kinds, all data:
+
+- **Passive.** Always on. Each class has one: today's four passives, plus one for the Cleric.
+- **Weaponskill.** Replaces the next basic attack. It rides the same swing timer, so a hero with
+  thirty weaponskills still swings at the same speed. Some are the second step of a combo and hit
+  harder right after the first step.
+- **Ability.** Has its own cooldown and fires between swings. After any ability a hero waits a
+  short lock before the next, so thirty abilities cannot all go off in one moment. Today's four
+  signatures are abilities.
+- **Counter.** An ability with a counter tag: stun, interrupt, dodge or shield. Counters are what
+  the AI reaches for when an enemy telegraphs.
+
+There is no mana or other skill resource. Cooldowns, the swing timer and the ability lock are
+the only limits. A skill never adds a seventh stat: its effects read and change the six stats,
+damage, healing, shields, statuses and position.
+
+**The bar.** A hero's bar is every skill it knows, in an order you set. There is no slot limit.
+Each skill has a mode:
+
+- **Auto.** The AI may use it. This is the default, so a hero you never open still fights with
+  its whole kit.
+- **Manual.** Only you fire it, by command or while you control the hero.
+- **Off.** Never used.
+
+Bar order is priority: when the AI has two good choices, the one higher on the bar wins. That is
+how you tune the AI without programming it. The 2026-09-22 rejection of "forcing thirty
+individual skill bars onto the player" still holds, because nothing forces you to open a bar.
+
+**How the AI picks.** Each time a hero can act, it takes the first of these that applies:
+
+1. **Counter** an enemy telegraph (below).
+2. **Revive** a downed ally.
+3. **Heal** an ally who is low.
+4. **Continue a chain** you programmed (below).
+5. **Buff** when a fight is on and the buff is not already up.
+6. **Attack**: area skills when enough enemies are close, otherwise the best single-target
+   skill, with combo steps in order.
+
+Each skill carries its own small rule (how many targets, below what HP, only on a downed ally),
+so the AI is one general picker, not code per skill.
+
+**The AI answers telegraphs.** When an enemy starts a telegraphed skill, the heroes who can see it
+decide, after a short reaction delay, how to answer it:
+
+1. Stop it: **interrupt** or **stun** the caster, if one is in range.
+2. Else **shield** or protect whoever is standing in it.
+3. Else **dodge**, if the hero itself is in it.
+4. Else walk out of it, as heroes already do today.
+
+One hero answers each telegraph, so three stuns are not wasted on one swing. The AI prefers the
+counter with the shortest cooldown, and keeps the long ones for later. A skill set to Manual or
+Off is never used as a counter.
+
+**Chains: you program the order.** A chain is one trigger skill and the skills you want after it,
+in order. When the trigger fires, by the AI or by you, the hero follows with the rest as each
+becomes ready. A step that cannot fire in time is skipped. A counter or a revive can cut in, and
+the chain carries on after. A Manual skill inside a chain fires: programming it into the chain
+counts as firing it by hand (director ruling, 2026-09-23). A chain is a preference, not an order
+queue. Orders still replace orders.
+
+**Take control of one hero.** In a watched battle you can take one hero over and play it like an
+MMO character. Its AI stops picking skills and targets for it. It keeps auto-attacking your
+target. Its bar appears with number keys for the first ten skills; the rest are a click away.
+Your other heroes keep their AI. Leave the battle view, and the AI takes the hero back. Control
+changes nothing about rewards: the same simulation runs either way.
+
+- **First version** (owner ruling, 2026-09-23): click to move and to target, number keys and
+  clicks to fire skills, one controlled hero, watched battles only.
+- **Later:** WASD movement, tab-targeting, a camera that follows the hero, and bar pages with
+  your own keybinds.
+
+**Two pools: the class and the general pool** (owner ruling, 2026-09-23). A hero learns its own
+class's skills, plus skills from one shared general pool that every class can learn. No hero
+learns another class's skills. The general pool is the road to the owner's 30+: each general
+skill serves all five classes, so it grows the most bars for the least work.
+
+- **General skills are utility, not damage.** Self-heals, a heal for an ally, damage reduction, a
+  dodge, an interrupt, a small party buff. None replaces the swing, and none hits harder than a
+  basic attack. They make a hero harder to kill and give every class a backup counter. They do
+  not make a class hit harder, so the class kit stays what defines a hero.
+- **General skills are never free.** They come only from books and the Training Hall, never by
+  level. Each has a minimum hero level, so rank still gates them.
+
+**Learning skills.**
+
+- **Level and rank.** Each class skill opens at a level. Rank caps level (F at 10, D at 20, and on
+  up), so ranking a hero up is what opens its later skills.
+- **Skill books.** Rare expedition drops. A class book teaches its class's book-only skill to one
+  hero of that class. A general book teaches one general skill to any hero at or above its
+  minimum level.
+- **The Training Hall.** Teaches a class skill before its level, and teaches general skills, for
+  parts. A higher hall teaches further ahead and opens more of the general pool. It never teaches
+  a class book-only skill.
+
+A hero keeps what it learned for life. Death and sacrifice erase it, as they erase profession
+skill (owner ruling, 2026-09-23).
+
+**What skills never touch.** Books add no Summon Stones, Essence or parts, and sacrifice reads only
+rank and level, so skills do not move the ~327-pull claim in § Win and loss. Stronger heroes clear
+faster, which changes time, not pulls, the same as gear does.
+
+**The Cleric gets a kit** (`ig-4if`). Today it has no battle ability at all. It gets a heal first,
+then the rest of its kit with the others.
+
+**Enemies use skills too** (owner ruling, 2026-09-23). They keep telegraphing their big hits, and
+enemy Knights gain one, so the heroes have something to answer. Enemies do not use the general
+pool.
+
+> ⚠️ **PROVISIONAL** — every skill number, the reaction delay, the ability lock and the drop rates
+> are unfelt · **Settled by:** a played build of `ig-gy0`'s first kit slice, then its balance
+> pass.
 
 ### Historical quick-resolve and action-arena direction
 
