@@ -249,8 +249,10 @@ func test_a_failed_mutation_at_the_cap_rolls_back_to_the_same_ledger_through_a_r
 
 ## SYSTEMS.md § The Ledger, the save budget row: at most 2 ms added to a profile action or a
 ## periodic save at any ledger size up to the cap. Best of seven, since noise only adds time;
-## printed for the bead. The eventful ledger is the eviction's worst case: no routine battle, so it
-## scans every record.
+## printed for the bead. The periodic sample's battle has a moment, so it survives eviction and every
+## case appends the same record; the eventful ledger is then the eviction's worst case: no routine
+## battle, so it scans every record. Each timed step starts 20 ms after the last, as saves in play
+## do: back-to-back appends hit a ~2 ms OS wait at any ledger size (ig-9b6).
 func test_a_full_ledger_adds_at_most_2_ms_to_a_commit_or_a_periodic_save() -> void:
 	var empty: Dictionary = _timings()
 	_fill(BALANCE.ledger_max_records, true)
@@ -269,18 +271,21 @@ func test_a_full_ledger_adds_at_most_2_ms_to_a_commit_or_a_periodic_save() -> vo
 
 
 ## Best-of-seven milliseconds of: a profile commit that records once, a settle recorded outside any commit
-## plus its periodic save, and a save with nothing new.
+## plus its periodic save, and a save with nothing new; each after a 20 ms pause.
 func _timings() -> Dictionary:
 	assert_true(SaveService.save())
 	var samples: Dictionary = {"commit": [], "periodic": [], "idle": []}
 	for run: int in 7:
+		OS.delay_msec(20)
 		var started: int = Time.get_ticks_usec()
 		assert_true(_commit("died", {"hero": "hero:t%d" % run, "name": "T", "rank": 0, "cause": "sacrifice", "by": "hero:a"}))
 		samples["commit"].append((Time.get_ticks_usec() - started) / 1000.0)
+		OS.delay_msec(20)
 		started = Time.get_ticks_usec()
-		GameSession._record("battle", _battle(0, []))
+		GameSession._record("battle", _battle(0, [{"tick": 1, "what": "downed", "hero": "hero:a", "by": "enemy:rogue"}]))
 		assert_true(SaveService.save())
 		samples["periodic"].append((Time.get_ticks_usec() - started) / 1000.0)
+		OS.delay_msec(20)
 		started = Time.get_ticks_usec()
 		assert_true(SaveService.save())
 		samples["idle"].append((Time.get_ticks_usec() - started) / 1000.0)
