@@ -59,14 +59,15 @@ const ARRIVE_RADIUS: float = 2.8
 const AT_SPOT: float = 0.05
 ## The overview camera (ig-6m2.8.1). Presentation only: tune by screenshot. hub.tscn sets the start
 ## framing and the pitch; these only bound how far the player moves it.
-const OVERVIEW_HEIGHT_MIN: float = 4.5
+## 6 m, not 4.5: at 4.5 the camera sat inside the House roofs in front of the start view (ig-6m2.8.1 shots).
+const OVERVIEW_HEIGHT_MIN: float = 6.0
 const OVERVIEW_HEIGHT_MAX: float = 27.0
 ## Metres a second at the start height (9 m); faster higher up, so a screen crosses in the same time.
 const OVERVIEW_PAN_SPEED: float = 20.0
 ## Each wheel step moves this share of the distance to the focus.
 const OVERVIEW_ZOOM_STEP: float = 0.1
 ## Multiplies the shared atlas on the ground only, towards a natural green.
-const GRASS_TINT: Color = Color(0.72, 0.85, 0.62)
+const GRASS_TINT: Color = Color(0.5, 0.8, 0.5)
 
 ## The embodied hero, or null when the town is seen from the overview camera.
 var body: TownHero
@@ -237,10 +238,12 @@ func zoom_overview(steps: int) -> void:
 	if body != null or camera == null:
 		return
 	var forward: Vector3 = -camera.global_basis.z
+	# Clamp every step: a long run unclamped flies the camera kilometres out and float precision
+	# then drifts the focus.
 	for step: int in absi(steps):
 		var focus: Vector3 = _focus(camera)
 		camera.global_position += forward * camera.global_position.distance_to(focus) * OVERVIEW_ZOOM_STEP * signi(steps)
-	_clamp_overview(camera)
+		_clamp_overview(camera)
 
 
 ## Where the camera looks at the ground, in global space. The pitch always looks down.
