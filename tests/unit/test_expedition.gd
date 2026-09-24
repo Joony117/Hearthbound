@@ -786,7 +786,7 @@ func _earned_xp(hero: Hero) -> int:
 
 func _make_zone(recommended_power: int, fraction: float, trash_wave_count: int) -> ZoneDefinition:
 	var zone := ZoneDefinition.new()
-	zone.zone_id = &"test_zone"
+	zone.zone_id = &"verdant_outskirts"  # A known zone: mark_zone_cleared saves it, and a save must load (ig-6pm).
 	zone.recommended_power = recommended_power
 	zone.trash_wave_count = trash_wave_count
 	zone.trash_wave_start_fraction = fraction

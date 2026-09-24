@@ -529,6 +529,7 @@ func test_failed_battle_settlement_rolls_back_refund_then_retry_refunds_once() -
 	var order: Dictionary = GameSession.expedition_orders[0]
 	(order["battle"] as Dictionary)["status"] = "victory"
 	(order["battle"] as Dictionary)["supplies_remaining"] = {"healing": 1, "revival": 0}
+	order["phase"] = "returning"
 	order["remaining_seconds"] = 0.0
 	assert_true(SaveService.save())
 	var canonical_before: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)

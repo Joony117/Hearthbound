@@ -74,7 +74,7 @@ func test_paused_incident_card_keeps_controls_selection_and_can_dispatch_first_r
 	}], zone, [{"id": "source-squad", "name": "Source", "hero_ids": [stranded.instance_id], "stance": "stay_together", "guard_target_id": ""}], {}, {}, 544)
 	source_state.actors[0].life = BattleActor.LIFE_DOWNED
 	source_state.actors[0].hp = 0.0
-	GameSession.stranded_incidents.append({"id": "incident-1", "source_order_id": "private-source-id", "zone_id": "verdant_outskirts", "hero_ids": [stranded.instance_id], "battle_snapshot": source_state.to_dict(), "created_recovery_seconds": GameSession.rescue_clock_seconds, "paused": true, "expiry_pending": false, "active_rescue_order_id": ""})
+	GameSession.stranded_incidents.append({"id": "incident-1", "source_order_id": "private-source-id", "zone_id": "verdant_outskirts", "hero_ids": [stranded.instance_id], "battle_snapshot": GameSession._incident_snapshot(source_state, [stranded.instance_id] as Array[String]), "created_recovery_seconds": GameSession.rescue_clock_seconds, "paused": true, "expiry_pending": false, "active_rescue_order_id": ""})
 	var hub: Node3D = _instantiate_hub()
 	hub._refresh_incident_cards()
 	var cards: VBoxContainer = hub.get_node("%IncidentCards") as VBoxContainer
@@ -123,7 +123,7 @@ func test_open_rescue_team_popup_survives_timer_pulse_without_rebuilding_options
 	}], zone, [{"id": "source-squad", "name": "Source", "hero_ids": [stranded.instance_id], "stance": "stay_together", "guard_target_id": ""}], {}, {}, 544)
 	source_state.actors[0].life = BattleActor.LIFE_DOWNED
 	source_state.actors[0].hp = 0.0
-	GameSession.stranded_incidents.append({"id": "incident-popup", "source_order_id": "private-source-id", "zone_id": "verdant_outskirts", "hero_ids": [stranded.instance_id], "battle_snapshot": source_state.to_dict(), "created_recovery_seconds": GameSession.rescue_clock_seconds, "paused": true, "expiry_pending": false, "active_rescue_order_id": ""})
+	GameSession.stranded_incidents.append({"id": "incident-popup", "source_order_id": "private-source-id", "zone_id": "verdant_outskirts", "hero_ids": [stranded.instance_id], "battle_snapshot": GameSession._incident_snapshot(source_state, [stranded.instance_id] as Array[String]), "created_recovery_seconds": GameSession.rescue_clock_seconds, "paused": true, "expiry_pending": false, "active_rescue_order_id": ""})
 	var hub: Node3D = _instantiate_hub()
 	hub._refresh_incident_cards()
 	var panel: PanelContainer = hub._incident_panel("incident-popup")

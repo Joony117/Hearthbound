@@ -198,6 +198,7 @@ func test_home_keepers_earn_xp_on_the_live_tick_only() -> void:
 	assert_almost_eq(float(smith.profession_xp.get(&"smithing", 0.0)), 240.0, 0.001, "x4 in a passion")
 	assert_almost_eq(float(priest.profession_xp.get(&"rites", 0.0)), 60.0, 0.001, "x1 otherwise")
 	assert_almost_eq(float(away.profession_xp.get(&"tracking", 0.0)), 0.0, 0.001, "away earns nothing")
+	_come_home()  # The catch-up saves, and the fake order would not load (ig-6pm).
 	GameSession._advance_orders_in_memory(3600.0)
 	assert_almost_eq(float(smith.profession_xp.get(&"smithing", 0.0)), 240.0, 0.001, "the offline catch-up grants none")
 	assert_almost_eq(float(priest.profession_xp.get(&"rites", 0.0)), 60.0, 0.001)
@@ -328,7 +329,7 @@ func test_the_keeper_panel_shows_the_bonus_the_xp_to_next_and_master() -> void:
 	assert_string_contains(bonus.text, "salvage +25%")
 	assert_string_contains(bonus.text, "max skill · MASTER")
 	_send_away(smith)
-	GameSession.roster_changed.emit()
+	GameSession.expeditions_changed.emit()  # As a dispatch does; roster_changed would save the fake order (ig-6pm).
 	assert_eq(bonus.text, "Away: no bonus and no XP until home")
 
 
@@ -351,7 +352,7 @@ func _add_hero(hero_name: String) -> Hero:
 	return hero
 
 
-## In memory only: a route order holding the hero makes it busy (is_hero_busy). Never saved.
+## In memory only: a route order holding the hero makes it busy (is_hero_busy). Never saved: save() refuses it.
 func _send_away(hero: Hero) -> void:
 	GameSession.expedition_orders.append({
 		"id": "away-" + hero.instance_id,

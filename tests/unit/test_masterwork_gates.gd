@@ -191,7 +191,7 @@ func _item_at(level: int) -> Item:
 	return item
 
 
-## In memory only: a route order holding the hero makes it busy (is_hero_busy). Never saved.
+## In memory only: a route order holding the hero makes it busy (is_hero_busy). Never saved: save() refuses it.
 func _send_away(hero: Hero) -> void:
 	GameSession.expedition_orders.append({
 		"id": "away-" + hero.instance_id,

@@ -37,6 +37,15 @@ func save() -> bool:
 	payload["version"] = SAVE_VERSION
 	var saved_at: float = Time.get_unix_time_from_system()
 	payload["saved_at_unix"] = saved_at
+	var text: String = JSON.stringify(payload, "\t")
+
+	# ig-6pm: never write a file this build's own load would refuse. Checked on the text load will read
+	# (numbers as floats, names as Strings, a NaN that does not survive), not on the dict. Before the
+	# ledger, so a refusal touches no file. Do not remove for speed: a bad state would lock the save.
+	var parsed: Variant = JSON.parse_string(text)
+	var refusal: String = "the save text is not a Dictionary" if parsed is not Dictionary else _load_refusal(parsed as Dictionary, SAVE_VERSION)
+	if not refusal.is_empty():
+		return _write_failed("Save refused: this game state would not load (%s). Your last save is safe; restart to return to it." % refusal)
 
 	# The ledger goes first: a main save that then fails leaves lines past its mark, which the undo
 	# below cuts and load would drop anyway. The reverse order could lose committed records.
@@ -55,7 +64,7 @@ func save() -> bool:
 	# the handle stays non-null through it, so the open check above does not cover this. Renaming a
 	# truncated temp over a good save is the exact loss staging exists to prevent, so a failed write
 	# leaves both files alone and the previous save stands.
-	var wrote: bool = file.store_string(JSON.stringify(payload, "\t"))
+	var wrote: bool = file.store_string(text)
 	file.flush()
 	var write_error: Error = file.get_error()
 	file.close()
@@ -127,8 +136,7 @@ func load_game() -> bool:
 		return false
 
 	if version >= 2:
-		GameSession.repair_rescue_timestamps(parsed_dictionary)
-		var validation_error: String = GameSession.validate_saved_state(parsed_dictionary, version)
+		var validation_error: String = _load_refusal(parsed_dictionary, version)
 		if not validation_error.is_empty():
 			_block_load("Save v%d is invalid: %s" % [version, validation_error])
 			return false
@@ -160,6 +168,13 @@ func load_game() -> bool:
 	else:
 		GameSession.apply_offline_expedition_progress(Time.get_unix_time_from_system())
 	return true
+
+
+## Why load refuses a parsed save, or "". save() runs it on its own text first (ig-6pm), so the write
+## side and the read side cannot drift. Repairs rescue timestamps in place, as load needs.
+static func _load_refusal(parsed: Dictionary, version: int) -> String:
+	GameSession.repair_rescue_timestamps(parsed)
+	return GameSession.validate_saved_state(parsed, version)
 
 
 ## The committed records in LEDGER_PATH: lines below mark, oldest first. rewrite is true when the

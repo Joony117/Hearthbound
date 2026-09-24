@@ -88,7 +88,7 @@ func _add_knight() -> Hero:
 
 func _make_zone(recommended_power: int, trash_wave_count: int) -> ZoneDefinition:
 	var zone := ZoneDefinition.new()
-	zone.zone_id = &"test_zone"
+	zone.zone_id = &"verdant_outskirts"  # A known zone: mark_zone_cleared saves it, and a save must load (ig-6pm).
 	zone.recommended_power = recommended_power
 	zone.trash_wave_count = trash_wave_count
 	zone.trash_wave_start_fraction = 1.0
