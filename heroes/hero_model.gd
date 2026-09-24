@@ -25,7 +25,7 @@ const ENEMY_LOOKS: Dictionary = {
 const ALLY_DROPPED_MESHES: Dictionary = {"cleric": ["Mage_Hat"]}
 const LOOPED_CLIPS: Array[String] = [
 	"Idle_A", "Idle_B", "Running_A", "Walking_A", "Skeletons_Idle", "Skeletons_Walking",
-	"Hammering", "Chopping", "Working_A", "Working_C", "Push_Ups", "Sit_Floor_Idle", "Pickaxing",
+	"Hammering", "Chopping", "Working_A", "Working_C", "Push_Ups", "Sit_Floor_Idle", "Pickaxing", "Digging",
 ]
 # Clip file under animations/Rig_Medium_<file>.glb for every clip in the library.
 const CLIP_FILES: Dictionary = {
@@ -37,7 +37,7 @@ const CLIP_FILES: Dictionary = {
 	# Town: strolling and using stalls.
 	"Walking_A": "MovementBasic", "Idle_B": "General", "Interact": "General", "PickUp": "General", "Use_Item": "General",
 	# Town: work at a station (TownWalker.WORK_CLIPS).
-	"Hammering": "Tools", "Chopping": "Tools", "Working_A": "Tools", "Working_C": "Tools", "Pickaxing": "Tools",
+	"Hammering": "Tools", "Chopping": "Tools", "Working_A": "Tools", "Working_C": "Tools", "Pickaxing": "Tools", "Digging": "Tools",
 	"Push_Ups": "Simulation", "Sit_Floor_Idle": "Simulation",
 }
 const ROOT_POSITION_TRACK: NodePath = NodePath("Rig_Medium/Skeleton3D:root")

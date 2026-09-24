@@ -102,7 +102,7 @@ func test_a_save_from_before_stone_loads_zero_and_negative_stone_loads_zero() ->
 	(saved["town_resources"] as Dictionary).erase("stone")
 	_write(JSON.stringify(saved, "\t").to_utf8_buffer())
 	assert_true(SaveService.load_game())
-	assert_eq(GameSession.town_resources, {"wood": 12.0, "stone": 0.0}, "the wood stays, no start stock of stone")
+	assert_eq(GameSession.town_resources, {"wood": 12.0, "stone": 0.0, "food": BALANCE.town_start_food}, "the wood stays, no start stock of stone")
 	var state: Dictionary = GameSession.to_dict()
 	state["town_resources"] = {"wood": 12.0, "stone": -5.0}
 	GameSession.from_dict(state)
@@ -116,11 +116,11 @@ func test_a_bad_stone_value_or_bad_resources_load_zero_stone_and_the_tick_still_
 	state["town_resources"] = {"wood": 12.0, "stone": "lots"}
 	GameSession.from_dict(state)
 	assert_push_error("Invalid town resources stone")
-	assert_eq(GameSession.town_resources, {"wood": 12.0, "stone": 0.0})
+	assert_eq(GameSession.town_resources, {"wood": 12.0, "stone": 0.0, "food": BALANCE.town_start_food})
 	state["town_resources"] = "broken"
 	GameSession.from_dict(state)
 	assert_push_error("Invalid town_resources")
-	assert_eq(GameSession.town_resources, {"wood": 0.0, "stone": 0.0})
+	assert_eq(GameSession.town_resources, {"wood": 0.0, "stone": 0.0, "food": BALANCE.town_start_food})
 	GameSession.town_resources["wood"] = 100.0
 	_staffed_mine()
 	GameSession.tick_expeditions(60.0)

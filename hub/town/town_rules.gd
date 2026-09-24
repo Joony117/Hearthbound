@@ -16,10 +16,11 @@ const HEX_SIZE: float = 1.1547 * MODEL_SCALE
 const HOUSE: StringName = &"House"
 const LUMBERMILL: StringName = &"Lumbermill"
 const MINE: StringName = &"Mine"
-const TYPES: Array[StringName] = [HOUSE, LUMBERMILL, MINE]
+const FARM: StringName = &"Farm"
+const TYPES: Array[StringName] = [HOUSE, LUMBERMILL, MINE, FARM]
 ## Types whose first one is free (SYSTEMS.md § The first of each producer is free): each producer,
-## and the House its workers need (ig-6m2.10). The Farm joins when its slice adds it.
-const FREE_FIRST: Array[StringName] = [HOUSE, LUMBERMILL, MINE]
+## and the House its workers need (ig-6m2.10). The first Farm is the way out of hunger with no wood.
+const FREE_FIRST: Array[StringName] = [HOUSE, LUMBERMILL, MINE, FARM]
 ## The seven halls: placed buildings whose id is their type (DECISIONS.md 2026-09-23, the town
 ## builder, item 3), one of each, never built or demolished. These are their default hexes, where the
 ## authored halls stood before ig-6m2.2; a new profile, or a save without them, gets them here.
@@ -81,6 +82,8 @@ static func wood_cost(type: StringName, buildings: Array[Dictionary], balance: B
 			return balance.lumbermill_wood_cost
 		MINE:
 			return balance.mine_wood_cost
+		FARM:
+			return balance.farm_wood_cost
 	return -1
 
 
@@ -91,6 +94,8 @@ static func worker_slots(type: StringName, balance: BalanceTable) -> int:
 			return balance.lumbermill_worker_slots
 		MINE:
 			return balance.mine_worker_slots
+		FARM:
+			return balance.farm_worker_slots
 	return 0
 
 
@@ -167,3 +172,14 @@ static func wood_made(workers_home: int, delta_seconds: float, balance: BalanceT
 ## Stone made over delta_seconds by this many Mine workers who are home.
 static func stone_made(workers_home: int, delta_seconds: float, balance: BalanceTable) -> float:
 	return balance.stone_per_worker_minute * workers_home * delta_seconds / 60.0
+
+
+## Food made over delta_seconds by this many Farm workers who are home.
+static func food_made(workers_home: int, delta_seconds: float, balance: BalanceTable) -> float:
+	return balance.food_per_worker_minute * workers_home * delta_seconds / 60.0
+
+
+## Food after delta_seconds: what the Farms make less what the eaters eat, never below 0.
+static func food_step(food: float, workers_home: int, eaters: int, delta_seconds: float, balance: BalanceTable) -> float:
+	var eaten: float = balance.food_per_housed_hero_minute * eaters * delta_seconds / 60.0
+	return maxf(food + food_made(workers_home, delta_seconds, balance) - eaten, 0.0)

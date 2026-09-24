@@ -909,7 +909,8 @@ func _refresh_town() -> void:
 
 
 func _refresh_wood() -> void:
-	_wood.text = "Wood: %d   Stone: %d" % [floori(float(GameSession.town_resources["wood"])), floori(float(GameSession.town_resources["stone"]))]
+	var resources: Dictionary = GameSession.town_resources
+	_wood.text = "Wood: %d   Stone: %d   Food: %d" % [floori(float(resources["wood"])), floori(float(resources["stone"])), floori(float(resources["food"]))]
 
 
 ## Placing starts from the bare town; the next hex click places or says why not.
@@ -965,7 +966,12 @@ func _refresh_placed_panel() -> void:
 	if house:
 		%PlacedInfo.text = "Resident %d/%d: %s" % [people.size(), BALANCE.house_capacity, who]
 	else:
-		var made: String = "%.1f stone" % TownRules.stone_made(home_count, 60.0, BALANCE) if type == TownRules.MINE else "%.1f wood" % TownRules.wood_made(home_count, 60.0, BALANCE)
+		var made: String = "%.1f wood" % TownRules.wood_made(home_count, 60.0, BALANCE)
+		match type:
+			TownRules.MINE:
+				made = "%.1f stone" % TownRules.stone_made(home_count, 60.0, BALANCE)
+			TownRules.FARM:
+				made = "%.1f food" % TownRules.food_made(home_count, 60.0, BALANCE)
 		%PlacedInfo.text = "Workers %d/%d: %s\nMakes %s a minute" % [people.size(), TownRules.worker_slots(type, BALANCE), who, made]
 	%PlacedAssign.text = "Assign resident" if house else "Assign worker"
 	%PlacedClear.text = "Move out" if house else "Unassign"

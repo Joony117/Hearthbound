@@ -24,6 +24,7 @@ const SCENES: Dictionary[StringName, PackedScene] = {
 	TownRules.HOUSE: preload("res://hub/town/buildings/house.tscn"),
 	TownRules.LUMBERMILL: preload("res://hub/town/buildings/lumbermill.tscn"),
 	TownRules.MINE: preload("res://hub/town/buildings/mine.tscn"),
+	TownRules.FARM: preload("res://hub/town/buildings/farm.tscn"),
 }
 
 const PICK_DISTANCE: float = 200.0

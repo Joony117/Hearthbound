@@ -211,7 +211,8 @@ func test_every_work_clip_is_in_the_library_and_loops() -> void:
 			assert_eq(animation.loop_mode, Animation.LOOP_LINEAR, "%s loops" % clip)
 			assert_lt(_loop_seam(animation), 0.05, "%s ends where it starts" % clip)
 	assert_eq(TownWalker.work_clip(&"Mine_1"), &"Pickaxing")
-	assert_eq(TownWalker.work_clip(&"Farm_1"), TownWalker.DEFAULT_WORK_CLIP, "a station without a row works too")
+	assert_eq(TownWalker.work_clip(&"Farm_1"), &"Digging")
+	assert_eq(TownWalker.work_clip(&"Well_1"), TownWalker.DEFAULT_WORK_CLIP, "a station without a row works too")
 	assert_eq(TownWalker.work_clip(&"Lumbermill_2"), &"Chopping")
 
 

@@ -174,6 +174,12 @@ extends Resource
 @export var mine_wood_cost: int = 20
 @export var mine_worker_slots: int = 2
 @export var stone_per_worker_minute: float = 0.5
+# Farms and food (SYSTEMS.md § Food and starvation; every row PROVISIONAL).
+@export var town_start_food: float = 30.0
+@export var food_per_housed_hero_minute: float = 0.2
+@export var farm_wood_cost: int = 20
+@export var farm_worker_slots: int = 2
+@export var food_per_worker_minute: float = 1.0
 # The Ledger (SYSTEMS.md § The Ledger; both caps PROVISIONAL).
 @export var ledger_max_records: int = 10000
 @export var battle_max_moments: int = 64

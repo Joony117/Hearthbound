@@ -16,6 +16,7 @@ const WORK_CLIPS: Dictionary[StringName, StringName] = {
 	&"Forge": &"Hammering",
 	TownRules.LUMBERMILL: &"Chopping",
 	TownRules.MINE: &"Pickaxing",
+	TownRules.FARM: &"Digging",
 	&"Apothecary": &"Working_A",
 	&"TrainingHall": &"Push_Ups",
 	&"Sanctum": &"Sit_Floor_Idle",

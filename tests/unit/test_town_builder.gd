@@ -407,7 +407,7 @@ func test_a_save_from_before_the_town_gets_the_start_wood_once() -> void:
 	for key: String in ["town_buildings", "town_resources", "town_next_id"]:
 		state.erase(key)
 	GameSession.from_dict(state)
-	assert_eq(GameSession.town_resources, {"wood": BALANCE.town_start_wood, "stone": 0.0})
+	assert_eq(GameSession.town_resources, {"wood": BALANCE.town_start_wood, "stone": 0.0, "food": BALANCE.town_start_food})
 	assert_eq(GameSession.town_buildings, TownRules.default_halls())
 	assert_eq(GameSession.town_next_id, 1)
 	GameSession.town_resources["wood"] = 3.0
@@ -445,16 +445,16 @@ func test_the_hub_builds_on_a_clicked_hex_and_staffs_the_building() -> void:
 	var hub: Node3D = _instantiate_hub()
 	var town: TownView = hub.get_node("%Town") as TownView
 	var wood_label: Label = hub.get_node("%Wood") as Label
-	assert_eq(wood_label.text, "Wood: 40   Stone: 0")
+	assert_eq(wood_label.text, "Wood: 40   Stone: 0   Food: 30")
 	var menu: PopupMenu = (hub.get_node("%Build") as MenuButton).get_popup()
-	assert_eq([menu.get_item_text(0), menu.get_item_text(1), menu.get_item_text(2)], ["House · 0 wood", "Lumbermill · 0 wood", "Mine · 0 wood"])
+	assert_eq([menu.get_item_text(0), menu.get_item_text(1), menu.get_item_text(2), menu.get_item_text(3)], ["House · 0 wood", "Lumbermill · 0 wood", "Mine · 0 wood", "Farm · 0 wood"])
 	menu.index_pressed.emit(0)
 	assert_eq(town.placing, TownRules.HOUSE)
 	town.hex_selected.emit(TownRules.HALL_HEXES[&"Forge"])
 	assert_eq((hub.get_node("%Status") as Label).text, "The Forge stands there. Esc cancels.")
 	town.hex_selected.emit(FREE_HEX)
 	assert_eq(town.placing, &"", "placing ends after a build")
-	assert_eq(wood_label.text, "Wood: 40   Stone: 0", "the first House is free")
+	assert_eq(wood_label.text, "Wood: 40   Stone: 0   Food: 30", "the first House is free")
 	assert_eq(menu.get_item_text(0), "House · 10 wood", "the next one is not")
 	var placed: Node3D = town.get_node("House_1") as Node3D
 	assert_eq(placed.position, TownRules.hex_to_world(FREE_HEX))
