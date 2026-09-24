@@ -727,6 +727,35 @@ func set_item_favorite(item: Item, value: bool) -> bool:
 	return _commit_profile_mutation(_set_favorite_in_memory.bind(item, value))
 
 
+## The hero's whole skill bar in priority order (GAME_SPEC.md § Skills, "The bar"): every skill it
+## knows, once each, with a mode that skill can take. Same contract as set_hero_favorite. A dispatch
+## fixes the bar into the team snapshot, so an away hero's change counts from its next expedition.
+func set_skill_bar(hero: Hero, bar: Array[Dictionary]) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
+	var known: Array[AbilityDefinition] = Hero.known_skills(hero, preload("res://balance.tres"))
+	var clean: Array[Dictionary] = []
+	for entry: Dictionary in bar:
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(entry.get("id", ""))) as AbilityDefinition
+		if skill == null or not skill in known or not Hero.valid_mode(skill, str(entry.get("mode", ""))) or clean.any(func(kept: Dictionary) -> bool: return kept["id"] == str(skill.skill_id)):
+			last_action_error = "A skill bar lists each skill the hero knows once, with a mode it can take."
+			return false
+		clean.append({"id": str(skill.skill_id), "mode": str(entry["mode"])})
+	if clean.size() != known.size():
+		last_action_error = "A skill bar lists each skill the hero knows once, with a mode it can take."
+		return false
+	return _commit_profile_mutation(_set_skill_bar_in_memory.bind(hero, clean))
+
+
+func _set_skill_bar_in_memory(hero: Hero, bar: Array[Dictionary]) -> void:
+	hero.skill_bar = bar
+
+
 ## Checked path only. target is a Hero or an Item; both carry favorite.
 func _set_favorite_in_memory(target: Object, value: bool) -> void:
 	target.set(&"favorite", value)
@@ -1030,7 +1059,7 @@ func _team_snapshots(team: Array[Hero], squads: Array[Dictionary] = []) -> Array
 		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
 		var level: int = Hero.level_for(hero, balance)
 		var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, level)
-		result.append({"hero_id": hero.instance_id, "archetype": str(hero.def_id), "hp": stats[Hero.STAT_HP], "atk": stats[Hero.STAT_ATK], "defense": stats[Hero.STAT_DEF], "speed": stats[Hero.STAT_SPD], "crit_rate": stats[Hero.STAT_CRIT_RATE], "crit_damage": stats[Hero.STAT_CRIT_DMG], "level": level, "squad_id": _squad_for_hero(hero.instance_id, squads)})
+		result.append({"hero_id": hero.instance_id, "archetype": str(hero.def_id), "hp": stats[Hero.STAT_HP], "atk": stats[Hero.STAT_ATK], "defense": stats[Hero.STAT_DEF], "speed": stats[Hero.STAT_SPD], "crit_rate": stats[Hero.STAT_CRIT_RATE], "crit_damage": stats[Hero.STAT_CRIT_DMG], "level": level, "squad_id": _squad_for_hero(hero.instance_id, squads), "skills": Hero.bar_for(hero, balance), "chains": hero.skill_chains.duplicate(true)})
 	return result
 
 

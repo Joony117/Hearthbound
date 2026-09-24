@@ -154,7 +154,7 @@ func configure_practice(team: Array[Hero], zone: ZoneDefinition) -> void:
 		snapshots,
 		zone,
 		squads,
-		{"auto_battle": true, "default_stance": "stay_together", "ability_auto": {}, "auto_heal": true, "auto_revive": true, "heal_below": 0.35, "reserve_last_revival": false, "retreat_when_supplies_empty": false},
+		{"auto_battle": true, "default_stance": "stay_together", "auto_heal": true, "auto_revive": true, "heal_below": 0.35, "reserve_last_revival": false, "retreat_when_supplies_empty": false},
 		{"healing": 0, "revival": 0},
 		randi(),
 		"practice",
@@ -786,14 +786,14 @@ func _update_selected_panel() -> void:
 		var live_hero: Hero = live_hero_value as Hero
 		if live_hero != null:
 			hero_name = live_hero.hero_name
-	# The signature: the first ability on the actor's list, the one a manual cast fires.
+	# The signature: the first ability on the actor's list not set to Off, the one a manual cast fires.
 	var ability_definition: AbilityDefinition = null
 	var ability_auto: bool = true
 	for entry: Variant in selected_actor.get("skills", []) as Array:
 		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((entry as Dictionary).get("id", ""))) as AbilityDefinition
-		if skill != null and skill.is_ability():
+		if skill != null and skill.is_ability() and str((entry as Dictionary).get("mode", "auto")) != "off":
 			ability_definition = skill
-			ability_auto = str((entry as Dictionary).get("mode", "auto")) != "manual"
+			ability_auto = str((entry as Dictionary).get("mode", "auto")) == "auto"
 			break
 	var ability_name: String = ability_definition.display_name if ability_definition != null else "Signature"
 	var ability_cooldown: float = float((selected_actor.get("skill_cooldowns", {}) as Dictionary).get(str(ability_definition.skill_id), 0.0)) if ability_definition != null else 0.0

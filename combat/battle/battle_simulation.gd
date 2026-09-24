@@ -172,12 +172,10 @@ static func issue_command(state: BattleState, command: Dictionary) -> Dictionary
 	if command_kind == COMMAND_SET_ABILITY_AUTO:
 		if not command.get("value") is bool:
 			return _command_result(false, "Ability automation needs a bool value.", state)
+		# The actors' modes are the truth; an old order's ability_auto policy is kept as saved, never
+		# written (ig-gy0.3; nothing reads it, ig-28b).
 		for actor: BattleActor in actors:
 			actor.set_abilities_auto(command.get("value") as bool)
-		var ability_auto: Dictionary = state.policies.get("ability_auto", {}) as Dictionary
-		for actor: BattleActor in actors:
-			ability_auto[actor.hero_id] = command.get("value") as bool
-		state.policies["ability_auto"] = ability_auto
 		return _accept_command(state)
 	if command_kind == COMMAND_SET_STANCE:
 		if not command.get("value") is String or not str(command.get("value")) in STANCES:
@@ -853,21 +851,22 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 		for entry: Variant in snapshot.get("skills") as Array:
 			var skill_id: String = str((entry as Dictionary).get("id", "")) if entry is Dictionary else ""
 			if ABILITIES.has(skill_id) and ABILITIES[skill_id].archetype in [actor.archetype, "general"] and not actor.skills.any(func(kept: Dictionary) -> bool: return kept["id"] == skill_id):
-				actor.add_skill(ABILITIES[skill_id], "manual" if str((entry as Dictionary).get("mode", "auto")) == "manual" else "auto")
+				actor.add_skill(ABILITIES[skill_id], str((entry as Dictionary).get("mode", "auto")))
 		if actor.skill_cooldowns.is_empty():
 			actor.set_default_kit(bool(snapshot.get("ability_auto", true)))
 	elif _valid_number(snapshot.get("level")):
 		# The known kit: class skills open at or below the hero's level, then anything learned
 		# (books and the Training Hall, ig-gy0.3). Level skills are derived, never saved. Heroes start
 		# at level 0 and the first slot opens at level 1 (SYSTEMS.md § Learning), so level 0 has it too.
+		# The old per-hero ability_auto flag covers abilities only; weaponskills stay on.
 		var mode: String = "auto" if bool(snapshot.get("ability_auto", true)) else "manual"
 		for skill: AbilityDefinition in known_kit(actor.archetype, maxi(int(snapshot.get("level")), 1)):
-			actor.add_skill(skill, mode)
+			actor.add_skill(skill, mode if skill.is_ability() else "auto")
 		var learned: Variant = snapshot.get("learned_skills")
 		for skill_id: Variant in learned as Array if learned is Array else []:
 			var skill: AbilityDefinition = ABILITIES.get(str(skill_id)) as AbilityDefinition
 			if skill != null and skill.archetype in [actor.archetype, "general"] and not actor.skills.any(func(kept: Dictionary) -> bool: return kept["id"] == str(skill_id)):
-				actor.add_skill(skill, mode)
+				actor.add_skill(skill, mode if skill.is_ability() else "auto")
 	else:
 		actor.set_default_kit(bool(snapshot.get("ability_auto", true)))
 	actor.attack_range = _attack_range(actor)
@@ -1209,6 +1208,14 @@ static func _abilities(actor: BattleActor) -> Array[AbilityDefinition]:
 	return abilities
 
 
+## The first ability on the bar not set to Off (a manual cast fires it), or null.
+static func _signature(actor: BattleActor) -> AbilityDefinition:
+	for entry: Dictionary in actor.skills:
+		if ABILITIES[entry["id"]].is_ability() and entry["mode"] != "off":
+			return ABILITIES[entry["id"]]
+	return null
+
+
 ## The one picker (SYSTEMS.md § Skills): the first ready Auto ability, band by band in the order
 ## given (revive, heal, buff, attack), then bar order, whose AI rule finds an aim and whose cast
 ## resolves. An enemy's line or circle starts a telegraph instead. True when something was cast.
@@ -1243,7 +1250,7 @@ static func _pick_weaponskill(state: BattleState, actor: BattleActor, target: Ba
 	var fallback: AbilityDefinition = null
 	for entry: Dictionary in actor.skills:
 		var skill: AbilityDefinition = ABILITIES[entry["id"]]
-		if skill.kind != "weaponskill":
+		if skill.kind != "weaponskill" or str(entry["mode"]) != "auto":
 			continue
 		match skill.ai_rule:
 			"default":
@@ -1475,12 +1482,12 @@ static func _manual_abilities(state: BattleState, actors: Array[BattleActor], ta
 	rng.state = state.rng_state.to_int()
 	var used: bool = false
 	for actor: BattleActor in actors:
-		var abilities: Array[AbilityDefinition] = _abilities(actor)
-		if abilities.is_empty():
+		# The signature: the first ability on the bar not set to Off. A clicked unit is the aim,
+		# whatever point came with it (the view sends none); a ground point is only for a cast
+		# without a target.
+		var skill: AbilityDefinition = _signature(actor)
+		if skill == null:
 			continue
-		# The signature: the first ability on the bar. A clicked unit is the aim, whatever point came
-		# with it (the view sends none); a ground point is only for a cast without a target.
-		var skill: AbilityDefinition = abilities[0]
 		var self_cast: bool = skill.self_centered and target == null
 		var aim: Vector2 = actor.position if self_cast else (target.position if target != null else point)
 		used = _use_skill(state, actor, skill, actor if self_cast else target, aim, rng) or used
@@ -1689,13 +1696,13 @@ static func _normalized_policies(policies: Dictionary) -> Dictionary:
 	var normalized: Dictionary = {
 		"auto_battle": bool(policies.get("auto_battle", true)),
 		"default_stance": str(policies.get("default_stance", "stay_together")),
-		"ability_auto": {},
 		"auto_heal": bool(policies.get("auto_heal", true)),
 		"auto_revive": bool(policies.get("auto_revive", true)),
 		"heal_below": clampf(float(policies.get("heal_below", 0.35)), 0.0, 1.0),
 		"reserve_last_revival": bool(policies.get("reserve_last_revival", false)),
 		"retreat_when_supplies_empty": bool(policies.get("retreat_when_supplies_empty", false)),
 	}
+	# Only an old order carries ability_auto; a new one never gains it (ig-28b).
 	var raw_auto: Variant = policies.get("ability_auto")
 	if raw_auto is Dictionary:
 		normalized["ability_auto"] = (raw_auto as Dictionary).duplicate(true)
@@ -2225,9 +2232,9 @@ static func _validate_policies(policies: Dictionary) -> String:
 		return "Battle default_stance is invalid."
 	if not _valid_number(policies.get("heal_below")) or float(policies.get("heal_below")) < 0.0 or float(policies.get("heal_below")) > 1.0:
 		return "Battle heal_below must be between zero and one."
-	if not policies.get("ability_auto") is Dictionary:
+	if policies.has("ability_auto") and not policies.get("ability_auto") is Dictionary:
 		return "Battle ability_auto policy must be a Dictionary."
-	for raw_value: Variant in (policies.get("ability_auto") as Dictionary).values():
+	for raw_value: Variant in (policies.get("ability_auto", {}) as Dictionary).values():
 		if not raw_value is bool:
 			return "Every per-hero ability_auto value must be a bool."
 	return ""

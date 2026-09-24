@@ -200,6 +200,7 @@ func _connect_ui_signals() -> void:
 	%UnequipAll.pressed.connect(_on_unequip_all_pressed)
 	%Sacrifice.pressed.connect(_on_sacrifice_pressed)
 	%RankUp.pressed.connect(_on_rank_up_pressed)
+	%HeroSkills.pressed.connect(func() -> void: (%SkillPanel as SkillPanel).show_hero(_selected_hero()))
 	%UpgradeCircle.pressed.connect(_on_upgrade_circle_pressed)
 	%UpgradeForge.pressed.connect(_on_upgrade_forge_pressed)
 	%UpgradeTrainingHall.pressed.connect(_on_upgrade_training_hall_pressed)
@@ -588,6 +589,12 @@ func _refresh_hero_detail() -> void:
 	_favorite_hero.disabled = hero == null
 	_favorite_hero.set_pressed_no_signal(hero.favorite if hero != null else false)
 	%WalkAsHero.disabled = hero == null or GameSession.is_hero_busy(hero) or GameSession.is_embodied(hero)
+	%HeroSkills.disabled = hero == null
+	var skill_panel := %SkillPanel as SkillPanel
+	if skill_panel.visible and (hero == null or hero.instance_id != skill_panel.hero_id):
+		skill_panel.show_hero(hero)
+	elif skill_panel.visible:
+		skill_panel.refresh() # the same hero may have levelled; refresh keeps the error text
 	var unavailable: bool = hero == null or GameSession.is_hero_busy(hero)
 	%Unequip.disabled = unavailable
 	%UnequipAll.disabled = unavailable
@@ -773,6 +780,7 @@ func _open(building_id: StringName) -> void:
 		for panel_name: StringName in panels:
 			(get_node("%%%s" % panel_name) as Control).visible = shown.has(panel_name)
 	(get_node("%%%s" % PLACED_PANEL) as Control).visible = shown.has(PLACED_PANEL)
+	(%SkillPanel as SkillPanel).hide()
 	for other: StringName in BUILDING_PANELS:
 		_building_button(other).theme_type_variation = &"ActiveNavButton" if other == _open_building else &""
 	_close_panel.visible = _open_building != NO_BUILDING
@@ -1799,7 +1807,6 @@ func _battle_policies() -> Dictionary:
 	return {
 		"auto_battle": %AutoBattle.button_pressed,
 		"default_stance": str(stance.get_selected_metadata()) if stance.selected >= 0 else "stay_together",
-		"ability_auto": {},
 		"auto_heal": %AutoHeal.button_pressed,
 		"auto_revive": %AutoRevive.button_pressed,
 		"heal_below": float(%HealThreshold.value) / 100.0,

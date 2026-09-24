@@ -10,7 +10,6 @@ func test_battle_settings_start_with_contract_defaults() -> void:
 	assert_eq(hub._battle_policies(), {
 		"auto_battle": true,
 		"default_stance": "stay_together",
-		"ability_auto": {},
 		"auto_heal": true,
 		"auto_revive": true,
 		"heal_below": 0.35,

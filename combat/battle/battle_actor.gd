@@ -9,7 +9,7 @@ const VALID_LIFE: Array[String] = [LIFE_ALIVE, LIFE_DOWNED, LIFE_EXTRACTED, LIFE
 const VALID_ARCHETYPES: Array[String] = ["knight", "ranger", "mage", "rogue", "cleric"]
 const VALID_FACTIONS: Array[String] = ["ally", "enemy"]
 const VALID_ORDERS: Array[String] = ["", "move", "attack", "attack_move", "hold", "guard", "carry", "retreat"]
-const SKILL_MODES: Array[String] = ["auto", "manual"]
+const SKILL_MODES: Array[String] = ["auto", "manual", "off"]
 
 var id: String = ""
 var hero_id: String = ""
@@ -37,7 +37,8 @@ var order_point: Vector2 = Vector2.ZERO
 var carried_by_id: String = ""
 var carrying_id: String = ""
 var guard_target_id: String = ""
-## [{id, mode}] in bar order; mode is "auto" or "manual" (a passive is always "auto").
+## [{id, mode}] in bar order; mode is "auto", "manual" (fired only by command) or "off" (never
+## fired). A passive is always "auto".
 var skills: Array[Dictionary] = []
 ## {skill_id: seconds} for every ability in skills.
 var skill_cooldowns: Dictionary = {}
@@ -242,18 +243,19 @@ func set_default_kit(auto: bool = true, cooldown: float = 0.0) -> void:
 		add_skill(skill, "manual" if skill.is_ability() and not auto else "auto", cooldown)
 
 
-## Appends skill to the list (an ability gets its cooldown). A passive or a weaponskill is always
-## "auto"; only abilities follow the bar's mode.
+## Appends skill to the list (an ability gets its cooldown). A passive is always "auto"; a
+## weaponskill or an ability takes the bar's mode.
 func add_skill(skill: AbilityDefinition, mode: String = "auto", cooldown: float = 0.0) -> void:
-	skills.append({"id": str(skill.skill_id), "mode": mode if skill.is_ability() else "auto"})
+	skills.append({"id": str(skill.skill_id), "mode": "auto" if skill.kind == "passive" or not mode in SKILL_MODES else mode})
 	if skill.is_ability():
 		skill_cooldowns[str(skill.skill_id)] = cooldown
 
 
-## Every ability on the list to Auto or Manual; passives and weaponskills stay on.
+## Every ability on the list to Auto or Manual; passives, weaponskills and Off abilities stay as
+## they are (Off is never fired).
 func set_abilities_auto(auto: bool) -> void:
 	for entry: Dictionary in skills:
-		if BattleSimulation.ABILITIES[entry["id"]].is_ability():
+		if BattleSimulation.ABILITIES[entry["id"]].is_ability() and entry["mode"] != "off":
 			entry["mode"] = "auto" if auto else "manual"
 
 
@@ -275,7 +277,7 @@ static func _validate_skills(data: Dictionary) -> String:
 		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((entry as Dictionary)["id"])) as AbilityDefinition
 		if skill == null or not skill.archetype in [str(data.get("archetype")), "general"]:
 			return "Battle actor skill %s is unknown or from another class." % str((entry as Dictionary)["id"])
-		if not str((entry as Dictionary)["mode"]) in SKILL_MODES or (not skill.is_ability() and str((entry as Dictionary)["mode"]) != "auto"):
+		if not str((entry as Dictionary)["mode"]) in SKILL_MODES or (skill.kind == "passive" and str((entry as Dictionary)["mode"]) != "auto"):
 			return "Battle actor skill %s mode is invalid." % str((entry as Dictionary)["id"])
 		if seen.has(skill.skill_id):
 			return "Battle actor skill %s is listed twice." % str(skill.skill_id)

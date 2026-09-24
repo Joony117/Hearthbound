@@ -15,6 +15,8 @@ const STAT_NAMES: Array[StringName] = [STAT_HP, STAT_ATK, STAT_DEF, STAT_SPD, ST
 const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 const NO_STATION: StringName = &""
 const NO_HOME: StringName = &""
+## A bar entry's mode (GAME_SPEC.md § Skills, "The bar"). Order on the bar is priority.
+const SKILL_MODES: Array[String] = ["auto", "manual", "off"]
 ## Every profession a hero can have a passion for: the five halls in PROFESSIONS order, then the town
 ## workplaces (DECISIONS.md 2026-09-23, the town builder, item 12). The passion roll indexes this
 ## list, so reordering it changes every hero's passions.
@@ -50,6 +52,13 @@ var station: StringName = NO_STATION
 ## The placed House this hero lives in, or NO_HOME. A workplace job needs one (DECISIONS.md
 ## 2026-09-23, the town builder, item 5). Like station, it leaves with the hero.
 var home: StringName = NO_HOME
+## Skills are profile state (DECISIONS.md 2026-09-23 "Skills", item 3), and leave with the hero.
+## learned_skills: from books and the Training Hall only (ig-gy0.7); level skills are derived, never
+## saved. skill_bar: [{id, mode}] as last set, bar order is priority; bar_for() is the bar in use.
+## skill_chains: [{trigger, then: [ids]}] (ig-gy0.5).
+var learned_skills: Array[String] = []
+var skill_bar: Array[Dictionary] = []
+var skill_chains: Array[Dictionary] = []
 
 
 func _init(p_name: String = "", p_rank: int = 0) -> void:
@@ -337,7 +346,81 @@ func to_dict() -> Dictionary:
 		"profession_xp": xp_by_profession,
 		"station": str(station),
 		"home": str(home),
+		"learned_skills": learned_skills.duplicate(),
+		"skill_bar": skill_bar.duplicate(true),
+		"skill_chains": skill_chains.duplicate(true),
 	}
+
+
+## Every skill the hero knows, in kit order: its class skills open at its level (level 0 knows the
+## level-1 slot, SYSTEMS.md § Learning), then what it learned.
+static func known_skills(hero: Hero, balance: BalanceTable) -> Array[AbilityDefinition]:
+	var known: Array[AbilityDefinition] = BattleSimulation.known_kit(str(hero.def_id), maxi(level_for(hero, balance), 1))
+	for skill_id: String in hero.learned_skills:
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition
+		if skill != null and not skill in known:
+			known.append(skill)
+	return known
+
+
+## The bar in use: the saved entries the hero still knows, in their order, then every known skill
+## the bar lacks (a level-up's new skills), auto, in kit order. No saved bar is the derived default.
+static func bar_for(hero: Hero, balance: BalanceTable) -> Array[Dictionary]:
+	var known: Array[AbilityDefinition] = known_skills(hero, balance)
+	var known_ids: Array[String] = []
+	for skill: AbilityDefinition in known:
+		known_ids.append(str(skill.skill_id))
+	var bar: Array[Dictionary] = []
+	var listed: Dictionary = {}
+	for entry: Dictionary in hero.skill_bar:
+		if str(entry["id"]) in known_ids and not listed.has(entry["id"]):
+			bar.append(entry.duplicate())
+			listed[entry["id"]] = true
+	for skill_id: String in known_ids:
+		if not listed.has(skill_id):
+			bar.append({"id": skill_id, "mode": "auto"})
+	return bar
+
+
+## A mode the skill can take: a passive is always on, so only "auto".
+static func valid_mode(skill: AbilityDefinition, mode: String) -> bool:
+	return mode in SKILL_MODES and (skill.kind != "passive" or mode == "auto")
+
+
+## Additive keys (item 3, no SAVE_VERSION bump); a legacy hero has none and gets the derived bar.
+## Read after level, rank and def_id. Unknown ids, another class's, skills the hero does not know
+## and bad modes are dropped with a warning; a general id is valid on every class.
+static func _read_skills(hero: Hero, data: Dictionary) -> void:
+	var archetype: String = str(hero.def_id)
+	for raw_id: Variant in _array_field(data, "learned_skills", hero):
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(raw_id)) as AbilityDefinition if raw_id is String else null
+		if skill == null or not skill.archetype in [archetype, "general"] or str(raw_id) in hero.learned_skills:
+			push_warning("Learned skill '%s' dropped from hero %s: unknown, another class's or repeated." % [raw_id, hero.instance_id])
+			continue
+		hero.learned_skills.append(str(raw_id))
+	var known: Array[AbilityDefinition] = known_skills(hero, preload("res://balance.tres"))
+	for raw_entry: Variant in _array_field(data, "skill_bar", hero):
+		var entry: Dictionary = raw_entry as Dictionary if raw_entry is Dictionary else {}
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(entry.get("id"))) as AbilityDefinition if entry.get("id") is String else null
+		if skill == null or not skill in known or not entry.get("mode") is String or not valid_mode(skill, str(entry["mode"])) or hero.skill_bar.any(func(kept: Dictionary) -> bool: return kept["id"] == str(entry["id"])):
+			push_warning("Skill bar entry %s dropped from hero %s: unknown, another class's, not known, a bad mode or repeated." % [str(raw_entry), hero.instance_id])
+			continue
+		hero.skill_bar.append({"id": str(entry["id"]), "mode": str(entry["mode"])})
+	for raw_chain: Variant in _array_field(data, "skill_chains", hero):
+		var chain: Dictionary = raw_chain as Dictionary if raw_chain is Dictionary else {}
+		var ids: Array = [chain.get("trigger")] + (chain.get("then") as Array if chain.get("then") is Array and not (chain.get("then") as Array).is_empty() else [null])
+		if not ids.all(func(id: Variant) -> bool: return id is String and known.has(BattleSimulation.ABILITIES.get(id))):
+			push_warning("Skill chain %s dropped from hero %s: empty, or an unknown or unlearned skill." % [str(raw_chain), hero.instance_id])
+			continue
+		hero.skill_chains.append({"trigger": str(chain["trigger"]), "then": (chain["then"] as Array).map(func(id: Variant) -> String: return str(id))})
+
+
+## data[key] when it is an Array; absent is empty, anything else is empty with a warning.
+static func _array_field(data: Dictionary, key: String, hero: Hero) -> Array:
+	var raw: Variant = data.get(key)
+	if raw != null and not raw is Array:
+		push_warning("Invalid hero %s on %s: expected Array; dropped." % [key, hero.instance_id])
+	return raw as Array if raw is Array else []
 
 
 ## Additive keys (no SAVE_VERSION bump). A present "passions" loads as saved when valid, else
@@ -459,6 +542,7 @@ static func from_dict(data: Dictionary) -> Hero:
 		else:
 			push_error("Invalid hero def_id: expected String, got %s." % type_string(typeof(raw_def_id)))
 			hero.def_id = NO_ARCHETYPE_DEF_ID
+	_read_skills(hero, data)
 
 	# Dictionary.get() does not replace an explicit null from a hand-edited or corrupt save.
 	# Save-file fields remain Variant until their types are validated.

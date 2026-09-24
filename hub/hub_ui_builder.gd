@@ -31,6 +31,7 @@ static func build(root: Control, confirm_dialog: ConfirmationDialog, enhance_dia
 	_build_teams(content)
 	_build_armory(content)
 	_build_selected_hero(content)
+	_build_skill_panel(content)
 	_build_hall(content)
 	_build_keeper(content)
 	_build_placed(content)
@@ -324,6 +325,7 @@ static func _build_selected_hero(content: Control) -> void:
 	availability.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_button(box, "Favorite hero", "FavoriteHero", true, true)
 	_button(box, "Walk as this hero", "WalkAsHero", true)
+	_button(box, "Skills", "HeroSkills", true)
 	var equipped := ItemList.new()
 	_add(box, equipped, "EquippedList", true)
 	equipped.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -336,6 +338,16 @@ static func _build_selected_hero(content: Control) -> void:
 	all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var detail := _label(box, "", "HeroDetail", true)
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+
+## The selected hero's skill bar, over the middle view while it is open (hub.gd hides it with its
+## building).
+static func _build_skill_panel(content: Control) -> void:
+	var panel := SkillPanel.new()
+	_add(content, panel, "SkillPanel", true)
+	panel.visible = false
+	_stop_clicks(panel)
+	_anchor_fill(panel, 316.0, 0.0, -412.0, -KEEPER_ROW_HEIGHT)
 
 
 ## The Circle, Reliquary and Apothecary panels: one centred column that shows one section at a time.
