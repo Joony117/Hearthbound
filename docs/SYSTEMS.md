@@ -94,6 +94,9 @@ formulas are unchanged. Evidence: `.agent-results/logs/ig-544-starter-measure-r1
 | Mage | Burst: 12s cooldown, range 8, radius 2.5, 1.5× attack damage; auto prefers at least 3 enemies or an elite | Signature cooldown reduced by 10% |
 | Rogue | Flank/Interrupt: 10s cooldown, range 6, moves to an available rear slot, interrupts windup with 0.3s stagger, 1.6× attack damage | +25% basic damage from behind |
 
+**Spawn facing (director ruling, 2026-09-23):** both sides spawn facing the other side's centre; "behind" reads actual facing, so a Rogue earns the rear bonus by flanking a unit turned toward someone else, never from spawn orientation.
+> ⚠️ **PROVISIONAL** — how often an idle-flank bonus now lands is unmeasured · **Settled by:** a played build
+
 The four kits add effects and decision rules, not a seventh hero stat. Multiple Rally effects
 do not stack their reduction; use the strongest active effect. Knight's ally-proximity
 passive requires another actor, not the Knight itself.
@@ -4325,6 +4328,58 @@ figures are before Circle effects and before levelling fodder.
 > cross-checked. · **Settled by:** a played build with two or more
 > keepers working for a real session, measuring how many minutes of work a session actually
 > yields; the pull figures, by a Codex arithmetic check against § Sacrifice.
+
+---
+
+## Town builder — *ig-6m2, proposed 2026-09-23*
+
+Design: `GAME_SPEC.md` § The town builder. Boundaries: `DECISIONS.md` 2026-09-23, the town builder.
+Only the first slice has numbers. Every row below is a `balance.tres` row.
+
+> ⚠️ **PROVISIONAL** — every number in this section is a desk guess. None has been played.
+> · **Settled by:** a played build of the first slice (`ig-6m2.1`), measuring how long it takes to
+> house and employ five heroes.
+
+### First slice: wood, houses and the Lumbermill
+
+| Row | Value | Why |
+|---|---|---|
+| `town_map_radius` | 8 hexes (217 hexes) | Room for the 7 halls, about 30 houses and a dozen workplaces |
+| `town_start_wood` | 40 | Enough for one Lumbermill and two Houses. Old saves get it once, when the key is missing |
+| `house_wood_cost` | 10 | |
+| `house_capacity` | 1 | The owner: each hero has its own house |
+| `lumbermill_wood_cost` | 20 | |
+| `lumbermill_worker_slots` | 2 | |
+| `wood_per_worker_minute` | 1.0 | Live play only, and only while the worker is home |
+
+**Pacing check.** The start stock builds one Lumbermill and two Houses, leaving 0. Two workers make
+2 wood a minute, so a new House every 5 minutes. A second Lumbermill and its two Houses cost 40,
+which is 20 minutes. After that, 4 wood a minute. Housing is bounded by the roster, so this
+stops when you run out of heroes worth keeping.
+
+### What the town costs the spine
+
+**The town makes no Summon Stones, Essence or parts.** No income number in § Summon Stones moves,
+and neither does ~327 → ~219 → ~188 in § Keepers and professions.
+
+The only cost is the heroes you keep as workers instead of feeding them. At the average of
+78.38 Essence per pull:
+
+| Worker's rank | F | D | C |
+|---|---|---|---|
+| Essence not fed | 10 | 25 | 65 |
+| Pulls this costs | 0.13 | 0.32 | 0.83 |
+
+Ten F-rank workers cost about 1.3 pulls: ~327 → ~328. F is 40% of pulls, so a player who staffs
+the town with F-rank heroes pays almost nothing. A player who keeps better heroes as workers pays
+more. That is a choice, not a trap.
+
+### Later slices: not set
+
+> ⚠️ **PROVISIONAL** — undefined: stone costs and rates, construction time, how much wood and
+> stone a hall upgrade costs on top of its parts, and everything about food. · **Settled by:** the
+> `game-designer`, when each slice is next (`ig-6m2.3` to `ig-6m2.5`); food also needs the owner's
+> hunger ruling first.
 
 ---
 

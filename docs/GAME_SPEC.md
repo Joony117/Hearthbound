@@ -188,8 +188,8 @@ becomes the interface.**
   buildings). You walk the town as one of them (§ The town avatar).
 - **Buildings show their level.** Upgrading a building changes how it looks. Levels already
   persist (`P2-07b`); this slice only draws them.
-- **Later: a base builder with an NPC-driven economy.** This is direction only: no ticket and no
-  scaffolding. See the end of this subsection.
+- **Next: you build the town.** You place houses and workplaces, and your heroes work them. See
+  § The town builder, below (`ig-6m2`, owner direction 2026-09-23).
 
 Where today's actions live:
 
@@ -242,7 +242,7 @@ The Summoning Circle and the Town Gate take no keeper in this pass.
 - **Circle.** A keeper bonus on summon odds would wear down the ~12× "manufacture, don't pray"
   margin that § Win and loss guards. A Circle keeper needs its own ruling and its own check.
 - **Gate.** It has nothing for a keeper to improve.
-- **Research.** The owner parked "research skills" for the base builder on 2026-09-23. It has no
+- **Research.** The owner parked "research skills" for the town builder on 2026-09-23. It has no
   system today, and it gets none in this pass.
 
 The numbers are in `SYSTEMS.md` § Keepers and professions.
@@ -336,10 +336,15 @@ their rank.
 home. While you are that hero, its counter stands empty. The body rules still apply: you cannot
 dispatch the hero you are in.
 
-**How this feeds the economy later.** Professions are the labor a future NPC economy would read.
-More slots per building would mean more keepers, and production would scale with keeper skill.
-Whether anyone besides roster heroes ever works in the town is still § Scope boundaries' call.
-Nothing is built toward it now.
+**Any hero can run any shop.** The owner, 2026-09-23: "It can be anyone. I intend any hero to be
+able to be able to run any shop pretty much." Stationing checks no calling. The calling only makes a hero learn
+four times faster and lets it make masterwork. The two places where "anyone" stops are the ones the
+owner ruled the same day: masterwork (including the Forge's +13 to +15 and SS→SSS) needs a born
+master, and the Summoning Circle and the Town Gate take no keeper.
+
+**How this feeds the town builder.** A keeper's station is the first kind of town job. The town
+builder (§ The town builder, below) adds workplaces with worker slots, and a worker's job uses the
+same field. The town still has no NPCs: every worker is a roster hero.
 
 **Owner rulings on staffing, 2026-09-23.**
 
@@ -349,7 +354,8 @@ Nothing is built toward it now.
 - Masterwork draughts are built now, after the keeper bonuses (`DECISIONS.md` 2026-09-23,
   masterwork draughts).
 - SS→SSS needs a master priest.
-- Research is parked for the base builder.
+- Any hero can run any shop.
+- Research is parked for the town builder.
 
 > ⚠️ **PROVISIONAL** — masterwork draughts have never been played. They heal or revive for more,
 > cost more, and are spent after the regular stock (`SYSTEMS.md`). Whether a stronger draught
@@ -362,26 +368,74 @@ Nothing is built toward it now.
 > · **Settled by:** a played build that reaches SS→SSS, once with a master kept and once after
 > losing one.
 
-**Base builder and NPC economy — direction only.** The owner eventually wants to lay out and grow
-the town, with an economy run by NPCs. Nothing gets built toward that now. Three questions are
-recorded here so that no town slice closes them off by accident:
+### The town builder — owner direction 2026-09-23 (`ig-6m2`)
 
-1. **Placement.** The choice is authored plots or free placement. Today building positions are
-   authored in the scene and are not save state. Either answer makes them save state.
-2. **Offline.** Under § Hard constraints, only dispatched expeditions progress while the game is
-   closed. An economy that produced while closed would need a `DECISIONS.md` entry amending that
-   line. The default is that it runs only during play, like the recovery clock.
-3. **Output.** An economy that mints Summon Stones or parts competes with expedition income. That
-   moves every income number in `SYSTEMS.md` and the ~327-pull claim in § Win and loss.
+The owner, 2026-09-23: "It can be anyone. I intend any hero to be able to be able to run any shop
+pretty much. I also want the player to be able to build their own town, manage work, have the heros
+have their own house, city management like the game banished".
 
-"Defend it against attack" (the old town bullet) belongs to this same later tier. Keeper
-professions (§ Heroes staff the buildings) are the labor this economy would read. They do not
-answer any of the three questions above.
+**You build the town, and your heroes are its workforce.** You place buildings on a hex map, give
+each working hero a house, and assign heroes to jobs. While you play, the town makes wood, then
+stone and food, and those build more town. This is a gacha-hero game with a town layer, not a
+Banished clone. The people come from the Summoning Circle, not from births. Every worker is a hero
+you pulled and can lose.
 
-> ⚠️ **PROVISIONAL** — undefined as a whole: placement, what NPCs produce, and whether anything
-> runs while closed. · **Settled by:** an owner ruling when the base-builder epic is scheduled,
-> made against measured Summon Stone and parts income from a played build, since economy output
-> is priced against it.
+- **Hexes.** The map is made of hexes because the art is: KayKit Medieval Hexagon, already
+  downloaded and owner-approved, has hex tiles, houses, a lumbermill, a mine, a farm field and
+  construction scaffolding. One building sits on one hex.
+- **The seven hall buildings stay, one of each.** They are the Summoning Circle, Forge, Training
+  Hall, Sanctum, Reliquary, Town Gate and Apothecary. Every profile starts with them standing, so
+  the game works from the first minute. You can move them. You cannot build a second one: a second
+  Forge would add nothing, because nothing a hall does is limited by how many you have. Their
+  levels, panels and keepers are unchanged.
+- **You place everything else.** First the House and the Lumbermill. A stone workplace and a farm
+  come in later slices.
+- **Houses.** A house holds one hero. A hero needs a house to work at a workplace. Fighters and
+  fodder need none. Whether a hall keeper needs one too is an owner question.
+- **Work.** A workplace has worker slots, and you assign housed heroes to them. A hero has one job:
+  a hall station or a workplace slot. Any hero can do any job. A worker is protected like a keeper,
+  not busy: you can still send it out, and its job pauses while it is away.
+- **What the town makes, and what it pays for.**
+  - Wood and stone build houses and workplaces. Later they also help pay for hall upgrades (the
+    numbers are not set).
+  - Food makes draughts, and maybe feeds workers (owner question).
+  - **No iron.** Its only use would be making gear, which is a crafting tree, and § Scope boundaries
+    excludes those. Gear stays loot plus parts.
+  - **The town never makes Summon Stones, Essence or parts.** Expedition income and the ~327-pull
+    claim in § Win and loss stay where they are.
+- **Only while you play.** The town works on the same live clock as profession XP. Nothing is made
+  while the game is closed (§ Hard constraints). Changing that needs a `DECISIONS.md` entry, not a
+  ticket.
+
+**What we take from Banished, and what we skip.**
+
+| We take | We skip, and why |
+|---|---|
+| Placing buildings on a map | Births, families and aging: the gacha is where people come from |
+| Building costs material and time (scaffolding) | Seasons, winter and freezing: § Scope boundaries excludes weather and day/night |
+| Workplaces with worker slots | Hauling and storage distance: one shared stockpile |
+| A house for each worker | Roads as a requirement: roads are decoration |
+| A stockpile and production rates | Health, happiness and disease: § Scope boundaries excludes morale and injuries |
+| Food as the thing to manage (owner question) | Trade, nomads, schools, and tool or clothing chains |
+
+**Flagged, not decided: can the town kill a hero?** Banished kills people with hunger and cold. Cold
+is gone with the seasons. Hunger is open. If heroes can starve, the town becomes a second way to die.
+Today only a failed expedition kills (`ARCHITECTURE.md` rule 8). `kill_hero()` would stay the only
+writer either way, but a death you get by forgetting a farm is a different game from a death you
+risk on a run. This is the owner's call. No food slice is built before it.
+
+**The fodder tension grows.** Every worker is a hero you did not feed. An F-rank worker costs about
+0.13 of a pull (`SYSTEMS.md` § Town builder). That is the point: junk heroes now have a job, and
+feeding them has a price.
+
+"Defend the town against attack" (the old town bullet) stays later. It has no slice.
+
+> ⚠️ **PROVISIONAL** — undefined: what a house does beyond allowing a job, whether heroes eat,
+> whether the new jobs get their own skills, whether the town ever runs while closed, and every
+> town number. · **Settled by:** the owner's answers to the questions in `ig-6m2`, then a played
+> build of its first slice.
+
+### Earlier direction, recorded 2026-08-11
 
 Recorded 2026-08-11. **None of this is the draft, none of it is next, and none of it gets
 built toward speculatively** — no scaffolding, no interfaces with one implementation, no
@@ -485,6 +539,10 @@ day/night, weather, mounts, pets, guilds.
 **Clarified 2026-09-23 (`ig-wgj`).** Heroes stationed at buildings are roster heroes, not town
 NPCs, so the "town NPCs" exclusion still holds. "Crafting trees" still holds too. Professions have
 no recipes and unlock nothing. They only scale bonuses the buildings already give.
+
+**Clarified 2026-09-23 (`ig-6m2`).** Town workers are roster heroes too, so "town NPCs" still holds.
+"Day/night" and "weather" still hold, so the town builder has no seasons and nobody freezes.
+Turning wood and stone into buildings is not a crafting tree.
 
 **Excluded from the draft is not the same as excluded forever.** Hard constraints above is the
 never list; this one is a *now* list. Direction above already names town NPCs as eventual, and

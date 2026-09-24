@@ -7,6 +7,79 @@ Newest first.
 
 ---
 
+## 2026-09-23: The town builder — placed buildings are profile state, `station` is a hero's one job, `home` is its house, and the town runs only on the live tick
+
+**PROPOSED, 2026-09-23. Waiting for the director.** Drafted for `ig-6m2`. The owner, 2026-09-23:
+"build their own town, manage work, have the heros have their own house, city management like the
+game banished". `GAME_SPEC.md` § The town builder has the design. `SYSTEMS.md` § Town builder has
+the numbers.
+
+**What moves.**
+
+1. **Placed buildings and the stockpile are `GameSession` state.** There are three additive keys:
+   `town_buildings` (a list of `{id, type, q, r}`), `town_resources` (`{wood: float}`, with more
+   kinds in later slices) and `town_next_id`. `SAVE_VERSION` is not bumped (the `P2-23` precedent).
+   A save without `town_resources` gets `town_start_wood` once. This crosses save boundary #1, so
+   each slice needs a real disk round-trip and a `verifier`.
+2. **Hex coordinates are axial `(q, r)` integers in the save.** The world position is derived,
+   never saved.
+3. **The seven halls stay unique, and a hall's id is its type name** (`Forge`, `Sanctum`, and so
+   on). `station` values that `ig-wgj.9` saves stay valid, and `building_levels` keeps its indexes.
+   Placed buildings get `<type>_<n>`, where `n` comes from `town_next_id` and is never reused.
+   - In the first slice, the halls stay authored nodes in `hub/town/town.tscn`, and their hexes
+     count as taken.
+   - In the second slice, the halls join `town_buildings` at default hexes, and each building type
+     gets its own scene. "Renaming a hall node is a save change" then becomes "renaming a hall type
+     id is a save change".
+4. **A hero's one job is `Hero.station`.** It holds a hall id or a placed workplace id. One field,
+   not two, so a hero can never hold two jobs. The `ig-wgj.9` rules carry over to workers:
+   - protected, not busy
+   - the four dispatch paths are unchanged
+   - a worker who is away produces nothing
+   - the stationing mutator enforces the slot count
+   On load, a workplace id is kept only if that building exists and has a free slot. Otherwise it
+   is cleared with a `push_warning`, and the first hero in roster order wins.
+5. **A hero's house is `Hero.home`,** a placed House id, saved as the additive key `home`. A house
+   holds `house_capacity` heroes, enforced by the mutator and on load. A workplace job needs a home.
+   Whether a hall keeper needs one is an owner question, and until the owner answers, it does not.
+6. **Permadeath keeps one writer.** `home` and `station` live on the `Hero`, so a death takes them
+   away. There is no building-to-hero map to clean (rule 8, and the same reasoning as 2026-09-23
+   item 5). Demolishing a building, when it exists, clears its residents and workers in its own
+   mutator. That is not a death path.
+7. **Town rules are pure static functions in one script under `hub/town/`,** following
+   `ExpeditionOrders`: hex math, whether a hex is free, and production for a tick. `GameSession`
+   mutators call them (`place_building`, `assign_home`, and `station_hero` extended to workplaces),
+   and refuse there. The town view spawns buildings from `town_buildings` and emits ids upward, as
+   it does today.
+8. **Production runs only on the live tick** (`_advance_clocks_in_memory`). The offline catch-up
+   (`_advance_orders_in_memory`) makes nothing (`GAME_SPEC.md` § Hard constraints).
+9. **The town makes no Summon Stones, Essence or parts,** and `combat/` never reads town state.
+10. **No fourth autoload.**
+
+**Rejected.**
+
+- *A square grid (`GridMap`).* The art is hex tiles. A square grid fights every tile in the pack.
+- *A separate `job` field next to `station`.* Two fields that must never both be set is a bug
+  waiting to happen.
+- *A building-to-workers map on `GameSession`.* It would need cleaning after a death. That is a
+  second writer after `kill_hero()`.
+- *Duplicate halls.* A second Forge would do nothing. It would also break type-name ids, `station`
+  values and the `building_levels` indexes.
+- *Physical hauling and per-building storage.* Banished's logistics cost a lot to build and give a
+  gacha game nothing. One shared stockpile.
+- *Production while the game is closed.* It breaks § Hard constraints. Changing that is an owner
+  ruling and its own entry.
+- *Iron, or a town that makes Summon Stones or parts.* Iron needs a crafting tree, which
+  § Scope boundaries excludes. Stones or parts would move every income number and the ~327-pull
+  spine.
+
+**Left open on purpose.** Whether a hall keeper needs a house. Whether heroes eat, and whether
+hunger can kill (a second death path, flagged in `GAME_SPEC.md`). Whether the new jobs get their
+own skills: adding professions would make each calling rarer, and a Rites-born hero would drop from
+1 in 5. The numbers for stone, construction time, hall upgrade costs and food.
+
+---
+
 ## 2026-09-23: Dev-tool autoloads that exports strip do not count toward the three-autoload cap
 
 **ACCEPTED, owner ruling 2026-09-23.** The Godot AI editor plugin (`addons/godot_ai/`, MIT, v4.2.1)
@@ -201,10 +274,8 @@ buildings have the design. `SYSTEMS.md` § Keepers and professions has the numbe
 - *A crafting system so the Forge can "make masterwork equips".* § Scope boundaries excludes
   crafting trees. Masterwork gates an output tier the building already has, and adds none.
 
-**Left open on purpose.** Base builder and NPC economy (placement as save state; production;
-offline behavior against § Hard constraints) are direction only, with no ticket and no
-scaffolding. Professions are the labor it would read, and research is parked there (owner,
-2026-09-23). Masterwork draughts have their own entry above.
+**Left open on purpose.** The town builder has its own entry above (proposed 2026-09-23).
+Research is parked there (owner, 2026-09-23). Masterwork draughts have their own entry above.
 
 ---
 

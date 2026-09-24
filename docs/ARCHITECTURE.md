@@ -240,7 +240,8 @@ scene still holds, and so do rules 1, 5 and 8.
   the body you are in.
 - **A keeper's station and skills are hero state.** `station`, `calling` and `profession_xp`
   are `Hero` fields, saved in `Hero.to_dict/from_dict` (save boundary #1). `station` holds a
-  building node name from `hub/town/town.tscn`, so renaming a building node is a save change.
+  hall id (a building node name from `hub/town/town.tscn`) or, once the town builder lands, a placed
+  workplace id. Renaming a hall is a save change.
   Masterwork (calling + skill 5) is a gate `GameSession` checks inside the action it gates:
   `enhance_item` past +12, `rank_up_hero` for SS→SSS, and the masterwork draught craft. The UI only
   reflects it. A station counts in
@@ -265,10 +266,21 @@ scene still holds, and so do rules 1, 5 and 8.
 - **No fourth autoload.** Town state is either profile state (`GameSession`) or view state
   (`hub/town/`). Nothing sits in between.
 
-A future base builder or NPC economy would move real boundaries: building placement becomes save
-state, economy rules need a home (pure functions under `hub/`, the `ExpeditionOrders` precedent),
-and anything that runs while the game is closed collides with `GAME_SPEC.md` § Hard constraints.
-None of that is decided here. See `DECISIONS.md` 2026-09-23.
+**The town builder (`ig-6m2`, proposed 2026-09-23)** moves these boundaries. Details:
+`DECISIONS.md` 2026-09-23, the town builder.
+
+- **Placement is profile state.** Placed buildings and the resource stockpile live on
+  `GameSession` and save through `SaveService`. The town view spawns buildings from that list. It
+  never decides where one goes.
+- **A hero's one job is `station`,** and its house is `home`. Both are `Hero` fields, so a death
+  takes them away and `kill_hero()` stays the only writer (rule 8).
+- **Town rules are pure functions in one script under `hub/town/`,** following `ExpeditionOrders`:
+  hex math, whether a hex is free, and production per tick. `GameSession` mutators call them and
+  refuse there. The view only reflects the result.
+- **Production runs only on the live tick,** never in the offline catch-up (`GAME_SPEC.md`
+  § Hard constraints).
+- **The halls stay unique,** so a hall's id is its type name and `building_levels` keeps its
+  indexes.
 
 ---
 
