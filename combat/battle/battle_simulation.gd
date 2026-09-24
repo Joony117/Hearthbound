@@ -55,6 +55,9 @@ const ABILITIES: Dictionary[String, AbilityDefinition] = {
 }
 const ROLE_CYCLE: Array[String] = ["knight", "knight", "ranger", "mage", "rogue"]
 const STANCES: Array[String] = ["advance", "stay_together", "defend", "protect"]
+## Rows, SYSTEMS.md § Archetypes.
+const FRONT_ROW: Array[String] = ["knight", "rogue"]
+const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 const TICK_EPSILON: float = 0.000001
 
 const COMMAND_MOVE: String = "move"
@@ -2029,10 +2032,37 @@ static func _choose_squad_intention(state: BattleState, actor: BattleActor) -> v
 			target = _nearest_enemy_near_point(state, actor.position, protect_center, BALANCE.battle_guard_radius)
 		_:
 			target = _assigned_objective_enemy(state, actor, objective)
+	if (stance == "advance" or stance == "stay_together") and actor.archetype in BACK_ROW and _formation_order(state, actor, target.position if target != null else objective):
+		return
 	if target != null:
 		_set_auto_order(actor, COMMAND_ATTACK, target.id, target.position)
 	else:
 		_set_auto_order(actor, COMMAND_MOVE, "", objective)
+
+
+## ig-uu7.1 Formation (SYSTEMS.md § Hero AI on auto): before contact, a back-row hero stays one
+## formation spacing farther from its reference point than its squad's nearest living front-liner.
+## Off while any living enemy is within its contact range, or with no living front-liner. Returns
+## whether it set the order. Worst case: one pass over state.actors (80 at frontier_march 50v30).
+static func _formation_order(state: BattleState, actor: BattleActor, reference: Vector2) -> bool:
+	var contact: float = maxf(BALANCE.battle_detection_range, actor.attack_range)
+	var front_distance: float = INF
+	for other: BattleActor in state.actors:
+		if other.life != BattleActor.LIFE_ALIVE:
+			continue
+		if other.faction == "enemy":
+			if other.position.distance_to(actor.position) <= contact:
+				return false
+		elif other.squad_id == actor.squad_id and other.archetype in FRONT_ROW:
+			front_distance = minf(front_distance, other.position.distance_to(reference))
+	if front_distance == INF:
+		return false
+	var cap: float = front_distance + BALANCE.battle_formation_spacing
+	if actor.position.distance_to(reference) > cap:
+		_set_auto_order(actor, COMMAND_MOVE, "", reference + (actor.position - reference).normalized() * cap)
+	else:
+		_set_auto_order(actor, COMMAND_HOLD, "", actor.position)
+	return true
 
 
 static func _set_auto_order(actor: BattleActor, kind: String, target_id: String, point: Vector2) -> void:
