@@ -604,7 +604,7 @@ row is a `balance.tres` row except the read cost, which is a measurement.
 | `bond_points_death_witnessed` | 5 | Both in the `team` of the battle that stranded a hero who then died (`died.battle_order`). With the hard battle, 6 |
 | `bond_threshold` | 8 | Two saves (4 + 4), or one rescue or witnessed death plus two more hard fights (6 + 2). One fact alone never makes a bond |
 | `dream_fight_beside_battles` | 3 | The dream's middle milestone: battles beside the one this hero owes, after the save that opened the debt. Any battle counts, routine too |
-| Bond read cost | Measured, not a gate | One bond and dream read for one hero, at the 10,000-record cap, best of seven, printed for `ig-m6o.2.1`. It feeds `ig-m6o.2.2`'s derived-or-stored ADR. Nobody nears the cap for 100+ hours at the guessed 60 records an hour. Hard rule: it runs on refresh only, never per frame |
+| Bond read cost | 39 ms, measured, not a gate | One bond and dream read for one hero, at the 10,000-record cap, best of seven, printed for `ig-m6o.2.1`. It feeds `ig-m6o.2.2`'s derived-or-stored ADR. Nobody nears the cap for 100+ hours at the guessed 60 records an hour. Hard rule: it runs on refresh only, never per frame. A roster change pays it more than once: the selected hero's detail refreshes twice (directly, and again through `_refresh_director_ui`), and the walker's partner adds a bond read. That is about 100 ms per roster change at the cap |
 
 Each fact counts at most once per record for a pair, so one long battle full of revives cannot make
 a bond by itself.
