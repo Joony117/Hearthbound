@@ -173,12 +173,15 @@ func test_placing_spends_the_cost_exactly_and_takes_the_next_id() -> void:
 	assert_eq(GameSession.town_resources["wood"], BALANCE.town_start_wood)
 	assert_true(GameSession.place_building(TownRules.HOUSE, FREE_HEX), GameSession.last_action_error)
 	assert_true(GameSession.place_building(TownRules.LUMBERMILL, NEXT_HEX), GameSession.last_action_error)
-	assert_eq(GameSession.town_resources["wood"], BALANCE.town_start_wood - BALANCE.house_wood_cost, "the first Lumbermill is free")
+	assert_eq(GameSession.town_resources["wood"], BALANCE.town_start_wood, "the first House and the first Lumbermill are free")
+	assert_true(GameSession.place_building(TownRules.HOUSE, Vector2i(2, 2)), GameSession.last_action_error)
+	assert_eq(GameSession.town_resources["wood"], BALANCE.town_start_wood - BALANCE.house_wood_cost)
 	assert_eq(_placed(), [
 		{"id": "House_1", "type": "House", "q": 0, "r": 2},
 		{"id": "Lumbermill_2", "type": "Lumbermill", "q": 1, "r": 2},
+		{"id": "House_3", "type": "House", "q": 2, "r": 2},
 	] as Array[Dictionary])
-	assert_eq(GameSession.town_next_id, 3)
+	assert_eq(GameSession.town_next_id, 4)
 
 
 func test_every_refusal_spends_nothing_and_says_why() -> void:
@@ -199,9 +202,9 @@ func test_every_refusal_spends_nothing_and_says_why() -> void:
 		assert_eq(GameSession.to_dict(), before, "nothing spent for %s" % str(case))
 
 
-## Four Houses spend the start wood; without the free first Lumbermill the town could never make wood again.
+## Five Houses spend the start wood (the first is free); without the free first Lumbermill the town could never make wood again.
 func test_the_first_lumbermill_is_free_so_houses_first_cannot_lock_the_town() -> void:
-	for q: int in 4:
+	for q: int in 5:
 		assert_true(GameSession.place_building(TownRules.HOUSE, Vector2i(q, 2)), GameSession.last_action_error)
 	assert_eq(GameSession.town_resources["wood"], 0.0)
 	assert_eq(GameSession.preview_place_building(TownRules.LUMBERMILL, Vector2i(0, 3))["cost"], 0)
@@ -210,6 +213,24 @@ func test_the_first_lumbermill_is_free_so_houses_first_cannot_lock_the_town() ->
 	assert_eq(second["cost"], BALANCE.lumbermill_wood_cost)
 	assert_false(GameSession.place_building(TownRules.LUMBERMILL, Vector2i(1, 3)))
 	assert_eq(GameSession.last_action_error, "A Lumbermill costs 20 wood; you have 0.")
+
+
+## The free Lumbermill and two more spend the start wood; without the free first House nobody could
+## work them, and the town could never make wood again (ig-6m2.10).
+func test_the_first_house_is_free_so_lumbermills_first_cannot_lock_the_town() -> void:
+	for q: int in 3:
+		assert_true(GameSession.place_building(TownRules.LUMBERMILL, Vector2i(q, 3)), GameSession.last_action_error)
+	assert_eq(GameSession.town_resources["wood"], 0.0)
+	assert_eq(GameSession.preview_place_building(TownRules.HOUSE, FREE_HEX)["cost"], 0)
+	assert_true(GameSession.place_building(TownRules.HOUSE, FREE_HEX), GameSession.last_action_error)
+	assert_eq(GameSession.preview_place_building(TownRules.HOUSE, NEXT_HEX)["cost"], BALANCE.house_wood_cost)
+	assert_false(GameSession.place_building(TownRules.HOUSE, NEXT_HEX))
+	assert_eq(GameSession.last_action_error, "A House costs 10 wood; you have 0.")
+	var mira: Hero = _add_hero("Mira")
+	assert_true(GameSession.assign_home(mira, &"House_4"), GameSession.last_action_error)
+	assert_true(GameSession.station_hero(mira, &"Lumbermill_1"), GameSession.last_action_error)
+	GameSession._advance_clocks_in_memory(60.0)
+	assert_almost_eq(float(GameSession.town_resources["wood"]), BALANCE.wood_per_worker_minute, 0.0001, "wood comes in again")
 
 
 func test_the_preview_equals_the_result() -> void:
@@ -426,14 +447,15 @@ func test_the_hub_builds_on_a_clicked_hex_and_staffs_the_building() -> void:
 	var wood_label: Label = hub.get_node("%Wood") as Label
 	assert_eq(wood_label.text, "Wood: 40")
 	var menu: PopupMenu = (hub.get_node("%Build") as MenuButton).get_popup()
-	assert_eq([menu.get_item_text(0), menu.get_item_text(1)], ["House · 10 wood", "Lumbermill · 0 wood"])
+	assert_eq([menu.get_item_text(0), menu.get_item_text(1)], ["House · 0 wood", "Lumbermill · 0 wood"])
 	menu.index_pressed.emit(0)
 	assert_eq(town.placing, TownRules.HOUSE)
 	town.hex_selected.emit(TownRules.HALL_HEXES[&"Forge"])
 	assert_eq((hub.get_node("%Status") as Label).text, "The Forge stands there. Esc cancels.")
 	town.hex_selected.emit(FREE_HEX)
 	assert_eq(town.placing, &"", "placing ends after a build")
-	assert_eq(wood_label.text, "Wood: 30")
+	assert_eq(wood_label.text, "Wood: 40", "the first House is free")
+	assert_eq(menu.get_item_text(0), "House · 10 wood", "the next one is not")
 	var placed: Node3D = town.get_node("House_1") as Node3D
 	assert_eq(placed.position, TownRules.hex_to_world(FREE_HEX))
 	var camera: Camera3D = hub.get_viewport().get_camera_3d()

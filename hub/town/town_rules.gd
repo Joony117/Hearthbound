@@ -16,8 +16,9 @@ const HEX_SIZE: float = 1.1547 * MODEL_SCALE
 const HOUSE: StringName = &"House"
 const LUMBERMILL: StringName = &"Lumbermill"
 const TYPES: Array[StringName] = [HOUSE, LUMBERMILL]
-## Types that make a resource. The Mine and the Farm join when their slices add them.
-const PRODUCERS: Array[StringName] = [LUMBERMILL]
+## Types whose first one is free (SYSTEMS.md § The first of each producer is free): each producer,
+## and the House its workers need (ig-6m2.10). The Mine and the Farm join when their slices add them.
+const FREE_FIRST: Array[StringName] = [HOUSE, LUMBERMILL]
 ## The seven halls: placed buildings whose id is their type (DECISIONS.md 2026-09-23, the town
 ## builder, item 3), one of each, never built or demolished. These are their default hexes, where the
 ## authored halls stood before ig-6m2.2; a new profile, or a save without them, gets them here.
@@ -64,10 +65,10 @@ static func map_hexes(balance: BalanceTable) -> Array[Vector2i]:
 	return hexes
 
 
-## Wood a type costs to place; -1 for a type this slice does not know. The first of each producer
-## is free (SYSTEMS.md § The first of each producer is free), so the town can never lock itself out.
+## Wood a type costs to place; -1 for a type this slice does not know. The first of each FREE_FIRST
+## type is free, so the town can never lock itself out.
 static func wood_cost(type: StringName, buildings: Array[Dictionary], balance: BalanceTable) -> int:
-	if type in PRODUCERS and not buildings.any(func(building: Dictionary) -> bool: return building["type"] == String(type)):
+	if type in FREE_FIRST and not buildings.any(func(building: Dictionary) -> bool: return building["type"] == String(type)):
 		return 0
 	match type:
 		HOUSE:
