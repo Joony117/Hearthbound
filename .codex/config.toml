@@ -1,5 +1,5 @@
 [mcp_servers.serena]
-enabled = false
+enabled = true
 
 [features]
 hooks = true

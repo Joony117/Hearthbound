@@ -20,6 +20,14 @@ func after_each() -> void:
 	SceneRouter.reset_arena_transition_state()
 
 
+## What `_play_animation()` stretches into a balance window: the trimmed swing, not the whole clip.
+## `length` is already the trim end, so only the start has to come off.
+func _clip_span(animation_player: AnimationPlayer, clip: StringName) -> float:
+	var bare := StringName(String(clip).trim_prefix("mixamo/"))
+	var start: float = Arena.CLIP_TRIMS[bare].x if Arena.CLIP_TRIMS.has(bare) else 0.0
+	return animation_player.get_animation(clip).length - start
+
+
 func test_arena_loads_animated_characters_without_mutating_profile() -> void:
 	var hero := Hero.new("Keeper", 0)
 	hero.def_id = &"knight"
@@ -706,7 +714,7 @@ func test_hub_enter_arena_button_connection_targets_handler() -> void:
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
-	var button: Button = hub.get_node("UI/Root/Bottom/Buttons/EnterArena") as Button
+	var button: Button = hub.get_node("%EnterArena") as Button
 	var connections: Array = button.pressed.get_connections()
 
 	assert_eq(connections.size(), 1)
@@ -1226,7 +1234,7 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 	var light_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_A").length
+		_clip_span(animation_player, &"mixamo/Attack_A")
 		/ (
 			BALANCE.arena_light_attack_startup
 			+ BALANCE.arena_light_attack_active
@@ -1239,7 +1247,7 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 	assert_eq(animation_player.current_animation, light_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_A").length
+		_clip_span(animation_player, &"mixamo/Attack_A")
 		/ (
 			BALANCE.arena_light_attack_startup
 			+ BALANCE.arena_light_attack_active
@@ -1261,7 +1269,7 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 	assert_eq(animation_player.current_animation, &"mixamo/Attack_C")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_C").length
+		_clip_span(animation_player, &"mixamo/Attack_C")
 		/ (
 			BALANCE.arena_light_attack_startup
 			+ BALANCE.arena_light_attack_active
@@ -1276,7 +1284,7 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 	var heavy_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_Heavy").length
+		_clip_span(animation_player, &"mixamo/Attack_Heavy")
 		/ (
 			BALANCE.arena_heavy_attack_startup
 			+ BALANCE.arena_heavy_attack_active
@@ -1289,7 +1297,7 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 	assert_eq(animation_player.current_animation, heavy_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_Heavy").length
+		_clip_span(animation_player, &"mixamo/Attack_Heavy")
 		/ (
 			BALANCE.arena_heavy_attack_startup
 			+ BALANCE.arena_heavy_attack_active
@@ -1305,7 +1313,7 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 	assert_eq(animation_player.current_animation, &"mixamo/Standing Dodge Forward")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Standing Dodge Forward").length
+		_clip_span(animation_player, &"mixamo/Standing Dodge Forward")
 		/ BALANCE.arena_dodge_duration,
 		0.001,
 	)
@@ -1318,7 +1326,12 @@ func test_hero_animation_player_covers_every_arena_state_and_fits_authored_windo
 	arena._hit_stun_remaining = BALANCE.arena_enemy_hit_stun
 	arena._update_hero_animation()
 	assert_eq(animation_player.current_animation, &"mixamo/Hit_Chest")
-	assert_almost_eq(animation_player.get_playing_speed(), 1.0, 0.001)
+	# The reaction is fitted to the stun now, so it finishes instead of being cut by Idle.
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		_clip_span(animation_player, &"mixamo/Hit_Chest") / BALANCE.arena_enemy_hit_stun,
+		0.001,
+	)
 
 
 func test_enemy_animations_do_not_change_attack_or_dodge_displacement() -> void:
@@ -1374,7 +1387,7 @@ func test_enemy_animation_player_covers_every_state_and_fits_authored_windows() 
 	var enemy_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_A").length
+		_clip_span(animation_player, &"mixamo/Attack_A")
 		/ (
 			BALANCE.arena_enemy_attack_startup
 			+ BALANCE.arena_enemy_attack_active
@@ -1389,7 +1402,7 @@ func test_enemy_animation_player_covers_every_state_and_fits_authored_windows() 
 	assert_eq(animation_player.current_animation, enemy_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_A").length
+		_clip_span(animation_player, &"mixamo/Attack_A")
 		/ (
 			BALANCE.arena_enemy_attack_startup
 			+ BALANCE.arena_enemy_attack_active
@@ -1407,7 +1420,7 @@ func test_enemy_animation_player_covers_every_state_and_fits_authored_windows() 
 	assert_eq(animation_player.current_animation, &"mixamo/Standing Dodge Backward")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Standing Dodge Backward").length
+		_clip_span(animation_player, &"mixamo/Standing Dodge Backward")
 		/ BALANCE.arena_enemy_dodge_duration,
 		0.001,
 	)
@@ -1417,7 +1430,7 @@ func test_enemy_animation_player_covers_every_state_and_fits_authored_windows() 
 	assert_eq(animation_player.current_animation, &"mixamo/Block")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Block").length
+		_clip_span(animation_player, &"mixamo/Block")
 		/ BALANCE.arena_enemy_parry_active_window,
 		0.001,
 	)
@@ -1427,7 +1440,7 @@ func test_enemy_animation_player_covers_every_state_and_fits_authored_windows() 
 	assert_eq(animation_player.current_animation, &"mixamo/Hit_Chest")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Hit_Chest").length
+		_clip_span(animation_player, &"mixamo/Hit_Chest")
 		/ BALANCE.arena_parry_enemy_stagger,
 		0.001,
 	)
@@ -1486,7 +1499,7 @@ func test_big_hit_staggers_the_enemy_out_of_its_attack_and_plays_its_own_reactio
 	assert_eq(animation_player.current_animation, &"mixamo/Big Hit To Head")
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Big Hit To Head").length
+		_clip_span(animation_player, &"mixamo/Big Hit To Head")
 		/ BALANCE.arena_enemy_big_hit_stagger,
 		0.001,
 	)
@@ -1524,15 +1537,20 @@ func test_enemy_attack_dominant_motion_lands_inside_telegraph_window() -> void:
 	arena._update_enemy_animation()
 	var animation: Animation = animation_player.get_animation(animation_player.current_animation)
 	var dominant_key_time: float = _dominant_rotation_key_time(animation)
-	var scaled_key_time: float = dominant_key_time / animation_player.get_playing_speed()
+	# Playback starts at the trim, so on-screen time is measured from there, not from clip zero.
+	var trim: Vector2 = Arena.CLIP_TRIMS[&"Attack_A"]
+	var scaled_key_time: float = (dominant_key_time - trim.x) / animation_player.get_playing_speed()
 	print(
 		"MIXAMO_ATTACK_A_TIMING length=%.6f dominant=%.6f scaled=%.6f"
 		% [animation.length, dominant_key_time, scaled_key_time],
 	)
 
-	assert_almost_eq(animation.length, 1.5, 0.001)
+	assert_almost_eq(animation.length, trim.y, 0.001)
 	assert_almost_eq(dominant_key_time, 0.593333, 0.001)
-	assert_almost_eq(scaled_key_time, 0.435111, 0.001)
+	# `SYSTEMS.md`'s alignment target is the active-window onset itself. The trim closes the old
+	# 0.435 s miss to within a frame of it; the residual is the trim being on a round 1/100 s.
+	assert_almost_eq(scaled_key_time, BALANCE.arena_enemy_attack_startup, 1.0 / 60.0)
+	assert_almost_eq(scaled_key_time, 0.539524, 0.001)
 	assert_gte(
 		scaled_key_time,
 		BALANCE.arena_enemy_attack_startup - BALANCE.arena_enemy_telegraph_flash,
@@ -1621,7 +1639,7 @@ func test_hero_light_attack_chain_wraps_back_onto_the_a_and_b_clips() -> void:
 	var wrapped_attack_animation: StringName = animation_player.current_animation
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_B").length
+		_clip_span(animation_player, &"mixamo/Attack_B")
 		/ (
 			BALANCE.arena_light_attack_startup
 			+ BALANCE.arena_light_attack_active
@@ -1634,7 +1652,7 @@ func test_hero_light_attack_chain_wraps_back_onto_the_a_and_b_clips() -> void:
 	assert_eq(animation_player.current_animation, wrapped_attack_animation)
 	assert_almost_eq(
 		animation_player.get_playing_speed(),
-		animation_player.get_animation(&"mixamo/Attack_B").length
+		_clip_span(animation_player, &"mixamo/Attack_B")
 		/ (
 			BALANCE.arena_light_attack_startup
 			+ BALANCE.arena_light_attack_active
@@ -1744,3 +1762,31 @@ func test_dodge_turns_neither_capsule_and_picks_the_clip_from_the_direction() ->
 	var to_hero: Vector3 = hero_capsule.global_position - enemy_capsule.global_position
 	to_hero.y = 0.0
 	assert_gt((-enemy_capsule.global_basis.z).normalized().dot(to_hero.normalized()), 0.999)
+
+
+## `ig-r86`: a Mixamo swing is stance → windup → swing → stance in one clip, so handing the whole
+## clip to a balance window authored for capsules ran the light attacks at 4x. The window belongs to
+## the trimmed span, and a fresh play has to start at the trim rather than at the stance.
+func test_trimmed_clip_stretches_only_its_swing_and_starts_at_the_trim() -> void:
+	var arena: Arena = _instantiate_arena()
+	var animation_player := arena.get_node("HeroCapsule/HeroAnimationPlayer") as AnimationPlayer
+	var trim: Vector2 = Arena.CLIP_TRIMS[&"Attack_A"]
+	assert_gt(trim.x, 0.0)
+	# The trim end is the clip's length, because Godot has no trim API to express it any other way.
+	assert_almost_eq(animation_player.get_animation(&"mixamo/Attack_A").length, trim.y, 0.0001)
+
+	arena._attack_elapsed = 0.0
+	arena._combo_index = 0
+	arena._update_hero_animation()
+	assert_eq(animation_player.current_animation, &"mixamo/Attack_A")
+	assert_almost_eq(
+		animation_player.get_playing_speed(),
+		(trim.y - trim.x)
+		/ (
+			BALANCE.arena_light_attack_startup
+			+ BALANCE.arena_light_attack_active
+			+ BALANCE.arena_light_attack_recovery
+		),
+		0.001,
+	)
+	assert_almost_eq(animation_player.current_animation_position, trim.x, 0.0001)

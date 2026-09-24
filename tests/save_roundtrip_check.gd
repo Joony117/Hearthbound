@@ -75,7 +75,7 @@ func _run_after_autoloads() -> void:
 	if restore_code != 0:
 		exit_code = restore_code
 	if exit_code == 0:
-		print("PASS: legacy and malformed def_id compatibility, hero level/XP disk round-trip and untrusted shapes, both new-format def_ids, roster, essence, resonance, taught traits, Summon Stones deduction/reward/untrusted shapes, parts, part conversion, buildings, Forge salvage yield, enhanced equipment, inventory, cleared zones, permadeath, turn counter, lost-cache turn_lost, recovery and expiry, save version %d, and byte-identical restoration passed." % _save_version)
+		print("PASS: v1/v2 migration; v3 mid-fight, stranded, active-rescue and partial-extraction disk checkpoints; legacy compatibility; profile resources, equipment and progression; active-clock recovery; save version %d; and byte-identical original-save restoration passed." % _save_version)
 	quit(exit_code)
 
 
@@ -83,6 +83,12 @@ func _run() -> int:
 	var legacy_code: int = _check_legacy_save()
 	if legacy_code != 0:
 		return legacy_code
+	var v2_order_code: int = _check_v2_inflight_order_round_trip()
+	if v2_order_code != 0:
+		return v2_order_code
+	var v3_battle_code: int = _check_v3_battle_round_trip()
+	if v3_battle_code != 0:
+		return v3_battle_code
 	var malformed_code: int = _check_malformed_def_id()
 	if malformed_code != 0:
 		return malformed_code
@@ -126,6 +132,143 @@ func _run() -> int:
 	if roster_wipe_code != 0:
 		return roster_wipe_code
 	return _check_recovery_round_trip()
+
+
+func _check_v3_battle_round_trip() -> int:
+	var previous_state: Dictionary = _game_session.call("to_dict") as Dictionary
+	_game_session.set("_save_deferred_depth", 1)
+	_game_session.call("from_dict", {"roster": []})
+	_game_session.set("_save_deferred_depth", 0)
+	var source := Hero.new("V3 Source", 7)
+	source.def_id = &"knight"
+	source.level = 80
+	_game_session.call("add_hero", source)
+	var source_ids: Array[String] = [source.instance_id]
+	var source_preset: String = _game_session.call("save_team_preset", "", "V3 Source", source_ids, "verdant_outskirts")
+	var source_presets: Array[String] = [source_preset]
+	var zero_loadout: Dictionary = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
+	var order_id: String = _game_session.call("dispatch_force", source_presets, "verdant_outskirts", 1, {}, zero_loadout)
+	if order_id.is_empty():
+		return _fail("v3 battle dispatch", "non-empty order ID", "empty")
+	_game_session.call("tick_expeditions", 1.3)
+	var midfight: Dictionary = _game_session.call("get_battle_snapshot", order_id) as Dictionary
+	if int(midfight.get("tick", 0)) <= 0:
+		return _fail("v3 mid-fight tick", "> 0", str(midfight.get("tick")))
+	if not _save_service.call("save"):
+		return _fail("v3 mid-fight save", "true", "false")
+	var future_code: int = _rewrite_saved_at_in_future()
+	if future_code != 0:
+		return future_code
+	_clear_session_without_save()
+	if not _save_service.call("load_game"):
+		return _fail("v3 mid-fight disk reload", "true", "false")
+	var reloaded_midfight: Dictionary = _game_session.call("get_battle_snapshot", order_id) as Dictionary
+	var normalized_midfight: Dictionary = BattleState.from_dict(midfight).to_dict()
+	var normalized_reloaded: Dictionary = BattleState.from_dict(reloaded_midfight).to_dict()
+	# JSON decodes every number as float, including integer-valued fields nested in effect_state.
+	# Normalize both sides through the actual wire format before checking canonical continuity.
+	var expected_wire: Dictionary = JSON.parse_string(JSON.stringify(normalized_midfight)) as Dictionary
+	var reloaded_wire: Dictionary = JSON.parse_string(JSON.stringify(normalized_reloaded)) as Dictionary
+	for key: String in ["tick", "rng_state", "actors", "objective_state", "supplies_remaining"]:
+		if reloaded_wire.get(key) != expected_wire.get(key):
+			return _fail("v3 mid-fight %s" % key, "wire-equivalent value", "different after JSON normalization")
+	var expected_continued := BattleState.from_dict(expected_wire)
+	var reloaded_continued := BattleState.from_dict(reloaded_wire)
+	BattleSimulation.advance(expected_continued, 3.0)
+	BattleSimulation.advance(reloaded_continued, 3.0)
+	if JSON.stringify(expected_continued.to_dict()) != JSON.stringify(reloaded_continued.to_dict()):
+		return _fail("v3 deterministic continuation", "same canonical state", "tick %d/%d rng %s/%s status %s/%s" % [expected_continued.tick, reloaded_continued.tick, expected_continued.rng_state, reloaded_continued.rng_state, expected_continued.status, reloaded_continued.status])
+	if bool(reloaded_midfight.get("paused", true)):
+		return _fail("v3 transient pause after reload", "false", "true")
+
+	var orders: Array[Dictionary] = _game_session.get("expedition_orders")
+	var source_order: Dictionary = orders[0]
+	var source_battle: Dictionary = source_order.get("battle") as Dictionary
+	for actor: Dictionary in source_battle.get("actors") as Array[Dictionary]:
+		if str(actor.get("faction")) == "ally":
+			actor["life"] = BattleActor.LIFE_DOWNED
+			actor["hp"] = 0.0
+	source_battle["status"] = "stranded"
+	source_battle["downed_ever_ids"] = [source.instance_id]
+	source_order["phase"] = "returning"
+	_game_session.call("tick_expeditions", 0.1)
+	var incidents: Array[Dictionary] = _game_session.get("stranded_incidents")
+	if incidents.size() != 1 or orders.size() != 0:
+		return _fail("v3 stranded incident settlement", "one incident and no source order", "%d/%d" % [incidents.size(), orders.size()])
+	var incident_id: String = str(incidents[0].get("id"))
+	if not _save_service.call("save"):
+		return _fail("v3 stranded save", "true", "false")
+	_clear_session_without_save()
+	if not _save_service.call("load_game"):
+		return _fail("v3 stranded disk reload", "true", "false")
+	incidents = _game_session.get("stranded_incidents")
+	if incidents.size() != 1 or str(incidents[0].get("id")) != incident_id:
+		return _fail("v3 stranded identity", incident_id, str(incidents))
+
+	var rescuer := Hero.new("V3 Rescuer", 7)
+	rescuer.def_id = &"knight"
+	rescuer.level = 80
+	_game_session.call("add_hero", rescuer)
+	var rescuer_ids: Array[String] = [rescuer.instance_id]
+	var rescue_preset: String = _game_session.call("save_team_preset", "", "V3 Rescue", rescuer_ids, "verdant_outskirts")
+	var rescue_order_id: String = _game_session.call("dispatch_rescue", incident_id, rescue_preset, zero_loadout)
+	if rescue_order_id.is_empty():
+		return _fail("v3 rescue dispatch", "non-empty order ID", "empty")
+	if not _save_service.call("save"):
+		return _fail("v3 active rescue save", "true", "false")
+	future_code = _rewrite_saved_at_in_future()
+	if future_code != 0:
+		return future_code
+	_clear_session_without_save()
+	if not _save_service.call("load_game"):
+		return _fail("v3 active rescue disk reload", "true", "false")
+	incidents = _game_session.get("stranded_incidents")
+	if incidents.size() != 1 or str(incidents[0].get("active_rescue_order_id")) != rescue_order_id:
+		return _fail("v3 active rescue identity", rescue_order_id, str(incidents))
+
+	orders = _game_session.get("expedition_orders")
+	var rescue_order: Dictionary = orders[0]
+	var rescue_battle: Dictionary = rescue_order.get("battle") as Dictionary
+	for actor: Dictionary in rescue_battle.get("actors") as Array[Dictionary]:
+		if str(actor.get("hero_id")) == source.instance_id:
+			actor["life"] = BattleActor.LIFE_EXTRACTED
+			actor["hp"] = maxf(float(actor.get("hp", 0.0)), 1.0)
+		elif str(actor.get("hero_id")) == rescuer.instance_id:
+			actor["life"] = BattleActor.LIFE_DOWNED
+			actor["hp"] = 0.0
+	rescue_battle["status"] = "stranded"
+	rescue_battle["extracted_ids"] = [source.instance_id]
+	rescue_battle["downed_ever_ids"] = [source.instance_id, rescuer.instance_id]
+	rescue_order["phase"] = "returning"
+	rescue_order["remaining_seconds"] = 0.0
+	_game_session.call("tick_expeditions", 0.1)
+	if not _save_service.call("save"):
+		return _fail("v3 partial extraction save", "true", "false")
+	_clear_session_without_save()
+	if not _save_service.call("load_game"):
+		return _fail("v3 partial extraction disk reload", "true", "false")
+	incidents = _game_session.get("stranded_incidents")
+	if incidents.size() != 1 or incidents[0].get("hero_ids") != [rescuer.instance_id]:
+		return _fail("v3 partial extraction remaining heroes", "[%s]" % rescuer.instance_id, str(incidents))
+	_game_session.call("from_dict", previous_state)
+	_save_service.call("save")
+	return 0
+
+
+func _clear_session_without_save() -> void:
+	_game_session.set("_save_deferred_depth", 1)
+	_game_session.call("from_dict", {"roster": []})
+	_game_session.set("_save_deferred_depth", 0)
+
+
+func _rewrite_saved_at_in_future() -> int:
+	var bytes: PackedByteArray = _read_save_bytes()
+	var parsed: Variant = JSON.parse_string(bytes.get_string_from_utf8())
+	if parsed is not Dictionary:
+		return _fail("v3 saved payload before reload", "Dictionary", type_string(typeof(parsed)))
+	var payload: Dictionary = parsed as Dictionary
+	payload["saved_at_unix"] = Time.get_unix_time_from_system() + 60.0
+	return _write_save_bytes(JSON.stringify(payload, "\t").to_utf8_buffer())
 
 
 func _check_taught_traits_round_trip() -> int:
@@ -176,6 +319,71 @@ func _check_legacy_save() -> int:
 		return _fail("essence after pre-existing disk reload", "0", str(_essence()))
 	if _stones() != 300:
 		return _fail("stones after pre-existing disk reload", "300", str(_stones()))
+	return 0
+
+
+func _check_v2_inflight_order_round_trip() -> int:
+	var previous_state: Dictionary = _game_session.call("to_dict") as Dictionary
+	_game_session.set("_save_deferred_depth", 1)
+	_game_session.call("from_dict", {"roster": []})
+	_game_session.set("_save_deferred_depth", 0)
+	var hero := Hero.new("Roundtrip Courier", 7)
+	hero.def_id = &"knight"
+	hero.level = 80
+	hero.favorite = true
+	var item := Item.new(&"head", 2)
+	item.favorite = true
+	_game_session.call("add_hero", hero)
+	_game_session.call("add_item", item)
+	var hero_ids: Array[String] = [hero.instance_id]
+	var preset_id: String = _game_session.call(
+		"save_team_preset",
+		"",
+		"Roundtrip Team",
+		hero_ids,
+		"verdant_outskirts",
+	)
+	if preset_id.is_empty():
+		return _fail("v2 preset creation", "non-empty ID", "empty")
+	var order_id: String = _game_session.call(
+		"dispatch_expedition",
+		hero_ids,
+		"verdant_outskirts",
+		2,
+		"Roundtrip Team",
+		preset_id,
+	)
+	if order_id.is_empty():
+		return _fail("v2 order dispatch", "non-empty ID", "empty")
+	var hero_id: String = hero.instance_id
+	var item_id: String = item.instance_id
+	var saved_bytes: PackedByteArray = _read_save_bytes()
+	if saved_bytes.is_empty():
+		return _fail("v2 in-flight disk bytes", "non-empty", "empty")
+	_game_session.set("_save_deferred_depth", 1)
+	_game_session.call("from_dict", {"roster": []})
+	_game_session.set("_save_deferred_depth", 0)
+	var rewrite_code: int = _write_save_bytes(saved_bytes)
+	if rewrite_code != 0:
+		return rewrite_code
+	if not _save_service.call("load_game"):
+		return _fail("v2 in-flight disk reload", "load_game() == true", "load_game() == false")
+	var reloaded_hero: Hero = _game_session.call("hero_by_id", hero_id)
+	if reloaded_hero == null or not reloaded_hero.favorite:
+		return _fail("v2 hero identity and favorite", hero_id, "missing or not favorite")
+	var inventory: Array[Item] = _game_session.get("inventory")
+	if inventory.size() != 1 or inventory[0].instance_id != item_id or not inventory[0].favorite:
+		return _fail("v2 item identity and favorite", item_id, str(inventory))
+	var presets: Array[Dictionary] = _game_session.get("team_presets")
+	var orders: Array[Dictionary] = _game_session.get("expedition_orders")
+	if presets.size() != 1 or str(presets[0].get("id", "")) != preset_id:
+		return _fail("v2 preset ID", preset_id, str(presets))
+	if orders.size() != 1 or str(orders[0].get("id", "")) != order_id:
+		return _fail("v2 order ID", order_id, str(orders))
+	if not _game_session.call("is_hero_busy", reloaded_hero):
+		return _fail("v2 busy state", "true", "false")
+	_game_session.call("from_dict", previous_state)
+	_save_service.call("save")
 	return 0
 
 
@@ -705,15 +913,25 @@ func _check_recovery_round_trip() -> int:
 	rescuer.level = balance.level_caps[7]
 	_game_session.call("add_hero", rescuer)
 	_game_session.set("turns", 15)
-	var recovered_cache := LostCache.new("Recovered Hero", &"verdant_outskirts", 15)
+	_game_session.set("recovery_clock_seconds", balance.recovery_base_duration_seconds)
+	_game_session.set("recovery_clock_paused", false)
+	var recovered_cache := LostCache.new(
+		"Recovered Hero",
+		&"verdant_outskirts",
+		15,
+		balance.recovery_base_duration_seconds,
+	)
 	var recovered_item := Item.new(RECOVERED_ITEM_DEF_ID, 7)
 	recovered_item.enhance_level = 13
 	recovered_cache.items.append(recovered_item)
-	var expired_cache := LostCache.new("Expired Hero", &"verdant_outskirts", 0)
+	var expired_cache := LostCache.new("Expired Hero", &"verdant_outskirts", 0, 0.0)
 	expired_cache.items.append(Item.new(EXPIRED_ITEM_DEF_ID, 7))
 	var lost_caches: Array[LostCache] = _game_session.get("lost_caches")
 	lost_caches.append(recovered_cache)
 	lost_caches.append(expired_cache)
+	_game_session.call("tick_expeditions", 0.01)
+	if lost_caches.has(expired_cache):
+		return _fail("active-clock cache expiry before recovery", "absent", "present")
 	var team: Array[Hero] = [rescuer]
 	var outcome: StringName = _game_session.call("recover_cache", recovered_cache, team, balance)
 	if outcome != &"completed":
@@ -766,6 +984,26 @@ func _backup_save() -> int:
 	return 0
 
 
+func _read_save_bytes() -> PackedByteArray:
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.READ)
+	if save_file == null:
+		return PackedByteArray()
+	var bytes: PackedByteArray = save_file.get_buffer(save_file.get_length())
+	save_file.close()
+	return bytes
+
+
+func _write_save_bytes(bytes: PackedByteArray) -> int:
+	var save_file: FileAccess = FileAccess.open(_save_path, FileAccess.WRITE)
+	if save_file == null:
+		return _fail("v2 fixture rewrite", "writable", error_string(FileAccess.get_open_error()))
+	var wrote: bool = save_file.store_buffer(bytes)
+	save_file.close()
+	if not wrote:
+		return _fail("v2 fixture rewrite", "successful write", "store_buffer() == false")
+	return 0
+
+
 func _restore_save() -> int:
 	if not _original_save_existed:
 		if FileAccess.file_exists(_save_path):
@@ -796,7 +1034,7 @@ func _write_preexisting_fixture() -> int:
 		return _fail("pre-existing fixture write", "writable", error_string(FileAccess.get_open_error()))
 	var fixture: Dictionary = {
 		"roster": [{"name": PREEXISTING_HERO_NAME, "rank": PREEXISTING_HERO_RANK}],
-		"version": _save_version,
+		"version": 1,
 	}
 	save_file.store_string(JSON.stringify(fixture, "\t"))
 	save_file.close()
@@ -809,7 +1047,7 @@ func _write_malformed_fixture() -> int:
 		return _fail("malformed def_id fixture write", "writable", error_string(FileAccess.get_open_error()))
 	var fixture: Dictionary = {
 		"roster": [{"name": MALFORMED_HERO_NAME, "rank": MALFORMED_HERO_RANK, "def_id": null}],
-		"version": _save_version,
+		"version": 1,
 	}
 	save_file.store_string(JSON.stringify(fixture, "\t"))
 	save_file.close()
@@ -824,7 +1062,7 @@ func _write_stones_fixture(raw_stones: Variant) -> int:
 	var fixture: Dictionary = {
 		"roster": [],
 		"stones": raw_stones,
-		"version": _save_version,
+		"version": 1,
 	}
 	save_file.store_string(JSON.stringify(fixture, "\t"))
 	save_file.close()
@@ -838,7 +1076,7 @@ func _write_hero_progress_fixture(raw_level: Variant, raw_xp: Variant) -> int:
 		return _fail("untrusted hero progress fixture write", "writable", error_string(FileAccess.get_open_error()))
 	var fixture: Dictionary = {
 		"roster": [{"name": PROGRESS_HERO_NAME, "rank": 0, "level": raw_level, "xp": raw_xp}],
-		"version": _save_version,
+		"version": 1,
 	}
 	save_file.store_string(JSON.stringify(fixture, "\t"))
 	save_file.close()

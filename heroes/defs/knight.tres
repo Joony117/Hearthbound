@@ -1,7 +1,8 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=8 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
 [ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
+[ext_resource type="Resource" path="res://combat/abilities/knight_rally.tres" id="3_ability"]
 
 [sub_resource type="Resource" id="TraitDefinition_bulwark"]
 script = ExtResource("2_trait")
@@ -57,5 +58,6 @@ base_spd = 90.0
 spd_growth = 1.0
 crit_rate = 0.05
 crit_dmg = 1.5
+battle_ability = ExtResource("3_ability")
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_bulwark"), SubResource("TraitDefinition_stalwart"), SubResource("TraitDefinition_iron_wall")])
 instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_shield_drill"), SubResource("TraitDefinition_iron_discipline"), SubResource("TraitDefinition_veterans_bastion")])

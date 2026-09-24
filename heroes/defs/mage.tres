@@ -1,7 +1,8 @@
-[gd_resource type="Resource" script_class="HeroDefinition" load_steps=8 format=3]
+[gd_resource type="Resource" script_class="HeroDefinition" load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://heroes/hero_definition.gd" id="1"]
 [ext_resource type="Script" path="res://heroes/trait_definition.gd" id="2_trait"]
+[ext_resource type="Resource" path="res://combat/abilities/mage_burst.tres" id="3_ability"]
 
 [sub_resource type="Resource" id="TraitDefinition_arcane_focus"]
 script = ExtResource("2_trait")
@@ -59,5 +60,6 @@ base_spd = 95.0
 spd_growth = 1.2
 crit_rate = 0.08
 crit_dmg = 1.65
+battle_ability = ExtResource("3_ability")
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_arcane_focus"), SubResource("TraitDefinition_overload"), SubResource("TraitDefinition_archmage")])
 instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_apprentice_rites"), SubResource("TraitDefinition_mana_burn"), SubResource("TraitDefinition_spellweaving")])

@@ -1,7 +1,12 @@
 extends Node3D
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
+const UI_BUILDER := preload("res://hub/hub_ui_builder.gd")
 const MAX_TEAM_SIZE: int = 5
+const VIEW_EXPEDITIONS: int = 0
+const VIEW_TEAMS: int = 1
+const VIEW_ARMORY: int = 2
+const VIEW_HALL: int = 3
 const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 	preload("res://zones/defs/verdant_outskirts.tres"),
 	preload("res://zones/defs/ashfall_reaches.tres"),
@@ -17,6 +22,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _stones: Label = %Stones
 @onready var _turns: Label = %Turns
 @onready var _lost_cache_list: ItemList = %LostCacheList
+@onready var _recovery_clock_status: Label = %RecoveryClockStatus
 @onready var _summon_button: Button = %Summon
 @onready var _inventory_list: ItemList = %InventoryList
 @onready var _inventory_rank_filter: OptionButton = %InventoryRankFilter
@@ -35,18 +41,79 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _status: Label = %Status
 @onready var _pause_menu: CanvasLayer = %PauseMenu
 @onready var _confirm_dialog: ConfirmationDialog = %ConfirmDialog
+@onready var _enhance_dialog: ConfirmationDialog = %EnhanceDialog
+@onready var _expeditions_view: Control = %ExpeditionsView
+@onready var _teams_view: Control = %TeamsView
+@onready var _armory_view: Control = %ArmoryView
+@onready var _hall_view: Control = %HallView
+@onready var _shared_roster_panel: Control = %SharedRosterPanel
+@onready var _selected_hero_panel: Control = %SelectedHeroPanel
+@onready var _view_tabs: Array[Button] = [%ExpeditionsTab, %TeamsTab, %ArmoryTab, %HallTab]
+@onready var _roster_availability_filter: OptionButton = %RosterAvailabilityFilter
+@onready var _roster_favorites_only: CheckBox = %RosterFavoritesOnly
+@onready var _favorite_hero: CheckBox = %FavoriteHero
+@onready var _hero_availability: Label = %HeroAvailability
+@onready var _inventory_protection_filter: OptionButton = %InventoryProtectionFilter
+@onready var _favorite_item: CheckBox = %FavoriteItem
+@onready var _preset_dispatch_list: ItemList = %PresetDispatchList
+@onready var _runs_per_team: SpinBox = %RunsPerTeam
+@onready var _repeat_until_stopped: CheckBox = %RepeatUntilStopped
+@onready var _dispatch_summary: RichTextLabel = %DispatchSummary
+@onready var _dispatch_empty: Label = %DispatchEmpty
+@onready var _dispatch_selected: Button = %DispatchSelected
+@onready var _expedition_counts: Label = %ExpeditionCounts
+@onready var _recovery_warning: Control = %RecoveryWarning
+@onready var _order_cards: VBoxContainer = %OrderCards
+@onready var _recent_returns: ItemList = %RecentReturns
+@onready var _preset_selector: OptionButton = %PresetSelector
+@onready var _preset_name: LineEdit = %PresetName
+@onready var _preset_members: RichTextLabel = %PresetMembers
+@onready var _recovery_team_option: OptionButton = %RecoveryTeamOption
+@onready var _practice_preset: OptionButton = %PracticePreset
+@onready var _practice_zone: OptionButton = %PracticeZone
+@onready var _combine_teams: CheckBox = %CombineTeams
+@onready var _combined_zone: OptionButton = %CombinedZone
+@onready var _battle_settings: Control = %BattleSettings
+@onready var _incident_cards: VBoxContainer = %IncidentCards
+@onready var _supply_stock: Label = %SupplyStock
+@onready var _supply_kind: OptionButton = %SupplyKind
+@onready var _supply_quantity: SpinBox = %SupplyQuantity
+@onready var _supply_reserve: SpinBox = %SupplyReserve
+@onready var _supply_preview: Label = %SupplyPreview
+@onready var _convert_quantity: SpinBox = %ConvertQuantity
+@onready var _convert_reserve: SpinBox = %ConvertReserve
+@onready var _enhance_target_level: SpinBox = %EnhanceTargetLevel
+@onready var _enhance_preview: RichTextLabel = %EnhancePreview
+@onready var _enhance_budgets: Array[SpinBox] = [%FBudget, %DBudget, %CBudget, %BBudget, %ABudget, %SBudget, %SSBudget, %SSSBudget]
+@onready var _bulk_controls: VBoxContainer = %BulkControls
+@onready var _bulk_quantity: SpinBox = %BulkQuantity
+@onready var _confirm_body: RichTextLabel = %DialogBody
 
 # Held between the press that asks and the press that confirms. The dialog is exclusive, so no
 # second action can be queued while one is pending.
 var _pending_action: Callable
+var _pending_bulk_plan: Dictionary = {}
+var _bulk_kind: String = ""
 var _slot_filter: int = -1
 var _roster_min_rank: int = -1
 var _inventory_min_rank: int = -1
 # -1 is an OptionButton index sentinel, so it cannot collide with Hero.NO_ARCHETYPE_DEF_ID (&"").
 var _roster_archetype_filter_index: int = -1
+var _roster_availability_filter_index: int = 0
+var _inventory_protection_filter_index: int = 0
+var _selected_hero_ids: Array[String] = []
+var _selected_item_ids: Array[String] = []
+var _editing_preset_id: String = ""
+var _active_view: int = VIEW_EXPEDITIONS
+var _order_structure_key: String = ""
+
+
+func _enter_tree() -> void:
+	UI_BUILDER.build($UI/Root, $UI/ConfirmDialog, $UI/EnhanceDialog)
 
 
 func _ready() -> void:
+	_connect_ui_signals()
 	GameSession.roster_changed.connect(_refresh_roster)
 	GameSession.roster_changed.connect(_refresh_essence)
 	GameSession.roster_changed.connect(_refresh_stones)
@@ -58,10 +125,15 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_equipped)
 	GameSession.roster_changed.connect(_refresh_hero_detail)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
+	GameSession.roster_changed.connect(_refresh_director_ui)
+	GameSession.expeditions_changed.connect(_on_expeditions_changed)
+	GameSession.battle_changed.connect(_on_battle_changed)
 	_populate_rank_filter(_roster_rank_filter)
 	_populate_rank_filter(_inventory_rank_filter)
 	_populate_archetype_filter()
 	_populate_slot_filter()
+	_populate_availability_filter()
+	_populate_protection_filter()
 	_refresh_roster()
 	_refresh_essence()
 	_refresh_stones()
@@ -74,9 +146,97 @@ func _ready() -> void:
 	_refresh_hero_detail()
 	_populate_convert_ranks()
 	_populate_zones()
+	%ConfirmSupply.disabled = true
 	_refresh_zone_unlocks()
-	_status.text = "Summon a hero, then send it out. It might not come back."
+	_refresh_director_ui()
+	_show_view(VIEW_EXPEDITIONS)
+	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
 	_show_pending_arena_result()
+
+
+func _connect_ui_signals() -> void:
+	_view_tabs[VIEW_EXPEDITIONS].pressed.connect(_show_view.bind(VIEW_EXPEDITIONS))
+	_view_tabs[VIEW_TEAMS].pressed.connect(_show_view.bind(VIEW_TEAMS))
+	_view_tabs[VIEW_ARMORY].pressed.connect(_show_view.bind(VIEW_ARMORY))
+	_view_tabs[VIEW_HALL].pressed.connect(_show_view.bind(VIEW_HALL))
+	_roster_list.multi_selected.connect(_on_roster_list_multi_selected)
+	_roster_rank_filter.item_selected.connect(_on_roster_rank_filter_item_selected)
+	_roster_exact_rank.toggled.connect(_on_roster_exact_rank_toggled)
+	_roster_type_filter.item_selected.connect(_on_roster_type_filter_item_selected)
+	%SelectAllRoster.pressed.connect(_on_select_all_roster_pressed)
+	_inventory_rank_filter.item_selected.connect(_on_inventory_rank_filter_item_selected)
+	_inventory_exact_rank.toggled.connect(_on_inventory_exact_rank_toggled)
+	_inventory_slot_filter.item_selected.connect(_on_inventory_slot_filter_item_selected)
+	_inventory_list.multi_selected.connect(_on_inventory_list_multi_selected)
+	_favorite_item.toggled.connect(_on_favorite_item_toggled)
+	%SelectAllInventory.pressed.connect(_on_select_all_inventory_pressed)
+	%Equip.pressed.connect(_on_equip_pressed)
+	%Salvage.pressed.connect(_on_salvage_pressed)
+	%Enhance.pressed.connect(_on_enhance_pressed)
+	%Convert.pressed.connect(_on_convert_pressed)
+	%ConvertMax.pressed.connect(_on_convert_max_pressed)
+	%Unequip.pressed.connect(_on_unequip_pressed)
+	%UnequipAll.pressed.connect(_on_unequip_all_pressed)
+	%Sacrifice.pressed.connect(_on_sacrifice_pressed)
+	%RankUp.pressed.connect(_on_rank_up_pressed)
+	%UpgradeCircle.pressed.connect(_on_upgrade_circle_pressed)
+	%UpgradeForge.pressed.connect(_on_upgrade_forge_pressed)
+	%UpgradeTrainingHall.pressed.connect(_on_upgrade_training_hall_pressed)
+	%UpgradeSanctum.pressed.connect(_on_upgrade_sanctum_pressed)
+	%UpgradeReliquary.pressed.connect(_on_upgrade_reliquary_pressed)
+	%Summon.pressed.connect(_on_summon_pressed)
+	%Recover.pressed.connect(_on_recover_pressed)
+	%EnterArena.pressed.connect(_on_enter_arena_pressed)
+	%ManageTeams.pressed.connect(_show_view.bind(VIEW_TEAMS))
+	%GoToHall.pressed.connect(_show_view.bind(VIEW_HALL))
+	%ReviewLosses.pressed.connect(_show_view.bind(VIEW_HALL))
+	%DispatchSelected.pressed.connect(_on_dispatch_selected_pressed)
+	_preset_dispatch_list.multi_selected.connect(_on_dispatch_selection_changed)
+	_combine_teams.toggled.connect(_on_combine_teams_toggled)
+	for setting_name: String in ["AutoBattle", "AutoHeal", "AutoRevive", "ReserveLastRevival", "RetreatIfEmpty"]:
+		var check: CheckBox = get_node("%%%s" % setting_name) as CheckBox
+		check.toggled.connect(_on_battle_policy_changed)
+	for setting_name: String in ["HealThreshold", "HealingAllocation", "HealingFloor", "RevivalAllocation", "RevivalFloor"]:
+		var spin: SpinBox = get_node("%%%s" % setting_name) as SpinBox
+		spin.value_changed.connect(_on_battle_policy_value_changed)
+	var stance: OptionButton = %BattleStance
+	stance.item_selected.connect(_on_battle_stance_changed)
+	%BattleSettingsToggle.pressed.connect(_on_battle_settings_toggle_pressed)
+	%SuggestedAllocations.pressed.connect(_on_suggested_allocations_pressed)
+	%PreviewSupply.pressed.connect(_on_preview_supply_pressed)
+	%ConfirmSupply.pressed.connect(_on_confirm_supply_pressed)
+	_supply_kind.item_selected.connect(_on_supply_input_changed)
+	_supply_quantity.value_changed.connect(_on_supply_quantity_changed)
+	_supply_reserve.value_changed.connect(_on_supply_quantity_changed)
+	_repeat_until_stopped.toggled.connect(_on_dispatch_options_changed)
+	_runs_per_team.value_changed.connect(_on_runs_per_team_changed)
+	_preset_selector.item_selected.connect(_on_preset_selector_selected)
+	%SavePreset.pressed.connect(_on_save_preset_pressed)
+	%DeletePreset.pressed.connect(_on_delete_preset_pressed)
+	_roster_availability_filter.item_selected.connect(_on_availability_filter_selected)
+	_roster_favorites_only.toggled.connect(_on_favorites_only_toggled)
+	_inventory_protection_filter.item_selected.connect(_on_protection_filter_selected)
+	_favorite_hero.toggled.connect(_on_favorite_hero_toggled)
+	%StartRecoveryWindow.pressed.connect(_on_start_recovery_window_pressed)
+	_supply_kind.add_item("Healing", 0)
+	_supply_kind.set_item_metadata(0, "healing")
+	_supply_kind.add_item("Revival", 1)
+	_supply_kind.set_item_metadata(1, "revival")
+	for data: Array in [["Stay together", "stay_together"], ["Advance", "advance"], ["Defend", "defend"], ["Protect", "protect"]]:
+		stance.add_item(str(data[0]))
+		stance.set_item_metadata(stance.item_count - 1, str(data[1]))
+	stance.select(0)
+	%AutoBattle.button_pressed = true
+	%AutoHeal.button_pressed = true
+	%AutoRevive.button_pressed = true
+	%HealThreshold.value = 35
+	_populate_practice_zones()
+	%UseAvailableParts.pressed.connect(_on_use_available_parts_pressed)
+	_enhance_target_level.value_changed.connect(_on_enhance_preview_changed)
+	for budget: SpinBox in _enhance_budgets:
+		budget.value_changed.connect(_on_enhance_preview_changed)
+	_enhance_dialog.confirmed.connect(_on_enhance_dialog_confirmed)
+	_bulk_quantity.value_changed.connect(_on_bulk_quantity_changed)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -88,16 +248,18 @@ func _unhandled_input(event: InputEvent) -> void:
 func _refresh_roster() -> void:
 	_refresh_hero_list(_roster_list)
 	_refresh_hero_option(_target_option)
+	_refresh_practice_options()
 
 
 ## Re-select by identity after the clear, so a hero that left the roster drops out of the selection
 ## instead of the row under it taking its place.
 func _refresh_hero_list(list: ItemList) -> void:
-	var selected_heroes: Array[Hero] = []
+	var selected_ids: Array[String] = _selected_hero_ids.duplicate()
+	var visible_ids: Array[String] = []
 	for selected_index: int in list.get_selected_items():
 		var selected_hero: Hero = list.get_item_metadata(selected_index) as Hero
-		if selected_hero != null:
-			selected_heroes.append(selected_hero)
+		if selected_hero != null and not selected_ids.has(selected_hero.instance_id):
+			selected_ids.append(selected_hero.instance_id)
 	list.clear()
 	for hero: Hero in GameSession.roster:
 		if _roster_min_rank != -1 and (
@@ -106,17 +268,43 @@ func _refresh_hero_list(list: ItemList) -> void:
 			continue
 		if _roster_archetype_filter_index != -1 and hero.def_id != StringName(Summon.ARCHETYPE_DEF_IDS[_roster_archetype_filter_index]):
 			continue
+		var busy: bool = GameSession.is_hero_busy(hero)
+		var protected: bool = GameSession.is_hero_protected(hero)
+		if _roster_availability_filter_index == 1 and (busy or protected):
+			continue
+		if _roster_availability_filter_index == 2 and not busy:
+			continue
+		if _roster_availability_filter_index == 3 and (not protected or busy):
+			continue
+		if _roster_favorites_only.button_pressed and not hero.favorite:
+			continue
 		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
-		list.add_item("[%s]  %s — %s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name])
+		var flags: PackedStringArray = []
+		if hero.favorite:
+			flags.append("★")
+		if busy:
+			flags.append("Away")
+		elif protected:
+			flags.append("Preset")
+		var suffix: String = " · %s" % ", ".join(flags) if not flags.is_empty() else ""
+		list.add_item("[%s]  %s — %s%s" % [hero.rank_label(BALANCE), hero.hero_name, archetype_name, suffix])
 		var item_index: int = list.item_count - 1
+		visible_ids.append(hero.instance_id)
 		list.set_item_metadata(item_index, hero)
 		list.set_item_tooltip(item_index, _hero_detail_text(hero))
-		if selected_heroes.has(hero):
+		if selected_ids.has(hero.instance_id):
 			list.select(item_index, false)
+	_selected_hero_ids.clear()
+	for selected_id: String in selected_ids:
+		if visible_ids.has(selected_id):
+			_selected_hero_ids.append(selected_id)
 
 
 func _refresh_hero_option(option: OptionButton) -> void:
+	var selected_id: String = ""
 	var selected_hero: Hero = option.get_selected_metadata() as Hero if option.selected >= 0 else null
+	if selected_hero != null:
+		selected_id = selected_hero.instance_id
 	option.clear()
 	for hero: Hero in GameSession.roster:
 		var archetype_name: String = Summon.archetype_label_for(hero.def_id)
@@ -124,7 +312,28 @@ func _refresh_hero_option(option: OptionButton) -> void:
 		option.set_item_metadata(option.item_count - 1, hero)
 	# Only TargetOption auto-selects index 0 on a cleared button. Re-selecting by identity after
 	# the loop is what stops a sacrificed hero's target silently retargeting whoever took its place.
-	option.select(GameSession.roster.find(selected_hero))
+	var selected_index: int = -1
+	for index: int in option.item_count:
+		var hero: Hero = option.get_item_metadata(index) as Hero
+		if hero != null and hero.instance_id == selected_id:
+			selected_index = index
+			break
+	option.select(selected_index)
+
+
+func _refresh_available_hero_option(option: OptionButton) -> void:
+	var selected_id: String = ""
+	if option.selected >= 0:
+		var selected: Hero = option.get_selected_metadata() as Hero
+		selected_id = selected.instance_id if selected != null else ""
+	option.clear()
+	for hero: Hero in GameSession.roster:
+		if GameSession.is_hero_busy(hero):
+			continue
+		option.add_item("[%s] %s" % [hero.rank_label(BALANCE), hero.hero_name])
+		option.set_item_metadata(option.item_count - 1, hero)
+		if hero.instance_id == selected_id:
+			option.select(option.item_count - 1)
 
 
 func _refresh_essence() -> void:
@@ -133,6 +342,7 @@ func _refresh_essence() -> void:
 
 func _refresh_stones() -> void:
 	_stones.text = "Summon Stones: %d" % GameSession.stones
+	_summon_button.text = "Summon hero · %d stones" % BALANCE.summon_pull_cost
 	_summon_button.disabled = GameSession.stones < BALANCE.summon_pull_cost
 
 
@@ -151,6 +361,18 @@ func _refresh_lost_caches() -> void:
 		0,
 		BALANCE.summoning_circle_level_cap,
 	)
+	var reliquary_bonus: float = BALANCE.recovery_duration_seconds_per_level * reliquary_level
+	if GameSession.lost_caches.is_empty():
+		_recovery_clock_status.text = "No lost gear is waiting."
+	elif GameSession.recovery_clock_paused:
+		var first_remaining: float = LostCache.seconds_remaining(
+			GameSession.lost_caches[0], GameSession.recovery_clock_seconds, reliquary_level, BALANCE
+		)
+		_recovery_clock_status.text = "Clock paused for review · %s active time remains · Reliquary +%s" % [
+			_format_duration(first_remaining), _format_duration(reliquary_bonus)
+		]
+	else:
+		_recovery_clock_status.text = "Recovery clock active · Reliquary +%s per cache" % _format_duration(reliquary_bonus)
 	for cache: LostCache in GameSession.lost_caches:
 		var zone: ZoneDefinition = ZoneDefinition.definition_for(cache.zone_id)
 		var zone_name: String = (
@@ -158,25 +380,34 @@ func _refresh_lost_caches() -> void:
 			if zone != null
 			else "[Missing definition: %s]" % cache.zone_id
 		)
-		var turns_remaining: int = LostCache.turns_remaining(
+		var seconds_remaining: float = LostCache.seconds_remaining(
 			cache,
-			GameSession.turns,
+			GameSession.recovery_clock_seconds,
 			reliquary_level,
 			BALANCE,
 		)
-		_lost_cache_list.add_item("%s — %s — %d items — %d turns remaining" % [
+		var time_text: String = "Paused until reviewed" if GameSession.recovery_clock_paused else "%s active remaining" % _format_duration(seconds_remaining)
+		_lost_cache_list.add_item("%s — %s — %s" % [
 			cache.hero_name,
 			zone_name,
-			cache.items.size(),
-			turns_remaining,
+			time_text,
 		])
+		_lost_cache_list.set_item_tooltip(_lost_cache_list.item_count - 1, "%d lost item(s) · %s · Reliquary Lv %d adds %s." % [cache.items.size(), time_text, reliquary_level, _format_duration(reliquary_bonus)])
 		var item_index: int = _lost_cache_list.item_count - 1
 		_lost_cache_list.set_item_metadata(item_index, cache)
 		if cache == selected_cache:
 			_lost_cache_list.select(item_index)
+	%StartRecoveryWindow.disabled = not GameSession.recovery_clock_paused or GameSession.lost_caches.is_empty()
+	%StartRecoveryWindow.tooltip_text = "A new gear loss pauses the recovery clock for review." if %StartRecoveryWindow.disabled else "Review every loss before starting the active timer."
 
 
 func _refresh_inventory() -> void:
+	var selected_ids: Array[String] = _selected_item_ids.duplicate()
+	var visible_ids: Array[String] = []
+	for selected_index: int in _inventory_list.get_selected_items():
+		var selected_item: Item = _inventory_list.get_item_metadata(selected_index) as Item
+		if selected_item != null and not selected_ids.has(selected_item.instance_id):
+			selected_ids.append(selected_item.instance_id)
 	_inventory_list.clear()
 	var items: Array[Item] = GameSession.inventory.duplicate()
 	items.sort_custom(_sort_inventory_items)
@@ -188,14 +419,36 @@ func _refresh_inventory() -> void:
 			continue
 		if _slot_filter != -1 and (definition == null or definition.slot != _slot_filter):
 			continue
+		var protected: bool = GameSession.is_item_protected(item)
+		if _inventory_protection_filter_index == 1 and protected:
+			continue
+		if _inventory_protection_filter_index == 2 and not item.favorite:
+			continue
 		var enhance_suffix: String = " +%d" % item.enhance_level if item.enhance_level != 0 else ""
+		var favorite_prefix: String = "★ " if item.favorite else ""
 		if definition == null:
-			_inventory_list.add_item("%s [Missing definition: %s]%s" % [item.rank_label(BALANCE), item.def_id, enhance_suffix])
+			_inventory_list.add_item("%s%s [Missing definition: %s]%s" % [favorite_prefix, item.rank_label(BALANCE), item.def_id, enhance_suffix])
 		else:
-			_inventory_list.add_item("%s %s%s" % [item.rank_label(BALANCE), definition.display_name, enhance_suffix])
+			_inventory_list.add_item("%s%s %s%s" % [favorite_prefix, item.rank_label(BALANCE), definition.display_name, enhance_suffix])
 		var item_index: int = _inventory_list.item_count - 1
+		visible_ids.append(item.instance_id)
 		_inventory_list.set_item_metadata(item_index, item)
 		_inventory_list.set_item_tooltip(item_index, _inventory_tooltip_text(item, definition))
+		if selected_ids.has(item.instance_id):
+			_inventory_list.select(item_index, false)
+	_selected_item_ids.clear()
+	for selected_id: String in selected_ids:
+		if visible_ids.has(selected_id):
+			_selected_item_ids.append(selected_id)
+	_refresh_favorite_item_control()
+
+
+func _refresh_favorite_item_control() -> void:
+	var selected: PackedInt32Array = _inventory_list.get_selected_items()
+	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item if selected.size() == 1 else null
+	_favorite_item.disabled = item == null
+	_favorite_item.set_pressed_no_signal(item.favorite if item != null else false)
+	_favorite_item.tooltip_text = "Select exactly one inventory item." if item == null else "Favorite items are protected from salvage."
 
 
 func _inventory_tooltip_text(item: Item, definition: EquipmentDefinition) -> String:
@@ -244,11 +497,22 @@ func _refresh_parts() -> void:
 
 
 func _refresh_buildings() -> void:
-	_circle_level.text = "Summoning Circle — Lv %d" % GameSession.building_levels[0]
-	_forge_level.text = "Forge — Lv %d" % GameSession.building_levels[1]
-	_training_hall_level.text = "Training Hall — Lv %d" % GameSession.building_levels[2]
-	_sanctum_level.text = "Sanctum — Lv %d" % GameSession.building_levels[3]
-	_reliquary_level.text = "Reliquary — Lv %d" % GameSession.building_levels[4]
+	_circle_level.text = _building_level_text("Summoning Circle", 0)
+	_forge_level.text = _building_level_text("Forge", 1)
+	_training_hall_level.text = _building_level_text("Training Hall", 2)
+	_sanctum_level.text = _building_level_text("Sanctum", 3)
+	_reliquary_level.text = _building_level_text("Reliquary", 4)
+
+
+func _building_level_text(building_name: String, index: int) -> String:
+	var preview: Dictionary = GameSession.preview_building_upgrade(index)
+	var current_level: int = int(preview.get("current_level", 0))
+	var next_level: int = int(preview.get("next_level", current_level))
+	var part_rank: int = int(preview.get("part_rank", -1))
+	var part_cost: int = int(preview.get("part_cost", 0))
+	if next_level == current_level or part_rank < 0 or part_rank >= BALANCE.rank_names.size():
+		return "%s — Lv %d · MAX" % [building_name, current_level]
+	return "%s — Lv %d · Next %d %s parts" % [building_name, current_level, part_cost, BALANCE.rank_names[part_rank]]
 
 
 func _refresh_equipped() -> void:
@@ -283,6 +547,26 @@ func _refresh_equipped() -> void:
 func _refresh_hero_detail() -> void:
 	var hero: Hero = _selected_hero()
 	_hero_detail.text = "" if hero == null else _hero_detail_text(hero)
+	_hero_availability.text = "Select exactly one hero." if hero == null else _hero_state_text(hero)
+	_favorite_hero.disabled = hero == null
+	_favorite_hero.set_pressed_no_signal(hero.favorite if hero != null else false)
+	var unavailable: bool = hero == null or GameSession.is_hero_busy(hero)
+	%Unequip.disabled = unavailable
+	%UnequipAll.disabled = unavailable
+	if unavailable and hero != null:
+		%Unequip.tooltip_text = "Unavailable while this hero is away."
+		%UnequipAll.tooltip_text = "Unavailable while this hero is away."
+	else:
+		%Unequip.tooltip_text = ""
+		%UnequipAll.tooltip_text = ""
+
+
+func _hero_state_text(hero: Hero) -> String:
+	if GameSession.is_hero_busy(hero):
+		return "Away on expedition. Equipment and advancement are locked."
+	if GameSession.is_hero_protected(hero):
+		return "Protected by favorite or team preset."
+	return "Ready"
 
 
 func _hero_detail_text(hero: Hero) -> String:
@@ -333,9 +617,34 @@ func _selected_hero() -> Hero:
 
 func _populate_zones() -> void:
 	_zone_option.clear()
+	_combined_zone.clear()
+	_practice_zone.clear()
 	for zone: ZoneDefinition in EXPEDITION_ZONES:
 		_zone_option.add_item(zone.display_name)
 		_zone_option.set_item_metadata(_zone_option.item_count - 1, zone)
+		_combined_zone.add_item(zone.display_name)
+		_combined_zone.set_item_metadata(_combined_zone.item_count - 1, zone)
+		_practice_zone.add_item(zone.display_name)
+		_practice_zone.set_item_metadata(_practice_zone.item_count - 1, zone)
+	if _combined_zone.item_count > 0:
+		_combined_zone.select(0)
+		_practice_zone.select(0)
+	_combined_zone.visible = false
+
+
+func _populate_practice_zones() -> void:
+	# The standard unlocked-zone list is populated by _populate_zones.
+	_refresh_practice_options()
+
+
+func _refresh_practice_options() -> void:
+	_practice_preset.clear()
+	for preset: Dictionary in GameSession.team_presets:
+		if _preset_status(preset) != "Ready":
+			continue
+		_practice_preset.add_item(str(preset.get("name", "Unnamed team")))
+		_practice_preset.set_item_metadata(_practice_preset.item_count - 1, preset)
+	%EnterArena.disabled = _practice_preset.item_count == 0
 
 
 func _populate_convert_ranks() -> void:
@@ -373,14 +682,39 @@ func _populate_slot_filter() -> void:
 		_inventory_slot_filter.set_item_metadata(_inventory_slot_filter.item_count - 1, slot)
 
 
+func _populate_availability_filter() -> void:
+	_roster_availability_filter.clear()
+	for label: String in ["Any availability", "Ready", "Away", "Protected"]:
+		_roster_availability_filter.add_item(label)
+
+
+func _populate_protection_filter() -> void:
+	_inventory_protection_filter.clear()
+	for label: String in ["All items", "Unprotected", "Favorites"]:
+		_inventory_protection_filter.add_item(label)
+
+
+func _show_view(view_index: int) -> void:
+	_active_view = clampi(view_index, VIEW_EXPEDITIONS, VIEW_HALL)
+	_expeditions_view.visible = _active_view == VIEW_EXPEDITIONS
+	_teams_view.visible = _active_view == VIEW_TEAMS
+	_armory_view.visible = _active_view == VIEW_ARMORY
+	_hall_view.visible = _active_view == VIEW_HALL
+	_shared_roster_panel.visible = _active_view == VIEW_TEAMS or _active_view == VIEW_ARMORY
+	_selected_hero_panel.visible = _shared_roster_panel.visible
+	for index: int in _view_tabs.size():
+		_view_tabs[index].theme_type_variation = &"ActiveNavButton" if index == _active_view else &""
+	_view_tabs[_active_view].grab_focus()
+	if _active_view == VIEW_HALL:
+		_refresh_lost_caches()
+
+
 func _refresh_zone_unlocks() -> void:
-	for zone_index: int in _zone_option.item_count:
-		var zone: ZoneDefinition = _zone_option.get_item_metadata(zone_index) as ZoneDefinition
-		assert(zone != null)
-		_zone_option.set_item_disabled(
-			zone_index,
-			not is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids),
-		)
+	for option: OptionButton in [_zone_option, _combined_zone, _practice_zone]:
+		for zone_index: int in option.item_count:
+			var zone: ZoneDefinition = option.get_item_metadata(zone_index) as ZoneDefinition
+			assert(zone != null)
+			option.set_item_disabled(zone_index, not is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids))
 
 
 static func is_zone_unlocked(
@@ -407,9 +741,22 @@ func _on_summon_pressed() -> void:
 
 
 func _ask(prompt: String, action: Callable) -> void:
+	_bulk_controls.visible = false
+	_pending_bulk_plan.clear()
 	_pending_action = action
-	_confirm_dialog.dialog_text = prompt
-	_confirm_dialog.popup_centered()
+	_confirm_dialog.dialog_text = ""
+	_confirm_body.text = prompt
+	_confirm_body.scroll_to_line(0)
+	_popup_confirm_dialog(560)
+
+
+func _popup_confirm_dialog(preferred_height: int) -> void:
+	var viewport_size: Vector2i = Vector2i(get_viewport().get_visible_rect().size)
+	var dialog_size := Vector2i(
+		mini(760, maxi(viewport_size.x - 64, 320)),
+		mini(preferred_height, maxi(viewport_size.y - 84, 300)),
+	)
+	_confirm_dialog.popup_centered(dialog_size)
 
 
 func _on_confirm_dialog_confirmed() -> void:
@@ -420,66 +767,22 @@ func _on_confirm_dialog_confirmed() -> void:
 
 
 func _on_sacrifice_pressed() -> void:
-	var fodders: Array[Hero] = []
-	for selected_index: int in _roster_list.get_selected_items():
-		var fodder: Hero = _roster_list.get_item_metadata(selected_index) as Hero
-		if fodder != null:
-			fodders.append(fodder)
 	var target: Hero = _target_option.get_selected_metadata() as Hero if _target_option.selected >= 0 else null
-	if fodders.is_empty() or target == null:
+	if _selected_hero_ids.is_empty() or target == null:
 		_status.text = "Select both a fodder hero and a target hero."
 		return
-	var sanctum_level: int = clampi(GameSession.building_levels[3], 0, BALANCE.summoning_circle_level_cap)
-	var essence_yield: int = 0
-	var fodder_names: PackedStringArray = []
-	for fodder: Hero in fodders:
-		if fodder == target:
-			_status.text = "A hero cannot be sacrificed into itself."
-			return
-		if not GameSession.roster.has(fodder):
-			_status.text = "Cannot sacrifice: %s is no longer in the roster." % fodder.hero_name
-			return
-		if not fodder.equipped.is_empty():
-			_status.text = "Unequip %s before sacrificing it." % fodder.hero_name
-			return
-		essence_yield += Hero.compute_essence_yield(fodder, target, BALANCE, sanctum_level)
-		fodder_names.append("[%s] %s" % [fodder.rank_label(BALANCE), fodder.hero_name])
-	var fodder_text: String = ", ".join(fodder_names)
-	var destruction_text: String = fodders[0].hero_name if fodders.size() == 1 else "%d heroes" % fodders.size()
-	_ask(
-		"Sacrifice %s into [%s] %s for %d essence?\n\n%s %s destroyed permanently." % [
-			fodder_text,
-			target.rank_label(BALANCE),
-			target.hero_name,
-			essence_yield,
-			destruction_text,
-			"is" if fodders.size() == 1 else "are",
-		],
-		_do_sacrifice.bind(fodders, target),
-	)
-
-
-func _do_sacrifice(fodders: Array[Hero], target: Hero) -> void:
-	var sanctum_level: int = clampi(GameSession.building_levels[3], 0, BALANCE.summoning_circle_level_cap)
-	var sacrificed_count: int = 0
-	var credited_essence: int = 0
-	for fodder: Hero in fodders:
-		var essence_yield: int = Hero.compute_essence_yield(fodder, target, BALANCE, sanctum_level)
-		if GameSession.sacrifice_hero(fodder, target, BALANCE):
-			sacrificed_count += 1
-			credited_essence += essence_yield
-	if fodders.size() == 1 and sacrificed_count == 1:
-		_status.text = "Sacrificed %s for %d essence." % [fodders[0].hero_name, credited_essence]
-	elif sacrificed_count == fodders.size():
-		_status.text = "Sacrificed %d heroes for %d essence." % [sacrificed_count, credited_essence]
-	else:
-		_status.text = "Sacrificed %d of %d heroes for %d essence." % [sacrificed_count, fodders.size(), credited_essence]
+	_bulk_kind = "sacrifice"
+	_bulk_quantity.value = 0
+	_open_bulk_dialog("Sacrifice selected heroes", "Sacrifice")
 
 
 func _on_rank_up_pressed() -> void:
 	var hero: Hero = _selected_hero()
 	if hero == null:
 		_status.text = "Select exactly one hero to rank up."
+		return
+	if GameSession.is_hero_busy(hero):
+		_status.text = "Cannot rank up %s while that hero is away." % hero.hero_name
 		return
 	if hero.rank >= BALANCE.rank_up_essence_costs.size():
 		_status.text = "%s is already at the highest rank." % hero.hero_name
@@ -496,8 +799,14 @@ func _on_rank_up_pressed() -> void:
 
 
 func _on_roster_list_multi_selected(_index: int, _selected: bool) -> void:
+	_selected_hero_ids.clear()
+	for selected_index: int in _roster_list.get_selected_items():
+		var selected_hero: Hero = _roster_list.get_item_metadata(selected_index) as Hero
+		if selected_hero != null:
+			_selected_hero_ids.append(selected_hero.instance_id)
 	_refresh_equipped()
 	_refresh_hero_detail()
+	_refresh_preset_editor()
 
 
 func _on_select_all_roster_pressed() -> void:
@@ -505,6 +814,7 @@ func _on_select_all_roster_pressed() -> void:
 		_roster_list.select(item_index, false)
 	_refresh_equipped()
 	_refresh_hero_detail()
+	_on_roster_list_multi_selected(-1, true)
 	_status.text = "Selected %d heroes." % _roster_list.item_count
 
 
@@ -542,9 +852,23 @@ func _on_inventory_slot_filter_item_selected(index: int) -> void:
 	_refresh_inventory()
 
 
+func _on_inventory_list_multi_selected(_index: int, _selected: bool) -> void:
+	_selected_item_ids.clear()
+	for selected_index: int in _inventory_list.get_selected_items():
+		var item: Item = _inventory_list.get_item_metadata(selected_index) as Item
+		if item != null:
+			_selected_item_ids.append(item.instance_id)
+	_refresh_favorite_item_control()
+
+
 func _on_select_all_inventory_pressed() -> void:
 	for item_index: int in _inventory_list.item_count:
 		_inventory_list.select(item_index, false)
+	_selected_item_ids.clear()
+	for selected_index: int in _inventory_list.get_selected_items():
+		var item: Item = _inventory_list.get_item_metadata(selected_index) as Item
+		if item != null:
+			_selected_item_ids.append(item.instance_id)
 	_status.text = "Selected %d items." % _inventory_list.item_count
 
 
@@ -552,6 +876,9 @@ func _on_equip_pressed() -> void:
 	var hero: Hero = _selected_hero()
 	if hero == null:
 		_status.text = "Select exactly one hero first."
+		return
+	if GameSession.is_hero_busy(hero):
+		_status.text = "Cannot equip gear while that hero is away."
 		return
 	var selected: PackedInt32Array = _inventory_list.get_selected_items()
 	if selected.size() != 1:
@@ -568,85 +895,169 @@ func _on_equip_pressed() -> void:
 
 
 func _on_salvage_pressed() -> void:
-	var selected: PackedInt32Array = _inventory_list.get_selected_items()
-	if selected.size() < 1:
+	if _selected_item_ids.is_empty():
 		_status.text = "Select at least one inventory item."
 		return
-	var items: Array[Item] = []
-	var parts_by_rank: Array[int] = []
-	parts_by_rank.resize(BALANCE.rank_names.size())
-	for selected_index: int in selected:
-		var item: Item = _inventory_list.get_item_metadata(selected_index) as Item
-		if item == null:
-			continue
-		items.append(item)
-		var rank_index: int = clampi(item.rank, 0, parts_by_rank.size() - 1)
-		parts_by_rank[rank_index] += Item.compute_salvage_yield(item, GameSession.building_levels[1], BALANCE)
-	var parts_text: PackedStringArray = []
-	for rank_index: int in parts_by_rank.size():
-		if parts_by_rank[rank_index] > 0:
-			parts_text.append("%d %s parts" % [parts_by_rank[rank_index], BALANCE.rank_names[rank_index]])
-	assert(not items.is_empty())
-	_ask(
-		"Salvage %d %s into %s?\n\n%s %s destroyed." % [
-			items.size(), "item" if items.size() == 1 else "items", ", ".join(parts_text),
-			"The item" if items.size() == 1 else "The items", "is" if items.size() == 1 else "are",
-		], _do_salvage.bind(items, parts_by_rank),
-	)
-
-
-func _do_salvage(items: Array[Item], parts_by_rank: Array[int]) -> void:
-	for item: Item in items:
-		GameSession.salvage_item(item, BALANCE)
-	var parts_text: PackedStringArray = []
-	for rank_index: int in parts_by_rank.size():
-		if parts_by_rank[rank_index] > 0:
-			parts_text.append("%d %s parts" % [parts_by_rank[rank_index], BALANCE.rank_names[rank_index]])
-	if items.size() == 1:
-		var rank_index: int = clampi(items[0].rank, 0, BALANCE.rank_names.size() - 1)
-		_status.text = "Salvaged %s item into %s." % [BALANCE.rank_names[rank_index], parts_text[0]]
-	else:
-		_status.text = "Salvaged %d items into %s." % [items.size(), ", ".join(parts_text)]
+	_bulk_kind = "salvage"
+	_bulk_quantity.value = 0
+	_open_bulk_dialog("Salvage selected items", "Salvage")
 
 
 func _on_enhance_pressed() -> void:
-	var selected: PackedInt32Array = _inventory_list.get_selected_items()
-	if selected.size() != 1:
-		_status.text = "Select exactly one inventory item."
+	if _selected_item_ids.is_empty():
+		_status.text = "Select at least one inventory item."
 		return
-	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
-	assert(item != null)
-	if not GameSession.inventory.has(item):
-		_status.text = "Cannot enhance: item is no longer in inventory."
-		return
-	var enhance_level: int = clampi(item.enhance_level, 0, BALANCE.forge_enhance_cap_max)
 	var forge_level: int = clampi(GameSession.building_levels[1], 0, BALANCE.summoning_circle_level_cap)
 	var enhance_cap: int = mini(BALANCE.forge_enhance_cap_max, forge_level * BALANCE.forge_enhance_cap_per_level)
 	if enhance_cap <= 0:
 		_status.text = "Cannot enhance: build the Forge first."
 		return
-	if enhance_level >= enhance_cap:
-		_status.text = "Cannot enhance: item is already at the +%d cap." % enhance_cap
-		return
-	var rank_index: int = clampi(item.rank, 0, GameSession.parts.size() - 1)
-	var cost: int = 2 + enhance_level
-	var rank_label: String = BALANCE.rank_names[rank_index]
-	if GameSession.parts[rank_index] < cost:
-		_status.text = "Cannot enhance: need %d %s parts." % [cost, rank_label]
-		return
-	GameSession.enhance_item(item, BALANCE)
-	var definition: EquipmentDefinition = Item.definition_for(item.def_id)
-	var item_name: String = definition.display_name if definition != null else str(item.def_id)
-	_status.text = "Enhanced %s to +%d for %d %s parts." % [item_name, item.enhance_level, cost, rank_label]
+	_enhance_target_level.max_value = enhance_cap
+	_enhance_target_level.value = enhance_cap
+	for budget: SpinBox in _enhance_budgets:
+		budget.value = 0
+	_update_enhance_preview()
+	var viewport_size: Vector2i = Vector2i(get_viewport().get_visible_rect().size)
+	_enhance_dialog.popup_centered(Vector2i(
+		mini(760, maxi(viewport_size.x - 64, 400)),
+		mini(620, maxi(viewport_size.y - 84, 420)),
+	))
 
 
 func _on_convert_pressed() -> void:
 	var selected_rank: int = _convert_rank_option.get_item_metadata(_convert_rank_option.selected) as int
-	var rank_label: String = BALANCE.rank_names[selected_rank]
-	if GameSession.convert_parts(selected_rank):
-		_status.text = "Converted 3 %s parts into 1 %s part." % [rank_label, BALANCE.rank_names[selected_rank + 1]]
+	var plan: Dictionary = GameSession.preview_bulk_conversion(selected_rank, int(_convert_quantity.value), int(_convert_reserve.value))
+	if not bool(plan.get("valid", false)):
+		_status.text = str(plan.get("error", "Conversion is not available."))
+		return
+	_ask("Convert parts?\n\n%s" % _format_bulk_plan(plan), _commit_bulk_plan.bind(plan))
+
+
+func _on_convert_max_pressed() -> void:
+	var selected_rank: int = _convert_rank_option.get_item_metadata(_convert_rank_option.selected) as int
+	var plan: Dictionary = GameSession.preview_bulk_conversion(selected_rank, 0, int(_convert_reserve.value))
+	if not bool(plan.get("valid", false)):
+		_status.text = str(plan.get("error", "No parts are available above the reserve."))
+		return
+	_ask("Convert the maximum without chaining ranks?\n\n%s" % _format_bulk_plan(plan), _commit_bulk_plan.bind(plan))
+
+
+func _open_bulk_dialog(title: String, confirm_text: String) -> void:
+	_bulk_controls.visible = true
+	_confirm_dialog.title = title
+	_confirm_dialog.ok_button_text = confirm_text
+	_confirm_dialog.dialog_text = ""
+	_pending_action = _commit_current_bulk_plan
+	_update_bulk_preview()
+	_popup_confirm_dialog(580)
+
+
+func _on_bulk_quantity_changed(_value: float) -> void:
+	if _bulk_controls.visible:
+		_update_bulk_preview()
+
+
+func _update_bulk_preview() -> void:
+	var quantity: int = int(_bulk_quantity.value)
+	if _bulk_kind == "salvage":
+		_pending_bulk_plan = GameSession.preview_bulk_salvage(_selected_item_ids.duplicate(), quantity)
+	elif _bulk_kind == "sacrifice":
+		var target: Hero = _target_option.get_selected_metadata() as Hero if _target_option.selected >= 0 else null
+		_pending_bulk_plan = GameSession.preview_bulk_sacrifice(_selected_hero_ids.duplicate(), target.instance_id if target != null else "", quantity)
 	else:
-		_status.text = "Need 3 %s parts to convert." % rank_label
+		_pending_bulk_plan = {}
+	var preview_text: String = _format_bulk_plan(_pending_bulk_plan)
+	if _bulk_kind == "sacrifice":
+		var target: Hero = _target_option.get_selected_metadata() as Hero if _target_option.selected >= 0 else null
+		var output_text: String = "%d essence" % int(_pending_bulk_plan.get("essence_gain", 0))
+		var resonance_gain: int = int(_pending_bulk_plan.get("resonance_gain", 0))
+		output_text += " · %d resonance" % resonance_gain
+		preview_text = "Recipient: %s\nTotal output: %s\n\n%s" % [target.hero_name if target != null else "Missing", output_text, preview_text]
+	_confirm_body.text = "Review the exact eligible and skipped entries before confirming.\n\n%s" % preview_text
+	_confirm_body.scroll_to_line(0)
+	_confirm_dialog.get_ok_button().disabled = not bool(_pending_bulk_plan.get("valid", false))
+
+
+func _commit_current_bulk_plan() -> void:
+	_commit_bulk_plan(_pending_bulk_plan)
+	_bulk_controls.visible = false
+
+
+func _commit_bulk_plan(plan: Dictionary) -> void:
+	if SaveService.load_blocked:
+		_status.text = SaveService.load_block_reason
+		return
+	if GameSession.commit_bulk_plan(plan):
+		_status.text = "%s completed." % str(plan.get("kind", "Bulk action")).capitalize()
+	else:
+		_status.text = GameSession.last_action_error
+
+
+func _format_bulk_plan(plan: Dictionary) -> String:
+	if plan.is_empty():
+		return "No preview available."
+	var lines: PackedStringArray = []
+	if not bool(plan.get("valid", false)):
+		lines.append(str(plan.get("error", "This action is not available.")))
+	for entry: Variant in plan.get("entries", []) as Array:
+		if not entry is Dictionary:
+			continue
+		var data: Dictionary = entry as Dictionary
+		var detail: String = ""
+		match str(plan.get("kind", "")):
+			"supplies":
+				detail = "%d units · spend %d F-parts · %s" % [int(data.get("units", 0)), int(data.get("spend", 0)), str(data.get("supply_kind", "supply"))]
+			"enhance":
+				detail = "+%d → +%d; spend %s" % [int(data.get("before_level", 0)), int(data.get("after_level", 0)), str(data.get("spend", 0))]
+			"salvage":
+				detail = "+%s parts" % str(data.get("gain", 0))
+			"sacrifice":
+				detail = "+%d essence%s" % [int(data.get("essence_gain", 0)), " · +%d resonance" % int(data.get("resonance_gain", 0)) if int(data.get("resonance_gain", 0)) > 0 else ""]
+			"conversion":
+				detail = "%d units · spend %d · gain %d" % [int(data.get("units", 0)), int(data.get("spend", 0)), int(data.get("gain", 0))]
+		var rank_index: int = int(data.get("rank", -1))
+		var rank_label: String = BALANCE.rank_names[rank_index] if rank_index >= 0 and rank_index < BALANCE.rank_names.size() else "?"
+		if str(plan.get("kind", "")) == "enhance":
+			lines.append("• %s → +%d; spend %s %s parts" % [str(data.get("name", "Entry")), int(data.get("after_level", 0)), str(data.get("spend", 0)), rank_label])
+			continue
+		if str(plan.get("kind", "")) == "supplies":
+			lines.append("• %s — %s" % [str(data.get("name", "Supply")), detail])
+			continue
+		lines.append("• %s [%s] — %s" % [str(data.get("name", "Entry")), rank_label, detail])
+	var excluded: Array = plan.get("excluded", []) as Array
+	if not excluded.is_empty():
+		lines.append("Skipped %d protected/ineligible:" % excluded.size())
+		for excluded_entry: Variant in excluded:
+			if excluded_entry is Dictionary:
+				var data: Dictionary = excluded_entry as Dictionary
+				lines.append("• %s — %s" % [str(data.get("name", "Entry")), str(data.get("reason", "ineligible"))])
+	if lines.is_empty():
+		lines.append("Nothing eligible for this action.")
+	return "\n".join(lines)
+
+
+func _on_use_available_parts_pressed() -> void:
+	for index: int in _enhance_budgets.size():
+		_enhance_budgets[index].value = GameSession.parts[index]
+	_update_enhance_preview()
+
+
+func _on_enhance_preview_changed(_value: float) -> void:
+	if _enhance_dialog.visible:
+		_update_enhance_preview()
+
+
+func _update_enhance_preview() -> void:
+	var budgets: Array[int] = []
+	for budget: SpinBox in _enhance_budgets:
+		budgets.append(int(budget.value))
+	_pending_bulk_plan = GameSession.preview_bulk_enhance(_selected_item_ids.duplicate(), int(_enhance_target_level.value), budgets)
+	_enhance_preview.text = _format_bulk_plan(_pending_bulk_plan)
+	_enhance_dialog.get_ok_button().disabled = not bool(_pending_bulk_plan.get("valid", false))
+
+
+func _on_enhance_dialog_confirmed() -> void:
+	_commit_bulk_plan(_pending_bulk_plan)
 
 
 func _on_upgrade_circle_pressed() -> void:
@@ -687,6 +1098,9 @@ func _on_unequip_pressed() -> void:
 	if hero == null:
 		_status.text = "Select exactly one hero first."
 		return
+	if GameSession.is_hero_busy(hero):
+		_status.text = "Cannot unequip gear while that hero is away."
+		return
 	var selected: PackedInt32Array = _equipped_list.get_selected_items()
 	if selected.size() != 1:
 		_status.text = "Select exactly one equipped item."
@@ -709,6 +1123,9 @@ func _on_unequip_all_pressed() -> void:
 	if hero == null:
 		_status.text = "Select exactly one hero first."
 		return
+	if GameSession.is_hero_busy(hero):
+		_status.text = "Cannot unequip gear while that hero is away."
+		return
 	var occupied_slots: Array[int] = []
 	for slot: int in hero.equipped.keys():
 		occupied_slots.append(slot)
@@ -721,30 +1138,7 @@ func _on_unequip_all_pressed() -> void:
 
 
 func _on_expedition_pressed() -> void:
-	var selected: PackedInt32Array = _roster_list.get_selected_items()
-	if selected.is_empty():
-		_status.text = "Select a hero first."
-		return
-	if selected.size() > MAX_TEAM_SIZE:
-		_status.text = "Select no more than 5 heroes."
-		return
-
-	var team: Array[Hero] = []
-	for selected_index: int in selected:
-		var hero: Hero = _roster_list.get_item_metadata(selected_index) as Hero
-		assert(hero != null)
-		team.append(hero)
-	var zone: ZoneDefinition = _zone_option.get_item_metadata(_zone_option.selected) as ZoneDefinition
-	assert(zone != null)
-	assert(is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids))
-	_ask(
-		"Send %d hero(es) to %s?\n\n%s\n\nHeroes that fall are gone for good." % [
-			team.size(),
-			zone.display_name,
-			", ".join(_hero_names(team)),
-		],
-		_do_expedition.bind(team, zone),
-	)
+	_on_dispatch_selected_pressed()
 
 
 func _hero_names(team: Array[Hero]) -> PackedStringArray:
@@ -754,46 +1148,24 @@ func _hero_names(team: Array[Hero]) -> PackedStringArray:
 	return names
 
 
-func _do_expedition(team: Array[Hero], zone: ZoneDefinition) -> void:
-	var expedition := Expedition.new()
-	var outcome: StringName = expedition.resolve(team, zone)
-	match outcome:
-		Expedition.OUTCOME_COMPLETED:
-			var definition: EquipmentDefinition = Item.definition_for(expedition.loot.def_id)
-			if definition == null:
-				_status.text = "%d-hero team cleared %s, but its item definition is missing." % [team.size(), zone.display_name]
-			else:
-				_status.text = "%d-hero team cleared %s. Found %s %s." % [
-					team.size(), zone.display_name, expedition.loot.rank_label(BALANCE), definition.display_name,
-				]
-		Expedition.OUTCOME_RETREATED:
-			_status.text = "%d-hero team retreated from %s." % [team.size(), zone.display_name]
-		Expedition.OUTCOME_DEFEATED:
-			_status.text = "The expedition to %s lost heroes. Gone for good." % zone.display_name
-		Expedition.OUTCOME_INVALID_TEAM:
-			_status.text = "Expedition cannot start: every hero needs an archetype."
-
-
 func _on_enter_arena_pressed() -> void:
-	var selected: PackedInt32Array = _roster_list.get_selected_items()
-	if selected.is_empty():
-		_status.text = "Select a hero first."
+	if _practice_preset.selected < 0:
+		_status.text = "Choose a ready saved team for RTS practice."
 		return
-	if selected.size() > 1:
-		_status.text = "Select exactly one hero for the arena."
+	var preset: Dictionary = _practice_preset.get_selected_metadata() as Dictionary
+	if preset.is_empty() or _preset_status(preset) != "Ready":
+		_status.text = "Choose a ready saved team for RTS practice."
 		return
-	var hero: Hero = _roster_list.get_item_metadata(selected[0]) as Hero
-	assert(hero != null)
-	if Hero.definition_for(hero.def_id) == null:
-		_status.text = "Arena cannot start: the selected hero needs a valid archetype."
+	var team: Array[Hero] = _heroes_for_ids(_string_array(preset.get("hero_ids", [])))
+	if team.is_empty() or team.size() > MAX_TEAM_SIZE or team.size() != _string_array(preset.get("hero_ids", [])).size():
+		_status.text = "Practice requires a complete saved team of 1–5 heroes."
 		return
-	var zone: ZoneDefinition = _zone_option.get_item_metadata(_zone_option.selected) as ZoneDefinition
-	assert(zone != null)
-	assert(is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids))
-	var team: Array[Hero] = [hero]
-	var wave: Wave = Wave.from_zone(zone, 0)
-	SceneRouter.prepare_arena(team, wave)
-	SceneRouter.go_to(SceneRouter.ARENA)
+	var zone: ZoneDefinition = _practice_zone.get_selected_metadata() as ZoneDefinition if _practice_zone.selected >= 0 else null
+	if zone == null or not is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids):
+		_status.text = "Choose an unlocked standard zone for practice."
+		return
+	SceneRouter.prepare_battle_practice(team, zone)
+	SceneRouter.go_to(SceneRouter.BATTLE)
 
 
 func _show_pending_arena_result() -> void:
@@ -809,9 +1181,842 @@ func _show_pending_arena_result() -> void:
 		]
 		return
 	assert(result.dead_heroes.size() == 1)
-	# The arena is a feel prototype and its CombatResult is display-only, so a "dead" hero here is
-	# still on the roster - Expedition is the sole permadeath writer (docs/DECISIONS.md 2026-08-11).
+	# The legacy arena result is display-only, so its prototype "death" remains isolated from permadeath.
 	_status.text = "Arena defeat: %s went down. Practice only, nothing lost." % result.dead_heroes[0].hero_name
+
+
+func _refresh_director_ui() -> void:
+	_refresh_preset_lists()
+	_refresh_preset_editor()
+	_refresh_recovery_team_options()
+	_refresh_practice_options()
+	_refresh_expeditions(true)
+	_refresh_hero_detail()
+	if SaveService.load_blocked:
+		_status.text = SaveService.load_block_reason
+		_disable_mutating_controls()
+
+
+func _disable_mutating_controls() -> void:
+	for control: BaseButton in [%DispatchSelected, %SavePreset, %DeletePreset, %Sacrifice, %RankUp, %Equip, %Salvage, %Enhance, %Convert, %Summon, %Recover, %StartRecoveryWindow, %UpgradeCircle, %UpgradeForge, %UpgradeTrainingHall, %UpgradeSanctum, %UpgradeReliquary]:
+		control.disabled = true
+		control.tooltip_text = SaveService.load_block_reason
+
+
+func _refresh_preset_lists() -> void:
+	var selected_ids: Array[String] = []
+	for index: int in _preset_dispatch_list.get_selected_items():
+		var preset: Dictionary = _preset_dispatch_list.get_item_metadata(index) as Dictionary
+		selected_ids.append(str(preset.get("id", "")))
+	_preset_dispatch_list.clear()
+	_preset_selector.clear()
+	_preset_selector.add_item("New team")
+	_preset_selector.set_item_metadata(0, "")
+	for preset: Dictionary in GameSession.team_presets:
+		var status: String = _preset_status(preset)
+		var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(preset.get("zone_id", ""))))
+		var zone_name: String = zone.display_name if zone != null else "Missing zone"
+		_preset_dispatch_list.add_item("[%s] %s" % [status, str(preset.get("name", "Unnamed team"))])
+		var row: int = _preset_dispatch_list.item_count - 1
+		_preset_dispatch_list.set_item_metadata(row, preset)
+		_preset_dispatch_list.set_item_tooltip(row, _preset_tooltip(preset))
+		if selected_ids.has(str(preset.get("id", ""))):
+			_preset_dispatch_list.select(row, false)
+		_preset_selector.add_item(str(preset.get("name", "Unnamed team")))
+		_preset_selector.set_item_metadata(_preset_selector.item_count - 1, str(preset.get("id", "")))
+		if str(preset.get("id", "")) == _editing_preset_id:
+			_preset_selector.select(_preset_selector.item_count - 1)
+	var no_heroes: bool = GameSession.roster.is_empty()
+	_dispatch_empty.text = "Summon heroes in the Hall to form your first team." if no_heroes else "Save a team to start an expedition."
+	_dispatch_empty.visible = GameSession.team_presets.is_empty()
+	%GoToHall.visible = no_heroes
+	%ManageTeams.visible = not no_heroes
+	_dispatch_selected.disabled = GameSession.team_presets.is_empty() or SaveService.load_blocked
+	_refresh_dispatch_summary()
+
+
+func _preset_status(preset: Dictionary) -> String:
+	var missing: bool = false
+	var away: bool = false
+	for hero_id: String in _string_array(preset.get("hero_ids", [])):
+		var hero: Hero = GameSession.hero_by_id(hero_id)
+		if hero == null:
+			missing = true
+		elif GameSession.is_hero_busy(hero):
+			away = true
+	if missing:
+		return "Missing"
+	if away:
+		return "Away"
+	return "Ready"
+
+
+func _preset_tooltip(preset: Dictionary) -> String:
+	var lines: PackedStringArray = [str(preset.get("name", "Unnamed team")), "State: %s" % _preset_status(preset)]
+	for hero_id: String in _string_array(preset.get("hero_ids", [])):
+		var hero: Hero = GameSession.hero_by_id(hero_id)
+		lines.append("• Missing (%s)" % hero_id if hero == null else "• %s" % hero.hero_name)
+	return "\n".join(lines)
+
+
+func _refresh_preset_editor() -> void:
+	var lines: PackedStringArray = []
+	for hero_id: String in _selected_hero_ids:
+		var hero: Hero = GameSession.hero_by_id(hero_id)
+		lines.append("• Missing (%s)" % hero_id if hero == null else "• %s — %s" % [hero.hero_name, _hero_state_text(hero)])
+	if lines.is_empty():
+		lines.append("Select 1–5 unique roster members.")
+	var zone: ZoneDefinition = _zone_option.get_selected_metadata() as ZoneDefinition if _zone_option.selected >= 0 else null
+	var team: Array[Hero] = _heroes_for_ids(_selected_hero_ids)
+	var valid_definitions: bool = true
+	for hero: Hero in team:
+		if hero.def_id == Hero.NO_ARCHETYPE_DEF_ID:
+			valid_definitions = false
+			break
+	if not team.is_empty() and team.size() == _selected_hero_ids.size() and zone != null and valid_definitions:
+		var duration: float = ExpeditionOrders.duration_seconds(team, zone, BALANCE)
+		var forecast: Dictionary = ExpeditionOrders.safety_forecast(team, zone, BALANCE)
+		lines.append("Power forecast: %s · ETA %s" % [str(forecast.get("reason", "Unknown")), _format_duration(duration)])
+	_preset_members.text = "\n".join(lines)
+
+
+func _on_preset_selector_selected(index: int) -> void:
+	_editing_preset_id = str(_preset_selector.get_item_metadata(index))
+	if _editing_preset_id.is_empty():
+		_preset_name.text = ""
+		_selected_hero_ids.clear()
+		_roster_list.deselect_all()
+		_refresh_preset_editor()
+		return
+	var preset: Dictionary = _preset_by_id(_editing_preset_id)
+	_preset_name.text = str(preset.get("name", ""))
+	_selected_hero_ids = _string_array(preset.get("hero_ids", []))
+	for zone_index: int in _zone_option.item_count:
+		var zone: ZoneDefinition = _zone_option.get_item_metadata(zone_index) as ZoneDefinition
+		if zone != null and str(zone.zone_id) == str(preset.get("zone_id", "")):
+			_zone_option.select(zone_index)
+			break
+	_refresh_roster()
+	_refresh_preset_editor()
+
+
+func _on_save_preset_pressed() -> void:
+	if SaveService.load_blocked:
+		_status.text = SaveService.load_block_reason
+		return
+	var zone: ZoneDefinition = _zone_option.get_selected_metadata() as ZoneDefinition if _zone_option.selected >= 0 else null
+	if zone == null:
+		_status.text = "Choose a valid preferred zone."
+		return
+	var result_id: String = GameSession.save_team_preset(_editing_preset_id, _preset_name.text.strip_edges(), _selected_hero_ids.duplicate(), str(zone.zone_id))
+	if result_id.is_empty():
+		_status.text = GameSession.last_action_error
+		return
+	_editing_preset_id = result_id
+	_status.text = "Saved team %s." % _preset_name.text.strip_edges()
+
+
+func _on_delete_preset_pressed() -> void:
+	if _editing_preset_id.is_empty():
+		_status.text = "Choose a saved preset to delete."
+		return
+	var preset: Dictionary = _preset_by_id(_editing_preset_id)
+	_ask("Delete team preset %s? Active expeditions will continue." % str(preset.get("name", "this team")), _do_delete_preset.bind(_editing_preset_id))
+
+
+func _do_delete_preset(preset_id: String) -> void:
+	if GameSession.delete_team_preset(preset_id):
+		_editing_preset_id = ""
+		_status.text = "Deleted team preset."
+	else:
+		_status.text = GameSession.last_action_error
+
+
+func _on_dispatch_selection_changed(_index: int, _selected: bool) -> void:
+	_refresh_dispatch_summary()
+
+
+func _on_dispatch_options_changed(_enabled: bool) -> void:
+	_refresh_dispatch_summary()
+
+
+func _on_runs_per_team_changed(_value: float) -> void:
+	_refresh_dispatch_summary()
+
+
+func _refresh_dispatch_summary() -> void:
+	var preview: Dictionary = _selected_force_preview()
+	var selected_count: int = _preset_dispatch_list.get_selected_items().size()
+	var count_label: String = "force" if _combine_teams.button_pressed else "order(s)"
+	var summary: String = "%d team(s) selected · %d %s" % [selected_count, 1 if _combine_teams.button_pressed else selected_count, count_label]
+	if preview.is_empty():
+		_dispatch_summary.text = summary + "\nSelect ready, non-overlapping teams."
+	elif preview.has("orders_preview"):
+		var detail_lines: PackedStringArray = [summary]
+		var total_heroes: int = 0
+		var total_capacity: int = 0
+		var total_squads: int = 0
+		var safe_forecast: bool = true
+		var raw_previews: Variant = preview.get("orders_preview", [])
+		for entry_value: Variant in raw_previews as Array:
+			if not entry_value is Dictionary:
+				continue
+			var entry: Dictionary = entry_value as Dictionary
+			total_heroes += int(entry.get("hero_count", 0))
+			total_capacity += int(entry.get("capacity", 0))
+			total_squads += int(entry.get("squad_count", 0))
+			safe_forecast = safe_forecast and bool(entry.get("safe", false))
+			detail_lines.append("• %s · %d/cap %d · %s min · %s" % [str(entry.get("name", "Team")), int(entry.get("hero_count", 0)), int(entry.get("capacity", 0)), _format_duration(float(entry.get("route_seconds", 0.0))), str(entry.get("reason", ""))])
+		detail_lines.append("Total %d heroes / %d per-order capacity · %d squads · forecast %s (never guaranteed safe)" % [total_heroes, total_capacity, total_squads, "safe" if safe_forecast else "not safe"])
+		_dispatch_summary.text = "\n".join(detail_lines)
+	else:
+		_dispatch_summary.text = "%s\n%d heroes / cap %d · %d squad(s) · route minimum %s\nForecast: %s · %s" % [
+			summary,
+			int(preview.get("hero_count", 0)),
+			int(preview.get("capacity", 0)),
+			int(preview.get("squad_count", 0)),
+			_format_duration(float(preview.get("route_seconds", 0.0))),
+			"forecast only; safety is not guaranteed" if bool(preview.get("safe", false)) else "not forecast safe",
+			str(preview.get("reason", "")),
+		]
+	_repeat_until_stopped.disabled = preview.is_empty()
+	_dispatch_selected.disabled = preview.is_empty() or not bool(preview.get("valid", false)) or SaveService.load_blocked
+	_combined_zone.visible = _combine_teams.button_pressed
+	%BattleSettingsToggle.text = "Battle settings · allocation per %s" % ("force/order" if _combine_teams.button_pressed else "team/order")
+
+
+func _on_battle_settings_toggle_pressed() -> void:
+	_battle_settings.visible = not _battle_settings.visible
+
+
+func _on_combine_teams_toggled(_enabled: bool) -> void:
+	_refresh_dispatch_summary()
+
+
+func _on_battle_policy_changed(_enabled: bool) -> void:
+	_refresh_dispatch_summary()
+
+
+func _on_battle_policy_value_changed(_value: float) -> void:
+	_refresh_dispatch_summary()
+
+
+func _on_battle_stance_changed(_index: int) -> void:
+	_refresh_dispatch_summary()
+
+
+func _selected_force_preview() -> Dictionary:
+	var selected: PackedInt32Array = _preset_dispatch_list.get_selected_items()
+	if selected.is_empty():
+		return {}
+	var preset_ids: Array[String] = []
+	for row: int in selected:
+		var preset: Dictionary = _preset_dispatch_list.get_item_metadata(row) as Dictionary
+		if _preset_status(preset) != "Ready":
+			return {}
+		preset_ids.append(str(preset.get("id", "")))
+	var zone_id: String = ""
+	if _combine_teams.button_pressed:
+		var zone: ZoneDefinition = _combined_zone.get_selected_metadata() as ZoneDefinition if _combined_zone.selected >= 0 else null
+		if zone == null or not is_zone_unlocked(zone.zone_id, GameSession.cleared_zone_ids):
+			return {}
+		zone_id = str(zone.zone_id)
+	else:
+		# Per-team mode still previews each order independently, using its saved preferred zone.
+		var order_previews: Array[Dictionary] = []
+		var all_valid: bool = true
+		var total_heroes: int = 0
+		var total_capacity: int = 0
+		var total_squads: int = 0
+		var longest_route: float = 0.0
+		var all_safe: bool = true
+		var reasons: PackedStringArray = []
+		for row: int in selected:
+			var preset: Dictionary = _preset_dispatch_list.get_item_metadata(row) as Dictionary
+			var own_zone: String = str(preset.get("zone_id", ""))
+			var order_preview: Dictionary = GameSession.preview_force([str(preset.get("id", ""))], own_zone, _total_runs(), _battle_policies(), _battle_loadout())
+			order_preview["name"] = str(preset.get("name", "Unnamed team"))
+			order_previews.append(order_preview)
+			all_valid = all_valid and bool(order_preview.get("valid", false))
+			all_safe = all_safe and bool(order_preview.get("safe", false))
+			total_heroes += int(order_preview.get("hero_count", 0))
+			total_capacity += int(order_preview.get("capacity", 0))
+			total_squads += int(order_preview.get("squad_count", 0))
+			longest_route = maxf(longest_route, float(order_preview.get("route_seconds", 0.0)))
+			var reason_text: String = str(order_preview.get("reason", ""))
+			if reason_text.is_empty():
+				reason_text = str(order_preview.get("error", "No forecast"))
+			reasons.append("%s: %s" % [str(preset.get("name", "Team")), reason_text])
+		return {"valid": all_valid, "safe": all_safe, "reason": "; ".join(reasons), "hero_count": total_heroes, "capacity": total_capacity, "squad_count": total_squads, "route_seconds": longest_route, "orders_preview": order_previews}
+	return GameSession.preview_force(preset_ids, zone_id, _total_runs(), _battle_policies(), _battle_loadout())
+
+
+func _total_runs() -> int:
+	return 0 if _repeat_until_stopped.button_pressed else int(_runs_per_team.value)
+
+
+func _battle_policies() -> Dictionary:
+	var stance: OptionButton = %BattleStance
+	return {
+		"auto_battle": %AutoBattle.button_pressed,
+		"default_stance": str(stance.get_selected_metadata()) if stance.selected >= 0 else "stay_together",
+		"ability_auto": {},
+		"auto_heal": %AutoHeal.button_pressed,
+		"auto_revive": %AutoRevive.button_pressed,
+		"heal_below": float(%HealThreshold.value) / 100.0,
+		"reserve_last_revival": %ReserveLastRevival.button_pressed,
+		"retreat_when_supplies_empty": %RetreatIfEmpty.button_pressed,
+	}
+
+
+func _battle_loadout() -> Dictionary:
+	return {
+		"healing": int(%HealingAllocation.value),
+		"revival": int(%RevivalAllocation.value),
+		"keep_healing": int(%HealingFloor.value),
+		"keep_revival": int(%RevivalFloor.value),
+	}
+
+
+func _on_suggested_allocations_pressed() -> void:
+	var heroes: int = 0
+	var squads: int = 0
+	for row: int in _preset_dispatch_list.get_selected_items():
+		var preset: Dictionary = _preset_dispatch_list.get_item_metadata(row) as Dictionary
+		var members: Array[String] = _string_array(preset.get("hero_ids", []))
+		heroes += members.size()
+		squads += 1
+	if _combine_teams.button_pressed:
+		%HealingAllocation.value = heroes
+		%RevivalAllocation.value = squads
+	else:
+		var largest: int = 0
+		for row: int in _preset_dispatch_list.get_selected_items():
+			var preset: Dictionary = _preset_dispatch_list.get_item_metadata(row) as Dictionary
+			largest = maxi(largest, _string_array(preset.get("hero_ids", [])).size())
+		%HealingAllocation.value = largest
+		%RevivalAllocation.value = 1
+	_refresh_dispatch_summary()
+
+
+func _on_dispatch_selected_pressed() -> void:
+	var selected: PackedInt32Array = _preset_dispatch_list.get_selected_items()
+	if selected.is_empty():
+		_status.text = "Select at least one ready team."
+		return
+	var presets: Array[Dictionary] = []
+	var used_heroes: Dictionary[String, bool] = {}
+	for row: int in selected:
+		var preset: Dictionary = _preset_dispatch_list.get_item_metadata(row) as Dictionary
+		if _preset_status(preset) != "Ready":
+			_status.text = "%s is not ready; Missing and Away members are never substituted." % str(preset.get("name", "A team"))
+			return
+		for hero_id: String in _string_array(preset.get("hero_ids", [])):
+			if used_heroes.has(hero_id):
+				_status.text = "Selected teams overlap on a hero. Choose non-overlapping teams."
+				return
+			used_heroes[hero_id] = true
+		presets.append(preset)
+	var preview: Dictionary = _selected_force_preview()
+	if not bool(preview.get("valid", false)):
+		_status.text = str(preview.get("error", "The selected force cannot be dispatched."))
+		return
+	var zone_id: String = ""
+	if _combine_teams.button_pressed:
+		var selected_zone: ZoneDefinition = _combined_zone.get_selected_metadata() as ZoneDefinition
+		zone_id = str(selected_zone.zone_id)
+	var warning: String = "\n\nHeroes may be downed and stranded; rescue is required before any permanent loss decision."
+	var run_text: String = "Repeat until stopped" if _total_runs() == 0 else "%d run(s) per order" % _total_runs()
+	var team_lines: PackedStringArray = []
+	for preset: Dictionary in presets:
+		var team_zone_id: String = zone_id if _combine_teams.button_pressed else str(preset.get("zone_id", ""))
+		var team_zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(team_zone_id))
+		team_lines.append("%s → %s" % [str(preset.get("name", "Unnamed team")), team_zone.display_name if team_zone != null else "Unknown zone"])
+	var route_label: String = "Route minimum" if _combine_teams.button_pressed else "Longest route minimum"
+	_ask("Dispatch %d hero(es) in %d %s?\n%s\n%s: %s\nForecast: %s\n%s%s" % [
+		int(preview.get("hero_count", 0)), 1 if _combine_teams.button_pressed else presets.size(),
+		"force" if _combine_teams.button_pressed else "order(s)",
+		"\n".join(team_lines), route_label, _format_duration(float(preview.get("route_seconds", 0.0))), str(preview.get("reason", "Forecast unavailable.")), run_text, warning,
+	], _do_dispatch_presets.bind(presets, _total_runs(), _combine_teams.button_pressed, zone_id, _battle_policies(), _battle_loadout()))
+
+
+func _do_dispatch_presets(presets: Array[Dictionary], total_runs: int, combined: bool, combined_zone_id: String, policies: Dictionary, loadout: Dictionary) -> void:
+	var successful: int = 0
+	var failed: int = 0
+	if combined:
+		var preset_ids: Array[String] = []
+		for preset: Dictionary in presets:
+			preset_ids.append(str(preset.get("id", "")))
+		if GameSession.dispatch_force(preset_ids, combined_zone_id, total_runs, policies, loadout).is_empty():
+			failed = 1
+		else:
+			successful = 1
+	else:
+		for preset: Dictionary in presets:
+			var order_id: String = GameSession.dispatch_force([str(preset.get("id", ""))], str(preset.get("zone_id", "")), total_runs, policies, loadout)
+			if order_id.is_empty():
+				failed += 1
+			else:
+				successful += 1
+	_status.text = "Dispatched %d order(s); %d failed%s" % [successful, failed, ": %s" % GameSession.last_action_error if failed > 0 else "."]
+
+
+func _on_expeditions_changed() -> void:
+	_refresh_expeditions(false)
+	_refresh_practice_options()
+	if _active_view == VIEW_HALL:
+		_refresh_lost_caches()
+
+
+func _on_battle_changed(_order_id: String) -> void:
+	# Frequent battle pulses update live status without rebuilding order structure.
+	_update_order_cards()
+
+
+func _refresh_supply_stock() -> void:
+	var stock: Dictionary = GameSession.supplies
+	_supply_stock.text = "Healing %d · Revival %d" % [int(stock.get("healing", 0)), int(stock.get("revival", 0))]
+
+
+func _refresh_incident_cards() -> void:
+	var live_incident_ids: Array[String] = []
+	for incident: Dictionary in GameSession.get_stranded_incidents():
+		var incident_id: String = str(incident.get("id", ""))
+		if incident_id.is_empty():
+			continue
+		live_incident_ids.append(incident_id)
+		var panel: PanelContainer = _incident_panel(incident_id)
+		if panel == null:
+			panel = PanelContainer.new()
+			panel.name = "Incident_%s" % incident_id.validate_node_name()
+			panel.set_meta("incident_id", incident_id)
+			panel.custom_minimum_size.y = 92.0
+			_incident_cards.add_child(panel)
+			var box := VBoxContainer.new()
+			box.name = "Box"
+			box.add_theme_constant_override("separation", 2)
+			panel.add_child(box)
+			var label := Label.new()
+			label.name = "IncidentLabel"
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			label.add_theme_color_override("font_color", Color("E8AAA0"))
+			box.add_child(label)
+			var actions := HBoxContainer.new()
+			actions.name = "Actions"
+			box.add_child(actions)
+			var start := Button.new()
+			start.name = "StartWindow"
+			start.text = "Start rescue window"
+			start.pressed.connect(_on_start_stranded_window_pressed.bind(incident_id))
+			actions.add_child(start)
+			var preset_option := OptionButton.new()
+			preset_option.name = "RescueTeam"
+			preset_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			actions.add_child(preset_option)
+			var dispatch := Button.new()
+			dispatch.name = "DispatchRescue"
+			dispatch.text = "Dispatch rescue"
+			dispatch.pressed.connect(_on_dispatch_rescue_pressed.bind(incident_id, preset_option))
+			actions.add_child(dispatch)
+			var watch := Button.new()
+			watch.name = "WatchRescue"
+			watch.text = "Watch rescue"
+			watch.pressed.connect(_on_watch_incident_rescue_pressed.bind(incident_id))
+			actions.add_child(watch)
+			var abandon := Button.new()
+			abandon.name = "Abandon"
+			abandon.text = "Abandon"
+			abandon.pressed.connect(_on_abandon_incident_pressed.bind(incident_id))
+			actions.add_child(abandon)
+		var box: VBoxContainer = panel.get_node("Box") as VBoxContainer
+		var hero_names: PackedStringArray = []
+		for hero_id: String in _string_array(incident.get("hero_ids", [])):
+			var hero: Hero = GameSession.hero_by_id(hero_id)
+			hero_names.append(hero.hero_name if hero != null else hero_id)
+		var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(incident.get("zone_id", ""))))
+		var label: Label = box.get_node("IncidentLabel") as Label
+		var window_status: String = "paused · awaiting review" if bool(incident.get("paused", false)) else "window %s remaining" % _format_duration(float(incident.get("remaining_seconds", 0.0)))
+		if bool(incident.get("expiry_pending", false)):
+			window_status = "window ended · current rescue may finish"
+		label.text = "%s · %d heroes stranded · %s\n%s" % [zone.display_name if zone != null else "Unknown zone", hero_names.size(), window_status, ", ".join(hero_names)]
+		var actions: HBoxContainer = box.get_node("Actions") as HBoxContainer
+		var rescue_order_id: String = str(incident.get("active_rescue_order_id", ""))
+		var active_rescue: bool = not rescue_order_id.is_empty()
+		var start: Button = actions.get_node("StartWindow") as Button
+		start.disabled = active_rescue or not bool(incident.get("paused", false))
+		var preset_option: OptionButton = actions.get_node("RescueTeam") as OptionButton
+		var ready_presets: Array[Dictionary] = []
+		var signature_parts: PackedStringArray = []
+		for preset: Dictionary in GameSession.team_presets:
+			if _preset_status(preset) == "Ready":
+				ready_presets.append(preset)
+				signature_parts.append("%s:%s" % [str(preset.get("id", "")), str(preset.get("name", "Unnamed team"))])
+		var ready_signature: String = "|".join(signature_parts)
+		if str(preset_option.get_meta("ready_signature", "")) != ready_signature:
+			var selected_preset_id: String = ""
+			if preset_option.selected >= 0:
+				var prior_preset: Dictionary = preset_option.get_item_metadata(preset_option.selected) as Dictionary
+				selected_preset_id = str(prior_preset.get("id", ""))
+			preset_option.clear()
+			var restored_index: int = -1
+			for preset: Dictionary in ready_presets:
+				preset_option.add_item(str(preset.get("name", "Unnamed team")))
+				preset_option.set_item_metadata(preset_option.item_count - 1, preset)
+				if str(preset.get("id", "")) == selected_preset_id:
+					restored_index = preset_option.item_count - 1
+			preset_option.set_meta("ready_signature", ready_signature)
+			if restored_index >= 0:
+				preset_option.select(restored_index)
+			elif preset_option.item_count > 0:
+				preset_option.select(0)
+		var dispatch: Button = actions.get_node("DispatchRescue") as Button
+		var expired: bool = not bool(incident.get("paused", false)) and float(incident.get("remaining_seconds", 0.0)) <= 0.0
+		dispatch.disabled = active_rescue or preset_option.item_count == 0 or expired or bool(incident.get("expiry_pending", false))
+		var watch: Button = actions.get_node("WatchRescue") as Button
+		watch.visible = active_rescue
+		if active_rescue:
+			watch.set_meta("order_id", rescue_order_id)
+		var abandon: Button = actions.get_node("Abandon") as Button
+		abandon.disabled = active_rescue
+		abandon.set_meta("hero_names", ", ".join(hero_names))
+	for child: Node in _incident_cards.get_children():
+		if str(child.get_meta("incident_id", "")) not in live_incident_ids:
+			child.queue_free()
+
+
+func _incident_panel(incident_id: String) -> PanelContainer:
+	for child: Node in _incident_cards.get_children():
+		if str(child.get_meta("incident_id", "")) == incident_id:
+			return child as PanelContainer
+	return null
+
+
+func _on_watch_incident_rescue_pressed(incident_id: String) -> void:
+	for incident: Dictionary in GameSession.get_stranded_incidents():
+		if str(incident.get("id", "")) == incident_id:
+			var order_id: String = str(incident.get("active_rescue_order_id", ""))
+			if not order_id.is_empty():
+				_on_watch_battle_pressed(order_id)
+			return
+
+
+func _on_abandon_incident_pressed(incident_id: String) -> void:
+	for incident: Dictionary in GameSession.get_stranded_incidents():
+		if str(incident.get("id", "")) == incident_id:
+			var hero_names: PackedStringArray = []
+			for hero_id: String in _string_array(incident.get("hero_ids", [])):
+				var hero: Hero = GameSession.hero_by_id(hero_id)
+				hero_names.append(hero.hero_name if hero != null else hero_id)
+			_on_abandon_stranded_pressed(incident_id, ", ".join(hero_names))
+			return
+
+
+func _on_start_stranded_window_pressed(incident_id: String) -> void:
+	if GameSession.start_rescue_window(incident_id):
+		_status.text = "Rescue window started."
+	else:
+		_status.text = GameSession.last_action_error
+	_refresh_incident_cards()
+
+
+func _on_dispatch_rescue_pressed(incident_id: String, preset_option: OptionButton) -> void:
+	if preset_option.selected < 0:
+		_status.text = "Choose a ready rescue team."
+		return
+	var preset: Dictionary = preset_option.get_selected_metadata() as Dictionary
+	var order_id: String = GameSession.dispatch_rescue(incident_id, str(preset.get("id", "")), _battle_loadout())
+	_status.text = "Rescue dispatched." if not order_id.is_empty() else GameSession.last_action_error
+	_refresh_incident_cards()
+
+
+func _on_abandon_stranded_pressed(incident_id: String, hero_names: String) -> void:
+	_ask("Abandon %s? This permanently kills these heroes and loses their gear." % hero_names, _do_abandon_stranded.bind(incident_id))
+
+
+func _do_abandon_stranded(incident_id: String) -> void:
+	_status.text = "Incident abandoned." if GameSession.abandon_stranded(incident_id) else GameSession.last_action_error
+	_refresh_incident_cards()
+
+
+func _on_watch_battle_pressed(order_id: String) -> void:
+	SceneRouter.prepare_battle(order_id)
+	SceneRouter.go_to(SceneRouter.BATTLE)
+
+
+func _on_preview_supply_pressed() -> void:
+	var kind: String = str(_supply_kind.get_selected_metadata()) if _supply_kind.selected >= 0 else "healing"
+	_pending_bulk_plan = GameSession.preview_bulk_supplies(kind, int(_supply_quantity.value), int(_supply_reserve.value))
+	_supply_preview.text = _format_bulk_plan(_pending_bulk_plan)
+	%ConfirmSupply.disabled = not bool(_pending_bulk_plan.get("valid", false))
+
+
+func _on_supply_input_changed(_index: int) -> void:
+	_invalidate_supply_preview()
+
+
+func _on_supply_quantity_changed(_value: float) -> void:
+	_invalidate_supply_preview()
+
+
+func _invalidate_supply_preview() -> void:
+	_pending_bulk_plan.clear()
+	_supply_preview.text = ""
+	%ConfirmSupply.disabled = true
+
+
+func _on_confirm_supply_pressed() -> void:
+	if _pending_bulk_plan.is_empty() or not bool(_pending_bulk_plan.get("valid", false)):
+		_status.text = "Preview a valid supply craft first."
+		return
+	_status.text = "Supply craft completed." if GameSession.commit_bulk_plan(_pending_bulk_plan) else GameSession.last_action_error
+	_pending_bulk_plan.clear()
+	_supply_preview.text = ""
+	_refresh_supply_stock()
+
+
+func _refresh_expeditions(force_rebuild: bool) -> void:
+	var structure_parts: PackedStringArray = []
+	var away_ids: Dictionary[String, bool] = {}
+	for order: Dictionary in GameSession.expedition_orders:
+		structure_parts.append("%s:%s:%s" % [str(order.get("id", "")), str(order.get("stop_requested", false)), str(order.get("phase", ""))])
+		for hero_id: String in _string_array(order.get("hero_ids", [])):
+			away_ids[hero_id] = true
+	var structure_key: String = "|".join(structure_parts)
+	if force_rebuild or structure_key != _order_structure_key:
+		_order_structure_key = structure_key
+		_rebuild_order_cards()
+		_refresh_recent_returns()
+	_update_order_cards()
+	_refresh_incident_cards()
+	_refresh_supply_stock()
+	_expedition_counts.text = "%d active · %d heroes away" % [GameSession.expedition_orders.size(), away_ids.size()]
+	_recovery_warning.visible = GameSession.recovery_clock_paused and not GameSession.lost_caches.is_empty()
+
+
+func _rebuild_order_cards() -> void:
+	for child: Node in _order_cards.get_children():
+		child.queue_free()
+	for order: Dictionary in GameSession.expedition_orders:
+		var panel := PanelContainer.new()
+		panel.custom_minimum_size.y = 118.0
+		panel.set_meta("order_id", str(order.get("id", "")))
+		_order_cards.add_child(panel)
+		var box := VBoxContainer.new()
+		box.name = "Box"
+		box.add_theme_constant_override("separation", 2)
+		panel.add_child(box)
+		var head := HBoxContainer.new()
+		head.name = "Head"
+		box.add_child(head)
+		var title := Label.new()
+		title.name = "Title"
+		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		title.clip_text = true
+		title.add_theme_font_size_override("font_size", 18)
+		head.add_child(title)
+		var eta := Label.new()
+		eta.name = "ETA"
+		eta.add_theme_font_size_override("font_size", 22)
+		eta.add_theme_color_override("font_color", Color("CBA76A"))
+		head.add_child(eta)
+		var zone := Label.new()
+		zone.name = "Zone"
+		zone.theme_type_variation = &"MutedLabel"
+		box.add_child(zone)
+		var progress := ProgressBar.new()
+		progress.name = "Progress"
+		progress.custom_minimum_size.y = 5.0
+		progress.show_percentage = false
+		var progress_fill := StyleBoxFlat.new()
+		progress_fill.bg_color = Color("879B83")
+		progress_fill.corner_radius_top_left = 2
+		progress_fill.corner_radius_top_right = 2
+		progress_fill.corner_radius_bottom_left = 2
+		progress_fill.corner_radius_bottom_right = 2
+		progress.add_theme_stylebox_override("fill", progress_fill)
+		box.add_child(progress)
+		var bottom := HBoxContainer.new()
+		bottom.name = "Bottom"
+		box.add_child(bottom)
+		var details := Label.new()
+		details.name = "Details"
+		details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bottom.add_child(details)
+		var stop := Button.new()
+		stop.name = "Stop"
+		stop.custom_minimum_size.x = 180.0
+		stop.pressed.connect(_on_stop_order_pressed.bind(str(order.get("id", ""))))
+		bottom.add_child(stop)
+		var watch := Button.new()
+		watch.name = "Watch"
+		watch.text = "Watch"
+		watch.pressed.connect(_on_watch_battle_pressed.bind(str(order.get("id", ""))))
+		bottom.add_child(watch)
+
+
+func _update_order_cards() -> void:
+	for child: Node in _order_cards.get_children():
+		var order: Dictionary = _order_by_id(str(child.get_meta("order_id", "")))
+		if order.is_empty():
+			continue
+		var box: VBoxContainer = child.get_node("Box") as VBoxContainer
+		var title: Label = box.get_node("Head/Title") as Label
+		var eta: Label = box.get_node("Head/ETA") as Label
+		var zone_label: Label = box.get_node("Zone") as Label
+		var progress: ProgressBar = box.get_node("Progress") as ProgressBar
+		var details: Label = box.get_node("Bottom/Details") as Label
+		var stop: Button = box.get_node("Bottom/Stop") as Button
+		var watch: Button = box.get_node("Bottom/Watch") as Button
+		title.text = str(order.get("team_name", "Unnamed team"))
+		title.tooltip_text = title.text
+		var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(order.get("zone_id", ""))))
+		zone_label.text = zone.display_name if zone != null else "Missing zone"
+		var remaining: float = float(order.get("remaining_seconds", 0.0))
+		var duration: float = maxf(float(order.get("initial_duration_seconds", 1.0)), 0.001)
+		eta.text = _format_duration(remaining)
+		progress.value = clampf((duration - remaining) / duration * 100.0, 0.0, 100.0)
+		var completed: int = int(order.get("runs_completed", 0))
+		var total: int = int(order.get("total_runs", 0))
+		var snapshot: Dictionary = GameSession.get_battle_snapshot(str(order.get("id", "")))
+		var phase: String = str(snapshot.get("phase", ""))
+		var route_minimum: float = float(snapshot.get("route_remaining_seconds", remaining))
+		var alive_count: int = 0
+		var downed_count: int = 0
+		# Detached battle snapshots use a JSON-compatible Array of Dictionary actor rows.
+		for actor_value: Variant in snapshot.get("actors", []) as Array:
+			if not actor_value is Dictionary:
+				continue
+			var actor: Dictionary = actor_value as Dictionary
+			if str(actor.get("faction", "")) != "ally":
+				continue
+			if str(actor.get("life", "")) == BattleActor.LIFE_ALIVE:
+				alive_count += 1
+			elif str(actor.get("life", "")) == BattleActor.LIFE_DOWNED:
+				downed_count += 1
+		var checkpoint_error: String = str(snapshot.get("checkpoint_error", ""))
+		var command_error: String = str(snapshot.get("last_command_error", ""))
+		var battle_status: String = "%s · %d alive · %d downed · route min %s" % [phase.capitalize(), alive_count, downed_count, _format_duration(route_minimum)] if not phase.is_empty() else ""
+		if str(snapshot.get("status", "")) == "victory" and route_minimum > 0.0:
+			battle_status = "Won · heading home · rewards in %s" % _format_duration(route_minimum)
+		var pending_error: String = checkpoint_error if not checkpoint_error.is_empty() else command_error
+		details.text = "%s · %d stones · %d items · %d XP%s%s" % ["Run %d • repeating" % (completed + 1) if total == 0 else "Run %d of %d" % [mini(completed + 1, total), total], int(order.get("cumulative_stones", 0)), int(order.get("cumulative_items", 0)), int(order.get("cumulative_xp", 0)), "\n" + battle_status if not battle_status.is_empty() else "", "\nError: " + pending_error if not pending_error.is_empty() else ""]
+		var stopping: bool = bool(order.get("stop_requested", false))
+		stop.text = "Stopping after return" if stopping else "Stop after this run"
+		stop.disabled = stopping
+		watch.visible = phase == "fighting" or phase == "rescuing"
+		watch.text = "Command" if phase == "fighting" or phase == "rescuing" else "Watch"
+
+
+func _refresh_recent_returns() -> void:
+	_recent_returns.clear()
+	for index: int in range(GameSession.expedition_reports.size() - 1, -1, -1):
+		var report: Dictionary = GameSession.expedition_reports[index]
+		var casualties: Array[String] = _string_array(report.get("casualty_names", []))
+		var casualty_text: String = " · Lost: %s" % ", ".join(casualties) if not casualties.is_empty() else ""
+		_recent_returns.add_item("%s · %s · +%d stones, %d items, %d XP%s" % [str(report.get("team_name", "Team")), str(report.get("outcome", "returned")), int(report.get("stones_earned", 0)), int(report.get("items_earned", 0)), int(report.get("xp_earned", 0)), casualty_text])
+		var hero_names: Array[String] = _string_array(report.get("hero_names", []))
+		_recent_returns.set_item_tooltip(_recent_returns.item_count - 1, "%s\nOutcome: %s\nHeroes: %s\nRewards: %d stones, %d items, %d XP\nCasualties: %s\nStopped: %s\nCumulative: %d stones, %d items, %d XP\nRewards are already banked." % [
+			str(report.get("team_name", "Team")), str(report.get("outcome", "returned")), ", ".join(hero_names) if not hero_names.is_empty() else "Unknown", int(report.get("stones_earned", 0)), int(report.get("items_earned", 0)), int(report.get("xp_earned", 0)), ", ".join(casualties) if not casualties.is_empty() else "None", str(report.get("stopped_reason", "completed")), int(report.get("cumulative_stones", 0)), int(report.get("cumulative_items", 0)), int(report.get("cumulative_xp", 0)),
+		])
+
+
+func _on_stop_order_pressed(order_id: String) -> void:
+	GameSession.request_stop_expedition(order_id)
+	_status.text = GameSession.last_action_error if not GameSession.last_action_error.is_empty() else "The team will stop after its current run."
+
+
+func _refresh_recovery_team_options() -> void:
+	_recovery_team_option.clear()
+	for preset: Dictionary in GameSession.team_presets:
+		if _preset_status(preset) != "Ready":
+			continue
+		_recovery_team_option.add_item(str(preset.get("name", "Unnamed team")))
+		_recovery_team_option.set_item_metadata(_recovery_team_option.item_count - 1, preset)
+	%Recover.disabled = _recovery_team_option.item_count == 0 or GameSession.lost_caches.is_empty()
+	%Recover.tooltip_text = "Choose a ready saved team and one cache." if %Recover.disabled else ""
+	_refresh_practice_options()
+
+
+func _on_availability_filter_selected(index: int) -> void:
+	_roster_availability_filter_index = index
+	_refresh_roster()
+
+
+func _on_favorites_only_toggled(_enabled: bool) -> void:
+	_refresh_roster()
+
+
+func _on_protection_filter_selected(index: int) -> void:
+	_inventory_protection_filter_index = index
+	_refresh_inventory()
+
+
+func _on_favorite_item_toggled(enabled: bool) -> void:
+	var selected: PackedInt32Array = _inventory_list.get_selected_items()
+	if selected.size() != 1:
+		return
+	var item: Item = _inventory_list.get_item_metadata(selected[0]) as Item
+	if item == null:
+		return
+	GameSession.set_item_favorite(item, enabled)
+
+
+func _on_favorite_hero_toggled(enabled: bool) -> void:
+	var hero: Hero = _selected_hero()
+	if hero == null:
+		return
+	GameSession.set_hero_favorite(hero, enabled)
+
+
+func _on_start_recovery_window_pressed() -> void:
+	if not GameSession.recovery_clock_paused:
+		_status.text = "The recovery window is already running."
+		return
+	var minutes: int = ceili(GameSession.recovery_clock_seconds / 60.0)
+	_ask("Review the listed losses, then start the recovery window?\n\nEach cache has about %d active minute(s), including the Reliquary effect." % minutes, _do_start_recovery_window)
+
+
+func _do_start_recovery_window() -> void:
+	GameSession.acknowledge_recovery_losses()
+	_status.text = GameSession.last_action_error if GameSession.recovery_clock_paused else "Recovery clock started."
+
+
+func _preset_by_id(preset_id: String) -> Dictionary:
+	for preset: Dictionary in GameSession.team_presets:
+		if str(preset.get("id", "")) == preset_id:
+			return preset
+	return {}
+
+
+func _order_by_id(order_id: String) -> Dictionary:
+	for order: Dictionary in GameSession.expedition_orders:
+		if str(order.get("id", "")) == order_id:
+			return order
+	return {}
+
+
+func _heroes_for_ids(hero_ids: Array[String]) -> Array[Hero]:
+	var heroes: Array[Hero] = []
+	for hero_id: String in hero_ids:
+		var hero: Hero = GameSession.hero_by_id(hero_id)
+		if hero != null:
+			heroes.append(hero)
+	return heroes
+
+
+static func _string_array(value: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if value is Array:
+		for entry: Variant in value as Array:
+			if entry is String:
+				result.append(entry as String)
+	return result
+
+
+static func _format_duration(seconds: float) -> String:
+	var total: int = maxi(ceili(seconds), 0)
+	return "%d:%02d" % [total / 60, total % 60]
 
 
 func _on_recover_pressed() -> void:
@@ -819,12 +2024,8 @@ func _on_recover_pressed() -> void:
 	var cache: LostCache = null
 	if selected_caches.size() == 1:
 		cache = _lost_cache_list.get_item_metadata(selected_caches[0]) as LostCache
-	var selected_heroes: PackedInt32Array = _roster_list.get_selected_items()
-	var team: Array[Hero] = []
-	for selected_index: int in selected_heroes:
-		var hero: Hero = _roster_list.get_item_metadata(selected_index) as Hero
-		if hero != null:
-			team.append(hero)
+	var preset: Dictionary = _recovery_team_option.get_selected_metadata() as Dictionary if _recovery_team_option.selected >= 0 else {}
+	var team: Array[Hero] = _heroes_for_ids(_string_array(preset.get("hero_ids", [])))
 	# Recovery is the one action with no dry run — `recover_cache()` validates and mutates in the
 	# same call. Its cheap refusals are re-checked here so a misclick still reports itself instead
 	# of opening a dialog; the zone and power legs are deliberately left to `recover_cache()`, since
@@ -833,12 +2034,15 @@ func _on_recover_pressed() -> void:
 		_status.text = "Select one lost cache to recover."
 		return
 	if team.is_empty():
-		_status.text = "Select at least one hero for recovery."
+		_status.text = "Choose an available saved team for recovery."
 		return
 	if team.size() > MAX_TEAM_SIZE:
 		_status.text = "Select no more than 5 heroes for recovery."
 		return
 	for hero: Hero in team:
+		if GameSession.is_hero_busy(hero):
+			_status.text = "Recovery cannot start while a team member is away."
+			return
 		if Hero.definition_for(hero.def_id) == null:
 			_status.text = "Recovery cannot start: every hero needs a valid archetype."
 			return

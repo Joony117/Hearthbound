@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+ability_id = &"knight_rally"
+display_name = "Rally"
+cooldown_seconds = 16.0
+range_units = 3.0
+radius_units = 3.0
+magnitude = 0.3
+passive_magnitude = 0.1
+effect_duration_seconds = 4.0
+revival_fraction = 0.25

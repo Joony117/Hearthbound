@@ -24,18 +24,26 @@ These are the rules this game will actually violate if left unstated.
 5. **Only `SceneRouter` changes the main scene.** No `get_tree().change_scene_to_file()`
    anywhere else.
 
-6. **Autoloads hold no level-specific state.**
+6. **Autoloads hold no scene objects or level nodes.** Persistent battle checkpoints are
+   serialized dispatch-order data in the profile; their rules and runtime domain objects belong
+   to `combat/battle/`. This explicit `ig-544` exception permits an expedition to continue while
+   its view is closed without making a scene or autoload the combat rule authority.
 
-7. **`combat/` never reaches into `hub/`.** It takes data in and returns a `CombatResult`.
-   It does not know the roster exists.
+7. **Combat rules never reach into `hub/` or mutate the profile.** Legacy resolvers take data
+   in and return `CombatResult`; autonomous combat takes `BattleState` and produces
+   `BattleOutcome`. `BattleView` may observe snapshots and submit validated commands through
+   `GameSession`, as a UI adapter under rule 1. It never applies rewards or removes heroes.
 
 8. **Permadeath is applied in exactly one place — the expedition resolver.**
    This one matters more than it looks. A roster that can be mutated from three places is
    how this specific game rots: a hero half-deleted from the party but still in the roster,
    gear duplicated into a cache *and* left equipped. One writer, one code path.
 
-9. **Balance numbers live in `balance.tres`, not in code.** A magic number in a `.gd` file
-   is a bug unless it is structural (array sizes, tick rates).
+9. **Shared balance numbers live in `balance.tres`, not in code.** Per-zone authored values
+   (recommended power, wave ramp, rewards, and expedition durations) live on their
+   `ZoneDefinition` Resources; signature-specific cooldown/range/effect values live on
+   `AbilityDefinition` Resources. A magic number in a `.gd` file is a bug unless it is structural
+   (array sizes, tick rates).
 
 ---
 
@@ -47,7 +55,7 @@ These are the rules this game will actually violate if left unstated.
 |---|---|---|
 | `SceneRouter` | Main-scene transitions, transition state | Anything about the game |
 | `SaveService` | Serialization to/from `user://save.json`, version field | Game rules |
-| `GameSession` | Persistent player profile: roster, inventory, buildings, caches, currencies | Combat, UI, level state |
+| `GameSession` | Persistent player profile, supplies, dispatch battle checkpoints and stranded incidents; transaction/tick coordination | Combat rules, UI, scene objects or level nodes |
 
 `GameSession` exists because the player profile must outlive scene changes (menu → hub →
 arena → hub). That is the *only* justification, and it is not a licence to grow into a
@@ -56,6 +64,64 @@ argument, it lives there — not as a method on the autoload.
 
 Rejected: a `GameManager` owning health, enemies, inventory, quests, combat, UI, level
 loading, music, saving, and dialogue. See `DECISIONS.md`.
+
+---
+
+## Persistent expedition orders and transactional returns
+
+### Autonomous battle extension (`ig-544`, approved 2026-09-22)
+
+The owner replaced direct hero piloting with autonomous squad combat and RTS intervention.
+One fixed-tick `BattleSimulation` owns watched and unattended battle rules. `BattleState`,
+`BattleActor`, and `BattleOutcome` are typed domain objects; authored kits and zones are
+Resources. The profile stores their validated serialized checkpoints alongside each order.
+The view receives detached snapshots and routes commands by order ID. Opening a view never
+creates another battle, consumes supplies twice, or re-rolls a committed event.
+
+Route minimum and combat advance in parallel. Battle success waits for the remaining route
+before rewards settle; wipes instead create a stranded incident. Offline time advances only
+the dispatched leg, with a bounded combat simulation and no repeat chain. Tactical pause is
+transient for the watched battle and clears on leaving/reload. Practice owns a local domain
+state in its view and cannot mutate the profile.
+
+Schema 3 adds battle checkpoints, supply escrow and distinct stranded-hero incidents. The
+v2 migration preserves identities, remaining orders and resources, consumes prior offline
+time against the old route once, and starts new battle simulation at tick zero. It invents
+neither prior combat nor rewards. The atomic migration must persist before play. RNG state
+is a decimal string so JSON cannot round its 64-bit value.
+
+Zero HP only changes an allied actor to downed. Final abandonment/expiry passes IDs to
+`Expedition.finalize_permanent_losses`, which calls the sole roster-removal writer,
+`GameSession.kill_hero`. Hero rescue and the existing lost-gear caches remain distinct.
+Supply allocation, explicit commands and terminal reward/rescue settlement share the
+established transaction boundary; periodic checkpoints preserve whole simulation state.
+
+### Historical timer-only implementation (`ig-6l4`)
+
+Ruled 2026-09-22 for `ig-6l4`. A dispatch order is persistent player intent, not live combat
+state. `GameSession` owns its captured hero identities, destination, remaining time, repeat
+count, and seed. It coordinates ticking and mutations. `ExpeditionOrders` owns pure duration
+and safety rules; `BulkOperations` owns pure batch selection and cost planning. Both live under
+`hub/`, not in the autoload-only `systems/` directory. `Expedition` still owns transient wave
+progress and cumulative HP while resolving a single return. No fourth autoload is introduced.
+
+Heroes and items have stable instance IDs. Presets never identify a hero by display name or
+array index. A missing member remains missing; neither load nor dispatch silently substitutes.
+Busy/protected checks live at mutation boundaries as well as in the UI. Real combat deaths
+continue through the existing `kill_hero` path; protection does not confer immortality.
+
+`GameSession` coordinates the in-memory transaction and calls `SaveService`, the sole file
+writer, to commit it. A completion defers intermediate autosaves and commits casualties,
+rewards, cache changes, report, and order advancement together. A failed write restores the
+previous in-memory state and leaves the previous canonical save intact.
+The persisted seed drives a local RNG, so retrying an uncommitted return does not reroll it.
+The existing public `resolve(team, wave) -> CombatResult` seam stays intact; seeded quick
+resolution is an internal helper, not another combat-result contract.
+
+Schema 2 migrates version-1 profiles and persists generated identities before depending on
+them. New-schema identity/order corruption and unsupported future versions refuse play and
+writes; they must not become a fresh profile that overwrites the original. Bulk confirmation
+plans are revalidated at commit and saved as one transaction.
 
 ---
 
@@ -87,6 +153,11 @@ See `DECISIONS.md`, 2026-08-02.
 ---
 
 ## The combat seam
+
+The section below records the legacy quick-resolve/action-arena contract. `ig-544` preserves
+that API for its existing callers while new production dispatches use `BattleState` /
+`BattleOutcome`. The old requirement that all future combat fit `CombatResult` is superseded;
+the single wave-ramp function, pure rules and central permanent-death writer remain binding.
 
 The single structural decision made before the vertical slice exists, because retrofitting
 it means rewriting the expedition system.

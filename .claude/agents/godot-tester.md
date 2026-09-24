@@ -84,7 +84,7 @@ GUT 9.x is not installed yet; Phase 2 owns it (`docs/KNOWN_ISSUES.md`, `docs/TAS
 Until then your gates are the import gate, save round-trips, and scene smoke. Once GUT lands:
 
 ```bash
-cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests -gexit
+cd /e/Game && APPDATA="$(cygpath -w "$(mktemp -d)")" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
 ```
 
 ## What stays with you

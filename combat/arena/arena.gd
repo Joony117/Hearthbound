@@ -62,6 +62,34 @@ const DODGE_CLIPS: Array[StringName] = [
 const STRAFE_LEFT_CLIP: StringName = &"mixamo/Sword And Shield Strafe left"
 const STRAFE_RIGHT_CLIP: StringName = &"mixamo/Sword And Shield Strafe right"
 const BIG_HIT_CLIP: StringName = &"mixamo/Big Hit To Head"
+## Playable span of each non-looping clip, `Vector2(start_s, end_s)`, keyed by the bare clip name.
+## Mixamo authors stance → windup → swing → return to stance in one clip, so stretching the whole
+## thing into a balance window authored for capsules ran the light attacks at 4x. Only the swing
+## belongs in the window; the stance either side is what the trim drops.
+##
+## Derived from rotation-track motion energy (angular delta of all 52 rotation tracks, sampled at
+## 1/30 s): start sits ~0.1 s before the energy ramp, end where it falls back to idle. These are a
+## measurement, not an authored choice — expect them to be tuned by eye.
+##
+## `Attack_A` is the constrained one: its contact frame has to land at `arena_enemy_attack_startup`
+## = 0.55 s once stretched into the 1.10 s enemy attack, which fixes the trim at half the span
+## before the peak. It lands at 0.5395 s — the peak is 0.5933 s, not the sampled 0.600 s, and the
+## trim is kept on a round 1/100 s rather than chasing the last 0.011 s. `Block` is not a shield raise at all — the
+## clip is a held guard pose with no motion in it (energy ~0.06 throughout), so its span is chosen
+## to make the 0.20 s enemy parry window play at 1x rather than as a 7x twitch.
+const CLIP_TRIMS: Dictionary[StringName, Vector2] = {
+	&"Attack_A": Vector2(0.25, 0.95),
+	&"Attack_B": Vector2(0.22, 0.92),
+	&"Attack_C": Vector2(0.28, 0.75),
+	&"Attack_Heavy": Vector2(0.05, 0.95),
+	&"Standing Dodge Forward": Vector2(0.20, 0.80),
+	&"Standing Dodge Right": Vector2(0.13, 0.72),
+	&"Standing Dodge Backward": Vector2(0.18, 0.85),
+	&"Standing Dodge Left": Vector2(0.18, 0.78),
+	&"Hit_Chest": Vector2(0.00, 0.45),
+	&"Big Hit To Head": Vector2(0.00, 0.90),
+	&"Block": Vector2(0.00, 0.20),
+}
 
 enum HitStopOutcome {
 	NONE,
@@ -320,6 +348,10 @@ func _bind_animation_libraries(animation_player: AnimationPlayer) -> void:
 			Animation.LOOP_LINEAR if clip_name in LOOPING_CLIPS else Animation.LOOP_NONE
 		)
 		_pin_hips_in_place(animation)
+		# Godot has no trim API, so shortening the animation is the trim: keys past `length` are
+		# never reached. The start half is handled by seeking there in `_play_animation()`.
+		if CLIP_TRIMS.has(clip_name):
+			animation.length = CLIP_TRIMS[clip_name].y
 		# The calls must sit outside the assert: Godot strips assert() expressions from release
 		# builds, so wrapping them would leave the exported game with no character animations.
 		var add_result: int = library.add_animation(clip_name, animation)
@@ -348,7 +380,9 @@ func _update_hero_animation() -> void:
 	# a reaction and then restart the swing from frame 0. _hit_stun_remaining needs no such guard:
 	# an armored hit returns before it is ever set.
 	if (_hit_stop_outcome == HitStopOutcome.HIT_HERO and not _hero_has_super_armor()) or _hit_stun_remaining > 0.0:
-		_play_hero_animation(&"mixamo/Hit_Chest")
+		# Fit the reaction to the stun it belongs to. Left at native rate the trimmed clip outlives
+		# the stun and Idle cuts it mid-recoil.
+		_play_hero_animation(&"mixamo/Hit_Chest", BALANCE.arena_enemy_hit_stun)
 		return
 	if _dodge_elapsed >= 0.0:
 		_play_hero_animation(
@@ -469,16 +503,31 @@ func _play_animation(
 	# retained name is what resumes a hit-stop instead of restarting the clip on every frozen frame.
 	if animation_player.assigned_animation == animation_name and animation_player.is_playing():
 		return
+	# Anything already assigned is being resumed out of a hit-stop pause, and must keep its retained
+	# position — seeking a trimmed clip back to its start here would restart the swing every frozen
+	# frame, which is the bug `KNOWN_ISSUES.md` records the resume test as guarding.
+	var starting_fresh: bool = animation_player.assigned_animation != animation_name
+	var trim_start: float = _clip_trim_start(animation_name)
 	var custom_speed: float = 1.0
 	if target_duration > 0.0:
 		var animation: Animation = animation_player.get_animation(animation_name)
 		assert(animation != null)
-		custom_speed = animation.length / target_duration
+		# `length` is already the trim end, so this is the trimmed span — the swing gets the window,
+		# not the swing plus the stance either side of it.
+		custom_speed = (animation.length - trim_start) / target_duration
 	# Resuming has to restate custom_speed. A bare play() defaults it to 1.0, which dropped the rest
 	# of the swing to the clip's native rate — barely visible when only the short recovery clip was
 	# left to play, but Mixamo authors a swing as one clip, so it now drags the whole remainder.
 	# Naming the already-assigned animation resumes from its retained position rather than seeking.
 	animation_player.play(animation_name, -1.0, custom_speed)
+	if starting_fresh and trim_start > 0.0:
+		animation_player.seek(trim_start, true)
+
+
+## Trim start in seconds for a library-qualified clip name, 0.0 when the clip is untrimmed.
+static func _clip_trim_start(animation_name: StringName) -> float:
+	var bare := StringName(String(animation_name).trim_prefix("mixamo/"))
+	return CLIP_TRIMS[bare].x if CLIP_TRIMS.has(bare) else 0.0
 
 
 func _pause_capsule_animations() -> void:

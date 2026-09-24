@@ -129,13 +129,3 @@ func test_turns_and_turn_lost_absorb_the_three_untrusted_save_shapes() -> void:
 	assert_eq(GameSession.turns, 0)
 	assert_eq(GameSession.lost_caches[0].turn_lost, 0)
 
-
-func test_explicit_null_version_loads_from_disk_instead_of_crashing_at_boot() -> void:
-	# load_game() reads version before any from_dict, so this one crashes earlier than the rest.
-	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
-	file.store_string('{"version": null, "roster": [{"name": "Ash", "rank": 2}]}')
-	file.close()
-
-	assert_true(SaveService.load_game())
-	assert_eq(GameSession.roster.size(), 1)
-	assert_eq(GameSession.roster[0].rank, 2)

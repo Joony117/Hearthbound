@@ -11,34 +11,43 @@ const MAX_POWER_DEFICIT_PENALTY: float = 0.2
 var hero_name: String
 var zone_id: StringName
 var items: Array[Item] = []
-## GameSession.turns at the moment of death. A turn is one resolved expedition; the cache's
-## deadline is turn_lost + 15 + 5 * reliquary_level, evaluated at the recovery attempt rather
-## than frozen here, so a Reliquary upgrade extends caches that already exist (docs/SYSTEMS.md,
-## Turns).
+## Historical expedition count at death, retained for legacy saves and player history. Recovery
+## timing uses recovery_created_at on GameSession's active recovery clock.
 var turn_lost: int = 0
+var recovery_created_at: float = 0.0
 
 
-func _init(p_hero_name: String = "", p_zone_id: StringName = &"", p_turn_lost: int = 0) -> void:
+func _init(
+	p_hero_name: String = "",
+	p_zone_id: StringName = &"",
+	p_turn_lost: int = 0,
+	p_recovery_created_at: float = 0.0,
+) -> void:
 	hero_name = p_hero_name
 	zone_id = p_zone_id
 	turn_lost = p_turn_lost
+	recovery_created_at = p_recovery_created_at
 
 
-static func turns_remaining(
+static func seconds_remaining(
 	cache: LostCache,
-	current_turn: int,
+	current_clock_seconds: float,
 	reliquary_level: int,
 	balance: BalanceTable,
-) -> int:
+) -> float:
 	var level: int = clampi(reliquary_level, 0, balance.summoning_circle_level_cap)
-	return cache.turn_lost + BASE_DECAY_TURNS + balance.reliquary_decay_turns_bonus * level - current_turn
+	var lifetime_seconds: float = (
+		balance.recovery_base_duration_seconds
+		+ balance.recovery_duration_seconds_per_level * level
+	)
+	return cache.recovery_created_at + lifetime_seconds - current_clock_seconds
 
 
 static func compute_damage_chance(
 	cache: LostCache,
 	zone_power: int,
 	team_power: float,
-	current_turn: int,
+	current_clock_seconds: float,
 	reliquary_level: int,
 	balance: BalanceTable,
 ) -> float:
@@ -50,10 +59,13 @@ static func compute_damage_chance(
 		0.0,
 		MAX_POWER_DEFICIT_PENALTY,
 	)
-	var turns_elapsed: int = current_turn - cache.turn_lost
+	var active_minutes_elapsed: float = maxf(
+		(current_clock_seconds - cache.recovery_created_at) / 60.0,
+		0.0,
+	)
 	return clampf(
 		BASE_DAMAGE_CHANCE
-		+ DAMAGE_CHANCE_PER_TURN * turns_elapsed
+		+ DAMAGE_CHANCE_PER_TURN * active_minutes_elapsed
 		+ power_deficit_penalty
 		- balance.reliquary_damage_chance_reduction * level,
 		0.0,
@@ -70,6 +82,7 @@ func to_dict() -> Dictionary:
 		"zone_id": str(zone_id),
 		"items": item_entries,
 		"turn_lost": turn_lost,
+		"recovery_created_at": recovery_created_at,
 	}
 
 
@@ -90,6 +103,10 @@ static func from_dict(data: Dictionary) -> LostCache:
 	# Decoded ahead of items because a malformed items array returns early below, and a cache that
 	# lost its gear to a bad save should still know when it was created.
 	cache.turn_lost = maxi(Item.int_field(data, "turn_lost", 0, "lost cache"), 0)
+	cache.recovery_created_at = maxf(
+		Item.float_field(data, "recovery_created_at", 0.0, "lost cache"),
+		0.0,
+	)
 	# Save-file fields remain Variant until their types are validated.
 	var raw_items: Variant = data.get("items")
 	if not raw_items is Array:

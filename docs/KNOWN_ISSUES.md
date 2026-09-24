@@ -19,17 +19,26 @@ No combat, no stats, no waves. Its only job is proving the scene chain and the p
 deletion path work end to end.
 **Replaced in:** Phase 2, ticket P2-03.
 
-### No save migration
-`SaveService` writes a `version` field from the first commit but does nothing with it. A save
-from an older build will load into a newer one and may produce garbage.
-**Fix in:** Phase 5.
+### Save migration is explicit rather than general
+`ig-6l4` introduces schema 2 and a version-1 migration for stable identities, saved teams,
+expedition orders, and active recovery time. Future-version or malformed new-schema saves
+must refuse entry to play and further writes, preserving the canonical file and displaying the
+reason. The main menu implements the refusal surface anticipated by `P2-17`.
 
-`P2-17`'s refused-save ruling (`docs/SYSTEMS.md` § Refused-save recovery) already covers what the
-newer-than-this-build branch (`version > SAVE_VERSION`) must do once it's reachable: refuse to
-boot, not move the file aside — that data isn't corrupt, only unreadable by this build, and
-move-aside would discard it. Unreachable today (`SAVE_VERSION` has never been bumped past `1`), so
-the error-rendering UI for it isn't built yet; whichever ticket first bumps `SAVE_VERSION` inherits
-that requirement rather than re-deciding it.
+There is no generic migration framework. A future schema change must supply its own explicit
+migration and actual disk save/reload verification. The schema-2 migration does not establish
+compatibility with formats that have not been authored.
+
+### Timed expedition and recovery pacing is provisional
+The first `ig-6l4` durations are 60/180/300 seconds for a full team at its zone's reference
+strength, with diminishing strength-based reductions and a small-party workload factor.
+Recovery windows use 15 active minutes plus 5 per Reliquary level and pause on new losses until
+reviewed. These are authored starting values, not a playtest result.
+
+**Settled by:** a fresh three-pull save reaching a second viable team; comparing one heavily
+geared squad with several squads; and rebuilding for gear recovery after a harder-zone wipe.
+Keep functional test results separate from those pacing judgments.
+Tracked in Bead `ig-2ah` (Playtest timed expedition and recovery pacing).
 
 ### No GUT until Phase 2
 There is no logic worth testing in the walking skeleton. Verification for Phase 1 is manual
@@ -80,9 +89,11 @@ measuring a number nothing reads.
 **Revisit in:** the first ticket that lets a played run resolve a real expedition — controlled
 expeditions (`GAME_SPEC.md` § Direction), not Phase 3 by date.
 
-### Controller support is a hard constraint but unimplemented
-`GAME_SPEC.md` requires gamepad as a first-class input path for the arena. Nothing in Phase 1
-addresses it. It must land with the arena in Phase 2b, not be deferred to Phase 5.
+### RTS controller support remains unimplemented
+The approved `ig-544` direction supersedes the direct-control arena as the primary combat
+surface. Its first RTS acceptance is desktop mouse and keyboard. A complete controller
+selection, targeting and camera scheme remains future work; the legacy arena's controller
+inputs do not establish controller support for commanding squads. See the 2026-09-22 ADR.
 
 ### Retreat only fires at F rank, in the only zone that exists today
 **Was:** retreat never fired at all. Solo, Verdant Outskirts, every rank F–SSS, all 5 archetypes,

@@ -22,11 +22,14 @@ var def_id: StringName
 var resonance: int = 0
 var taught_traits: Array[StringName] = []
 var equipped: Dictionary[int, Item] = {}
+var instance_id: String
+var favorite: bool = false
 
 
 func _init(p_name: String = "", p_rank: int = 0) -> void:
 	hero_name = p_name
 	rank = p_rank
+	instance_id = Item.new_instance_id()
 
 
 func rank_label(balance: BalanceTable) -> String:
@@ -236,6 +239,8 @@ func to_dict() -> Dictionary:
 	for slot: int in equipped_slots:
 		equipped_entries.append({"slot": slot, "item": equipped[slot].to_dict()})
 	return {
+		"instance_id": instance_id,
+		"favorite": favorite,
 		"name": hero_name,
 		"rank": rank,
 		"level": level,
@@ -249,6 +254,16 @@ func to_dict() -> Dictionary:
 
 static func from_dict(data: Dictionary) -> Hero:
 	var hero := Hero.new(str(data.get("name", "?")), maxi(Item.int_field(data, "rank", 0, "hero"), 0))
+	var raw_instance_id: Variant = data.get("instance_id")
+	if raw_instance_id is String and not (raw_instance_id as String).is_empty():
+		hero.instance_id = raw_instance_id as String
+	elif raw_instance_id != null:
+		push_error("Invalid hero instance_id: expected a non-empty String.")
+	var raw_favorite: Variant = data.get("favorite")
+	if raw_favorite is bool:
+		hero.favorite = raw_favorite as bool
+	elif raw_favorite != null:
+		push_error("Invalid hero favorite: expected bool, got %s." % type_string(typeof(raw_favorite)))
 	hero.level = maxi(Item.int_field(data, "level", 0, "hero"), 0)
 	hero.xp = maxi(Item.int_field(data, "xp", 0, "hero"), 0)
 	hero.resonance = maxi(Item.int_field(data, "resonance", 0, "hero"), 0)

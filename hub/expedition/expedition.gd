@@ -17,6 +17,20 @@ var loot: Item = null
 
 
 func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
+	return _resolve(team, zone, null)
+
+
+func resolve_seeded(team: Array[Hero], zone: ZoneDefinition, run_seed: int) -> StringName:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = run_seed
+	return _resolve(team, zone, rng)
+
+
+func _resolve(
+	team: Array[Hero],
+	zone: ZoneDefinition,
+	rng: RandomNumberGenerator,
+) -> StringName:
 	assert(team.size() >= 1 and team.size() <= 5)
 	assert(zone != null)
 	assert(zone.zone_id != &"")
@@ -46,7 +60,11 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 	for next_wave_index: int in range(zone.trash_wave_count + 1):
 		wave_index = next_wave_index
 		var wave := Wave.from_zone(zone, next_wave_index)
-		var result: CombatResult = QuickResolve.resolve(team, wave)
+		var result: CombatResult = (
+			QuickResolve.resolve_seeded(team, wave, rng)
+			if rng != null
+			else QuickResolve.resolve(team, wave)
+		)
 		if next_wave_index == zone.trash_wave_count:
 			boss_loot_seed = result.loot_seed
 		waves_resolved += 1
@@ -70,6 +88,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 				team,
 				roundi(float(BALANCE.xp_per_wave * waves_resolved) * xp_multiplier),
 				BALANCE,
+				true,
 			)
 			return OUTCOME_DEFEATED
 
@@ -78,6 +97,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 				team,
 				roundi(float(BALANCE.xp_per_wave * waves_resolved) * xp_multiplier),
 				BALANCE,
+				true,
 			)
 			return OUTCOME_RETREATED
 
@@ -89,6 +109,7 @@ func resolve(team: Array[Hero], zone: ZoneDefinition) -> StringName:
 		team,
 		roundi(float(BALANCE.xp_per_wave * waves_resolved + zone.xp_reward) * xp_multiplier),
 		BALANCE,
+		true,
 	)
 	return OUTCOME_COMPLETED
 
@@ -113,6 +134,13 @@ static func roll_loot(zone: ZoneDefinition, balance: BalanceTable, loot_seed: in
 	var rank: int = Summon.rank_for_ticket(rng.randi_range(0, total_weight - 1), weights, total_weight)
 	assert(rank >= 0)
 	return Item.new(def_id, rank)
+
+
+static func finalize_permanent_losses(hero_ids: Array[String], zone_id: StringName) -> void:
+	for hero_id: String in hero_ids:
+		var hero: Hero = GameSession.hero_by_id(hero_id)
+		if hero != null:
+			GameSession.kill_hero(hero, zone_id, BALANCE)
 
 
 func _party_hp_fraction(team: Array[Hero]) -> float:

@@ -75,7 +75,7 @@ func test_hub_equipment_display_preserves_unequip_target_and_slot_filter() -> vo
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var inventory_slot_filter: OptionButton = hub.get_node("%InventorySlotFilter") as OptionButton
 	var equipped_list: ItemList = hub.get_node("%EquippedList") as ItemList
-	var unequip_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Equipped/Unequip") as Button
+	var unequip_button: Button = hub.get_node("%Unequip") as Button
 	var status: Label = hub.get_node("%Status") as Label
 
 	roster_list.select(0)

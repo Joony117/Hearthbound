@@ -66,8 +66,8 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
-	var salvage_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Inventory/Salvage") as Button
-	var enhance_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Inventory/Enhance") as Button
+	var salvage_button: Button = hub.get_node("%Salvage") as Button
+	var enhance_button: Button = hub.get_node("%Enhance") as Button
 	var status: Label = hub.get_node("%Status") as Label
 
 	var salvage_index: int = -1
@@ -80,13 +80,15 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	# selecting index 0 would destroy the +6 and leave nothing for the enhance-cap half below.
 	assert_eq(salvage_index, 1)
 	inventory_list.select(salvage_index)
+	inventory_list.multi_selected.emit(salvage_index, true)
 	var parts_before: int = GameSession.parts[3]
 	salvage_button.pressed.emit()
 	# The press only asks; salvage destroys the item, so it waits for the confirm.
 	assert_eq(GameSession.parts[3], parts_before)
 	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).confirmed.emit()
-	assert_eq(status.text, "Salvaged B item into 4 B parts.")
+	assert_eq(status.text, "Salvage completed.")
 	assert_eq(GameSession.parts[3] - parts_before, 4)
+	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).hide()
 
 	var capped_index: int = -1
 	for item_index: int in inventory_list.item_count:
@@ -95,9 +97,10 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 			break
 	assert_ne(capped_index, -1)
 	inventory_list.select(capped_index)
+	inventory_list.multi_selected.emit(capped_index, true)
 	parts_before = GameSession.parts[3]
 	enhance_button.pressed.emit()
-	assert_eq(status.text, "Cannot enhance: item is already at the +6 cap.")
+	assert_string_contains((hub.get_node("%EnhancePreview") as RichTextLabel).text, "at_target")
 	assert_eq(capped_item.enhance_level, 6)
 	assert_eq(GameSession.parts[3], parts_before)
 
@@ -111,25 +114,27 @@ func test_batch_salvage_credits_each_rank_after_confirm() -> void:
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
-	var salvage_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Inventory/Salvage") as Button
+	var salvage_button: Button = hub.get_node("%Salvage") as Button
 	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
 	var status: Label = hub.get_node("%Status") as Label
+	var bulk_preview: RichTextLabel = hub.get_node("%DialogBody") as RichTextLabel
 	var parts_before: Array[int] = GameSession.parts.duplicate()
 
 	for item_index: int in inventory_list.item_count:
 		inventory_list.select(item_index, false)
+	inventory_list.multi_selected.emit(inventory_list.item_count - 1, true)
 	salvage_button.pressed.emit()
 
 	assert_eq(GameSession.inventory.size(), 2)
-	assert_string_contains(confirm_dialog.dialog_text, "2 items")
-	assert_string_contains(confirm_dialog.dialog_text, "3 B parts")
-	assert_string_contains(confirm_dialog.dialog_text, "3 C parts")
+	assert_string_contains(bulk_preview.text, "[B]")
+	assert_string_contains(bulk_preview.text, "+3 parts")
+	assert_string_contains(bulk_preview.text, "[C]")
 	confirm_dialog.confirmed.emit()
 
 	assert_true(GameSession.inventory.is_empty())
 	assert_eq(GameSession.parts[3] - parts_before[3], 3)
 	assert_eq(GameSession.parts[2] - parts_before[2], 3)
-	assert_eq(status.text, "Salvaged 2 items into 3 C parts, 3 B parts.")
+	assert_eq(status.text, "Salvage completed.")
 
 
 ## Same criterion as the sacrifice case, on the other irreversible action: salvage cannot destroy a
@@ -143,29 +148,25 @@ func test_rank_filter_drops_a_hidden_item_before_salvage_can_destroy_it() -> voi
 	add_child_autofree(hub)
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%InventoryRankFilter") as OptionButton
-	var salvage_button: Button = hub.get_node("UI/Root/EquipmentPanel/Columns/Inventory/Salvage") as Button
+	var salvage_button: Button = hub.get_node("%Salvage") as Button
 	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
 	var status: Label = hub.get_node("%Status") as Label
+	var bulk_preview: RichTextLabel = hub.get_node("%DialogBody") as RichTextLabel
 	var parts_before: Array[int] = GameSession.parts.duplicate()
 
 	for item_index: int in inventory_list.item_count:
 		inventory_list.select(item_index, false)
+	inventory_list.multi_selected.emit(inventory_list.item_count - 1, true)
 	rank_filter.select(4)
 	rank_filter.item_selected.emit(4)
 
-	# The bag drops its whole selection on a rebuild — it has no identity re-select, unlike the
-	# roster. Blunter than the roster's behaviour and safe in the same direction: the hidden item
-	# cannot be reached, and salvage refuses until the player picks again from what it can see.
+	# The visible selection survives by stable item ID while the hidden item is dropped.
 	assert_eq(inventory_list.item_count, 1)
-	assert_eq(inventory_list.get_selected_items(), PackedInt32Array())
+	assert_eq(inventory_list.get_selected_items(), PackedInt32Array([0]))
 	assert_eq(inventory_list.get_item_metadata(0), rank_b_item)
 	salvage_button.pressed.emit()
-	assert_eq(status.text, "Select at least one inventory item.")
-
-	inventory_list.select(0)
-	salvage_button.pressed.emit()
-	assert_string_contains(confirm_dialog.dialog_text, "3 B parts")
-	assert_false(confirm_dialog.dialog_text.contains("C parts"))
+	assert_string_contains(bulk_preview.text, "[B]")
+	assert_false(bulk_preview.text.contains("[C]"))
 	confirm_dialog.confirmed.emit()
 
 	assert_eq(GameSession.inventory, [rank_c_item] as Array[Item], "A hidden item is not a selected item.")
@@ -179,7 +180,7 @@ func test_training_hall_upgrade_updates_hub() -> void:
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
-	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeTrainingHall") as Button
+	var upgrade_button: Button = hub.get_node("%UpgradeTrainingHall") as Button
 	var status: Label = hub.get_node("%Status") as Label
 	var training_hall_level: Label = hub.get_node("%TrainingHallLevel") as Label
 
@@ -187,7 +188,7 @@ func test_training_hall_upgrade_updates_hub() -> void:
 	assert_eq(GameSession.building_levels[2], 1)
 	assert_eq(GameSession.parts[0], 0)
 	assert_eq(status.text, "Upgraded Training Hall to Lv 1 for 20 F parts.")
-	assert_eq(training_hall_level.text, "Training Hall — Lv 1")
+	assert_eq(training_hall_level.text, "Training Hall — Lv 1 · Next 30 D parts")
 
 
 func test_reliquary_upgrade_updates_hub() -> void:
@@ -196,7 +197,7 @@ func test_reliquary_upgrade_updates_hub() -> void:
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
-	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeReliquary") as Button
+	var upgrade_button: Button = hub.get_node("%UpgradeReliquary") as Button
 	var status: Label = hub.get_node("%Status") as Label
 	var reliquary_level: Label = hub.get_node("%ReliquaryLevel") as Label
 
@@ -204,7 +205,7 @@ func test_reliquary_upgrade_updates_hub() -> void:
 	assert_eq(GameSession.building_levels[4], 1)
 	assert_eq(GameSession.parts[0], 0)
 	assert_eq(status.text, "Upgraded Reliquary to Lv 1 for 20 F parts.")
-	assert_eq(reliquary_level.text, "Reliquary — Lv 1")
+	assert_eq(reliquary_level.text, "Reliquary — Lv 1 · Next 30 D parts")
 
 
 func test_reliquary_upgrade_refuses_without_parts() -> void:
@@ -212,7 +213,7 @@ func test_reliquary_upgrade_refuses_without_parts() -> void:
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
-	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeReliquary") as Button
+	var upgrade_button: Button = hub.get_node("%UpgradeReliquary") as Button
 	var status: Label = hub.get_node("%Status") as Label
 	var reliquary_level: Label = hub.get_node("%ReliquaryLevel") as Label
 
@@ -220,7 +221,7 @@ func test_reliquary_upgrade_refuses_without_parts() -> void:
 	assert_eq(GameSession.building_levels[4], 0)
 	assert_eq(GameSession.parts[0], 19)
 	assert_eq(status.text, "Cannot upgrade Reliquary: need 20 F parts.")
-	assert_eq(reliquary_level.text, "Reliquary — Lv 0")
+	assert_eq(reliquary_level.text, "Reliquary — Lv 0 · Next 20 F parts")
 
 
 ## The point of P2-24 is the wiring, not the formulas - both already read building_levels[4]
@@ -235,22 +236,22 @@ func test_reliquary_upgrade_reaches_both_consumers_from_the_hub() -> void:
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
-	var upgrade_button: Button = hub.get_node("UI/Root/BuildingsPanel/VBox/UpgradeReliquary") as Button
+	var upgrade_button: Button = hub.get_node("%UpgradeReliquary") as Button
 	var lost_cache_list: ItemList = hub.get_node("%LostCacheList") as ItemList
 	# team_power far above the zone's 900 keeps power_deficit_penalty at 0, so the only term
 	# moving between the two readings is the Reliquary's.
 	var damage_before: float = LostCache.compute_damage_chance(
-		cache, 900, 9000.0, GameSession.turns, GameSession.building_levels[4], balance
+		cache, 900, 9000.0, GameSession.recovery_clock_seconds, GameSession.building_levels[4], balance
 	)
-	assert_eq(lost_cache_list.get_item_text(0), "Doomed — Verdant Outskirts — 0 items — 15 turns remaining")
+	assert_eq(lost_cache_list.get_item_text(0), "Doomed — Verdant Outskirts — 15:00 active remaining")
 
 	upgrade_button.pressed.emit()
 
 	assert_eq(
 		lost_cache_list.get_item_text(0),
-		"Doomed — Verdant Outskirts — 0 items — %d turns remaining" % (15 + balance.reliquary_decay_turns_bonus)
+		"Doomed — Verdant Outskirts — 20:00 active remaining"
 	)
 	var damage_after: float = LostCache.compute_damage_chance(
-		cache, 900, 9000.0, GameSession.turns, GameSession.building_levels[4], balance
+		cache, 900, 9000.0, GameSession.recovery_clock_seconds, GameSession.building_levels[4], balance
 	)
 	assert_almost_eq(damage_before - damage_after, balance.reliquary_damage_chance_reduction, 0.0001)

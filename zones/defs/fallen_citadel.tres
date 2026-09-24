@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://zones/zone_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+zone_id = &"fallen_citadel"
+display_name = "Fallen Citadel"
+recommended_power = 28800
+trash_wave_count = 6
+trash_wave_start_fraction = 0.5
+trash_wave_end_fraction = 1.0
+boss_fraction = 1.2
+loot_emphasis = "C–A parts, raid Summon Stones"
+stone_reward = 225
+xp_reward = 216
+loot_rank_min = 2
+loot_rank_max = 4
+unlock_condition = "Clear Ashfall Reaches"
+base_duration_seconds = 600.0
+minimum_duration_seconds = 120.0
+battle_kind = "raid"
+reference_force_size = 30
+hero_cap = 30
+max_battle_seconds = 300.0
+battle_bounds = 35.0
+objective_points = Array[Vector2]([Vector2(-16, 4), Vector2(0, 14), Vector2(16, 4)])
+objective_hold_seconds = 10.0
+exit_position = Vector2(0, -31)
+trash_enemy_count = 30
+objective_enemy_count = 30
+boss_add_count = 10

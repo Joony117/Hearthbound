@@ -74,8 +74,14 @@ lives in `tests/unit/` and not `tests/`.
 BUILT therefore also requires the GUT suite green:
 
 ```bash
-cd /e/Game && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
+cd /e/Game && APPDATA="$(cygpath -w "$(mktemp -d)")" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
 ```
+
+**The `APPDATA=` prefix is not optional.** Without it the suite overwrites the owner's real
+`user://save.json` with a test roster (`docs/KNOWN_ISSUES.md`), and two runs share one save file,
+so a concurrent run shows up as a "flake" in `test_save_service.gd` (`ig-8lj`). This command
+shipped here without the prefix until 2026-09-23. Verified that day: the real save's mtime did not
+change across a redirected full run.
 
 ## The risky boundary
 
@@ -262,6 +268,21 @@ describes when it was written, not when the agent reads it. Re-verify at the poi
 `tests/import_gate.ps1` aborts with exit 1 if a Godot editor is listening on `127.0.0.1:6005`,
 rather than racing it on `.godot/`. Nothing in the workflow starts one now, so a red gate with
 that message means a stray editor is up — `Get-Process Godot* | Stop-Process -Force`, then re-run.
+
+## Parallel worker sessions
+
+The owner may run one director session plus peer Claude Desktop sessions as workers. `ListAgents`
+shows them; message them with `SendMessage`. **Only sessions whose name ends in `game` work this
+repo** — the rest belong to other repos and are never dispatched from here. Names read
+`<model>::<effort> <n> game`: `extra` gets reviews and hard calls, `high` gets implementation,
+`medium` gets small bounded jobs (docs moves, lookups). Re-run `ListAgents` before dispatching;
+the roster changes. Workers must run the director's permission mode, or every message waits for
+the owner's approval and expires unread.
+
+The worktree is **shared**, which tightens the engine rule above: a worker's half-written `.gd`
+turns another worker's gate red. So parallel code writers are only safe when at most one of them
+runs the engine and the other's edits cannot break the import. When in doubt, sequence them.
+Worker reports are input, not verification — the director re-runs BUILT before closing a bead.
 
 ## Export
 

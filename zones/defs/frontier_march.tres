@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://zones/zone_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+zone_id = &"frontier_march"
+display_name = "Frontier March"
+recommended_power = 48000
+trash_wave_count = 6
+trash_wave_start_fraction = 0.5
+trash_wave_end_fraction = 1.0
+boss_fraction = 1.2
+loot_emphasis = "C–A parts, regional Summon Stones"
+stone_reward = 375
+xp_reward = 360
+loot_rank_min = 2
+loot_rank_max = 4
+unlock_condition = "Clear Ashfall Reaches"
+base_duration_seconds = 900.0
+minimum_duration_seconds = 180.0
+battle_kind = "region"
+reference_force_size = 50
+hero_cap = 50
+max_battle_seconds = 420.0
+battle_bounds = 50.0
+objective_points = Array[Vector2]([Vector2(-24, -18), Vector2(22, -2), Vector2(-18, 20)])
+escort_waypoints = Array[Vector2]([Vector2(-16, -20), Vector2(16, 10), Vector2(0, 40)])
+exit_position = Vector2(0, -46)
+trash_enemy_count = 10
+objective_enemy_count = 30
+cart_speed = 1.5

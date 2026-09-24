@@ -10,11 +10,19 @@ const DEF_PATH_TEMPLATE: String = "res://equipment/defs/%s.tres"
 var def_id: StringName
 var rank: int
 var enhance_level: int = 0
+var instance_id: String
+var favorite: bool = false
 
 
 func _init(p_def_id: StringName = NO_EQUIPMENT_DEF_ID, p_rank: int = 0) -> void:
 	def_id = p_def_id
 	rank = p_rank
+	instance_id = new_instance_id()
+
+
+## Public because Hero uses the same serialized identity format without adding a utility layer.
+static func new_instance_id() -> String:
+	return Crypto.new().generate_random_bytes(16).hex_encode()
 
 
 func rank_label(balance: BalanceTable) -> String:
@@ -42,6 +50,14 @@ static func compute_enhance_cap(forge_level: int, balance: BalanceTable) -> int:
 ## price the upgrade and to write the new one, and a save can carry any integer at all.
 static func clamped_enhance_level(item: Item, balance: BalanceTable) -> int:
 	return clampi(item.enhance_level, 0, balance.forge_enhance_cap_max)
+
+
+static func compute_enhance_cost(item: Item, balance: BalanceTable) -> int:
+	return compute_enhance_cost_for_level(clamped_enhance_level(item, balance), balance)
+
+
+static func compute_enhance_cost_for_level(level: int, balance: BalanceTable) -> int:
+	return 2 + clampi(level, 0, balance.forge_enhance_cap_max)
 
 
 ## The fraction one item contributes to its primary stat (docs/SYSTEMS.md, Primary stat magnitude).
@@ -81,12 +97,28 @@ static func definition_for(p_def_id: StringName) -> EquipmentDefinition:
 
 
 func to_dict() -> Dictionary:
-	return {"def_id": str(def_id), "rank": rank, "enhance_level": enhance_level}
+	return {
+		"instance_id": instance_id,
+		"favorite": favorite,
+		"def_id": str(def_id),
+		"rank": rank,
+		"enhance_level": enhance_level,
+	}
 
 
 static func from_dict(data: Dictionary) -> Item:
 	var item := Item.new(NO_EQUIPMENT_DEF_ID, int_field(data, "rank", 0))
 	item.enhance_level = int_field(data, "enhance_level", 0)
+	var raw_instance_id: Variant = data.get("instance_id")
+	if raw_instance_id is String and not (raw_instance_id as String).is_empty():
+		item.instance_id = raw_instance_id as String
+	elif raw_instance_id != null:
+		push_error("Invalid item instance_id: expected a non-empty String.")
+	var raw_favorite: Variant = data.get("favorite")
+	if raw_favorite is bool:
+		item.favorite = raw_favorite as bool
+	elif raw_favorite != null:
+		push_error("Invalid item favorite: expected bool, got %s." % type_string(typeof(raw_favorite)))
 	if not data.has("def_id"):
 		# No save predates this field - Item ships with it. A missing key means a corrupt or
 		# hand-edited entry, and empty keeps it inert rather than resolving to a wrong slot.
@@ -116,4 +148,17 @@ static func int_field(data: Dictionary, key: String, fallback: int, subject: Str
 		if is_finite(float_value) and float_value == floorf(float_value):
 			return int(float_value)
 	push_error("Invalid %s %s: expected an integer, got '%s'." % [subject, key, value])
+	return fallback
+
+
+static func float_field(data: Dictionary, key: String, fallback: float, subject: String = "item") -> float:
+	# Save-file fields remain Variant until their types are validated.
+	var value: Variant = data.get(key)
+	if value == null:
+		return fallback
+	if value is int or value is float:
+		var number: float = float(value)
+		if is_finite(number):
+			return number
+	push_error("Invalid %s %s: expected a finite number, got '%s'." % [subject, key, value])
 	return fallback

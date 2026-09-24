@@ -7,6 +7,157 @@ Newest first.
 
 ---
 
+## 2026-09-22: Autonomous squads, RTS intervention, and recoverable downed heroes
+
+The owner approved the director's complete squad-command proposal and downed/rescue rules,
+then explicitly authorized implementation with parallel Sol/Luna workers. `ig-544` contains
+the accepted implementation plan, exact data/command contracts and validation gates;
+`ig-yzc` now means observing and commanding an existing expedition, not piloting one hero.
+
+One fixed-tick simulation serves watched and unattended battles. Persistent battle checkpoints
+are an explicit extension of dispatch-order profile data; no scene objects enter the save or
+autoload, no fourth autoload is added, and combat rules remain static domain functions.
+`BattleView` is a new SceneRouter destination. It renders snapshots and submits commands,
+never rewards or deaths. Practice owns a local simulation with no profile consequences.
+The legacy action arena/CombatResult seam is preserved for compatibility but no longer defines
+the production expedition direction. The six-stat model and one Wave ramp stay unchanged.
+
+**Rejected:** a decorative battle replay over an unrelated statistical result, a second loot
+settlement when opening a battle, immediate permanent deletion at zero HP, forcing thirty
+individual skill bars onto the player, and building a seamless procedural world for the first
+regional mission. Squads remain 1-5 member presets; authored missions set their force caps.
+
+Route minimum and battle time advance in parallel. Completion waits for both; a wipe creates
+a stranded incident. Offline processing advances the current run only. Tactical pause stops
+the viewed battle, not the other expeditions, and clears on leaving/reload. Supply allocations
+are shared per-force spending escrow; unused allocations refund exactly once. Explicit
+commands and terminal changes use the existing save transaction boundary.
+
+Downed allies can be revived by living teammates or carried out. A full force wipe permits
+rescue or abandonment. Incidents are separate from lost-gear caches and from one another;
+failed rescuers join only their source incident. Its reviewed active-play deadline never ages
+offline or resets on failure. An active rescue may finish after expiry; remaining stranded
+heroes are then finalized through Expedition and the existing sole roster-removal writer.
+
+Rescue settles at the end of its real fight/extraction, without a separate return timer.
+Applying raid/region force-size travel to five rescuers produces minimum waits of 720/1800
+seconds against an initial 900-second incident window, obstructing successive carry attempts.
+Rescue grants no farming rewards, so the expedition return gate serves no purpose there.
+Normal full wipes close their order immediately; partial withdrawals wait for survivor return,
+then create the incident and close the source order atomically to avoid conflicting reservations.
+
+Schema 3 migration preserves stable identity/resources/orders. For v2 in-flight orders,
+prior offline time reduces remaining route once and the new battle starts at tick zero.
+This may extend the previous ETA but cannot invent combat, rewards or immediate deaths.
+The migration is committed before play and invalid/future saves remain protected.
+
+The first native battlefield capture exposed unreadable small units, an empty gray surround,
+and a selection inspector that did not refresh while paused. The director set initial camera
+sizes to 32/44/60 for standard/raid/region, centered the standard view at world z=-4, and kept
+a local dark forest environment with a larger ground apron, subtle grid and readable chibi
+heads/class silhouettes. These are presentation rules; camera or rendering never changes the
+simulation. The paused inspector refresh is required for tactical commands.
+
+Initial enemy-budget HP×2/ATK×0.20 values failed all eight measured starter-team runs. Revised
+HP×1/ATK×0.04 remains provisional until measured from actual spawned actors. The failed
+in-memory override experiment is explicitly excluded from balance evidence.
+
+The first scene/input seam is desktop RTS: box selection, contextual commands, squad hotkeys,
+orthographic pan/zoom, abilities/items and tactical pause. The historical first-class action
+gamepad requirement remains a future RTS input task, not a claim of gamepad acceptance here.
+Chibi primitives are the authored first visual style. Ability/supply/raid numbers are
+provisional and must not be described as playtested merely because tests or profiling pass.
+
+---
+
+## 2026-09-22: Timed parallel expeditions, persistent teams, and protected bulk management
+
+Owner approval: implement all of the director's `ig-6l4` proposal. This supersedes the original
+`GAME_SPEC.md` no-clock/no-offline-accrual constraint for already-dispatched expeditions. It does
+not add an energy system, paid waits, servers, or unlimited offline farming. Each dispatched
+run may finish while closed; a repeat starts only in the running app. Separate teams can work
+concurrently, with exclusive reservation of their heroes and equipped gear.
+
+Duration falls with the square root of strength relative to the zone's team-size-scaled power,
+has a per-zone floor, then accounts for the same workload being covered by fewer heroes through
+`5 / team_size`. The last factor matters because existing enemies already scale down linearly:
+without it, splitting a squad into five solo parties would multiply output at the same combat
+difficulty. Existing combat damage, rewards, and success semantics remain unchanged. A local
+lost-wave roll is not an expedition defeat; surviving the boss still completes the run.
+
+**Rejected:** a timer added to the old click loop without presets or repeat orders, manual
+reward-claim chores, fixed dispatch slots unrelated to roster depth, and a new stamina currency.
+Finite orders stop on casualties/retreat/failure or a stop-after-return request. Unlimited orders
+require a worst-case attrition forecast using the actual wave ramp and retreat rule; one lucky
+clear is not proof of safety. Timing values remain explicitly provisional in `SYSTEMS.md`.
+
+Stable serialized hero/item identities and schema-2 migration are required by saved presets and
+in-flight orders. Presets preserve missing members instead of silently substituting. Orders
+capture membership/destination at dispatch. Timed orders belong to the persistent profile,
+while transient wave HP still belongs to `Expedition`; this does not reverse the rejected
+combat-state autoload decision. There are still exactly three autoloads. Pure expedition and
+bulk rules live under `hub/`. Shared balance stays in `balance.tres`; per-zone durations join
+the existing authored recommended-power/wave/reward data on `ZoneDefinition`.
+
+`GameSession` batches a return into one state change and `SaveService` persists it atomically,
+including rewards, deaths, cache, report and order advancement. A saved local RNG seed makes a
+pre-commit retry reproducible.
+Write failure rolls memory back; future/invalid new-schema saves refuse play and writes instead
+of becoming overwritable fresh profiles. The public combat-result seam and central hero-removal
+path remain unchanged. Confirmation previews are revalidated against current identities,
+protections, inputs and costs before bulk operations commit.
+
+**Recovery changes deliberately.** Expedition-count cache aging is unsuitable when many
+returns can arrive unattended. Caches now age in active recovery minutes, not completed runs
+or offline time. New gear losses pause this clock until explicitly reviewed. The base window
+is 15 minutes, extended by 5 minutes per Reliquary level; its existing damage reduction remains.
+The old elapsed-turn damage term becomes elapsed active minutes. Legacy caches map old elapsed
+turns to minutes and begin paused. This preserves the Reliquary's two functions while removing
+the punishment for running more teams. These timings require playtesting; source arithmetic
+does not settle their feel.
+
+**Hub scene seam:** `hub.tscn` remains the existing main scene. Its panels are reorganized into
+Expeditions, Teams, Armory, and Hall views under the same CanvasLayer, with modal confirmation
+and pause controls outside view visibility. Reparenting requires updating every affected
+`.tscn` connection path and runtime-verifying all existing unique-name lookups and handlers.
+No separate town scene or new SceneRouter destination is introduced. The established ink-green,
+brass and ivory theme is retained, including dark focused text on brass primary buttons.
+
+The four views are assembled from native Godot controls by `hub/hub_ui_builder.gd` before
+`hub.gd` resolves its `@onready` bindings. This replaces the former static panel subtrees and
+their `.tscn` connection paths with named controls and script-connected signals; the 3D hub,
+CanvasLayer, confirmation and pause roots remain in `hub.tscn`. The tradeoff is that the full
+panel layout is previewed by running the scene rather than by inspecting the static scene tree.
+Shared roster/detail controls avoid duplicating selection state across Teams and Armory.
+Existing `%UniqueName` contracts and interaction tests must remain valid after assembly.
+
+Favorites, preset membership, and active reservations protect heroes from bulk sacrifice;
+equipped/favorite items are excluded from salvage. Enhancement may improve favorite inventory
+items within explicit per-rank budgets. Conversion exposes a keep-at-least reserve and never
+cascades ranks. No automatic destructive processing is added. Existing controlled-expedition
+and mid-run-intervention directions (`ig-544`, `ig-yzc`) remain outside this implementation.
+
+---
+
+## 2026-09-21: Serena reinstated on demand for native GDScript symbols
+
+The owner requested Serena, GitNexus, and Ponytail for this repository. Serena is enabled in the
+repo's Codex configuration and connects to Godot's built-in GDScript language server on port 6005.
+It uses an editor instance that is already open for this project; it does not install another
+language server or add an always-running daemon.
+
+This supersedes the 2026-08-04 removal decision only for requested Serena use. The lifecycle
+constraint remains: the Godot editor/LSP and `tests/import_gate.ps1` are mutually exclusive because
+both access `.godot/`. Close the editor before the build gate, and do not start or stop a user's
+editor process as part of tool setup.
+
+GitNexus is registered only as a bounded local index. GitNexus 1.6.9 and the current 1.6.12 release
+do not support GDScript or `.gd` in their structural parser/extension maps, so its presence is not
+evidence of symbol, call-graph, or impact coverage for game code. Ponytail 4.10.0 is already enabled
+as a user plugin and needs no repository copy.
+
+---
+
 ## 2026-08-13: The town is `hub.tscn` with an avatar, and the avatar is a controlled hero
 
 User ruling, closing `TASKS.md` D-01a. Two answers, one architectural and one design.

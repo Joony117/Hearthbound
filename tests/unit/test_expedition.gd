@@ -333,46 +333,45 @@ func test_cleared_zones_round_trip_old_save_and_linear_unlock_chain() -> void:
 	assert_true(HUB_SCRIPT.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
 
 
-func test_hub_scene_multi_select_zone_locks_and_five_hero_cap() -> void:
-	for hero_index: int in 6:
-		_add_knight("Knight %d" % hero_index)
-	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
-	assert_not_null(hub_scene)
-	var hub: Node3D = hub_scene.instantiate() as Node3D
-	add_child_autofree(hub)
-	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
-	var zone_option: OptionButton = hub.get_node("%ZoneOption") as OptionButton
-	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
-	var status: Label = hub.get_node("%Status") as Label
 
-	assert_eq(roster_list.select_mode, ItemList.SELECT_MULTI)
-	assert_eq(zone_option.item_count, 3)
-	assert_false(zone_option.is_item_disabled(0))
-	assert_true(zone_option.is_item_disabled(1))
-	assert_true(zone_option.is_item_disabled(2))
-	for item_index: int in roster_list.item_count:
-		roster_list.select(item_index, false)
-	expedition_button.pressed.emit()
-	assert_eq(status.text, "Select no more than 5 heroes.")
+func test_dispatch_rejects_six_heroes_and_obeys_the_zone_unlock_chain() -> void:
+	var hero_ids: Array[String] = []
+	for hero_index: int in 6:
+		hero_ids.append(_add_knight("Knight %d" % hero_index).instance_id)
+
+	assert_eq(GameSession.dispatch_expedition(hero_ids, "verdant_outskirts", 1, "Too Many"), "")
+	assert_string_contains(GameSession.last_action_error, "1 to 5 unique heroes")
 	assert_eq(GameSession.roster.size(), 6)
 	assert_true(GameSession.cleared_zone_ids.is_empty())
-
+	assert_true(ExpeditionOrders.is_zone_unlocked(&"verdant_outskirts", GameSession.cleared_zone_ids))
+	assert_false(ExpeditionOrders.is_zone_unlocked(&"ashfall_reaches", GameSession.cleared_zone_ids))
 	GameSession.mark_zone_cleared(&"verdant_outskirts")
-	assert_false(zone_option.is_item_disabled(1))
-	assert_true(zone_option.is_item_disabled(2))
+	assert_true(ExpeditionOrders.is_zone_unlocked(&"ashfall_reaches", GameSession.cleared_zone_ids))
+	assert_false(ExpeditionOrders.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
 	GameSession.mark_zone_cleared(&"ashfall_reaches")
-	assert_false(zone_option.is_item_disabled(2))
+	assert_true(ExpeditionOrders.is_zone_unlocked(&"sundered_vault", GameSession.cleared_zone_ids))
 
 
-func test_zone_selection_uses_metadata_after_option_reorder() -> void:
-	_add_knight()
+func test_saved_zone_identity_survives_option_reorder_and_completes_on_the_timer() -> void:
+	var hero: Hero = _add_knight()
+	hero.rank = 7
+	hero.level = 80
+	GameSession.mark_zone_cleared(&"verdant_outskirts")
+	GameSession.mark_zone_cleared(&"ashfall_reaches")
+	var preset_id: String = GameSession.save_team_preset(
+		"",
+		"Stable Destination",
+		[hero.instance_id],
+		"sundered_vault",
+	)
+	assert_ne(preset_id, "")
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
-	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var zone_option: OptionButton = hub.get_node("%ZoneOption") as OptionButton
-	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
+	var dispatch_list: ItemList = hub.get_node("%PresetDispatchList") as ItemList
+	var expedition_button: Button = hub.get_node("%DispatchSelected") as Button
 	var status: Label = hub.get_node("%Status") as Label
 	var ashfall_zone: ZoneDefinition = zone_option.get_item_metadata(1) as ZoneDefinition
 	assert_not_null(ashfall_zone)
@@ -383,22 +382,29 @@ func test_zone_selection_uses_metadata_after_option_reorder() -> void:
 	zone_option.set_item_metadata(1, sundered_zone)
 	zone_option.set_item_text(2, ashfall_zone.display_name)
 	zone_option.set_item_metadata(2, ashfall_zone)
-	GameSession.mark_zone_cleared(&"verdant_outskirts")
-	GameSession.mark_zone_cleared(&"ashfall_reaches")
 	zone_option.select(1)
-	roster_list.select(0)
 	var selected_zone: ZoneDefinition = zone_option.get_item_metadata(zone_option.selected) as ZoneDefinition
-
 	assert_not_null(selected_zone)
 	assert_same(selected_zone, sundered_zone)
 	assert_eq(zone_option.get_item_text(zone_option.selected), selected_zone.display_name)
-	_seed_for_rolls_above(20.0 / HERO_POWER, 2)
+	assert_eq(dispatch_list.item_count, 1)
+	dispatch_list.select(0)
+	dispatch_list.multi_selected.emit(0, true)
 	expedition_button.pressed.emit()
 	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).confirmed.emit()
-	assert_eq(status.text, "1-hero team cleared Sundered Vault. Found F Legs.")
+	assert_eq(status.text, "Dispatched 1 order(s); 0 failed.")
+	assert_eq(GameSession.expedition_orders.size(), 1)
+	var order: Dictionary = GameSession.expedition_orders[0]
+	assert_eq(order["zone_id"], "sundered_vault")
+	assert_gt(float(order["remaining_seconds"]), 0.0)
+	assert_true(GameSession.expedition_reports.is_empty())
+	GameSession.tick_expeditions(float(order["remaining_seconds"]))
+	assert_eq(GameSession.expedition_reports.size(), 1)
+	assert_eq(GameSession.expedition_reports[0]["zone_id"], "sundered_vault")
+	assert_true(GameSession.expedition_orders.is_empty())
 
 
-func test_roster_refresh_does_not_select_survivors_after_selected_heroes_die() -> void:
+func test_roster_refresh_does_not_substitute_survivors_after_selected_heroes_die() -> void:
 	var hero_a: Hero = _add_knight("A")
 	var hero_b: Hero = _add_knight("B")
 	var hero_c: Hero = _add_knight("C")
@@ -409,21 +415,10 @@ func test_roster_refresh_does_not_select_survivors_after_selected_heroes_die() -
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
-	var zone_option: OptionButton = hub.get_node("%ZoneOption") as OptionButton
-	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
-	var lethal_zone: ZoneDefinition = _make_zone(1_000_000, 1.0, 1)
-	lethal_zone.zone_id = &"verdant_outskirts"
-	lethal_zone.display_name = "Lethal Zone"
-	zone_option.set_item_text(0, lethal_zone.display_name)
-	zone_option.set_item_metadata(0, lethal_zone)
 	roster_list.select(1, false)
 	roster_list.select(3, false)
-	seed(1)
-
-	expedition_button.pressed.emit()
-	# The press only asks. A misclicked expedition must not be able to kill anyone.
-	assert_eq(GameSession.roster.size(), 5)
-	(hub.get_node("%ConfirmDialog") as ConfirmationDialog).confirmed.emit()
+	GameSession.kill_hero(hero_b, &"verdant_outskirts", BALANCE)
+	GameSession.kill_hero(hero_d, &"verdant_outskirts", BALANCE)
 
 	assert_eq(GameSession.roster.size(), 3)
 	assert_true(GameSession.roster.has(hero_a))
@@ -730,7 +725,7 @@ func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
 	assert_eq(hero_detail.text, "", "Two heroes selected leaves no stale numbers.")
 
 
-func test_hub_roster_rank_filter_hides_selection_and_expedition_refuses_it() -> void:
+func test_hub_roster_rank_filter_hides_selection_before_preset_save() -> void:
 	var low_rank_hero: Hero = _add_knight("Low Rank")
 	low_rank_hero.rank = 1
 	var high_rank_hero: Hero = _add_knight("High Rank")
@@ -739,7 +734,8 @@ func test_hub_roster_rank_filter_hides_selection_and_expedition_refuses_it() -> 
 	add_child_autofree(hub)
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%RosterRankFilter") as OptionButton
-	var expedition_button: Button = hub.get_node("UI/Root/Bottom/Buttons/Expedition") as Button
+	var save_button: Button = hub.get_node("%SavePreset") as Button
+	var preset_name: LineEdit = hub.get_node("%PresetName") as LineEdit
 	var status: Label = hub.get_node("%Status") as Label
 
 	roster_list.select(0)
@@ -748,8 +744,10 @@ func test_hub_roster_rank_filter_hides_selection_and_expedition_refuses_it() -> 
 	assert_eq(roster_list.item_count, 1)
 	assert_eq(roster_list.get_item_metadata(0), high_rank_hero)
 	assert_eq(roster_list.get_selected_items(), PackedInt32Array())
-	expedition_button.pressed.emit()
-	assert_eq(status.text, "Select a hero first.")
+	preset_name.text = "Hidden selection"
+	save_button.pressed.emit()
+	assert_eq(status.text, "A team preset must contain 1 to 5 unique hero IDs.")
+	assert_true(GameSession.team_presets.is_empty())
 
 	rank_filter.select(0)
 	rank_filter.item_selected.emit(0)

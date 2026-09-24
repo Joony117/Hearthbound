@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+ability_id = &"ranger_piercing_shot"
+display_name = "Piercing Shot"
+cooldown_seconds = 10.0
+range_units = 10.0
+radius_units = 1.0
+magnitude = 1.8
+passive_magnitude = 0.2

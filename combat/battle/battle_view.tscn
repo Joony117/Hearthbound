@@ -1,0 +1,233 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://combat/battle/battle_view.gd" id="1_view"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(40, 40)
+
+[node name="BattleView" type="Node3D"]
+script = ExtResource("1_view")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.8, 0.4, 0.0)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="Units" type="Node3D" parent="."]
+unique_name_in_owner = true
+
+[node name="Objectives" type="Node3D" parent="."]
+unique_name_in_owner = true
+
+[node name="CameraRig" type="Node3D" parent="."]
+unique_name_in_owner = true
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+unique_name_in_owner = true
+current = true
+
+[node name="HUD" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+
+[node name="TopBar" type="PanelContainer" parent="HUD"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 56.0
+grow_horizontal = 2
+
+[node name="Content" type="Control" parent="HUD/TopBar"]
+custom_minimum_size = Vector2(900, 48)
+layout_mode = 2
+
+[node name="HeaderLabel" type="Label" parent="HUD/TopBar/Content"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 16.0
+offset_top = 9.0
+offset_right = 400.0
+offset_bottom = 40.0
+text = "Battle"
+vertical_alignment = 1
+
+[node name="StatusLabel" type="Label" parent="HUD/TopBar/Content"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 390.0
+offset_top = 9.0
+offset_right = 805.0
+offset_bottom = 40.0
+text = "Waiting for battle state"
+vertical_alignment = 1
+
+[node name="HelpButton" type="Button" parent="HUD/TopBar/Content"]
+unique_name_in_owner = true
+layout_mode = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -250.0
+offset_top = 10.0
+offset_right = -174.0
+offset_bottom = 44.0
+text = "Help"
+
+[node name="PauseButton" type="Button" parent="HUD/TopBar/Content"]
+unique_name_in_owner = true
+layout_mode = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -166.0
+offset_top = 10.0
+offset_right = -88.0
+offset_bottom = 44.0
+text = "Pause"
+
+[node name="ExitButton" type="Button" parent="HUD/TopBar/Content"]
+unique_name_in_owner = true
+layout_mode = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -80.0
+offset_top = 10.0
+offset_right = -12.0
+offset_bottom = 44.0
+text = "Exit"
+
+[node name="CommandPanel" type="PanelContainer" parent="HUD"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = -160.0
+offset_right = -10.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="PanelContent" type="VBoxContainer" parent="HUD/CommandPanel"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SquadScroll" type="ScrollContainer" parent="HUD/CommandPanel/PanelContent"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+horizontal_scroll_mode = 1
+vertical_scroll_mode = 0
+
+[node name="SquadRow" type="HBoxContainer" parent="HUD/CommandPanel/PanelContent/SquadScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ActionRow" type="HBoxContainer" parent="HUD/CommandPanel/PanelContent"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SupplyLabel" type="Label" parent="HUD/CommandPanel/PanelContent/ActionRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+text = "Heal 0   Revival 0"
+vertical_alignment = 1
+
+[node name="AutoBattle" type="CheckButton" parent="HUD/CommandPanel/PanelContent/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Auto Battle"
+
+[node name="AttackMoveButton" type="Button" parent="HUD/CommandPanel/PanelContent/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Attack move"
+tooltip_text = "Shift+A, then right-click a point or target"
+
+[node name="StancePicker" type="OptionButton" parent="HUD/CommandPanel/PanelContent/ActionRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(145, 0)
+layout_mode = 2
+
+[node name="SelectedPanel" type="PanelContainer" parent="HUD"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = -412.0
+offset_top = 68.0
+offset_right = -10.0
+offset_bottom = 180.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="SelectedContent" type="VBoxContainer" parent="HUD/SelectedPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SelectedLabel" type="Label" parent="HUD/SelectedPanel/SelectedContent"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Selected"
+
+[node name="SkillsRow" type="VBoxContainer" parent="HUD/SelectedPanel/SelectedContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="CommandStatus" type="Label" parent="HUD"]
+unique_name_in_owner = true
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -240.0
+offset_top = -205.0
+offset_right = 240.0
+offset_bottom = -174.0
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HelpPanel" type="PanelContainer" parent="HUD"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+offset_left = -250.0
+offset_top = 64.0
+offset_right = -10.0
+offset_bottom = 260.0
+grow_horizontal = 0
+
+[node name="HelpLabel" type="Label" parent="HUD/HelpPanel"]
+layout_mode = 2
+text = "LMB select / drag   Shift add\nRMB move, attack, guard, carry\nShift+A attack-move   H hold   G guard\nR retreat   Space pause\n1-0 squads; double-tap to focus\nWASD pan   mouse wheel zoom"
+autowrap_mode = 2
+
+[node name="SelectionBox" type="ColorRect" parent="HUD"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+mouse_filter = 2
+color = Color(0.65, 0.84, 0.65, 0.18)

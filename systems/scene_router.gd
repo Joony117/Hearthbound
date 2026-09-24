@@ -5,10 +5,35 @@ extends Node
 const MAIN_MENU := "res://ui/main_menu.tscn"
 const HUB := "res://hub/hub.tscn"
 const ARENA := "res://combat/arena/arena.tscn"
+const BATTLE := "res://combat/battle/battle_view.tscn"
 
 var arena_team: Array[Hero] = []
 var arena_wave: Wave
 var pending_arena_result: CombatResult
+var battle_order_id: String = ""
+var practice_team: Array[Hero] = []
+var practice_zone: ZoneDefinition
+
+
+func prepare_battle(order_id: String) -> void:
+	assert(not order_id.is_empty())
+	battle_order_id = order_id
+	practice_team.clear()
+	practice_zone = null
+
+
+func prepare_battle_practice(team: Array[Hero], zone: ZoneDefinition) -> void:
+	assert(not team.is_empty())
+	assert(zone != null)
+	battle_order_id = ""
+	practice_team = team.duplicate()
+	practice_zone = zone
+
+
+func clear_battle_payload() -> void:
+	battle_order_id = ""
+	practice_team.clear()
+	practice_zone = null
 
 
 func prepare_arena(team: Array[Hero], wave: Wave) -> void:

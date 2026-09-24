@@ -1,7 +1,8 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://hub/hub.gd" id="1_hub"]
 [ext_resource type="PackedScene" path="res://ui/pause_menu.tscn" id="2_pause"]
+[ext_resource type="Theme" path="res://ui/game_theme.tres" id="3_theme"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -18,6 +19,9 @@ albedo_color = Color(0.22, 0.24, 0.27, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_1"]
 size = Vector3(3, 3, 3)
+
+[sub_resource type="SystemFont" id="SystemFontGeorgia"]
+font_names = PackedStringArray("Georgia")
 
 [node name="Hub" type="Node3D"]
 script = ExtResource("1_hub")
@@ -97,333 +101,21 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
-
-[node name="RosterPanel" type="PanelContainer" parent="UI/Root"]
-layout_mode = 1
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = 16.0
-offset_right = 296.0
-offset_bottom = -16.0
-grow_vertical = 2
-
-[node name="VBox" type="VBoxContainer" parent="UI/Root/RosterPanel"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Header" type="Label" parent="UI/Root/RosterPanel/VBox"]
-layout_mode = 2
-text = "ROSTER"
-
-[node name="RosterRankFilter" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="RosterExactRank" type="CheckBox" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Exact rank"
-
-[node name="RosterTypeFilter" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="RosterList" type="ItemList" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-select_mode = 1
-
-[node name="SelectAllRoster" type="Button" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Select All"
-
-[node name="Essence" type="Label" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Essence: 0"
-
-[node name="Stones" type="Label" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Summon Stones: 300"
-
-[node name="Turns" type="Label" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Turn 0"
-
-[node name="LostCacheHeader" type="Label" parent="UI/Root/RosterPanel/VBox"]
-layout_mode = 2
-text = "LOST GEAR"
-
-[node name="LostCacheList" type="ItemList" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 100)
-layout_mode = 2
-select_mode = 0
-
-[node name="Recover" type="Button" parent="UI/Root/RosterPanel/VBox"]
-layout_mode = 2
-text = "Recover Selected Cache"
-
-[node name="TargetOption" type="OptionButton" parent="UI/Root/RosterPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="SacrificeButtons" type="HBoxContainer" parent="UI/Root/RosterPanel/VBox"]
-layout_mode = 2
-
-[node name="Sacrifice" type="Button" parent="UI/Root/RosterPanel/VBox/SacrificeButtons"]
-layout_mode = 2
-text = "Sacrifice"
-
-[node name="RankUp" type="Button" parent="UI/Root/RosterPanel/VBox/SacrificeButtons"]
-layout_mode = 2
-text = "Rank Up Selected"
-
-[node name="EquipmentPanel" type="PanelContainer" parent="UI/Root"]
-layout_mode = 1
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 528.0
-offset_top = 16.0
-offset_right = -16.0
-offset_bottom = -112.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="BuildingsPanel" type="PanelContainer" parent="UI/Root"]
-layout_mode = 1
-anchor_bottom = 1.0
-offset_left = 312.0
-offset_top = 16.0
-offset_right = 512.0
-offset_bottom = -112.0
-grow_vertical = 2
-
-[node name="VBox" type="VBoxContainer" parent="UI/Root/BuildingsPanel"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Header" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
-layout_mode = 2
-text = "BUILDINGS"
-
-[node name="CircleLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Summoning Circle — Lv 0"
-
-[node name="UpgradeCircle" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
-layout_mode = 2
-text = "Upgrade"
-
-[node name="ForgeLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Forge — Lv 0"
-
-[node name="UpgradeForge" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
-layout_mode = 2
-text = "Upgrade"
-
-[node name="TrainingHallLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Training Hall — Lv 0"
-
-[node name="UpgradeTrainingHall" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
-layout_mode = 2
-text = "Upgrade"
-
-[node name="SanctumLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Sanctum — Lv 0"
-
-[node name="UpgradeSanctum" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
-layout_mode = 2
-text = "Upgrade"
-
-[node name="ReliquaryLevel" type="Label" parent="UI/Root/BuildingsPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Reliquary — Lv 0"
-
-[node name="UpgradeReliquary" type="Button" parent="UI/Root/BuildingsPanel/VBox"]
-layout_mode = 2
-text = "Upgrade"
-
-[node name="Columns" type="HBoxContainer" parent="UI/Root/EquipmentPanel"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Inventory" type="VBoxContainer" parent="UI/Root/EquipmentPanel/Columns"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Header" type="Label" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-layout_mode = 2
-text = "INVENTORY"
-
-[node name="InventoryRankFilter" type="OptionButton" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="InventoryExactRank" type="CheckBox" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Exact rank"
-
-[node name="InventorySlotFilter" type="OptionButton" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="InventoryList" type="ItemList" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-select_mode = 1
-
-[node name="SelectAllInventory" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Select All"
-
-[node name="Equip" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-layout_mode = 2
-text = "Equip"
-
-[node name="Salvage" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-layout_mode = 2
-text = "Salvage"
-
-[node name="Enhance" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-layout_mode = 2
-text = "Enhance"
-
-[node name="Parts" type="Label" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Parts"
-autowrap_mode = 2
-
-[node name="ConvertRankOption" type="OptionButton" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="Convert" type="Button" parent="UI/Root/EquipmentPanel/Columns/Inventory"]
-layout_mode = 2
-text = "Convert 3 -> 1"
-
-[node name="Equipped" type="VBoxContainer" parent="UI/Root/EquipmentPanel/Columns"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Header" type="Label" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
-layout_mode = 2
-text = "EQUIPPED"
-
-[node name="EquippedList" type="ItemList" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-select_mode = 0
-
-[node name="Unequip" type="Button" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
-layout_mode = 2
-text = "Unequip"
-
-[node name="UnequipAll" type="Button" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Unequip All"
-
-[node name="HeroDetail" type="Label" parent="UI/Root/EquipmentPanel/Columns/Equipped"]
-unique_name_in_owner = true
-layout_mode = 2
-autowrap_mode = 2
-
-[node name="Bottom" type="VBoxContainer" parent="UI/Root"]
-layout_mode = 1
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 312.0
-offset_top = -96.0
-offset_right = -16.0
-offset_bottom = -16.0
-grow_horizontal = 2
-grow_vertical = 0
-theme_override_constants/separation = 10
-
-[node name="Status" type="Label" parent="UI/Root/Bottom"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "..."
-autowrap_mode = 3
-
-[node name="Buttons" type="HBoxContainer" parent="UI/Root/Bottom"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="ZoneOption" type="OptionButton" parent="UI/Root/Bottom/Buttons"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="Summon" type="Button" parent="UI/Root/Bottom/Buttons"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Summon"
-
-[node name="Expedition" type="Button" parent="UI/Root/Bottom/Buttons"]
-layout_mode = 2
-text = "Send on Expedition"
-
-[node name="EnterArena" type="Button" parent="UI/Root/Bottom/Buttons"]
-layout_mode = 2
-text = "Enter Arena"
-
-[node name="Hint" type="Label" parent="UI/Root/Bottom/Buttons"]
-layout_mode = 2
-text = "   Esc = pause"
-modulate = Color(1, 1, 1, 0.4)
+theme = ExtResource("3_theme")
 
 [node name="ConfirmDialog" type="ConfirmationDialog" parent="UI"]
 unique_name_in_owner = true
+theme = ExtResource("3_theme")
 title = "Confirm"
 ok_button_text = "Confirm"
+
+[node name="EnhanceDialog" type="ConfirmationDialog" parent="UI"]
+unique_name_in_owner = true
+theme = ExtResource("3_theme")
+title = "Bulk enhance"
+ok_button_text = "Enhance"
 
 [node name="PauseMenu" parent="." instance=ExtResource("2_pause")]
 unique_name_in_owner = true
 
 [connection signal="confirmed" from="UI/ConfirmDialog" to="." method="_on_confirm_dialog_confirmed"]
-[connection signal="multi_selected" from="UI/Root/RosterPanel/VBox/RosterList" to="." method="_on_roster_list_multi_selected"]
-[connection signal="item_selected" from="UI/Root/RosterPanel/VBox/RosterRankFilter" to="." method="_on_roster_rank_filter_item_selected"]
-[connection signal="toggled" from="UI/Root/RosterPanel/VBox/RosterExactRank" to="." method="_on_roster_exact_rank_toggled"]
-[connection signal="item_selected" from="UI/Root/RosterPanel/VBox/RosterTypeFilter" to="." method="_on_roster_type_filter_item_selected"]
-[connection signal="pressed" from="UI/Root/RosterPanel/VBox/SelectAllRoster" to="." method="_on_select_all_roster_pressed"]
-[connection signal="pressed" from="UI/Root/RosterPanel/VBox/Recover" to="." method="_on_recover_pressed"]
-[connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/Sacrifice" to="." method="_on_sacrifice_pressed"]
-[connection signal="pressed" from="UI/Root/RosterPanel/VBox/SacrificeButtons/RankUp" to="." method="_on_rank_up_pressed"]
-[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Equip" to="." method="_on_equip_pressed"]
-[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Salvage" to="." method="_on_salvage_pressed"]
-[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Enhance" to="." method="_on_enhance_pressed"]
-[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/Convert" to="." method="_on_convert_pressed"]
-[connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Inventory/InventoryRankFilter" to="." method="_on_inventory_rank_filter_item_selected"]
-[connection signal="toggled" from="UI/Root/EquipmentPanel/Columns/Inventory/InventoryExactRank" to="." method="_on_inventory_exact_rank_toggled"]
-[connection signal="item_selected" from="UI/Root/EquipmentPanel/Columns/Inventory/InventorySlotFilter" to="." method="_on_inventory_slot_filter_item_selected"]
-[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Inventory/SelectAllInventory" to="." method="_on_select_all_inventory_pressed"]
-[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/Unequip" to="." method="_on_unequip_pressed"]
-[connection signal="pressed" from="UI/Root/EquipmentPanel/Columns/Equipped/UnequipAll" to="." method="_on_unequip_all_pressed"]
-[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeCircle" to="." method="_on_upgrade_circle_pressed"]
-[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeForge" to="." method="_on_upgrade_forge_pressed"]
-[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeTrainingHall" to="." method="_on_upgrade_training_hall_pressed"]
-[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeSanctum" to="." method="_on_upgrade_sanctum_pressed"]
-[connection signal="pressed" from="UI/Root/BuildingsPanel/VBox/UpgradeReliquary" to="." method="_on_upgrade_reliquary_pressed"]
-[connection signal="pressed" from="UI/Root/Bottom/Buttons/Summon" to="." method="_on_summon_pressed"]
-[connection signal="pressed" from="UI/Root/Bottom/Buttons/Expedition" to="." method="_on_expedition_pressed"]
-[connection signal="pressed" from="UI/Root/Bottom/Buttons/EnterArena" to="." method="_on_enter_arena_pressed"]

@@ -9,6 +9,265 @@ code. The values here are starting points to be tuned against play, not commitme
 
 ---
 
+## Autonomous squad combat and rescue — *ig-544, approved 2026-09-22*
+
+This section supersedes the future direct-control combat direction and immediate-death
+semantics for production autonomous expeditions. Legacy action-arena and quick-resolve
+numbers below remain their compatibility reference. The six hero stats, rank/gear formulas,
+existing zone power ramps and economic rewards remain authored as before.
+
+### Battle clocks and commands
+
+The simulation uses fixed 0.1-second logical ticks with stable actor ordering and a saved RNG
+state. Route minimum and combat run in parallel. Success waits for both before reward
+settlement; wipe creates a stranded incident. Current-run offline progress is bounded by
+mission duration and never chains repeats. Tactical pause stops only the watched combat,
+clears on leaving/reload, and does not create an income speed bonus.
+
+Commands validate actor ownership/life, target, position, range, cooldown and supplies before
+applying atomically. A new direct movement/target order replaces the previous one; no custom
+queue. Auto Battle advances objectives; per-hero Manual abilities remain manual. Automatic
+support priority is revival skill, permitted revival item, heal, then offensive abilities and
+basic attacks. Automatic decisions use stable spawn order. Downed allies cannot be executed
+by enemies and cannot act, move or spend supplies.
+
+Desktop controls use plain A for camera pan and Shift+A to arm attack-move, followed by a
+right-click destination. Editable text fields suppress battle hotkeys. Shift still adds to
+selection. Enemy Ranger and Mage signatures show their fixed aim for 0.8 seconds before
+resolving; interruption cancels the effect but retains its spent cooldown. Death/downing or
+stun also cancels a pending attack. Allied signatures resolve immediately. Automatic allies
+evade telegraphed danger toward the nearest safe point before resuming their objective, unless
+the player has an explicit move, hold or guard order in effect.
+
+Advance pursues the squad's assigned objective without a cohesion leash. Stay Together uses
+the lowest living spawn index as leader, who waits when a living member is over 6 units away;
+followers regroup within 4 and engage threats within 6 of the leader. Defend anchors at the
+squad's current centroid, holds within 4 and pursues only threats within 4 of that anchor.
+Protect stays within 4 of the squad's explicit guard target, falling back to its living member
+with the lowest maximum HP (spawn order breaks ties). Direct commands override stances.
+
+Enemies detect living opponents within 12 units and pursue at most 18 from their saved spawn
+home, returning home when the target leaves that leash. Squads divide active capture/camp
+objectives before choosing enemies within 12 of their assigned site. Escort squads follow the
+cart together and engage nearby threats; future waypoints do not draw squads away from it.
+
+### Provisional shared combat numbers
+
+All values are starting points, not a claim of tested game feel. Shared values belong in
+`balance.tres`; kit values belong in their ability Resources. A director ruling is required
+before changing these values based on measurements.
+
+| Rule | Initial value |
+|---|---|
+| Basic damage before crit/effects | `max(1, ATK * 100 / (100 + DEF))` |
+| Basic attack interval | `clamp(100 / SPD, 0.3, 3.0)` seconds |
+| Attack windup | 0.3 seconds |
+| Movement | `clamp(SPD * 0.04, 1.5, 5.0)` units/second |
+| Basic melee / ranged range | 1.6 / 8.0 units |
+| Separation / formation spacing | 0.65 / 1.8 units |
+| Guard distance | 4 units |
+| Enemy HP / ATK / DEF from per-enemy wave budget | budget × 1 / × 0.04 / × 0.10 |
+| Enemy SPD / crit rate / crit damage | 20 / 0.05 / 1.5 |
+
+Per-enemy budget is `Wave` power scaled by deployed force/reference force, divided by the
+authored enemy count. The reference force is five for existing zones, thirty for Fallen
+Citadel and fifty for Frontier March. Enemy archetypes cycle Knight, Knight, Ranger, Mage,
+Rogue; they use the same signatures/passives with their own faction, cannot consume allied
+supplies, and die at zero HP. Elite marks an objective/visual role, not an extra stat bonus.
+
+The first HP×2 / ATK×0.20 translation stranded all eight measured F-rank starter runs before
+Verdant completion. The director revised only these new enemy conversion multipliers to the
+values above. The resource-backed check verified enemy HP/ATK of 90/3.6 for five heroes and
+54/2.16 for three. Across seeds 1 and 2, five mixed F-rank level-1 heroes cleared in
+60.1–65.6 seconds; three starter Knights cleared in 132.5–173.9 seconds. All eight
+team/seed/loadout cases won. Every unsupplied case had at least one downing; the suggested
+supplies prevented downings in these samples. These observations establish a playable
+starting point, not a broad win-rate or game-feel claim; pacing remains tracked in ig-2ah.
+The earlier runtime Resource override that printed candidate values but spawned original
+enemies remains invalid evidence. Existing hero stats, zone power/rewards and economic
+formulas are unchanged. Evidence: `.agent-results/logs/ig-544-starter-measure-r1.log`.
+
+| Hero kit | Signature | Passive |
+|---|---|---|
+| Knight | Rally: 16s cooldown; revive a downed ally within 3 to 25% HP, otherwise guard allies within radius 3 for 4s with 30% damage reduction | 10% damage reduction within 3 of another living ally; multiplicative with one Rally effect |
+| Ranger | Piercing Shot: 10s cooldown, range 10, line width 1, 1.8× attack damage | +20% basic range |
+| Mage | Burst: 12s cooldown, range 8, radius 2.5, 1.5× attack damage; auto prefers at least 3 enemies or an elite | Signature cooldown reduced by 10% |
+| Rogue | Flank/Interrupt: 10s cooldown, range 6, moves to an available rear slot, interrupts windup with 0.3s stagger, 1.6× attack damage | +25% basic damage from behind |
+
+The four kits add effects and decision rules, not a seventh hero stat. Multiple Rally effects
+do not stack their reduction; use the strongest active effect. Knight's ally-proximity
+passive requires another actor, not the Knight itself.
+Flank tests the rear center and then rear ±45-degree positions against actor separation; when
+all are occupied, it refuses without spending cooldown. Ranger's fixed enemy telegraph spans
+its full authored range along the chosen direction.
+
+### Knockback — *ig-n9r, proposed 2026-09-23*
+
+A qualifying hit moves its living target instantly, in the same tick, away from the hit's
+source. No new saved state: no velocity, no timer, no per-target cooldown field. The push
+rewrites `position` (already saved and bounds-validated) and reads only fields that already
+save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_id`.
+
+| Hit (either faction) | Push | Away from |
+|---|---|---|
+| Basic attack that crits | 1.0 units, crit gate below | the attacker |
+| Ranger Piercing Shot, each target | 1.0 units | along the shot line |
+| Mage Burst, each target | 1.5 units | the burst center |
+| Knight Rally, Rogue Flank/Interrupt, Cleric | none | — |
+
+> ⚠️ **PROVISIONAL** — the three push distances and the 1.0 s crit gate are arithmetic only (sustained crit pushes stay under the 1.5 u/s every enemy walks at), never seen on screen · **Settled by:** a played build plus the ig-544 starter re-measure below
+
+- **One push per hit.** Skill hits push by the table whether or not they crit; basic hits push
+  only on a crit. Crit push and gate live in `balance.tres`; skill pushes on their ability
+  Resources.
+- **Crit gate.** A basic crit pushes only if the target's previous crit (`last_crit_tick`, read
+  before this hit writes it) is at least 10 ticks (1.0 s) old. Closer crits still deal crit
+  damage. Crit push on one target therefore caps at 1.0 u/s however many attackers it has.
+  Skill pushes are not gated; their cooldowns bound them.
+- **Immune:** elites, and any hit that downs or kills, so bodies stay where revive and carry
+  expect them.
+- **No interrupt.** A push never cancels a windup, telegraph or carry; stagger stays Rogue's
+  job. A telegraph stays where it was drawn. An attacker whose target was pushed out of range
+  holds its finished windup and strikes on reaching range again.
+- **Area hits resolve, then push.** Piercing Shot and Burst compute every hit at pre-push
+  positions, then apply all pushes, so Knight proximity reduction never depends on actor order.
+- **Bounds:** clamp the landing point to the battlefield square; a wall shortens the push. No
+  bounce, no impact damage. Overlaps resolve through normal separation next tick.
+- **Carry:** a pushed carrier takes its carried body along in the same tick. A push that takes a
+  channeling carrier beyond 1.5 of the body stops progress under the existing carry rule.
+- **Determinism:** a push draws no RNG. If source and target coincide, push along the attacker's
+  `facing`. Orders, stances, leash and evasion are unchanged; the actor re-plans from where it
+  landed.
+
+**Balance.** Ranged heroes gain: pushes delay melee enemies, who all walk at 1.5 u/s. Melee
+heroes pay a re-close of at most 1.0 unit after their own crit push (0.2–0.7 s at 1.5–5 u/s).
+At base crit rates of 5–15% this is a light touch, not a swing. Pushing enemies out of a seal
+or cart radius helps; an enemy push can break an ally's seal hold. The forecast needs no special
+case: its stress run forces enemy crits (more gated pushes on allies) and suppresses ally crits
+(no ally crit pushes; skill pushes remain), so it stays the harsher run and "safe" keeps its
+definition. No existing number moves, but the ig-544 starter evidence goes stale: the
+implementation re-runs those eight cases on the same seeds, and any loss, any new downing in a
+supplied case, or a clear-time shift over 15% returns this to design. Known ceiling: skill
+pushes stack per caster, so five Mages bursting one target outpace a 1.5 u/s walk; accepted
+because elites are immune and clustered trash is meant to fall.
+
+Rejected: velocity or a knockback timer, and a per-target push cooldown field (new saved state,
+boundary #1; the `last_crit_tick` gate replaces the cooldown); interrupting pushes (steal
+Rogue's role, and crit-heavy teams would erase enemy signatures); a Rally pulse (shoves enemies
+off the Knight holding them); a Flank push (throws the target out of the rear slot Flank just
+took); pushing on the killing hit (moves bodies rescue depends on).
+
+### Supplies and automation
+
+Profile supplies are integer `healing` and `revival` stocks. New profiles and schema migration
+receive 3 healing and 1 revival once. Crafting costs 5 F parts per healing draught and 15 F
+parts per revival draught, through exact preview and transactional confirmation.
+
+Loadouts specify per-force allocations and stockpile keep-at-least floors; allocations are
+limited to 100 of each item per run. Suggested allocation is one healing item per hero and
+one revival per squad, but zero is valid. Dispatch and each repeat reserve the full selected
+allocation or refuse with a visible reason; no silent partial refill. Unused allocation is
+refunded exactly once at settlement, including a wipe. This is a spending budget, not a
+physical bag that disappears with a body.
+
+The initial dispatch form allocates zero until configured. Its suggested-fill action sets one
+healing item per selected hero and one revival per squad. Independent-team dispatch labels
+the allocation per order and suggests the largest selected team's size plus one revival;
+combined dispatch labels it per force.
+
+Healing restores 40% maximum HP; revival restores 35%. Each living user has a 15-second item
+cooldown. Revival requires a different downed ally within 3 units. Auto heal defaults to
+below 35% HP. Auto heal/revive and signature use default on; reserve-last-revival and
+retreat-when-supplies-empty default off. Reserving the final revival blocks automatic use
+only; the player may spend it manually. Auto Battle defaults on and stance to stay together.
+
+Repeat safety uses the exact unattended simulation for the proposed seed plus a stress run
+with enemy criticals forced and allied criticals suppressed. Both must win without downings,
+with valid supplies/reserves. This forecast is not an unconditional promise after manual
+intervention. Finite orders also stop after downing, withdrawal, wipe, missing member,
+insufficient refill or a stop request.
+
+### Authored missions and force sizes
+
+Existing zones retain their power ramps/rewards and use five enemies per trash wave, followed
+by one elite boss. The standard battlefield spans ±20 units, with enemies centered at (0,8)
+and extraction at (0,-16). Formation rows use the authored 1.8-unit spacing.
+
+| Mission | Force cap / reference | Route base / floor | Combat bound | Starting power/reward |
+|---|---|---|---|---|
+| Existing standard zones | 5 / 5 | Existing authored values | 180s | Existing values |
+| Fallen Citadel | 30 / 30 | 600s / 120s | 300s | 6× Ashfall recommended power; 3× its rewards, same initial loot ranks |
+| Frontier March | 50 / 50 | 900s / 180s | 420s | 10× Ashfall recommended power; 5× its rewards, same initial loot ranks |
+
+Both new missions unlock after Ashfall. Duration scales against the mission's own reference
+force, keeping its workload factor; adding raid capacity cannot accelerate Verdant income.
+Timeout withdraws living actors and strands downed actors not extracted.
+
+Fallen Citadel spans ±35. West/North/East seals at (-16,4), (0,14), (16,4), each radius 3,
+must all be held by living allies with no enemies inside for 10 continuous seconds. This
+unlocks the boss. The capture encounter has 30 enemies, ten per site; the boss encounter has
+one elite and ten adds sharing the authored wave budget. Extraction is (0,-31).
+
+Frontier March spans ±50. Camps at (-24,-18), (22,-2), (-18,20) contain ten enemies each.
+After clearing them, escort a cart from (0,-40) through (-16,-20), (16,10), (0,40). The cart
+moves at 1.5 units/second only with an ally within 4 and no enemy within 4. Ten-enemy patrol
+waves arrive at waypoints one and two, and one elite contests the final waypoint. Hero
+extraction is (0,-46). Auto squads divide objectives deterministically; commands override.
+
+Normal victory retains the existing stone reward and one loot roll. Secured heroes receive
+the existing completed-wave XP plus zone XP, with Training Hall bonus. Other normal outcomes
+credit completed-wave XP only to returned/extracted heroes, with no stone, loot or clear
+unlock. Each settled normal run increments the historical turn once. Rescue attempts award
+no mission rewards or turns and cannot reroll the source mission's loot.
+
+Victory calls `Expedition.roll_loot(zone, balance, order.run_seed)` once inside settlement.
+The stored run seed fixes the reward without consuming combat RNG. A failed save rolls back
+the reward and its inventory insertion; retry uses the same reward seed.
+
+### Downed heroes and rescue
+
+Zero HP downs allied heroes without deleting them or moving their equipment to a cache.
+Any living ally in the deployed force keeps combat active. Victory secures every ally.
+Revival returns someone to the current fight; carrying secures them at extraction. Carry
+requires an ally within 1.5, takes one uninterrupted second, permits one body per carrier,
+reduces movement to 65%, and extracts both within 2 of the exit. Downing the carrier drops
+the body. A retreat only secures downed heroes actually carried out.
+
+One stranded incident belongs to one source battle; unrelated wipes in the same zone never
+merge. It preserves the battlefield and reserved hero/equipment identities. A rescue uses
+up to five new heroes, independently of the original deployment cap. Extraction can succeed
+partially; failed rescuers join that same incident. No automatic rescue dispatch.
+
+Rescue attempts settle as soon as their combat/extraction simulation ends, with no additional
+expedition return timer. Their fight still runs at normal speed and requires actual extraction.
+The raid's five-hero return floor would otherwise be 720 seconds, and the region's 1800 seconds,
+against a 900-second initial rescue window, obstructing successive carry attempts. Rescues grant
+no farming rewards; ordinary expeditions keep their full return gates.
+
+A full wipe commits its incident and closes the source order immediately. After a partial
+withdrawal, returning survivors retain the route minimum; arrival creates the incident for
+the heroes left behind and closes the source order in one transaction. This ensures a hero
+is never both available for rescue/abandonment and still reserved by the source order.
+
+Within an explicitly dispatched rescue, Auto Battle assigns rescuers to the nearest
+unassigned body, breaking ties by spawn order. They approach, use a permitted revival if
+available, otherwise carry to extraction. Revived incident heroes and rescuers with no
+unassigned body withdraw unless manually commanded. Manual mode retains player orders;
+rescuing does not require clearing all enemies.
+
+Each incident has a reviewed active-play lifetime of `900 + 300 * Reliquary_level` seconds,
+separate from existing gear-cache timing. A new incident waits paused for review; starting
+its first rescue also acknowledges it. Failure neither resets nor pauses its age. Expiry
+blocks new attempts, while a rescue already dispatched may finish. Its settlement first
+secures extracted heroes, then finalizes only the remaining stranded heroes if expired.
+Abandonment requires explicit confirmation and cannot occur during an active rescue.
+
+Final deaths go through Expedition's one finalization entry point and GameSession's existing
+sole removal writer; only then does ordinary lost-gear cache recovery apply. Rescue time does
+not advance offline. These timings and the new combat economy require separate playtesting.
+
+---
+
 ## Ranks — *Phase 2*
 
 `F D C B A S SS SSS` → int `0..7`. Applies to heroes and equipment alike.
@@ -2298,6 +2557,66 @@ Up to 5 heroes. Waves resolve in order; **HP carries forward between waves**. A 
 `hero_power = ATK + DEF + HP/10 + SPD`, summed across the team. Used for UI warnings and
 quick-resolve scaling only. **Never a hard gate** — let players throw units away if they want.
 
+### Timed dispatch and repeat orders (`ig-6l4`, 2026-09-22)
+
+A hero can belong to only one active order; equipped gear is committed with that hero. Distinct
+teams run concurrently without an energy system or dispatch-slot cap. Presets store stable
+hero IDs, a name, and a preferred zone. Missing members remain visible and require an explicit
+edit. Preset edits do not modify an already-dispatched team.
+
+Duration uses the existing power calculation and the existing team-size difficulty scale:
+
+```
+strength_ratio = team_power / (zone.recommended_power * team_size / 5)
+full_team_seconds = max(zone.minimum_duration_seconds,
+                        zone.base_duration_seconds / sqrt(strength_ratio))
+duration_seconds = ceil(full_team_seconds * 5 / team_size)
+```
+
+| Zone | Base seconds at strength ratio 1, five heroes | Minimum, five heroes |
+|---|---:|---:|
+| Verdant Outskirts | 60 | 15 |
+| Ashfall Reaches | 180 | 45 |
+| Sundered Vault | 300 | 75 |
+
+The workload factor `5 / team_size` applies after the floor. For equal-strength heroes, five
+solo parties have the same aggregate throughput as one full squad, before whole-second rounding.
+The existing enemy scaling, reward amounts, and combat formulas are unchanged. This supersedes
+the old assumption below that solo play's only extra cost is repeated manual expedition calls.
+
+> ⚠️ **PROVISIONAL** — duration values and first-session pacing are not playtested. **Settled
+> by:** a fresh three-pull save reaching its second viable team, followed by a played comparison
+> of one geared team and several teams across all three zones. Automated arithmetic is not feel.
+
+Orders request 1–999 total runs, including the first, or unlimited repeats. Unlimited orders
+require a conservative forecast that survives every wave's worst-case damage without triggering
+the existing between-wave retreat threshold. A past clear is not a safety certificate. Finite
+orders may take risks after a clear warning. Every repeat rechecks membership and eligibility;
+casualty, defeat, retreat, invalid membership, or a stop request ends the order. Stopping means
+finish the current run; there is no immediate recall that bypasses its risk.
+
+Rewards are banked automatically. Reports show outcome, casualties, completed run count, and
+per-run/cumulative rewards; the most recent 50 are retained. Reviewing reports never grants
+rewards a second time. Already-dispatched runs can finish offline, but only one such run per
+order resolves on reopening; the next repeat starts at its full duration while the app is open.
+Online timing uses elapsed process time. Negative offline clock differences grant no progress.
+
+### Protected resources and bulk operations (`ig-6l4`)
+
+Favorites, preset members, and away heroes are excluded from sacrifice; equipped fodder also
+remains ineligible. Favorite or equipped items are excluded from salvage. Favorites may be
+enhanced or equipped because those operations preserve them. Away heroes cannot be equipped,
+unequipped, ranked up, sacrificed, used for recovery, or selected for arena practice.
+
+Batch salvage/sacrifice use selected identities and explicit quantities, show exclusions and
+exact outputs, and never fill a batch with unselected new arrivals. Enhancement specifies a
+target within the Forge cap and a parts budget for each rank. Items are processed in the captured
+display order, using existing per-level costs; no rank budget or available balance is exceeded.
+Part conversion uses one source rank and a keep-at-least reserve: maximum conversions are
+`floor(max(0, source_parts - reserve) / 3)`. It never cascades into another rank automatically.
+All destructive/budgeted batches preview and revalidate the same operation before one atomic
+commit. No automatic destructive processing is enabled.
+
 ### Team size scaling
 
 `recommended_power` is authored against the 5-hero reference team in Heroes. Nothing said what a
@@ -3102,7 +3421,35 @@ eagerly in Ashfall and Sundered, where the current 25% already produces real, me
 
 ---
 
-## Turns — *Phase 2*
+## Turns and recovery time — *Phase 2*
+
+### Current rule (`ig-6l4`, 2026-09-22)
+
+`GameSession.turns` remains a historical count of resolved normal and successful recovery
+expeditions. It no longer ages caches. Parallel returns or repeat orders must not spend a
+player's recovery window before the player can respond.
+
+Recovery has a persisted active-gameplay clock. It advances only while gameplay is running and
+unpaused, never from time while closed. A new lost-gear cache pauses this clock for all caches
+until the player reviews the losses and explicitly chooses **Start recovery window**. A later
+loss pauses it again; dismissing or truncating an ordinary report cannot unpause it.
+
+Cache lifetime is `900 + 300 * Reliquary level` active seconds: 15 minutes initially, 40 at
+level 5. The current building level extends existing caches. A cache remains available at
+exactly zero seconds and expires below zero, matching the former strict-boundary behavior.
+Recovery damage aging uses elapsed active minutes in place of elapsed expedition turns; its
+other coefficients and damaged-item behavior stay unchanged. Legacy elapsed turns convert to
+elapsed minutes on migration, with the recovery clock initially paused for existing caches.
+
+> ⚠️ **PROVISIONAL** — the 15–40-minute recovery window preserves the old numerical scale,
+> but has not been tested for rebuilding after a timed-expedition wipe. **Settled by:** a played
+> recovery scenario at low and high Reliquary levels with a surviving weak roster.
+
+### Historical expedition-turn rationale (superseded)
+
+The following analysis records the original instant-expedition design. Its turn-based deadlines
+and rejected-clock argument are historical, not current behavior; the rule above supersedes
+them because timed parallel expeditions change the unit of player opportunity.
 
 `P2-22`. Rules the gap `P2-04f` and `P2-13` are both blocked on, and that four already-authored
 numbers are denominated in with nothing to count: cache expiry (`15 turns`),
@@ -3226,7 +3573,7 @@ zero-cancellation `P2-07a` flagged and did not own — sound as arithmetic, open
 A dead hero's equipment does not vanish:
 
 ```
-LostCache { hero_name, zone_id, items[], turn_lost }
+LostCache { hero_name, zone_id, items[], recovery_created_at }
 ```
 
 **Recovery expeditions** are a distinct mission type targeting one cache. Required power is
@@ -3238,7 +3585,9 @@ Retrieved items may come back **Damaged**:
 ```
 r = zone.power / team_power                              # same r convention as Wave damage, above
 power_deficit_penalty = clamp(0.2 * (r - 1), 0.0, 0.2)
-damage_chance = clamp(0.15 + 0.03 * turns_elapsed + power_deficit_penalty, 0.0, 1.0)
+recovery_minutes_elapsed = (recovery_clock_seconds - recovery_created_at) / 60
+damage_chance = clamp(0.15 + 0.03 * recovery_minutes_elapsed
+                      - 0.03 * reliquary_level + power_deficit_penalty, 0.0, 1.0)
 ```
 
 **Ruling (`P2-04f`): Damaged means `enhance_level` halved (rounded down) if the item carries any;
@@ -3353,10 +3702,11 @@ load-bearing at the top end of cache life, not a formality.
 > 0.5`) is specifically that a weak team *can* attempt this, so a played `0.80`-chance outcome that
 > reads as "don't bother" would contradict the system's own stated point.
 
-Caches **expire after 15 turns** (+5 per Reliquary level), an expired cache taking its items with
-it. The clock is what makes a death hurt: you choose between pushing progression and mounting a
-salvage run. A turn is one resolved expedition and the deadline is evaluated at the attempt — see
-Turns, above, which also tabulates what `15` and `40` are worth against a rebuild.
+Caches **expire after 15 active recovery minutes** (+5 per Reliquary level), an expired cache
+taking its items with it. New losses pause this clock until reviewed. Expedition count and
+offline time no longer age gear; see the current rule under Turns and recovery time above.
+Earlier turn-denominated arithmetic in this section is historical: substitute active minutes
+for its old turn unit; damaged-item effects, power penalty, and Reliquary reduction are retained.
 
 ---
 
@@ -3609,7 +3959,7 @@ not the "one system" claim.
 | Forge | Enhance cap `level * 3` (max 15); salvage yield +10% | 2 (arguably 3: rate, cap, ceiling) | forge |
 | Training Hall | Post-expedition XP +15% | 1 | expedition |
 | Sanctum | Sacrifice essence yield +10% | 1 | sacrifice |
-| Reliquary | Cache decay +5 turns; recovery damage chance −3% | 2 | recovery |
+| Reliquary | Cache lifetime +5 active recovery minutes; recovery damage chance −3% | 2 | recovery |
 
 ### Level caps — all five cap at level 5
 
@@ -3834,8 +4184,19 @@ there is no level 5→6 to grind toward.
 Human-readable and diffable, which matters enormously when a balance change corrupts
 progression and you need to see what actually happened.
 
-**Include a `version: int` field from the first commit.** Migration logic is Phase 5, but
-retrofitting the field onto existing saves is not something you want to do later.
+**Current schema: 3 (`ig-544`).** Schema 2 introduced stable hero/item identities, team presets,
+dispatch orders, reports, and the active recovery clock. Schema 3 adds persistent battle state,
+supply allocations, and stranded incidents; the autonomous combat section above defines migration.
+Future versions, malformed JSON, and invalid saved state block play and writes while preserving
+the canonical file's bytes. A missing file is the fresh-game case. The historical refusal
+analysis below describes the earlier version-1 behavior; its corrupt-file move-and-start-fresh
+branch and claim that no migration/version bump exists are superseded by this rule.
+
+Dispatch and return persistence are atomic. A return commits its seeded outcome, rewards,
+casualties, order advancement, and report together; intermediate mutation signals cannot save
+half a return. A failed write rolls memory back. Reopening cannot credit an already committed
+return again, and an uncommitted return reuses the saved seed. Bulk operation confirmation also
+revalidates current state before one transaction. Actual disk save/reload acceptance is required.
 
 ### Refused-save recovery (`P2-17`)
 

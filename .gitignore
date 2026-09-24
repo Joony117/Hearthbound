@@ -24,6 +24,7 @@ panther/review.md
 .DS_Store
 Thumbs.db
 .serena/
+.gitnexus/
 
 # Beads / Dolt files (added by bd init)
 .dolt/

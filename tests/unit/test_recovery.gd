@@ -45,32 +45,62 @@ func test_damaged_halves_clamped_enhancement_then_falls_back_to_rank() -> void:
 	assert_eq(floor_item.rank, 0)
 
 
-func test_damage_chance_uses_pre_tick_elapsed_turns_and_power_deficit() -> void:
-	var cache := LostCache.new("Lost", &"verdant_outskirts", 0)
+func test_damage_chance_uses_active_recovery_minutes_and_power_deficit() -> void:
+	var cache := LostCache.new("Lost", &"verdant_outskirts", 0, 0.0)
 	assert_almost_eq(
-		LostCache.compute_damage_chance(cache, 900, 450.0, 0, 0, BALANCE),
+		LostCache.compute_damage_chance(cache, 900, 450.0, 0.0, 0, BALANCE),
 		0.35,
 		0.0001,
 	)
 	assert_almost_eq(
-		LostCache.compute_damage_chance(cache, 900, 450.0, 15, 0, BALANCE),
+		LostCache.compute_damage_chance(cache, 900, 450.0, 15.0 * 60.0, 0, BALANCE),
 		0.80,
 		0.0001,
 	)
 
 
-func test_advance_turn_keeps_cache_at_deadline_and_drops_it_one_turn_later() -> void:
-	var cache := LostCache.new("Lost", &"verdant_outskirts", 0)
+func test_active_clock_keeps_cache_at_deadline_and_drops_it_afterwards() -> void:
+	var cache := LostCache.new("Lost", &"verdant_outskirts", 0, 0.0)
 	GameSession.lost_caches.append(cache)
-	GameSession.turns = 14
+	GameSession.recovery_clock_paused = false
+	GameSession.set("_save_deferred_depth", 1)
 
-	GameSession.advance_turn(BALANCE)
-	assert_eq(GameSession.turns, 15)
+	GameSession.tick_expeditions(BALANCE.recovery_base_duration_seconds)
+	assert_eq(GameSession.recovery_clock_seconds, BALANCE.recovery_base_duration_seconds)
 	assert_true(GameSession.lost_caches.has(cache))
 
-	GameSession.advance_turn(BALANCE)
-	assert_eq(GameSession.turns, 16)
-	assert_false(GameSession.lost_caches.has(cache))
+	GameSession.tick_expeditions(0.01)
+	GameSession.set("_save_deferred_depth", 0)
+	assert_gt(GameSession.recovery_clock_seconds, BALANCE.recovery_base_duration_seconds)
+	assert_true(GameSession.lost_caches.is_empty())
+
+
+func test_new_loss_pauses_recovery_until_all_losses_are_acknowledged() -> void:
+	var hero: Hero = _add_knight("Doomed", 0, 0)
+	var item := Item.new(&"head", 1)
+	GameSession.add_item(item)
+	GameSession.equip_item(hero, item)
+	GameSession.recovery_clock_seconds = 45.0
+
+	GameSession.kill_hero(hero, &"verdant_outskirts", BALANCE)
+
+	assert_true(GameSession.recovery_clock_paused)
+	assert_eq(GameSession.lost_caches[0].recovery_created_at, 45.0)
+	GameSession.acknowledge_recovery_losses()
+	assert_false(GameSession.recovery_clock_paused)
+
+
+func test_current_snapshot_round_trip_preserves_recovery_clock_and_cache_origin() -> void:
+	GameSession.recovery_clock_seconds = 321.5
+	GameSession.recovery_clock_paused = false
+	GameSession.lost_caches.append(LostCache.new("Lost", &"verdant_outskirts", 4, 123.25))
+	var snapshot: Dictionary = GameSession.to_dict()
+
+	GameSession.from_dict(snapshot)
+
+	assert_eq(GameSession.recovery_clock_seconds, 321.5)
+	assert_false(GameSession.recovery_clock_paused)
+	assert_eq(GameSession.lost_caches[0].recovery_created_at, 123.25)
 
 
 func test_refused_recoveries_spend_no_turn_and_mutate_nothing() -> void:
@@ -139,7 +169,7 @@ func test_permitted_recovery_rolls_each_item_and_moves_every_item_to_inventory()
 		cache,
 		900,
 		team_power,
-		GameSession.turns,
+		GameSession.recovery_clock_seconds,
 		0,
 		BALANCE,
 	)
@@ -156,9 +186,9 @@ func test_permitted_recovery_rolls_each_item_and_moves_every_item_to_inventory()
 	assert_true(GameSession.roster.has(hero))
 
 
-func test_hub_lists_cache_details_and_missing_zone_fallback() -> void:
-	GameSession.turns = 3
-	var cache := LostCache.new("Aster", &"not_a_zone", 1)
+func test_hub_lists_active_cache_time_and_missing_zone_fallback() -> void:
+	GameSession.recovery_clock_seconds = 2.0 * 60.0
+	var cache := LostCache.new("Aster", &"not_a_zone", 1, 0.0)
 	cache.items.append(Item.new(&"head", 1))
 	cache.items.append(Item.new(&"body", 2))
 	GameSession.lost_caches.append(cache)
@@ -170,8 +200,8 @@ func test_hub_lists_cache_details_and_missing_zone_fallback() -> void:
 	assert_eq(cache_list.item_count, 1)
 	assert_string_contains(cache_list.get_item_text(0), "Aster")
 	assert_string_contains(cache_list.get_item_text(0), "[Missing definition: not_a_zone]")
-	assert_string_contains(cache_list.get_item_text(0), "2 items")
-	assert_string_contains(cache_list.get_item_text(0), "13 turns remaining")
+	assert_string_contains(cache_list.get_item_text(0), "13:00 active remaining")
+	assert_string_contains(cache_list.get_item_tooltip(0), "2 lost item(s)")
 
 
 func test_hub_recover_button_reuses_roster_selection() -> void:
@@ -179,11 +209,12 @@ func test_hub_recover_button_reuses_roster_selection() -> void:
 	var cache := LostCache.new("Aster", &"verdant_outskirts", 0)
 	cache.items.append(Item.new(&"head", 1))
 	GameSession.lost_caches.append(cache)
+	GameSession.save_team_preset("", "Recovery Team", [hero.instance_id], "verdant_outskirts")
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var cache_list: ItemList = hub.get_node("%LostCacheList") as ItemList
-	var recover_button: Button = hub.get_node("UI/Root/RosterPanel/VBox/Recover") as Button
+	var recover_button: Button = hub.get_node("%Recover") as Button
 	var status: Label = hub.get_node("%Status") as Label
 	roster_list.select(0)
 	cache_list.select(0)

@@ -1,0 +1,211 @@
+class_name BattleActor
+extends RefCounted
+
+const LIFE_ALIVE: String = "alive"
+const LIFE_DOWNED: String = "downed"
+const LIFE_EXTRACTED: String = "extracted"
+const LIFE_DEAD: String = "dead"
+const VALID_LIFE: Array[String] = [LIFE_ALIVE, LIFE_DOWNED, LIFE_EXTRACTED, LIFE_DEAD]
+const VALID_ARCHETYPES: Array[String] = ["knight", "ranger", "mage", "rogue", "cleric"]
+const VALID_FACTIONS: Array[String] = ["ally", "enemy"]
+const VALID_ORDERS: Array[String] = ["", "move", "attack", "attack_move", "hold", "guard", "carry", "retreat"]
+
+var id: String = ""
+var hero_id: String = ""
+var archetype: String = ""
+var faction: String = ""
+var spawn_index: int = 0
+var squad_id: String = ""
+var position: Vector2 = Vector2.ZERO
+var facing: Vector2 = Vector2.RIGHT
+var hp: float = 0.0
+var max_hp: float = 0.0
+var atk: float = 0.0
+var defense: float = 0.0
+var speed: float = 0.0
+var crit_rate: float = 0.0
+var crit_damage: float = 1.0
+var life: String = LIFE_ALIVE
+var attack_range: float = 1.6
+var move_speed: float = 1.5
+var attack_cooldown: float = 0.0
+var ability_cooldown: float = 0.0
+var item_cooldown: float = 0.0
+var order_kind: String = ""
+var order_target_id: String = ""
+var order_point: Vector2 = Vector2.ZERO
+var carried_by_id: String = ""
+var carrying_id: String = ""
+var guard_target_id: String = ""
+var ability_auto: bool = true
+var effect_state: Dictionary = {}
+
+
+func to_dict() -> Dictionary:
+	return {
+		"id": id,
+		"hero_id": hero_id,
+		"archetype": archetype,
+		"faction": faction,
+		"spawn_index": spawn_index,
+		"squad_id": squad_id,
+		"position": [position.x, position.y],
+		"facing": [facing.x, facing.y],
+		"hp": hp,
+		"max_hp": max_hp,
+		"atk": atk,
+		"defense": defense,
+		"speed": speed,
+		"crit_rate": crit_rate,
+		"crit_damage": crit_damage,
+		"life": life,
+		"attack_range": attack_range,
+		"move_speed": move_speed,
+		"attack_cooldown": attack_cooldown,
+		"ability_cooldown": ability_cooldown,
+		"item_cooldown": item_cooldown,
+		"order_kind": order_kind,
+		"order_target_id": order_target_id,
+		"order_point": [order_point.x, order_point.y],
+		"carried_by_id": carried_by_id,
+		"carrying_id": carrying_id,
+		"guard_target_id": guard_target_id,
+		"ability_auto": ability_auto,
+		"effect_state": effect_state.duplicate(true),
+	}
+
+
+static func from_dict(data: Dictionary) -> BattleActor:
+	var actor := BattleActor.new()
+	actor.id = str(data.get("id", ""))
+	actor.hero_id = str(data.get("hero_id", ""))
+	actor.archetype = str(data.get("archetype", ""))
+	actor.faction = str(data.get("faction", ""))
+	actor.spawn_index = _integer(data.get("spawn_index"), 0)
+	actor.squad_id = str(data.get("squad_id", ""))
+	actor.position = _vector(data.get("position"))
+	actor.facing = _vector(data.get("facing"), Vector2.RIGHT)
+	actor.hp = _number(data.get("hp"), 0.0)
+	actor.max_hp = _number(data.get("max_hp"), 0.0)
+	actor.atk = _number(data.get("atk"), 0.0)
+	actor.defense = _number(data.get("defense"), 0.0)
+	actor.speed = _number(data.get("speed"), 0.0)
+	actor.crit_rate = _number(data.get("crit_rate"), 0.0)
+	actor.crit_damage = _number(data.get("crit_damage"), 1.0)
+	actor.life = str(data.get("life", LIFE_ALIVE))
+	actor.attack_range = _number(data.get("attack_range"), 1.6)
+	actor.move_speed = _number(data.get("move_speed"), 1.5)
+	actor.attack_cooldown = _number(data.get("attack_cooldown"), 0.0)
+	actor.ability_cooldown = _number(data.get("ability_cooldown"), 0.0)
+	actor.item_cooldown = _number(data.get("item_cooldown"), 0.0)
+	actor.order_kind = str(data.get("order_kind", ""))
+	actor.order_target_id = str(data.get("order_target_id", ""))
+	actor.order_point = _vector(data.get("order_point"))
+	actor.carried_by_id = str(data.get("carried_by_id", ""))
+	actor.carrying_id = str(data.get("carrying_id", ""))
+	actor.guard_target_id = str(data.get("guard_target_id", ""))
+	actor.ability_auto = bool(data.get("ability_auto", true))
+	var raw_effects: Variant = data.get("effect_state")
+	actor.effect_state = (raw_effects as Dictionary).duplicate(true) if raw_effects is Dictionary else {}
+	return actor
+
+
+static func validate_dict(data: Dictionary) -> String:
+	for key: String in ["id", "hero_id", "archetype", "faction", "squad_id", "life", "order_kind", "order_target_id", "carried_by_id", "carrying_id", "guard_target_id"]:
+		if not data.get(key) is String:
+			return "Battle actor %s must be a String." % key
+	if (data.get("id") as String).is_empty():
+		return "Battle actor id must be non-empty."
+	if not str(data.get("archetype")) in VALID_ARCHETYPES or not str(data.get("faction")) in VALID_FACTIONS:
+		return "Battle actor archetype or faction is invalid."
+	if not str(data.get("order_kind")) in VALID_ORDERS:
+		return "Battle actor order_kind is invalid."
+	var hero_id: String = str(data.get("hero_id"))
+	if (str(data.get("faction")) == "ally") == hero_id.is_empty():
+		return "Allied battle actors need hero IDs and enemies must not have them."
+	if not _valid_nonnegative_integer(data.get("spawn_index")):
+		return "Battle actor spawn_index must be a non-negative integer."
+	for key: String in ["position", "facing", "order_point"]:
+		if not _valid_vector(data.get(key)):
+			return "Battle actor %s must contain two finite numbers." % key
+	for key: String in ["hp", "max_hp", "atk", "defense", "speed", "crit_rate", "crit_damage", "attack_range", "move_speed", "attack_cooldown", "ability_cooldown", "item_cooldown"]:
+		if not _valid_number(data.get(key)):
+			return "Battle actor %s must be finite." % key
+	if float(data.get("max_hp")) <= 0.0 or float(data.get("hp")) < 0.0 or float(data.get("hp")) > float(data.get("max_hp")):
+		return "Battle actor HP is outside its valid range."
+	for key: String in ["atk", "defense", "speed", "attack_range", "move_speed", "attack_cooldown", "ability_cooldown", "item_cooldown"]:
+		if float(data.get(key)) < 0.0:
+			return "Battle actor %s must be non-negative." % key
+	if float(data.get("crit_rate")) < 0.0 or float(data.get("crit_rate")) > 1.0 or float(data.get("crit_damage")) < 1.0:
+		return "Battle actor critical values are invalid."
+	if not str(data.get("life")) in VALID_LIFE:
+		return "Battle actor life is invalid."
+	if str(data.get("faction")) == "ally" and str(data.get("life")) == LIFE_DEAD:
+		return "Allied battle actors cannot be dead inside a battle snapshot."
+	if str(data.get("faction")) == "enemy" and str(data.get("life")) == LIFE_DOWNED:
+		return "Enemy battle actors cannot be downed."
+	if str(data.get("life")) == LIFE_ALIVE and float(data.get("hp")) <= 0.0:
+		return "Living battle actors need positive HP."
+	if str(data.get("life")) in [LIFE_DOWNED, LIFE_DEAD] and float(data.get("hp")) != 0.0:
+		return "Downed and dead battle actors must have zero HP."
+	if not data.get("ability_auto") is bool:
+		return "Battle actor ability_auto must be a bool."
+	if not data.get("effect_state") is Dictionary:
+		return "Battle actor effect_state must be a Dictionary."
+	var effects: Dictionary = data.get("effect_state") as Dictionary
+	if not effects.get("elite") is bool:
+		return "Battle actor elite effect flag must be a bool."
+	for key: String in ["guard_remaining", "guard_reduction", "stun_remaining", "attack_windup_remaining", "attack_windup_total", "telegraph_radius", "telegraph_remaining", "telegraph_total"]:
+		if not _valid_number(effects.get(key)) or float(effects.get(key)) < 0.0:
+			return "Battle actor effect %s must be finite and non-negative." % key
+	if float(effects.get("guard_reduction")) > 1.0:
+		return "Battle actor guard_reduction cannot exceed one."
+	for key: String in ["last_hit_tick", "last_skill_tick"]:
+		if not _valid_nonnegative_integer(effects.get(key)):
+			return "Battle actor effect %s must be a non-negative integer." % key
+	# Optional: saves written before crits were recorded have no key.
+	if effects.has("last_crit_tick") and not _valid_nonnegative_integer(effects.get("last_crit_tick")):
+		return "Battle actor effect last_crit_tick must be a non-negative integer."
+	for key: String in ["attack_target_id", "telegraph_kind"]:
+		if not effects.get(key) is String:
+			return "Battle actor effect %s must be a String." % key
+	if not str(effects.get("telegraph_kind")) in ["", "circle", "line"]:
+		return "Battle actor telegraph_kind is invalid."
+	for key: String in ["telegraph_origin", "telegraph_point", "home_position"]:
+		if not _valid_vector(effects.get(key)):
+			return "Battle actor effect %s must contain two finite numbers." % key
+	if effects.has("direct_order") and not effects.get("direct_order") is bool:
+		return "Battle actor direct_order effect must be a bool."
+	if effects.has("carry_progress") and (not _valid_number(effects.get("carry_progress")) or float(effects.get("carry_progress")) < 0.0):
+		return "Battle actor carry_progress must be finite and non-negative."
+	return ""
+
+
+static func _vector(value: Variant, fallback: Vector2 = Vector2.ZERO) -> Vector2:
+	if not _valid_vector(value):
+		return fallback
+	var entries: Array = value as Array
+	return Vector2(float(entries[0]), float(entries[1]))
+
+
+static func _valid_vector(value: Variant) -> bool:
+	if not value is Array or (value as Array).size() != 2:
+		return false
+	var entries: Array = value as Array
+	return _valid_number(entries[0]) and _valid_number(entries[1])
+
+
+static func _valid_number(value: Variant) -> bool:
+	return (value is int or value is float) and is_finite(float(value))
+
+
+static func _number(value: Variant, fallback: float) -> float:
+	return float(value) if _valid_number(value) else fallback
+
+
+static func _integer(value: Variant, fallback: int) -> int:
+	return int(value) if _valid_nonnegative_integer(value) else fallback
+
+
+static func _valid_nonnegative_integer(value: Variant) -> bool:
+	return _valid_number(value) and float(value) >= 0.0 and float(value) == floorf(float(value))
