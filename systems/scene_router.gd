@@ -15,6 +15,12 @@ var practice_team: Array[Hero] = []
 var practice_zone: ZoneDefinition
 
 
+func _ready() -> void:
+	# Once per run, before the first scene draws: the saved window size (systems/settings.gd).
+	# The saved choice stays as it is, even on a screen too small for it this time.
+	Settings.apply_window_size(Settings.window_size())
+
+
 func prepare_battle(order_id: String) -> void:
 	assert(not order_id.is_empty())
 	battle_order_id = order_id

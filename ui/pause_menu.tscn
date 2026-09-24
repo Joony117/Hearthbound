@@ -26,9 +26,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -192.0
-offset_top = -120.0
+offset_top = -146.0
 offset_right = 192.0
-offset_bottom = 120.0
+offset_bottom = 146.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
@@ -41,9 +41,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -160.0
-offset_top = -100.0
+offset_top = -126.0
 offset_right = 160.0
-offset_bottom = 100.0
+offset_bottom = 126.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
@@ -70,6 +70,20 @@ custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 text = "Screen shake"
 
+[node name="WindowRow" type="HBoxContainer" parent="VBox"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+
+[node name="WindowLabel" type="Label" parent="VBox/WindowRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Window size"
+
+[node name="WindowSize" type="OptionButton" parent="VBox/WindowRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+
 [node name="ToMenu" type="Button" parent="VBox"]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
@@ -77,4 +91,5 @@ text = "Return to title"
 
 [connection signal="pressed" from="VBox/Resume" to="." method="_on_resume_pressed"]
 [connection signal="toggled" from="VBox/ScreenShake" to="." method="_on_screen_shake_toggled"]
+[connection signal="item_selected" from="VBox/WindowRow/WindowSize" to="." method="_on_window_size_item_selected"]
 [connection signal="pressed" from="VBox/ToMenu" to="." method="_on_menu_pressed"]
