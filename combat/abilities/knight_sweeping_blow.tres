@@ -4,14 +4,17 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
+skill_id = &"knight_sweeping_blow"
+display_name = "Sweeping Blow"
+kind = "weaponskill"
 archetype = "knight"
+unlock_level = 25
+radius_units = 2.0
+ai_rule = "enemies_near_self"
+ai_count = 3
+ai_radius = 2.0
 effects = Array[Dictionary]([{
-"type": "status",
-"target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"type": "damage",
+"area": "around_caster",
+"multiplier": 0.9
 }])

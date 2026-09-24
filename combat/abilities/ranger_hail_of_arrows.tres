@@ -4,20 +4,20 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"mage_burst"
-display_name = "Arcane Bloom"
+skill_id = &"ranger_hail_of_arrows"
+display_name = "Hail of Arrows"
 kind = "ability"
-archetype = "mage"
-cooldown_seconds = 12.0
-range_units = 8.0
-radius_units = 2.5
+archetype = "ranger"
+unlock_level = 25
+cooldown_seconds = 20.0
+range_units = 10.0
+radius_units = 3.0
 ai_rule = "enemies_near_target"
 ai_count = 3
-ai_radius = 2.5
-ai_or_elite = true
+ai_radius = 3.0
 effects = Array[Dictionary]([{
 "type": "damage",
 "area": "circle",
-"multiplier": 1.5,
+"multiplier": 0.8,
 "required": true
 }])

@@ -6,7 +6,7 @@
 [sub_resource type="Resource" id="TraitDefinition_quickdraw"]
 script = ExtResource("2_trait")
 id = &"ranger_quickdraw"
-display_name = "Quickdraw"
+display_name = "Fleet String"
 stat = 3
 magnitude = 0.04
 

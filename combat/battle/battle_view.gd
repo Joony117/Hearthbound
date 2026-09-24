@@ -791,7 +791,7 @@ func _update_selected_panel() -> void:
 	var ability_auto: bool = true
 	for entry: Variant in selected_actor.get("skills", []) as Array:
 		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((entry as Dictionary).get("id", ""))) as AbilityDefinition
-		if skill != null and skill.kind != "passive":
+		if skill != null and skill.is_ability():
 			ability_definition = skill
 			ability_auto = str((entry as Dictionary).get("mode", "auto")) != "manual"
 			break

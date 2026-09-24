@@ -4,14 +4,22 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
-archetype = "knight"
+skill_id = &"rogue_slip"
+display_name = "Slip"
+kind = "ability"
+archetype = "rogue"
+unlock_level = 5
+counter_tag = "dodge"
+cooldown_seconds = 12.0
+self_centered = true
+ai_rule = "telegraph"
 effects = Array[Dictionary]([{
 "type": "status",
 "target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"status": "dodge",
+"seconds": 1.0
+}, {
+"type": "move",
+"to": "away",
+"distance": 2.0
 }])

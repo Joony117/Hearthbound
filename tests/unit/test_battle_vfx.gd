@@ -187,6 +187,19 @@ func test_enemy_mage_skill_start_is_not_a_skill_event() -> void:
 	assert_eq(BattleVfx.events_between({"e1": before}, [after]).size(), 0)
 
 
+func test_an_ally_delayed_area_marks_quietly_then_lands_in_its_skill_tint() -> void:
+	var idle: Dictionary = _actor("a1", "ally", "mage")
+	var marking: Dictionary = _actor("a1", "ally", "mage", {"last_skill_tick": 2, "last_skill_id": "mage_hanging_star", "telegraph_kind": "circle", "telegraph_skill": "mage_hanging_star", "telegraph_origin": [0.0, 0.0], "telegraph_point": [6.0, 0.0], "telegraph_radius": 3.0, "telegraph_remaining": 1.0})
+	assert_eq(BattleVfx.events_between({"a1": idle}, [marking]).size(), 0, "no blast at the cast: the ring shows it")
+
+	var landed: Dictionary = _actor("a1", "ally", "mage", {"last_skill_tick": 2, "last_skill_id": "mage_hanging_star"})
+	var events: Array[Dictionary] = BattleVfx.events_between({"a1": marking}, [landed])
+	assert_eq(_kinds(events), ["skill"], "never the red enemy_skill")
+	assert_eq([events[0]["skill_id"], events[0]["look"], events[0]["center"], events[0]["radius"]], ["mage_hanging_star", "burst", Vector3(6.0, 0.0, 0.0), 3.0])
+	assert_eq(events[0]["color"], BattleVfx.skill_color(BattleSimulation.ABILITIES["mage_hanging_star"], "ally"))
+	assert_ne(events[0]["color"], BattleVfx.ENEMY_SKILL_COLOR)
+
+
 func test_enemy_telegraph_resolve_uses_previous_shape() -> void:
 	var before: Dictionary = _actor("e1", "enemy", "ranger", {"telegraph_kind": "line", "telegraph_origin": [0.0, 0.0], "telegraph_point": [10.0, 0.0], "telegraph_radius": 1.0})
 	var after: Dictionary = _actor("e1", "enemy", "ranger")

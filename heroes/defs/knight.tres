@@ -6,7 +6,7 @@
 [sub_resource type="Resource" id="TraitDefinition_bulwark"]
 script = ExtResource("2_trait")
 id = &"knight_bulwark"
-display_name = "Bulwark"
+display_name = "Oaken Guard"
 stat = 2
 magnitude = 0.04
 

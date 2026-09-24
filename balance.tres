@@ -150,3 +150,6 @@ lumbermill_worker_slots = 2
 wood_per_worker_minute = 1.0
 ledger_max_records = 10000
 battle_max_moments = 64
+skill_ability_lock_seconds = 1.0
+skill_combo_window_seconds = 6.0
+skill_status_tick_seconds = 1.0

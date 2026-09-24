@@ -4,14 +4,16 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
-archetype = "knight"
+skill_id = &"general_disrupt"
+display_name = "Disrupt"
+kind = "ability"
+archetype = "general"
+tier = 3
+counter_tag = "interrupt"
+cooldown_seconds = 45.0
+range_units = 1.6
+ai_rule = "telegraph"
 effects = Array[Dictionary]([{
-"type": "status",
-"target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"type": "interrupt",
+"stun_seconds": 0.0
 }])

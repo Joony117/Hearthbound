@@ -4,13 +4,17 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"rogue_blindside"
-display_name = "Knave's Angle"
-kind = "passive"
+skill_id = &"rogue_deathmark"
+display_name = "Deathmark"
+kind = "ability"
 archetype = "rogue"
+book_only = true
+cooldown_seconds = 45.0
+range_units = 1.6
+ai_rule = "target_below"
+ai_fraction = 0.3
 effects = Array[Dictionary]([{
-"type": "status",
-"target": "self",
-"status": "rear_basic_damage",
-"magnitude": 0.25
+"type": "damage",
+"area": "target",
+"multiplier": 3.0
 }])

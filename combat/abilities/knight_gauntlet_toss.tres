@@ -4,14 +4,15 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
+skill_id = &"knight_gauntlet_toss"
+display_name = "Gauntlet Toss"
+kind = "ability"
 archetype = "knight"
+unlock_level = 15
+cooldown_seconds = 15.0
+range_units = 6.0
+ai_rule = "enemy_on_weaker_ally"
 effects = Array[Dictionary]([{
-"type": "status",
-"target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"type": "taunt",
+"seconds": 4.0
 }])

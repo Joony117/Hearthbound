@@ -2,18 +2,55 @@ class_name BattleSimulation
 extends RefCounted
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
-## Every skill, keyed by skill id. An archetype's default kit is read from here (default_kit).
+## Every skill, keyed by skill id, each class in kit order (SYSTEMS.md § The v1 kits) and then the
+## general pool. Kit order is bar order when a hero has no bar of its own.
 const ABILITIES: Dictionary[String, AbilityDefinition] = {
 	"knight_bulwark": preload("res://combat/abilities/knight_bulwark.tres"),
 	"knight_rally": preload("res://combat/abilities/knight_rally.tres"),
-	"ranger_long_sight": preload("res://combat/abilities/ranger_long_sight.tres"),
-	"ranger_piercing_shot": preload("res://combat/abilities/ranger_piercing_shot.tres"),
-	"mage_arcane_flow": preload("res://combat/abilities/mage_arcane_flow.tres"),
-	"mage_burst": preload("res://combat/abilities/mage_burst.tres"),
+	"knight_iron_cut": preload("res://combat/abilities/knight_iron_cut.tres"),
+	"knight_follow_through": preload("res://combat/abilities/knight_follow_through.tres"),
+	"knight_buckler_blow": preload("res://combat/abilities/knight_buckler_blow.tres"),
+	"knight_gauntlet_toss": preload("res://combat/abilities/knight_gauntlet_toss.tres"),
+	"knight_sweeping_blow": preload("res://combat/abilities/knight_sweeping_blow.tres"),
+	"knight_anvilheart": preload("res://combat/abilities/knight_anvilheart.tres"),
 	"rogue_blindside": preload("res://combat/abilities/rogue_blindside.tres"),
 	"rogue_flank_interrupt": preload("res://combat/abilities/rogue_flank_interrupt.tres"),
+	"rogue_quick_cut": preload("res://combat/abilities/rogue_quick_cut.tres"),
+	"rogue_gutting_strike": preload("res://combat/abilities/rogue_gutting_strike.tres"),
+	"rogue_slip": preload("res://combat/abilities/rogue_slip.tres"),
+	"rogue_venom_edge": preload("res://combat/abilities/rogue_venom_edge.tres"),
+	"rogue_knife_flurry": preload("res://combat/abilities/rogue_knife_flurry.tres"),
+	"rogue_deathmark": preload("res://combat/abilities/rogue_deathmark.tres"),
+	"ranger_long_sight": preload("res://combat/abilities/ranger_long_sight.tres"),
+	"ranger_piercing_shot": preload("res://combat/abilities/ranger_piercing_shot.tres"),
+	"ranger_heron_shot": preload("res://combat/abilities/ranger_heron_shot.tres"),
+	"ranger_true_mark": preload("res://combat/abilities/ranger_true_mark.tres"),
+	"ranger_pinning_shot": preload("res://combat/abilities/ranger_pinning_shot.tres"),
+	"ranger_barbed_arrow": preload("res://combat/abilities/ranger_barbed_arrow.tres"),
+	"ranger_hail_of_arrows": preload("res://combat/abilities/ranger_hail_of_arrows.tres"),
+	"ranger_hunters_focus": preload("res://combat/abilities/ranger_hunters_focus.tres"),
+	"mage_arcane_flow": preload("res://combat/abilities/mage_arcane_flow.tres"),
+	"mage_burst": preload("res://combat/abilities/mage_burst.tres"),
+	"mage_ember_bolt": preload("res://combat/abilities/mage_ember_bolt.tres"),
+	"mage_tinder_hex": preload("res://combat/abilities/mage_tinder_hex.tres"),
+	"mage_frost_bind": preload("res://combat/abilities/mage_frost_bind.tres"),
+	"mage_chain_spark": preload("res://combat/abilities/mage_chain_spark.tres"),
+	"mage_warding_glyph": preload("res://combat/abilities/mage_warding_glyph.tres"),
+	"mage_hanging_star": preload("res://combat/abilities/mage_hanging_star.tres"),
 	"cleric_grace": preload("res://combat/abilities/cleric_grace.tres"),
 	"cleric_mend": preload("res://combat/abilities/cleric_mend.tres"),
+	"cleric_censer_swing": preload("res://combat/abilities/cleric_censer_swing.tres"),
+	"cleric_hush": preload("res://combat/abilities/cleric_hush.tres"),
+	"cleric_sheltering_word": preload("res://combat/abilities/cleric_sheltering_word.tres"),
+	"cleric_wellspring": preload("res://combat/abilities/cleric_wellspring.tres"),
+	"cleric_prayer_circle": preload("res://combat/abilities/cleric_prayer_circle.tres"),
+	"cleric_hearthcall": preload("res://combat/abilities/cleric_hearthcall.tres"),
+	"general_catch_breath": preload("res://combat/abilities/general_catch_breath.tres"),
+	"general_field_dressing": preload("res://combat/abilities/general_field_dressing.tres"),
+	"general_brace": preload("res://combat/abilities/general_brace.tres"),
+	"general_tumble": preload("res://combat/abilities/general_tumble.tres"),
+	"general_disrupt": preload("res://combat/abilities/general_disrupt.tres"),
+	"general_hearten": preload("res://combat/abilities/general_hearten.tres"),
 }
 const ROLE_CYCLE: Array[String] = ["knight", "knight", "ranger", "mage", "rogue"]
 const STANCES: Array[String] = ["advance", "stay_together", "defend", "protect"]
@@ -396,7 +433,9 @@ static func _expire_effects_and_cooldowns(state: BattleState) -> void:
 		for skill_id: String in actor.skill_cooldowns:
 			actor.skill_cooldowns[skill_id] = maxf(float(actor.skill_cooldowns[skill_id]) - BALANCE.battle_tick_seconds, 0.0)
 		actor.item_cooldown = maxf(actor.item_cooldown - BALANCE.battle_tick_seconds, 0.0)
-		for key: String in ["guard_remaining", "stun_remaining", "attack_windup_remaining", "telegraph_remaining"]:
+		actor.ability_lock = maxf(actor.ability_lock - BALANCE.battle_tick_seconds, 0.0)
+		_tick_statuses(state, actor)
+		for key: String in ["stun_remaining", "attack_windup_remaining", "telegraph_remaining"]:
 			if actor.effect_state.has(key):
 				actor.effect_state[key] = maxf(float(actor.effect_state[key]) - BALANCE.battle_tick_seconds, 0.0)
 		if actor.life != BattleActor.LIFE_ALIVE or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0:
@@ -466,7 +505,7 @@ static func _choose_intentions(state: BattleState) -> void:
 
 static func _move_actors(state: BattleState) -> void:
 	for actor: BattleActor in state.actors:
-		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0:
+		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0 or _has_status(actor, "root"):
 			continue
 		_apply_separation(state, actor)
 		if actor.order_kind.is_empty() and not actor.effect_state.get("evade_point") is Array:
@@ -518,13 +557,13 @@ static func _support_actions(state: BattleState) -> void:
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.faction != "ally":
 			continue
-		var downed: BattleActor = _nearest_actor(state, actor, "ally", BattleActor.LIFE_DOWNED)
-		if downed != null and _auto_revive(state, actor, downed):
+		if _auto_cast(state, actor, null, ["revive"], null):
 			continue
+		var downed: BattleActor = _nearest_actor(state, actor, "ally", BattleActor.LIFE_DOWNED)
 		if bool(state.policies.get("auto_revive", true)) and downed != null and actor.item_cooldown <= 0.0:
 			if _use_revival(state, actor, downed, false):
 				continue
-		if _auto_heal(state, actor):
+		if _auto_cast(state, actor, null, ["heal"], null):
 			continue
 		if bool(state.policies.get("auto_heal", true)) and actor.item_cooldown <= 0.0:
 			var hurt: BattleActor = _lowest_health_ally(state, actor.position, BALANCE.battle_revival_range)
@@ -539,7 +578,7 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0:
 			continue
-		if actor.faction == "enemy" and str(actor.effect_state.get("telegraph_kind", "")) != "":
+		if str(actor.effect_state.get("telegraph_kind", "")) != "":
 			continue
 		var in_range: BattleActor = _in_range_target(state, actor)
 		if in_range != null:
@@ -547,20 +586,16 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0:
 			continue
-		if actor.faction == "enemy" and str(actor.effect_state.get("telegraph_kind", "")) != "":
+		if str(actor.effect_state.get("telegraph_kind", "")) != "":
 			if float(actor.effect_state.get("telegraph_remaining", 0.0)) <= 0.0:
-				_resolve_enemy_telegraph(state, actor, rng)
+				_resolve_telegraph(state, actor, rng)
 			continue
 		var target: BattleActor = _in_range_target(state, actor)
+		# Before the range check: a rule that finds its own aim (Gauntlet Toss) reaches past the swing.
+		if _auto_cast(state, actor, target, ["buff", "attack"], rng):
+			continue
 		if target == null:
 			continue
-		var wanted: AbilityDefinition = _auto_skill(state, actor, target)
-		if wanted != null:
-			if actor.faction == "enemy" and not _telegraph_kind(wanted).is_empty():
-				_start_enemy_telegraph(state, actor, target, wanted)
-				continue
-			if _use_skill(state, actor, wanted, target, target.position, rng):
-				continue
 		if actor.attack_cooldown > 0.0:
 			continue
 		var windup: float = float(actor.effect_state.get("attack_windup_remaining", 0.0))
@@ -574,9 +609,14 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 		if str(actor.effect_state.get("attack_target_id", "")) != target.id:
 			actor.effect_state["attack_target_id"] = ""
 			continue
-		_damage(state, actor, target, 1.0, rng, true)
+		# A weaponskill rides the swing: same windup, same interval (SYSTEMS.md § Skills).
+		var weaponskill: AbilityDefinition = _pick_weaponskill(state, actor, target)
+		if weaponskill != null:
+			_use_weaponskill(state, actor, weaponskill, target, rng)
+		else:
+			_damage(state, actor, target, 1.0, rng, true)
 		actor.attack_cooldown = clampf(
-			BALANCE.battle_basic_interval_numerator / maxf(actor.speed, 0.001),
+			BALANCE.battle_basic_interval_numerator / maxf(_stat(actor, "speed"), 0.001),
 			BALANCE.battle_basic_interval_min,
 			BALANCE.battle_basic_interval_max,
 		)
@@ -813,12 +853,21 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 		for entry: Variant in snapshot.get("skills") as Array:
 			var skill_id: String = str((entry as Dictionary).get("id", "")) if entry is Dictionary else ""
 			if ABILITIES.has(skill_id) and ABILITIES[skill_id].archetype in [actor.archetype, "general"] and not actor.skills.any(func(kept: Dictionary) -> bool: return kept["id"] == skill_id):
-				var ability: bool = ABILITIES[skill_id].kind != "passive"
-				actor.skills.append({"id": skill_id, "mode": "manual" if ability and str((entry as Dictionary).get("mode", "auto")) == "manual" else "auto"})
-				if ability:
-					actor.skill_cooldowns[skill_id] = 0.0
+				actor.add_skill(ABILITIES[skill_id], "manual" if str((entry as Dictionary).get("mode", "auto")) == "manual" else "auto")
 		if actor.skill_cooldowns.is_empty():
 			actor.set_default_kit(bool(snapshot.get("ability_auto", true)))
+	elif _valid_number(snapshot.get("level")):
+		# The known kit: class skills open at or below the hero's level, then anything learned
+		# (books and the Training Hall, ig-gy0.3). Level skills are derived, never saved. Heroes start
+		# at level 0 and the first slot opens at level 1 (SYSTEMS.md § Learning), so level 0 has it too.
+		var mode: String = "auto" if bool(snapshot.get("ability_auto", true)) else "manual"
+		for skill: AbilityDefinition in known_kit(actor.archetype, maxi(int(snapshot.get("level")), 1)):
+			actor.add_skill(skill, mode)
+		var learned: Variant = snapshot.get("learned_skills")
+		for skill_id: Variant in learned as Array if learned is Array else []:
+			var skill: AbilityDefinition = ABILITIES.get(str(skill_id)) as AbilityDefinition
+			if skill != null and skill.archetype in [actor.archetype, "general"] and not actor.skills.any(func(kept: Dictionary) -> bool: return kept["id"] == str(skill_id)):
+				actor.add_skill(skill, mode)
 	else:
 		actor.set_default_kit(bool(snapshot.get("ability_auto", true)))
 	actor.attack_range = _attack_range(actor)
@@ -834,7 +883,7 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 	return actor
 
 
-## Casts skill: checks readiness, range and target, then applies its effects in order. Nothing here
+## Casts ability: checks readiness, range and target, then applies its effects in order. Nothing here
 ## knows which skill it is. False, with nothing changed, when the cast cannot resolve.
 static func _use_skill(
 	state: BattleState,
@@ -844,16 +893,62 @@ static func _use_skill(
 	point: Vector2,
 	rng: RandomNumberGenerator = null,
 ) -> bool:
-	if actor.life != BattleActor.LIFE_ALIVE or float(actor.skill_cooldowns.get(str(skill.skill_id), 0.0)) > 0.0:
+	if actor.life != BattleActor.LIFE_ALIVE or not skill.is_ability() or float(actor.skill_cooldowns.get(str(skill.skill_id), 0.0)) > 0.0:
+		return false
+	if actor.ability_lock > 0.0 or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0 or _has_status(actor, "silence"):
 		return false
 	if actor.position.distance_to(point) > skill.range_units:
 		return false
 	if _needs_enemy_target(skill) and (target == null or target.faction == actor.faction or target.life != BattleActor.LIFE_ALIVE):
 		return false
-	if not _heal_effect(skill).is_empty() and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE or target.hp >= target.max_hp):
+	var heal: Dictionary = _effect_of(skill, "heal")
+	if not heal.is_empty() and str(heal.get("area", "target")) == "target" and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE or target.hp >= target.max_hp):
 		return false
-	# The caster faces what it cast at, manual or auto; a caster that moved faces its target.
-	var face_target: bool = false
+	if not _effect_of(skill, "shield").is_empty() and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE):
+		return false
+	var moves: bool = not _effect_of(skill, "move").is_empty()
+	if moves and _has_status(actor, "root"):
+		return false
+	if not _apply_effects(state, actor, skill, target, point, rng, false, false):
+		return false
+	# The caster faces what it cast at, manual or auto; a caster that moved, or cast around itself,
+	# faces its target.
+	_face(actor, target.position if target != null and (moves or skill.self_centered) else point)
+	_spend_ability(state, actor, skill)
+	return true
+
+
+## A weaponskill rides the basic swing (SYSTEMS.md § Skills): no cooldown, no lock. Its primary hit
+## counts as a basic hit. A combo step lands its combo_multiplier and combo-only statuses.
+static func _use_weaponskill(state: BattleState, actor: BattleActor, skill: AbilityDefinition, target: BattleActor, rng: RandomNumberGenerator) -> void:
+	if not _apply_effects(state, actor, skill, target, target.position, rng, _combo_ready(state, actor, skill), true):
+		_damage(state, actor, target, 1.0, rng, true)
+		return
+	actor.combo_skill = str(skill.skill_id)
+	actor.combo_tick = state.tick
+
+
+## The cooldown, the ability lock and the tick the views read.
+static func _spend_ability(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> void:
+	actor.skill_cooldowns[str(skill.skill_id)] = _skill_cooldown(actor, skill)
+	actor.ability_lock = BALANCE.skill_ability_lock_seconds
+	actor.effect_state["last_skill_tick"] = state.tick
+	actor.effect_state["last_skill_id"] = str(skill.skill_id)
+
+
+## The primitives, in the skill's order (AbilityDefinition.EFFECT_KEYS). False only when a required
+## effect (which comes before anything that changes state) finds nothing.
+static func _apply_effects(
+	state: BattleState,
+	actor: BattleActor,
+	skill: AbilityDefinition,
+	target: BattleActor,
+	point: Vector2,
+	rng: RandomNumberGenerator,
+	combo: bool,
+	weaponskill: bool,
+) -> bool:
+	var heal_scale: float = 1.0 + _passive(actor, "heal_bonus")
 	for effect: Dictionary in skill.effects:
 		match str(effect["type"]):
 			"revive":
@@ -862,28 +957,53 @@ static func _use_skill(
 					if bool(effect.get("stop", false)):
 						break
 			"status":
-				var remaining_key: String = "%s_remaining" % effect["status"]
-				var reduction_key: String = "%s_reduction" % effect["status"]
-				for ally: BattleActor in state.actors:
-					if ally.faction == actor.faction and ally.life == BattleActor.LIFE_ALIVE and ally.position.distance_to(actor.position) <= skill.radius_units:
-						ally.effect_state[remaining_key] = maxf(float(ally.effect_state.get(remaining_key, 0.0)), float(effect["seconds"]))
-						ally.effect_state[reduction_key] = maxf(float(ally.effect_state.get(reduction_key, 0.0)), float(effect["magnitude"]))
+				if bool(effect.get("combo", false)) and not combo:
+					continue
+				var kind: String = str(effect["status"])
+				var magnitude: float = float(effect.get("magnitude", 0.0))
+				if kind in ["bleed", "burn"]:
+					magnitude *= _stat(actor, "atk")
+				elif kind == "heal_over_time":
+					magnitude *= _stat(actor, "atk") * heal_scale
+				for receiver: BattleActor in _status_receivers(state, actor, skill, effect, target):
+					_add_status(receiver, str(skill.skill_id), kind, actor.id, float(effect["seconds"]), magnitude)
 			"move":
-				var destination: Variant = _rogue_flank_position(state, actor, target)
+				var destination: Variant = _rogue_flank_position(state, actor, target) if str(effect["to"]) == "behind_target" else _away_point(state, actor, target, float(effect.get("distance", 0.0)))
 				if not destination is Vector2:
 					return false
 				actor.position = destination as Vector2
-				face_target = true
 			"heal":
-				target.hp = minf(target.hp + actor.atk * float(effect["multiplier"]) * (1.0 + _passive(actor, "heal_bonus")), target.max_hp)
+				var healed: Array[BattleActor] = []
+				match str(effect.get("area", "target")):
+					"target":
+						healed.append(target)
+					"self":
+						healed.append(actor)
+					_:
+						healed = _living_in_radius(state, actor.faction, actor.position, skill.radius_units)
+				for ally: BattleActor in healed:
+					if ally != null and ally.life == BattleActor.LIFE_ALIVE:
+						var amount: float = _stat(actor, "atk") * float(effect["multiplier"]) if effect.has("multiplier") else ally.max_hp * float(effect["max_hp_fraction"])
+						ally.hp = minf(ally.hp + amount * heal_scale, ally.max_hp)
+			"shield":
+				_add_status(target, str(skill.skill_id), "shield", actor.id, float(effect["seconds"]), _stat(actor, "atk") * float(effect["multiplier"]) * heal_scale)
 			"interrupt":
-				target.effect_state["stun_remaining"] = float(effect["stun_seconds"])
-				_cancel_pending_action(target)
+				if target != null and target.life == BattleActor.LIFE_ALIVE:
+					target.effect_state["stun_remaining"] = maxf(float(target.effect_state.get("stun_remaining", 0.0)), float(effect["stun_seconds"]))
+					_cancel_pending_action(target)
+			"taunt":
+				if target != null and target.life == BattleActor.LIFE_ALIVE:
+					_add_status(target, str(skill.skill_id), "taunt", actor.id, float(effect["seconds"]), 0.0)
 			"damage":
+				var multiplier: float = float(effect["combo_multiplier"]) if combo and effect.has("combo_multiplier") else float(effect["multiplier"])
+				if effect.has("delay_seconds"):
+					# A delayed area is marked now and lands later, like an enemy's telegraph.
+					_start_telegraph(state, actor, skill, point, float(effect["delay_seconds"]))
+					continue
 				var hit_any: bool = false
 				match str(effect["area"]):
 					"target":
-						_damage(state, actor, target, float(effect["multiplier"]), rng)
+						_damage(state, actor, target, multiplier, rng, weaponskill)
 						hit_any = true
 					"line":
 						var direction: Vector2 = (target.position - actor.position).normalized()
@@ -893,29 +1013,160 @@ static func _use_skill(
 							var along: float = (candidate.position - actor.position).dot(direction)
 							var closest: Vector2 = actor.position + direction * along
 							if along >= 0.0 and along <= skill.range_units and candidate.position.distance_to(closest) <= skill.radius_units * 0.5:
-								_damage(state, actor, candidate, float(effect["multiplier"]), rng)
+								_damage(state, actor, candidate, multiplier, rng)
 								hit_any = true
-					"circle":
+					"circle", "around_caster":
+						var center: Vector2 = point if str(effect["area"]) == "circle" else actor.position
 						for candidate: BattleActor in state.actors:
-							if candidate.faction != actor.faction and candidate.life == BattleActor.LIFE_ALIVE and candidate.position.distance_to(point) <= skill.radius_units:
-								_damage(state, actor, candidate, float(effect["multiplier"]), rng)
+							if candidate.faction != actor.faction and candidate.life == BattleActor.LIFE_ALIVE and candidate.position.distance_to(center) <= skill.radius_units:
+								_damage(state, actor, candidate, multiplier, rng)
 								hit_any = true
+					"near_target":
+						for candidate: BattleActor in _nearest_others(state, actor, target, skill.radius_units, int(effect["count"])):
+							_damage(state, actor, candidate, multiplier, rng)
+							hit_any = true
 				if not hit_any and bool(effect.get("required", false)):
 					return false
-	_face(actor, target.position if face_target else point)
-	actor.skill_cooldowns[str(skill.skill_id)] = _skill_cooldown(actor, skill)
-	actor.effect_state["last_skill_tick"] = state.tick
 	return true
 
 
-## A line, a single-target hit or a move behind someone needs a living enemy to aim at.
-static func _needs_enemy_target(skill: AbilityDefinition) -> bool:
-	for effect: Dictionary in skill.effects:
-		if str(effect["type"]) == "move" or (str(effect["type"]) == "damage" and str(effect["area"]) in ["target", "line"]):
+## Who a status effect lands on: the caster, the target, or the caster's living side near it.
+static func _status_receivers(state: BattleState, actor: BattleActor, skill: AbilityDefinition, effect: Dictionary, target: BattleActor) -> Array[BattleActor]:
+	var receivers: Array[BattleActor] = []
+	match str(effect["target"]):
+		"self":
+			receivers.append(actor)
+		"target":
+			if target != null and target.life == BattleActor.LIFE_ALIVE:
+				receivers.append(target)
+		_:
+			receivers = _living_in_radius(state, actor.faction, actor.position, float(effect.get("radius", skill.radius_units)))
+	return receivers
+
+
+static func _living_in_radius(state: BattleState, faction: String, center: Vector2, radius: float) -> Array[BattleActor]:
+	var found: Array[BattleActor] = []
+	for candidate: BattleActor in state.actors:
+		if candidate.faction == faction and candidate.life == BattleActor.LIFE_ALIVE and candidate.position.distance_to(center) <= radius:
+			found.append(candidate)
+	return found
+
+
+## Up to count living opponents of actor nearest target (target excluded), within radius of it.
+static func _nearest_others(state: BattleState, actor: BattleActor, target: BattleActor, radius: float, count: int) -> Array[BattleActor]:
+	var found: Array[BattleActor] = []
+	for candidate: BattleActor in state.actors:
+		if candidate != target and candidate.faction != actor.faction and candidate.life == BattleActor.LIFE_ALIVE and candidate.position.distance_to(target.position) <= radius:
+			found.append(candidate)
+	var center: Vector2 = target.position
+	found.sort_custom(func(a: BattleActor, b: BattleActor) -> bool: return a.position.distance_squared_to(center) < b.position.distance_squared_to(center) or (a.position.distance_squared_to(center) == b.position.distance_squared_to(center) and a.spawn_index < b.spawn_index))
+	found.resize(mini(found.size(), count))
+	return found
+
+
+## distance straight back from target (or from where the actor faces, without one).
+static func _away_point(state: BattleState, actor: BattleActor, target: BattleActor, distance: float) -> Vector2:
+	var back: Vector2 = (actor.position - target.position).normalized() if target != null and target.position != actor.position else -actor.facing.normalized()
+	return _clamp_to_bounds(state, actor.position + back * distance)
+
+
+## Adds a status, or refreshes the one this skill already put there: the longer time and the larger
+## magnitude, never a second copy (SYSTEMS.md § Skills).
+static func _add_status(actor: BattleActor, id: String, kind: String, source: String, seconds: float, magnitude: float) -> void:
+	for status: Dictionary in actor.statuses:
+		if status["id"] == id and status["kind"] == kind:
+			status["remaining"] = maxf(float(status["remaining"]), seconds)
+			status["magnitude"] = maxf(float(status["magnitude"]), magnitude)
+			status["source"] = source
+			return
+	actor.statuses.append({"id": id, "kind": kind, "source": source, "remaining": seconds, "magnitude": magnitude})
+
+
+## The strongest magnitude of kind on actor, or 0 (the strongest damage reduction wins).
+static func _status_value(actor: BattleActor, kind: String) -> float:
+	var strongest: float = 0.0
+	for status: Dictionary in actor.statuses:
+		if status["kind"] == kind:
+			strongest = maxf(strongest, float(status["magnitude"]))
+	return strongest
+
+
+static func _has_status(actor: BattleActor, kind: String) -> bool:
+	for status: Dictionary in actor.statuses:
+		if status["kind"] == kind:
 			return true
 	return false
 
 
+## One of the five combat stats with its strongest stat status applied.
+static func _stat(actor: BattleActor, stat: String) -> float:
+	var base: float = 0.0
+	match stat:
+		"atk":
+			base = actor.atk
+		"defense":
+			base = actor.defense
+		"speed":
+			base = actor.speed
+		"crit_rate":
+			base = actor.crit_rate
+		"crit_damage":
+			base = actor.crit_damage
+	return base if actor.statuses.is_empty() else base * (1.0 + _status_value(actor, stat))
+
+
+## Counts statuses down, on the downed too (as the old guard did: a hero revived inside Stand Fast keeps
+## it). Bleed, burn and heal-over-time land, on the living only, each time the time left crosses a
+## multiple of skill_status_tick_seconds; damage goes through damage reduction and shields, credited to
+## its source.
+static func _tick_statuses(state: BattleState, actor: BattleActor) -> void:
+	if actor.statuses.is_empty():
+		return
+	var period: float = BALANCE.skill_status_tick_seconds
+	var kept: Array[Dictionary] = []
+	for status: Dictionary in actor.statuses.duplicate():
+		var before: float = float(status["remaining"])
+		var after: float = maxf(before - BALANCE.battle_tick_seconds, 0.0)
+		status["remaining"] = after
+		var kind: String = str(status["kind"])
+		if actor.life == BattleActor.LIFE_ALIVE and kind in ["bleed", "burn", "heal_over_time"] and ceilf(before / period - TICK_EPSILON) > ceilf(after / period - TICK_EPSILON):
+			var amount: float = float(status["magnitude"]) * period
+			if kind == "heal_over_time":
+				actor.hp = minf(actor.hp + amount, actor.max_hp)
+			else:
+				var source: BattleActor = _actor_by_id(state, str(status["source"]))
+				_take_damage(state, source if source != null else actor, actor, amount * (1.0 - _status_value(actor, "damage_reduction")))
+		if after > 0.0 and not (kind == "shield" and float(status["magnitude"]) <= 0.0):
+			kept.append(status)
+	actor.statuses = kept
+
+
+## The living actor that taunted this one, or null.
+static func _taunter(state: BattleState, actor: BattleActor) -> BattleActor:
+	for status: Dictionary in actor.statuses:
+		if status["kind"] == "taunt":
+			var source: BattleActor = _actor_by_id(state, str(status["source"]))
+			if source != null and source.life == BattleActor.LIFE_ALIVE:
+				return source
+	return null
+
+
+## A line, a single-target or chained hit, a move behind someone or a taunt needs a living enemy.
+static func _needs_enemy_target(skill: AbilityDefinition) -> bool:
+	for effect: Dictionary in skill.effects:
+		match str(effect["type"]):
+			"move":
+				if str(effect["to"]) == "behind_target":
+					return true
+			"taunt":
+				return true
+			"damage":
+				if str(effect["area"]) in ["target", "line", "near_target"]:
+					return true
+	return false
+
+
+## Arcane Flow's cooldown_reduction covers every ability the Mage casts.
 static func _skill_cooldown(actor: BattleActor, skill: AbilityDefinition) -> float:
 	return skill.cooldown_seconds * (1.0 - _passive(actor, "cooldown_reduction"))
 
@@ -937,75 +1188,177 @@ static func _passive_effect(actor: BattleActor, status: String) -> Dictionary:
 
 ## An enemy casting a line or circle shows it first (the telegraph); anything else lands at once.
 static func _telegraph_kind(skill: AbilityDefinition) -> String:
-	var damage: Dictionary = _damage_effect(skill)
+	var damage: Dictionary = _effect_of(skill, "damage")
 	return str(damage["area"]) if str(damage.get("area", "")) in ["line", "circle"] else ""
 
 
-static func _damage_effect(skill: AbilityDefinition) -> Dictionary:
+## The skill's first effect of type, or {}.
+static func _effect_of(skill: AbilityDefinition, type: String) -> Dictionary:
 	for effect: Dictionary in skill.effects:
-		if str(effect["type"]) == "damage":
+		if str(effect["type"]) == type:
 			return effect
 	return {}
 
 
-static func _heal_effect(skill: AbilityDefinition) -> Dictionary:
-	for effect: Dictionary in skill.effects:
-		if str(effect["type"]) == "heal":
-			return effect
-	return {}
-
-
-## The actor's abilities in bar order, passives left out.
+## The actor's abilities in bar order; passives and weaponskills left out.
 static func _abilities(actor: BattleActor) -> Array[AbilityDefinition]:
 	var abilities: Array[AbilityDefinition] = []
 	for entry: Dictionary in actor.skills:
-		if ABILITIES[entry["id"]].kind != "passive":
+		if ABILITIES[entry["id"]].is_ability():
 			abilities.append(ABILITIES[entry["id"]])
 	return abilities
 
 
-static func _auto_ready(actor: BattleActor, entry: Dictionary) -> bool:
-	return str(entry["mode"]) == "auto" and float(actor.skill_cooldowns.get(entry["id"], 0.0)) <= 0.0
+## The one picker (SYSTEMS.md § Skills): the first ready Auto ability, band by band in the order
+## given (revive, heal, buff, attack), then bar order, whose AI rule finds an aim and whose cast
+## resolves. An enemy's line or circle starts a telegraph instead. True when something was cast.
+static func _auto_cast(state: BattleState, actor: BattleActor, target: BattleActor, bands: Array[String], rng: RandomNumberGenerator) -> bool:
+	if actor.ability_lock > 0.0 or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0 or _has_status(actor, "silence"):
+		return false
+	for band: String in bands:
+		for entry: Dictionary in actor.skills:
+			var skill: AbilityDefinition = ABILITIES[entry["id"]]
+			if not skill.is_ability() or str(entry["mode"]) != "auto" or float(actor.skill_cooldowns.get(entry["id"], 0.0)) > 0.0:
+				continue
+			if skill.band() != band and not (band == "revive" and skill.ai_revive_first):
+				continue
+			var aim: BattleActor = _rule_aim(state, actor, skill, target, band)
+			if aim == null:
+				continue
+			if actor.faction == "enemy" and not _telegraph_kind(skill).is_empty():
+				_start_telegraph(state, actor, skill, aim.position, BALANCE.battle_enemy_telegraph_seconds)
+				_spend_ability(state, actor, skill)
+				return true
+			var point: Vector2 = actor.position if skill.self_centered and band != "revive" else aim.position
+			if _use_skill(state, actor, skill, aim, point, rng):
+				return true
+	return false
 
 
-## The first ready Auto ability whose AI rule wants to fire at target, or null.
-static func _auto_skill(state: BattleState, actor: BattleActor, target: BattleActor) -> AbilityDefinition:
+## The weaponskill for this swing: a conditional one whose rule holds (a combo step when its combo
+## is live), in bar order, else the first "default" one, else null (a plain basic hit).
+static func _pick_weaponskill(state: BattleState, actor: BattleActor, target: BattleActor) -> AbilityDefinition:
+	if _has_status(actor, "silence"):
+		return null
+	var fallback: AbilityDefinition = null
 	for entry: Dictionary in actor.skills:
 		var skill: AbilityDefinition = ABILITIES[entry["id"]]
-		if skill.kind != "passive" and _auto_ready(actor, entry) and _auto_ability_wanted(state, actor, skill, target):
-			return skill
+		if skill.kind != "weaponskill":
+			continue
+		match skill.ai_rule:
+			"default":
+				if fallback == null:
+					fallback = skill
+			"combo":
+				if _combo_ready(state, actor, skill):
+					return skill
+			_:
+				if _rule_aim(state, actor, skill, target, "attack") != null:
+					return skill
+	return fallback
+
+
+## The step before skill landed within skill_combo_window_seconds.
+static func _combo_ready(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> bool:
+	return skill.combo_after != &"" and actor.combo_skill == str(skill.combo_after) and (state.tick - actor.combo_tick) * BALANCE.battle_tick_seconds <= BALANCE.skill_combo_window_seconds + TICK_EPSILON
+
+
+## Whom the skill's AI rule (AbilityDefinition.AI_RULES) wants to cast at, or null when it does not
+## want to. target is the actor's in-range opponent (null in the support pass). Enemies fire whenever
+## ready.
+static func _rule_aim(state: BattleState, actor: BattleActor, skill: AbilityDefinition, target: BattleActor, band: String) -> BattleActor:
+	if band == "revive":
+		return _nearest_actor(state, actor, actor.faction, BattleActor.LIFE_DOWNED)
+	if actor.faction == "enemy":
+		return target
+	if skill.ai_no_ready_heal and _class_heal_ready(actor):
+		return null
+	match skill.ai_rule:
+		"always", "fight_on":
+			return target
+		"enemies_near_target":
+			if target != null and (_opponents_in_radius(state, actor.faction, target.position, skill.ai_radius) >= skill.ai_count or (skill.ai_or_elite and bool(target.effect_state.get("elite", false)))):
+				return target
+		"enemies_near_self":
+			if target != null and _opponents_in_radius(state, actor.faction, actor.position, skill.ai_radius) >= skill.ai_count:
+				return target
+		"target_below":
+			if target != null and target.hp / target.max_hp < skill.ai_fraction:
+				return target
+		"target_lacks_status":
+			if target != null and not _has_status(target, skill.ai_status):
+				return target
+		"allies_near":
+			if target != null and _living_in_radius(state, actor.faction, actor.position, skill.ai_radius).size() >= skill.ai_count:
+				return target
+		"enemy_on_weaker_ally":
+			for enemy: BattleActor in state.actors:
+				if enemy.faction == actor.faction or enemy.life != BattleActor.LIFE_ALIVE or enemy.position.distance_to(actor.position) > skill.range_units:
+					continue
+				var victim: BattleActor = _actor_by_id(state, enemy.order_target_id)
+				if victim != null and victim != actor and victim.faction == actor.faction and victim.life == BattleActor.LIFE_ALIVE and victim.hp / victim.max_hp < actor.hp / actor.max_hp:
+					return enemy
+		"ally_below_heal_below":
+			var hurt: BattleActor = _lowest_ally(state, actor, skill)
+			if hurt != null and hurt.hp / hurt.max_hp < float(state.policies.get("heal_below", 0.35)):
+				return hurt
+		"ally_below":
+			var low: BattleActor = _lowest_ally(state, actor, skill)
+			if low != null and low.hp / low.max_hp < skill.ai_fraction:
+				return low
+		"allies_below":
+			var below: int = 0
+			for ally: BattleActor in _living_in_radius(state, actor.faction, actor.position, skill.ai_radius):
+				if ally.hp / ally.max_hp < skill.ai_fraction:
+					below += 1
+			if below >= skill.ai_count:
+				return actor
+		"self_below":
+			if actor.hp / actor.max_hp < skill.ai_fraction:
+				return actor
 	return null
 
 
-## A ready Auto revive-first ability, cast on downed.
-static func _auto_revive(state: BattleState, actor: BattleActor, downed: BattleActor) -> bool:
+## One of the actor's own class abilities that heals is off cooldown and on Auto.
+static func _class_heal_ready(actor: BattleActor) -> bool:
 	for entry: Dictionary in actor.skills:
 		var skill: AbilityDefinition = ABILITIES[entry["id"]]
-		if skill.ai_revive_first and _auto_ready(actor, entry) and _use_skill(state, actor, skill, downed, downed.position):
+		if skill.is_ability() and skill.archetype == actor.archetype and str(entry["mode"]) == "auto" and float(actor.skill_cooldowns.get(entry["id"], 0.0)) <= 0.0 and not _effect_of(skill, "heal").is_empty():
 			return true
 	return false
 
 
-## A ready Auto heal ability, cast on the lowest-HP ally in its range when that ally is below
-## heal_below. The support pass's heal slot, ahead of the healing item.
-static func _auto_heal(state: BattleState, actor: BattleActor) -> bool:
-	for entry: Dictionary in actor.skills:
-		var skill: AbilityDefinition = ABILITIES[entry["id"]]
-		if skill.ai_rule != "ally_below_heal_below" or not _auto_ready(actor, entry):
+## The lowest-HP living ally (the caster included) within the skill's range, of its ai_archetype and
+## without its ai_status when those are set.
+static func _lowest_ally(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> BattleActor:
+	var lowest: BattleActor = null
+	var lowest_fraction: float = INF
+	for ally: BattleActor in _living_in_radius(state, actor.faction, actor.position, skill.range_units):
+		if (not skill.ai_archetype.is_empty() and ally.archetype != skill.ai_archetype) or (not skill.ai_status.is_empty() and _has_status(ally, skill.ai_status)):
 			continue
-		var hurt: BattleActor = _lowest_health_ally(state, actor.position, skill.range_units)
-		if hurt != null and hurt.hp / hurt.max_hp < float(state.policies.get("heal_below", 0.35)) and _use_skill(state, actor, skill, hurt, hurt.position):
-			return true
-	return false
+		if ally.hp / ally.max_hp < lowest_fraction:
+			lowest = ally
+			lowest_fraction = ally.hp / ally.max_hp
+	return lowest
 
 
-## The archetype's level-1 kit in kind order, passive first. A snapshot without skills gets this.
+## The archetype's level-1 kit, passive first then its signature ability. A snapshot without skills
+## or a level gets this (DECISIONS.md 2026-09-23 item 4): exactly the battle from before the v1 kits.
 static func default_kit(archetype: String) -> Array[AbilityDefinition]:
 	var kit: Array[AbilityDefinition] = []
-	for kind: String in AbilityDefinition.KINDS:
+	for kind: String in ["passive", "ability"]:
 		for skill: AbilityDefinition in ABILITIES.values():
 			if skill.archetype == archetype and skill.kind == kind and skill.unlock_level <= 1 and not skill.book_only:
 				kit.append(skill)
+	return kit
+
+
+## The class skills a hero of level knows without a book, in kit order (SYSTEMS.md § The v1 kits).
+static func known_kit(archetype: String, level: int) -> Array[AbilityDefinition]:
+	var kit: Array[AbilityDefinition] = []
+	for skill: AbilityDefinition in ABILITIES.values():
+		if skill.archetype == archetype and skill.unlock_level <= level and not skill.book_only:
+			kit.append(skill)
 	return kit
 
 
@@ -1032,36 +1385,40 @@ static func _face(actor: BattleActor, at: Vector2) -> void:
 		actor.facing = aim.normalized()
 
 
-static func _start_enemy_telegraph(state: BattleState, actor: BattleActor, target: BattleActor, skill: AbilityDefinition) -> void:
-	actor.skill_cooldowns[str(skill.skill_id)] = _skill_cooldown(actor, skill)
-	actor.effect_state["last_skill_tick"] = state.tick
-	actor.effect_state["telegraph_kind"] = _telegraph_kind(skill)
+## Marks skill's line or circle at point; it lands after seconds (_resolve_telegraph) unless the
+## caster is stunned or downed first.
+static func _start_telegraph(state: BattleState, actor: BattleActor, skill: AbilityDefinition, point: Vector2, seconds: float) -> void:
+	var kind: String = _telegraph_kind(skill)
+	actor.effect_state["telegraph_kind"] = kind
+	actor.effect_state["telegraph_skill"] = str(skill.skill_id)
 	actor.effect_state["telegraph_origin"] = [actor.position.x, actor.position.y]
-	var telegraph_point: Vector2 = target.position
-	if _telegraph_kind(skill) == "line":
-		var aim: Vector2 = (target.position - actor.position).normalized()
+	var telegraph_point: Vector2 = point
+	if kind == "line":
+		var aim: Vector2 = (point - actor.position).normalized()
 		telegraph_point = actor.position + aim * skill.range_units
 	actor.effect_state["telegraph_point"] = [telegraph_point.x, telegraph_point.y]
 	actor.effect_state["telegraph_radius"] = skill.radius_units
-	actor.effect_state["telegraph_remaining"] = BALANCE.battle_enemy_telegraph_seconds
-	actor.effect_state["telegraph_total"] = BALANCE.battle_enemy_telegraph_seconds
+	actor.effect_state["telegraph_remaining"] = seconds
+	actor.effect_state["telegraph_total"] = seconds
 
 
-static func _resolve_enemy_telegraph(state: BattleState, actor: BattleActor, rng: RandomNumberGenerator) -> void:
+static func _resolve_telegraph(state: BattleState, actor: BattleActor, rng: RandomNumberGenerator) -> void:
 	var kind: String = str(actor.effect_state.get("telegraph_kind", ""))
 	if kind.is_empty():
 		return
 	var origin: Vector2 = _array_vector(actor.effect_state.get("telegraph_origin"))
 	var point: Vector2 = _array_vector(actor.effect_state.get("telegraph_point"))
 	var radius: float = float(actor.effect_state.get("telegraph_radius", 0.0))
-	# The telegraphed skill is the actor's first ability of that shape.
-	var multiplier: float = 0.0
-	for skill: AbilityDefinition in _abilities(actor):
-		if _telegraph_kind(skill) == kind:
-			multiplier = float(_damage_effect(skill)["multiplier"])
-			break
+	var skill: AbilityDefinition = ABILITIES.get(str(actor.effect_state.get("telegraph_skill", ""))) as AbilityDefinition
+	if skill == null:
+		# A checkpoint from before ig-gy0.2: the actor's first ability of that shape.
+		for ability: AbilityDefinition in _abilities(actor):
+			if _telegraph_kind(ability) == kind:
+				skill = ability
+				break
+	var multiplier: float = float(_effect_of(skill, "damage").get("multiplier", 0.0)) if skill != null else 0.0
 	for candidate: BattleActor in state.actors:
-		if candidate.faction == actor.faction or candidate.life != BattleActor.LIFE_ALIVE:
+		if candidate.faction == actor.faction or candidate.life != BattleActor.LIFE_ALIVE or _has_status(candidate, "dodge"):
 			continue
 		var hit: bool = candidate.position.distance_to(point) <= radius
 		if kind == "line":
@@ -1181,18 +1538,18 @@ static func _damage(
 ) -> void:
 	if target.life != BattleActor.LIFE_ALIVE:
 		return
-	var damage: float = maxf(1.0, attacker.atk * BALANCE.battle_damage_defense_scale / (BALANCE.battle_damage_defense_scale + target.defense)) * multiplier
+	var damage: float = maxf(1.0, _stat(attacker, "atk") * BALANCE.battle_damage_defense_scale / (BALANCE.battle_damage_defense_scale + _stat(target, "defense"))) * multiplier
 	var critical: bool = false
 	if attacker.faction == "enemy" and bool(state.policies.get("force_enemy_crit", false)):
 		critical = true
 	elif attacker.faction == "ally" and bool(state.policies.get("suppress_ally_crit", false)):
 		critical = false
 	elif rng != null:
-		critical = rng.randf() < attacker.crit_rate
+		critical = rng.randf() < _stat(attacker, "crit_rate")
 	if critical:
-		damage *= attacker.crit_damage
-	if target.effect_state.get("guard_remaining", 0.0) > 0.0:
-		damage *= 1.0 - float(target.effect_state.get("guard_reduction", 0.0))
+		damage *= _stat(attacker, "crit_damage")
+	if not target.statuses.is_empty():
+		damage *= 1.0 - _status_value(target, "damage_reduction")
 	var near_ally: Dictionary = _passive_effect(target, "ally_near_damage_reduction")
 	if not near_ally.is_empty() and _living_ally_near(state, target, float(near_ally["radius"])):
 		damage *= 1.0 - float(near_ally["magnitude"])
@@ -1200,6 +1557,16 @@ static func _damage(
 		var rear: Dictionary = _passive_effect(attacker, "rear_basic_damage")
 		if not rear.is_empty() and _is_behind(attacker, target):
 			damage *= 1.0 + float(rear["magnitude"])
+	_take_damage(state, attacker, target, damage, critical)
+
+
+## Damage after every reduction: shields soak it first, then HP. Downs an ally or kills an enemy at 0.
+static func _take_damage(state: BattleState, attacker: BattleActor, target: BattleActor, damage: float, critical: bool = false) -> void:
+	for status: Dictionary in target.statuses:
+		if status["kind"] == "shield" and damage > 0.0:
+			var absorbed: float = minf(float(status["magnitude"]), damage)
+			status["magnitude"] = float(status["magnitude"]) - absorbed
+			damage -= absorbed
 	target.hp = maxf(target.hp - damage, 0.0)
 	target.effect_state["last_hit_tick"] = state.tick
 	if critical:
@@ -1343,8 +1710,6 @@ static func _normalized_policies(policies: Dictionary) -> Dictionary:
 static func _default_effect_state(elite: bool = false) -> Dictionary:
 	return {
 		"elite": elite,
-		"guard_remaining": 0.0,
-		"guard_reduction": 0.0,
 		"stun_remaining": 0.0,
 		"attack_windup_remaining": 0.0,
 		"attack_windup_total": 0.0,
@@ -1429,6 +1794,9 @@ static func _choose_enemy_intention(state: BattleState, actor: BattleActor) -> v
 	var target: BattleActor = _actor_by_id(state, actor.order_target_id)
 	if target == null or target.life != BattleActor.LIFE_ALIVE or target.position.distance_to(home) > BALANCE.battle_enemy_leash_range:
 		target = _nearest_actor_within(state, actor.position, "ally", BALANCE.battle_detection_range, home, BALANCE.battle_enemy_leash_range)
+	var taunter: BattleActor = _taunter(state, actor)
+	if taunter != null:
+		target = taunter
 	if target != null:
 		actor.order_kind = COMMAND_ATTACK
 		actor.order_target_id = target.id
@@ -1613,20 +1981,6 @@ static func _lowest_health_ally(state: BattleState, center: Vector2, radius: flo
 			lowest = actor
 			lowest_fraction = fraction
 	return lowest
-
-
-## The skill's AI rule (AbilityDefinition.AI_RULES). Enemies fire whenever ready.
-static func _auto_ability_wanted(state: BattleState, actor: BattleActor, skill: AbilityDefinition, target: BattleActor) -> bool:
-	if skill.ai_rule == "ally_below_heal_below":
-		return false
-	if actor.faction == "enemy":
-		return true
-	match skill.ai_rule:
-		"allies_near":
-			return _allies_in_radius(state, actor.position, skill.ai_radius) >= skill.ai_count
-		"enemies_near_target":
-			return _opponents_in_radius(state, actor.faction, target.position, skill.ai_radius) >= skill.ai_count or (skill.ai_or_elite and bool(target.effect_state.get("elite", false)))
-	return true
 
 
 static func _assigned_objective_point(state: BattleState, actor: BattleActor) -> Vector2:

@@ -4,14 +4,20 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
+skill_id = &"knight_anvilheart"
+display_name = "Anvilheart"
+kind = "ability"
 archetype = "knight"
+book_only = true
+counter_tag = "shield"
+cooldown_seconds = 60.0
+self_centered = true
+ai_rule = "self_below"
+ai_fraction = 0.3
 effects = Array[Dictionary]([{
 "type": "status",
 "target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"status": "damage_reduction",
+"magnitude": 0.6,
+"seconds": 5.0
 }])

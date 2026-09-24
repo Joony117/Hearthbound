@@ -34,14 +34,14 @@ magnitude = 0.03
 [sub_resource type="Resource" id="TraitDefinition_feint"]
 script = ExtResource("2_trait")
 id = &"rogue_feint"
-display_name = "Feint"
+display_name = "Wrong Foot"
 stat = 4
 magnitude = 0.01
 
 [sub_resource type="Resource" id="TraitDefinition_coup_de_grace"]
 script = ExtResource("2_trait")
 id = &"rogue_coup_de_grace"
-display_name = "Coup de Grace"
+display_name = "Velvet Knife"
 stat = 5
 magnitude = 0.05
 

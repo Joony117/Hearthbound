@@ -138,6 +138,8 @@ var _tweens: Array[Tween] = []
 var _view_time_scale: float = 1.0
 var _freeze_remaining: float = 0.0
 var _effects: Dictionary = {}
+## Under a damage-reduction status or a shield (BattleActor.statuses): the guard bubble shows.
+var _guarded: bool = false
 # Linear playback between snapshots: from where the unit is drawn to the new sim position over one render interval.
 var _placed: bool = false
 var _glide_from: Vector3 = Vector3.ZERO
@@ -172,6 +174,8 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 	# Snapshot effect_state is serialized input; narrow to Dictionary before reading presentation cues.
 	var effect_value: Variant = actor.get("effect_state", {})
 	_effects = effect_value as Dictionary if effect_value is Dictionary else {}
+	var statuses: Variant = actor.get("statuses", [])
+	_guarded = statuses is Array and (statuses as Array).any(func(status: Variant) -> bool: return status is Dictionary and str((status as Dictionary).get("kind", "")) in ["damage_reduction", "shield"])
 	var hit_tick: int = int(_effects.get("last_hit_tick", -1))
 	var skill_tick: int = int(_effects.get("last_skill_tick", -1))
 	var crit_tick: int = int(_effects.get("last_crit_tick", -1))
@@ -361,9 +365,11 @@ func _build_visual() -> void:
 	_state_label.modulate = Color("e8a974")
 	_pivot.add_child(_state_label)
 	var telegraph_mesh := TorusMesh.new()
-	# Telegraphs hang off the root, not the pivot, so recoil never moves a danger zone.
-	_telegraph_ring = _mesh(telegraph_mesh, Vector3(0.0, 0.07, 0.0), Vector3.ONE, _transparent_material(Color(0.91, 0.36, 0.31, 0.42)), self)
-	_telegraph_line = _mesh(BoxMesh.new(), Vector3.ZERO, Vector3.ONE, _transparent_material(Color(0.91, 0.36, 0.31, 0.42)), self)
+	# Telegraphs hang off the root, not the pivot, so recoil never moves a danger zone. Red is danger;
+	# an ally's own delayed area (Hanging Star) marks in the ally colour.
+	var telegraph_color: Color = Color(ALLY_COLOR, 0.42) if faction == "ally" else Color(0.91, 0.36, 0.31, 0.42)
+	_telegraph_ring = _mesh(telegraph_mesh, Vector3(0.0, 0.07, 0.0), Vector3.ONE, _transparent_material(telegraph_color), self)
+	_telegraph_line = _mesh(BoxMesh.new(), Vector3.ZERO, Vector3.ONE, _transparent_material(telegraph_color), self)
 	_telegraph_ring.visible = false
 	_telegraph_line.visible = false
 	# A unit first seen already dead or downed (mid-battle load) snaps; later falls animate.
@@ -391,7 +397,7 @@ func _update_status() -> void:
 	if _halo != null:
 		_halo.visible = not dead
 	_elite_ring.visible = bool(_effects.get("elite", false)) and life == "alive"
-	_guard_bubble.visible = float(_effects.get("guard_remaining", 0.0)) > 0.0 and life == "alive"
+	_guard_bubble.visible = _guarded and life == "alive"
 	var label_text: String = "!" if float(_effects.get("attack_windup_remaining", 0.0)) > 0.0 else "STUN" if float(_effects.get("stun_remaining", 0.0)) > 0.0 else ""
 	_state_label.text = "%s  %s" % ["ELITE" if bool(_effects.get("elite", false)) else "", label_text]
 	var telegraph_kind: String = str(_effects.get("telegraph_kind", ""))

@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"cleric_prayer_circle"
+display_name = "Prayer Circle"
+kind = "ability"
+archetype = "cleric"
+unlock_level = 25
+cooldown_seconds = 30.0
+radius_units = 4.0
+self_centered = true
+ai_rule = "allies_below"
+ai_count = 3
+ai_radius = 4.0
+ai_fraction = 0.7
+effects = Array[Dictionary]([{
+"type": "heal",
+"area": "allies_near_caster",
+"multiplier": 1.5
+}])

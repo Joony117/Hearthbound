@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"ranger_barbed_arrow"
+display_name = "Barbed Arrow"
+kind = "weaponskill"
+archetype = "ranger"
+unlock_level = 15
+ai_rule = "target_lacks_status"
+ai_status = "bleed"
+effects = Array[Dictionary]([{
+"type": "damage",
+"area": "target",
+"multiplier": 1.0
+}, {
+"type": "status",
+"target": "target",
+"status": "bleed",
+"magnitude": 0.15,
+"seconds": 8.0
+}])

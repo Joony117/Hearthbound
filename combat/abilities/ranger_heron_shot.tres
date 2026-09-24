@@ -4,14 +4,13 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
-archetype = "knight"
+skill_id = &"ranger_heron_shot"
+display_name = "Heron Shot"
+kind = "weaponskill"
+archetype = "ranger"
+ai_rule = "default"
 effects = Array[Dictionary]([{
-"type": "status",
-"target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"type": "damage",
+"area": "target",
+"multiplier": 1.2
 }])

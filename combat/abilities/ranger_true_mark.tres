@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"ranger_true_mark"
+display_name = "True Mark"
+kind = "weaponskill"
+archetype = "ranger"
+unlock_level = 5
+combo_after = &"ranger_heron_shot"
+ai_rule = "combo"
+effects = Array[Dictionary]([{
+"type": "damage",
+"area": "target",
+"multiplier": 1.1,
+"combo_multiplier": 1.7
+}])

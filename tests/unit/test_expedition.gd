@@ -711,7 +711,7 @@ func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
 	var after_stats := Hero.compute_final_stats(hero, definition, balance, Hero.level_for(hero, balance))
 	assert_string_contains(hero_detail.text, "DEF: %d" % roundi(after_stats[Hero.STAT_DEF]))
 	assert_string_contains(hero_detail.text, "Resonance: 1")
-	assert_string_contains(hero_detail.text, "Bulwark")
+	assert_string_contains(hero_detail.text, "Oaken Guard")
 	assert_string_contains(hero_detail.text, "Lv 10 (max)")
 	assert_false(
 		hero_detail.text.contains(before_def),

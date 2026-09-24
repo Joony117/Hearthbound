@@ -4,14 +4,16 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
+skill_id = &"knight_follow_through"
+display_name = "Follow-Through"
+kind = "weaponskill"
 archetype = "knight"
+unlock_level = 5
+combo_after = &"knight_iron_cut"
+ai_rule = "combo"
 effects = Array[Dictionary]([{
-"type": "status",
-"target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"type": "damage",
+"area": "target",
+"multiplier": 1.1,
+"combo_multiplier": 1.8
 }])

@@ -4,14 +4,20 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
-archetype = "knight"
+skill_id = &"general_brace"
+display_name = "Brace"
+kind = "ability"
+archetype = "general"
+tier = 2
+counter_tag = "shield"
+cooldown_seconds = 40.0
+self_centered = true
+ai_rule = "self_below"
+ai_fraction = 0.3
 effects = Array[Dictionary]([{
 "type": "status",
 "target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"status": "damage_reduction",
+"magnitude": 0.25,
+"seconds": 4.0
 }])

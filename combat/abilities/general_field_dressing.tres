@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"general_field_dressing"
+display_name = "Field Dressing"
+kind = "ability"
+archetype = "general"
+tier = 1
+cooldown_seconds = 45.0
+range_units = 2.0
+ai_rule = "ally_below"
+ai_fraction = 0.35
+ai_no_ready_heal = true
+effects = Array[Dictionary]([{
+"type": "heal",
+"multiplier": 1.5
+}])

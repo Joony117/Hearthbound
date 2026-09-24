@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"ranger_pinning_shot"
+display_name = "Pinning Shot"
+kind = "ability"
+archetype = "ranger"
+unlock_level = 5
+counter_tag = "interrupt"
+cooldown_seconds = 15.0
+range_units = 10.0
+ai_rule = "telegraph"
+effects = Array[Dictionary]([{
+"type": "interrupt",
+"stun_seconds": 0.0
+}, {
+"type": "damage",
+"area": "target",
+"multiplier": 0.5
+}, {
+"type": "status",
+"target": "target",
+"status": "root",
+"seconds": 1.0
+}])

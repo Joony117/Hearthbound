@@ -4,14 +4,18 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_bulwark"
-display_name = "Close Ranks"
-kind = "passive"
-archetype = "knight"
+skill_id = &"rogue_venom_edge"
+display_name = "Venom Edge"
+kind = "ability"
+archetype = "rogue"
+unlock_level = 15
+cooldown_seconds = 30.0
+self_centered = true
+ai_rule = "fight_on"
 effects = Array[Dictionary]([{
 "type": "status",
 "target": "self",
-"status": "ally_near_damage_reduction",
-"magnitude": 0.1,
-"radius": 3.0
+"status": "atk",
+"magnitude": 0.15,
+"seconds": 10.0
 }])

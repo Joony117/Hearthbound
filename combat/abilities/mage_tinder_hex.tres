@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"mage_tinder_hex"
+display_name = "Tinder Hex"
+kind = "weaponskill"
+archetype = "mage"
+unlock_level = 5
+combo_after = &"mage_ember_bolt"
+ai_rule = "combo"
+effects = Array[Dictionary]([{
+"type": "damage",
+"area": "target",
+"multiplier": 1.1,
+"combo_multiplier": 1.6
+}, {
+"type": "status",
+"target": "target",
+"status": "burn",
+"magnitude": 0.2,
+"seconds": 6.0,
+"combo": true
+}])

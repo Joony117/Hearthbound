@@ -187,7 +187,7 @@ func test_inspector_controls_persist_and_show_signature_cooldown_and_item_polici
 	var skill_button: Button = view._selected_ability_button
 	var squad_button: Button = view._squad_row.get_child(0) as Button
 	assert_string_contains(view._selected_label.text, "Inspector Knight")
-	assert_string_contains(skill_button.text, "Rally")
+	assert_string_contains(skill_button.text, "Stand Fast")
 	controller.snapshots["battle-1"]["actors"][0]["skill_cooldowns"]["knight_rally"] = 2.0
 	view._render_snapshot(controller.snapshots["battle-1"])
 	assert_eq(view._selected_ability_button, skill_button)
@@ -318,7 +318,7 @@ func test_paused_practice_selection_refreshes_inspector_without_advancing_battle
 	assert_true(view.get_node("HUD/SelectedPanel").visible)
 	assert_string_contains(view._selected_label.text, "Paused Practice Knight")
 	assert_string_contains(view._selected_label.text, "HP")
-	assert_string_contains(view._selected_ability_button.text, "Rally")
+	assert_string_contains(view._selected_ability_button.text, "Stand Fast")
 	assert_true(view._selected_auto_heal.visible)
 	assert_true(view._selected_auto_revive.visible)
 	assert_almost_eq(camera.size, 36.0, 0.001)

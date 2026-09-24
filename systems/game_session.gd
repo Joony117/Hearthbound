@@ -1025,7 +1025,7 @@ func _team_snapshots(team: Array[Hero], squads: Array[Dictionary] = []) -> Array
 		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
 		var level: int = Hero.level_for(hero, balance)
 		var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, level)
-		result.append({"hero_id": hero.instance_id, "archetype": str(hero.def_id), "hp": stats[Hero.STAT_HP], "atk": stats[Hero.STAT_ATK], "defense": stats[Hero.STAT_DEF], "speed": stats[Hero.STAT_SPD], "crit_rate": stats[Hero.STAT_CRIT_RATE], "crit_damage": stats[Hero.STAT_CRIT_DMG], "squad_id": _squad_for_hero(hero.instance_id, squads)})
+		result.append({"hero_id": hero.instance_id, "archetype": str(hero.def_id), "hp": stats[Hero.STAT_HP], "atk": stats[Hero.STAT_ATK], "defense": stats[Hero.STAT_DEF], "speed": stats[Hero.STAT_SPD], "crit_rate": stats[Hero.STAT_CRIT_RATE], "crit_damage": stats[Hero.STAT_CRIT_DMG], "level": level, "squad_id": _squad_for_hero(hero.instance_id, squads)})
 	return result
 
 

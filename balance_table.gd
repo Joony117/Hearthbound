@@ -162,3 +162,7 @@ extends Resource
 # The Ledger (SYSTEMS.md § The Ledger; both caps PROVISIONAL).
 @export var ledger_max_records: int = 10000
 @export var battle_max_moments: int = 64
+# Skills (SYSTEMS.md § Skills, shared rules; PROVISIONAL).
+@export var skill_ability_lock_seconds: float = 1.0
+@export var skill_combo_window_seconds: float = 6.0
+@export var skill_status_tick_seconds: float = 1.0

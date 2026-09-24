@@ -4,13 +4,17 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"rogue_blindside"
-display_name = "Knave's Angle"
-kind = "passive"
+skill_id = &"rogue_knife_flurry"
+display_name = "Knife Flurry"
+kind = "weaponskill"
 archetype = "rogue"
+unlock_level = 25
+radius_units = 2.5
+ai_rule = "enemies_near_self"
+ai_count = 3
+ai_radius = 2.5
 effects = Array[Dictionary]([{
-"type": "status",
-"target": "self",
-"status": "rear_basic_damage",
-"magnitude": 0.25
+"type": "damage",
+"area": "around_caster",
+"multiplier": 0.8
 }])

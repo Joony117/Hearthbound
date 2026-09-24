@@ -115,14 +115,21 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 				"critical": _tick(current[attack_target], "last_crit_tick") > _tick(previous[attack_target] as Dictionary, "last_crit_tick"),
 				"tick": _tick(current[attack_target], "last_hit_tick"),
 			})
-		var skill_visible: bool = archetype in ["knight", "rogue"] or faction == "ally"
-		var ability: AbilityDefinition = BattleSimulation.signature_for(archetype)
+		# The skill it cast (a save from before ig-gy0.2 names none: the signature).
+		var ability: AbilityDefinition = BattleSimulation.ABILITIES.get(str(after_effects.get("last_skill_id", "")), BattleSimulation.signature_for(archetype)) as AbilityDefinition
+		var look: String = skill_look(ability) if ability != null else ""
+		# An enemy's line or circle already shows as its telegraph, and so does an ally's delayed
+		# area (Hanging Star): both play when they land.
+		var skill_visible: bool = (faction == "ally" or not look in ["line", "burst"]) and str(after_effects.get("telegraph_kind", "")).is_empty()
 		if skill_visible and _tick(after, "last_skill_tick") > _tick(before, "last_skill_tick") and ability != null:
 			var skill: Dictionary = {
 				"kind": "skill",
 				"actor_id": actor_id,
 				"faction": faction,
 				"archetype": archetype,
+				"skill_id": str(ability.skill_id),
+				"look": look,
+				"color": skill_color(ability, faction),
 				"position": spot,
 				"previous_position": _world(before.get("position")),
 				"facing": facing,
@@ -131,7 +138,7 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 				"center": spot + facing * 2.0,
 				"tick": _tick(after, "last_skill_tick"),
 			}
-			if archetype in ["mage", "ranger"]:
+			if look in ["line", "burst", "strike"]:
 				var total: Vector3 = Vector3.ZERO
 				var count: int = 0
 				for hit_id: String in hit_ids:
@@ -143,10 +150,10 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 					var centroid: Vector3 = total / float(count)
 					skill["center"] = centroid
 					# The sim faces the shot at its first target; the streak follows what it actually pierced.
-					if archetype == "ranger" and not centroid.is_equal_approx(spot):
+					if look == "line" and not centroid.is_equal_approx(spot):
 						skill["facing"] = (centroid - spot).normalized()
-			elif archetype == "cleric":
-				# Mend lands on the ally in range whose HP rose the most.
+			elif look == "heal":
+				# A heal lands on the ally in range whose HP rose the most.
 				var best_gain: float = 0.0
 				for other_id: String in current:
 					var other: Dictionary = current[other_id]
@@ -158,7 +165,29 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 			events.append(skill)
 		var telegraph_kind: String = str(before_effects.get("telegraph_kind", ""))
 		# ponytail: rogue stun is 0.3s (3 ticks of 0.1s) against the 0.25s live pulse, so a frame hitch of 4+ ticks between renders lets the stun expire unseen and the cancel fakes a blast; carry a cancel flag in the snapshot if that shows up.
-		if telegraph_kind in ["circle", "line"] and str(after_effects.get("telegraph_kind", "")).is_empty() and life_after == "alive" and float(after_effects.get("stun_remaining", 0.0)) <= 0.0:
+		var resolves: bool = telegraph_kind in ["circle", "line"] and str(after_effects.get("telegraph_kind", "")).is_empty() and life_after == "alive" and float(after_effects.get("stun_remaining", 0.0)) <= 0.0
+		if resolves and faction == "ally":
+			# Red means danger to the player: an ally's delayed area lands in its skill's tint.
+			var landed: AbilityDefinition = BattleSimulation.ABILITIES.get(str(before_effects.get("telegraph_skill", "")), BattleSimulation.signature_for(archetype)) as AbilityDefinition
+			var origin: Vector3 = _world(before_effects.get("telegraph_origin"))
+			var point: Vector3 = _world(before_effects.get("telegraph_point"))
+			events.append({
+				"kind": "skill",
+				"actor_id": actor_id,
+				"faction": faction,
+				"archetype": archetype,
+				"skill_id": str(landed.skill_id) if landed != null else "",
+				"look": "line" if telegraph_kind == "line" else "burst",
+				"color": skill_color(landed, faction) if landed != null else ARCHETYPE_SKILL_COLORS.get(archetype, ENEMY_SKILL_COLOR),
+				"position": origin,
+				"previous_position": origin,
+				"facing": (point - origin).normalized() if not point.is_equal_approx(origin) else facing,
+				"radius": float(before_effects.get("telegraph_radius", 0.0)),
+				"range": origin.distance_to(point),
+				"center": point,
+				"tick": _tick(after, "last_hit_tick"),
+			})
+		elif resolves:
 			events.append({
 				"kind": "enemy_skill",
 				"actor_id": actor_id,
@@ -256,31 +285,71 @@ func _basic_attack(effect: Node3D, event: Dictionary) -> float:
 	return 0.18
 
 
-# Every signature: a cast flash at the caster, a ground shockwave, and a big impact where it lands.
+const ARCHETYPE_SKILL_COLORS: Dictionary = {"knight": KNIGHT_SKILL_COLOR, "ranger": RANGER_SKILL_COLOR, "mage": MAGE_SKILL_COLOR, "rogue": ROGUE_SKILL_COLOR, "cleric": HEAL_COLOR, "general": DODGE_COLOR}
+## The signatures' looks, for an event that names no look (it predates ig-gy0.2).
+const ARCHETYPE_LOOKS: Dictionary = {"knight": "buff", "ranger": "line", "mage": "burst", "rogue": "move", "cleric": "heal"}
+## Hue step between skills of one class, so each skill in a kit reads apart (the signature has none).
+const SKILL_HUE_STEP: float = 0.06
+
+
+## One generic look per leading primitive: a move, a damage shape, a heal, else a buff.
+static func skill_look(skill: AbilityDefinition) -> String:
+	var look: String = "buff"
+	for effect: Dictionary in skill.effects:
+		match str(effect["type"]):
+			"move":
+				return "move"
+			"damage":
+				if look in ["buff", "heal"]:
+					look = str({"line": "line", "circle": "burst", "around_caster": "burst"}.get(str(effect["area"]), "strike"))
+			"heal":
+				if look == "buff":
+					look = "heal"
+	return look
+
+
+## The class colour, turned a step round the hue wheel per kit slot after the signature.
+static func skill_color(skill: AbilityDefinition, faction: String) -> Color:
+	if faction == "enemy":
+		return ENEMY_SKILL_COLOR
+	var base: Color = ARCHETYPE_SKILL_COLORS.get(skill.archetype, ENEMY_SKILL_COLOR)
+	var slot: int = 0
+	for other: AbilityDefinition in BattleSimulation.ABILITIES.values():
+		if other.archetype == skill.archetype:
+			if other == skill:
+				break
+			slot += 1
+	var signature: AbilityDefinition = BattleSimulation.signature_for(skill.archetype)
+	var shift: int = slot - (1 if signature != null else 0)
+	return base if shift == 0 else Color.from_hsv(fposmod(base.h + SKILL_HUE_STEP * shift, 1.0), base.s, base.v)
+
+
+# Every skill: a cast flash at the caster, then its look's shockwave, streak or burst, and an impact.
 func _skill(effect: Node3D, event: Dictionary) -> float:
 	var spot: Vector3 = event.get("position", Vector3.ZERO)
 	var facing: Vector3 = event.get("facing", Vector3.FORWARD)
 	var archetype: String = str(event.get("archetype", ""))
-	var colors: Dictionary = {"knight": KNIGHT_SKILL_COLOR, "ranger": RANGER_SKILL_COLOR, "mage": MAGE_SKILL_COLOR, "rogue": ROGUE_SKILL_COLOR, "cleric": HEAL_COLOR}
-	var color: Color = ENEMY_SKILL_COLOR if str(event.get("faction", "")) == "enemy" else colors.get(archetype, ENEMY_SKILL_COLOR)
-	match archetype:
-		"knight":
+	var color: Color = event.get("color", ARCHETYPE_SKILL_COLORS.get(archetype, ENEMY_SKILL_COLOR))
+	if str(event.get("faction", "")) == "enemy":
+		color = ENEMY_SKILL_COLOR
+	match str(event.get("look", ARCHETYPE_LOOKS.get(archetype, ""))):
+		"buff":
 			_cast_flash(effect, spot, color)
 			_expanding_ring(effect, spot, color, 0.3, float(event.get("radius", 1.0)), 0.4)
 			_impact(effect, spot, color)
 			return 0.45
-		"ranger":
+		"line":
 			return _line_signature(effect, spot, spot + facing * float(event.get("range", 1.0)), event.get("center", spot), 0.12, color)
-		"mage":
+		"burst":
 			return _burst_signature(effect, spot, event.get("center", spot), float(event.get("radius", 1.0)), color)
-		"rogue":
+		"move":
 			# Vanish where it stood, strike where it lands.
 			_cast_flash(effect, event.get("previous_position", spot), color)
 			_expanding_ring(effect, spot, color, 0.3, SKILL_SHOCKWAVE_RADIUS * 0.7, SKILL_SHOCKWAVE_SECONDS)
 			_impact(effect, spot, color)
 			return 0.45
-		"cleric":
-			# Single-target heal: no shockwave.
+		"heal", "strike":
+			# One target: no shockwave.
 			_cast_flash(effect, spot, color)
 			_impact(effect, event.get("center", spot), color)
 			return 0.45

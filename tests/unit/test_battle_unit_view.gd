@@ -6,6 +6,7 @@ func test_enemy_that_dies_plays_its_death_clip_and_hides_overlays() -> void:
 	unit.set_selected(true)
 	assert_true(unit._hp_bar.visible, "a hurt enemy shows its HP bar")
 	assert_true(unit._elite_ring.visible, "alive elite shows its ring")
+	assert_true(unit._guard_bubble.visible, "a damage-reduction status shows the guard bubble")
 	assert_eq(unit._animator.assigned_animation, &"Skeletons_Idle")
 
 	unit.set_actor(_actor({"life": "dead", "effect_state": _live_effects()}), true)
@@ -552,6 +553,7 @@ func _actor(overrides: Dictionary) -> Dictionary:
 		"max_hp": 20.0,
 		"position": [0.0, 0.0],
 		"facing": [1.0, 0.0],
+		"statuses": [{"id": "knight_rally", "kind": "damage_reduction", "source": "", "remaining": 1.0, "magnitude": 0.3}],
 	}
 	actor.merge(overrides, true)
 	return actor
@@ -560,7 +562,6 @@ func _actor(overrides: Dictionary) -> Dictionary:
 func _live_effects() -> Dictionary:
 	return {
 		"elite": true,
-		"guard_remaining": 1.0,
 		"attack_windup_remaining": 0.5,
 		"telegraph_kind": "circle",
 		"telegraph_remaining": 1.0,

@@ -6,7 +6,7 @@
 [sub_resource type="Resource" id="TraitDefinition_devotion"]
 script = ExtResource("2_trait")
 id = &"cleric_devotion"
-display_name = "Devotion"
+display_name = "Lantern Vow"
 magnitude = 0.05
 
 [sub_resource type="Resource" id="TraitDefinition_sanctuary"]
@@ -38,7 +38,7 @@ magnitude = 0.03
 [sub_resource type="Resource" id="TraitDefinition_benediction"]
 script = ExtResource("2_trait")
 id = &"cleric_benediction"
-display_name = "Benediction"
+display_name = "Evensong"
 magnitude = 0.05
 
 [resource]

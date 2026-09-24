@@ -131,11 +131,22 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 	var resaved: Dictionary = _json_round_trip(state.to_dict())
 	assert_eq(BattleSimulation.validate_snapshot(resaved), "", "the migrated battle saves in the new shape")
 	state = BattleState.from_dict(resaved)
-	var outcome: BattleOutcome = BattleSimulation.advance(state, state.max_seconds)
+	# Tick by tick, to rebuild the old guard_reduction, which only ever grew (ig-gy0.2), from the
+	# value the checkpoint carried in.
+	var rallied: Dictionary = {}
+	for raw: Dictionary in ((saved["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"]:
+		rallied[raw["id"]] = float((raw["effect_state"] as Dictionary).get("guard_reduction", 0.0))
+	var outcome: BattleOutcome = null
+	while state.status == "active":
+		outcome = BattleSimulation.advance(state, 0.1)
+		for actor: BattleActor in state.actors:
+			for status: Dictionary in actor.statuses:
+				if status["id"] == "knight_rally":
+					rallied[actor.id] = maxf(float(rallied.get(actor.id, 0.0)), float(status["magnitude"]))
 	# The fixture predates the Ledger (ig-m6o.1): its bookkeeping keys are the only difference.
 	assert_false(outcome.moments.is_empty(), "the fight reports moments")
 	assert_eq(_exact_json(_without_ledger_keys(outcome.to_dict())), _exact_json(expected["outcome"]))
-	assert_eq(_exact_json(_pre_skills_shape(state)), _exact_json(expected["final"]), "final state matches the pre-change finish")
+	assert_eq(_exact_json(_pre_skills_shape(state, rallied)), _exact_json(expected["final"]), "final state matches the pre-change finish")
 
 	GameSession.tick_expeditions(0.1)
 	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
@@ -144,13 +155,25 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 
 
 ## The battle as the pre-skills build recorded it: one signature cooldown and one auto flag per actor.
-func _pre_skills_shape(state: BattleState) -> Dictionary:
+func _pre_skills_shape(state: BattleState, rallied: Dictionary = {}) -> Dictionary:
 	var data: Dictionary = _without_ledger_keys(state.to_dict())
 	for index: int in state.actors.size():
 		var actor: BattleActor = state.actors[index]
 		var actor_data: Dictionary = (data["actors"] as Array)[index]
 		actor_data.erase("skills")
 		actor_data.erase("skill_cooldowns")
+		# ig-gy0.2 bookkeeping the old build never had: the ability lock, combos, statuses.
+		for key: String in ["ability_lock", "combo_skill", "combo_tick", "statuses"]:
+			actor_data.erase(key)
+		(actor_data["effect_state"] as Dictionary).erase("last_skill_id")
+		(actor_data["effect_state"] as Dictionary).erase("telegraph_skill")
+		# The old guard keys: Stand Fast's time left, and the largest reduction it ever gave.
+		var guard_remaining: float = 0.0
+		for status: Dictionary in actor.statuses:
+			if status["id"] == "knight_rally":
+				guard_remaining = float(status["remaining"])
+		(actor_data["effect_state"] as Dictionary)["guard_remaining"] = guard_remaining
+		(actor_data["effect_state"] as Dictionary)["guard_reduction"] = float(rallied.get(actor.id, 0.0))
 		var cooldown: float = 0.0
 		for value: float in actor.skill_cooldowns.values():
 			cooldown += value

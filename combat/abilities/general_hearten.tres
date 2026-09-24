@@ -4,27 +4,21 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"knight_rally"
-display_name = "Stand Fast"
+skill_id = &"general_hearten"
+display_name = "Hearten"
 kind = "ability"
-archetype = "knight"
-counter_tag = "shield"
-cooldown_seconds = 16.0
-range_units = 3.0
-radius_units = 3.0
+archetype = "general"
+tier = 3
+cooldown_seconds = 60.0
+radius_units = 4.0
 self_centered = true
 ai_rule = "allies_near"
-ai_count = 2
-ai_radius = 3.0
-ai_revive_first = true
+ai_count = 3
+ai_radius = 4.0
 effects = Array[Dictionary]([{
-"type": "revive",
-"fraction": 0.25,
-"stop": true
-}, {
 "type": "status",
 "target": "allies_near_caster",
-"status": "damage_reduction",
-"magnitude": 0.3,
-"seconds": 4.0
+"status": "defense",
+"magnitude": 0.1,
+"seconds": 10.0
 }])

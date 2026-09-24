@@ -90,8 +90,9 @@ func test_cleric_kit_survives_a_profile_save_and_reload() -> void:
 	assert_eq(GameSession.validate_saved_state(saved, 3), "")
 	GameSession.from_dict(saved)
 	var actor: Dictionary = (GameSession.get_battle_snapshot(order_id)["actors"] as Array)[0]
-	assert_eq(actor["skills"], [{"id": "cleric_grace", "mode": "auto"}, {"id": "cleric_mend", "mode": "auto"}])
-	assert_true((actor["skill_cooldowns"] as Dictionary).has("cleric_mend"))
+	# A level-0 hero carries its level-1 kit: Grace, Mend and the Censer Swing weaponskill (no cooldown).
+	assert_eq(actor["skills"], [{"id": "cleric_grace", "mode": "auto"}, {"id": "cleric_mend", "mode": "auto"}, {"id": "cleric_censer_swing", "mode": "auto"}])
+	assert_eq((actor["skill_cooldowns"] as Dictionary).keys(), ["cleric_mend"])
 	GameSession.set("_save_deferred_depth", 0)
 
 

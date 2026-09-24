@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"rogue_gutting_strike"
+display_name = "Gutting Strike"
+kind = "weaponskill"
+archetype = "rogue"
+unlock_level = 5
+combo_after = &"rogue_quick_cut"
+ai_rule = "combo"
+effects = Array[Dictionary]([{
+"type": "damage",
+"area": "target",
+"multiplier": 1.0,
+"combo_multiplier": 1.5
+}, {
+"type": "status",
+"target": "target",
+"status": "bleed",
+"magnitude": 0.2,
+"seconds": 6.0,
+"combo": true
+}])
