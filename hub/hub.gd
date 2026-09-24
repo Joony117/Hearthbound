@@ -128,6 +128,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_hero_detail)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	GameSession.roster_changed.connect(_refresh_director_ui)
+	GameSession.roster_changed.connect(_refresh_body)
 	GameSession.expeditions_changed.connect(_on_expeditions_changed)
 	GameSession.battle_changed.connect(_on_battle_changed)
 	_populate_rank_filter(_roster_rank_filter)
@@ -151,6 +152,7 @@ func _ready() -> void:
 	%ConfirmSupply.disabled = true
 	_refresh_zone_unlocks()
 	_refresh_director_ui()
+	_refresh_body()
 	_open(NO_BUILDING)
 	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
 	_show_pending_arena_result()
@@ -220,6 +222,8 @@ func _connect_ui_signals() -> void:
 	_roster_favorites_only.toggled.connect(_on_favorites_only_toggled)
 	_inventory_protection_filter.item_selected.connect(_on_protection_filter_selected)
 	_favorite_hero.toggled.connect(_on_favorite_hero_toggled)
+	%WalkAsHero.pressed.connect(_on_walk_as_hero_pressed)
+	%StepOut.pressed.connect(_on_step_out_pressed)
 	%StartRecoveryWindow.pressed.connect(_on_start_recovery_window_pressed)
 	_supply_kind.add_item("Healing", 0)
 	_supply_kind.set_item_metadata(0, "healing")
@@ -291,6 +295,8 @@ func _refresh_hero_list(list: ItemList) -> void:
 			flags.append("★")
 		if busy:
 			flags.append("Away")
+		elif GameSession.is_embodied(hero):
+			flags.append("In town")
 		elif protected:
 			flags.append("Preset")
 		var suffix: String = " · %s" % ", ".join(flags) if not flags.is_empty() else ""
@@ -557,6 +563,7 @@ func _refresh_hero_detail() -> void:
 	_hero_availability.text = "Select exactly one hero." if hero == null else _hero_state_text(hero)
 	_favorite_hero.disabled = hero == null
 	_favorite_hero.set_pressed_no_signal(hero.favorite if hero != null else false)
+	%WalkAsHero.disabled = hero == null or GameSession.is_hero_busy(hero) or GameSession.is_embodied(hero)
 	var unavailable: bool = hero == null or GameSession.is_hero_busy(hero)
 	%Unequip.disabled = unavailable
 	%UnequipAll.disabled = unavailable
@@ -571,6 +578,8 @@ func _refresh_hero_detail() -> void:
 func _hero_state_text(hero: Hero) -> String:
 	if GameSession.is_hero_busy(hero):
 		return "Away on expedition. Equipment and advancement are locked."
+	if GameSession.is_embodied(hero):
+		return "Your body in town. Gear and rank-up are open; expeditions and sacrifice are not."
 	if GameSession.is_hero_protected(hero):
 		return "Protected by favorite or team preset."
 	return "Ready"
@@ -719,14 +728,46 @@ func _open(building_id: StringName) -> void:
 	var focus: StringName = _open_building if _open_building != NO_BUILDING else closing
 	if focus != NO_BUILDING:
 		_building_button(focus).grab_focus()
+	_sync_town_walk()
 	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
+
+
+## The body walks only in the bare town: never behind an open building or the pause menu.
+func _sync_town_walk() -> void:
+	%Town.input_enabled = _open_building == NO_BUILDING and not _pause_menu.visible
+
+
+## The town follows GameSession's body: its hero walks, or the overview camera shows.
+func _refresh_body() -> void:
+	var body: Hero = GameSession.hero_by_id(GameSession.embodied_hero_id)
+	%Town.embody(body)
+	%StepOut.visible = body != null
+	%Hint.text = "WASD · Walk   Wheel · Zoom   1–7 · Buildings   Esc · Close / Pause" if body != null else "1–7 · Buildings   Esc · Close / Pause"
+
+
+func _on_step_out_pressed() -> void:
+	if not GameSession.step_out():
+		_status.text = GameSession.last_action_error
+
+
+## Walking is what the button is for, so the building closes and the town shows the body.
+func _on_walk_as_hero_pressed() -> void:
+	var hero: Hero = _selected_hero()
+	if hero == null:
+		return
+	if GameSession.embody_hero(hero.instance_id):
+		_open(NO_BUILDING)
+		_status.text = "You walk the town as %s." % hero.hero_name
+	else:
+		_status.text = GameSession.last_action_error
 
 
 ## The pause dim stops clicks; the building list's number keys are shortcuts, so they are disabled too.
 func _on_pause_menu_visibility_changed() -> void:
 	for building_id: StringName in BUILDING_PANELS:
 		_building_button(building_id).disabled = _pause_menu.visible
+	_sync_town_walk()
 
 
 func _building_button(building_id: StringName) -> Button:
@@ -1262,16 +1303,21 @@ func _refresh_preset_lists() -> void:
 func _preset_status(preset: Dictionary) -> String:
 	var missing: bool = false
 	var away: bool = false
+	var body: String = ""
 	for hero_id: String in _string_array(preset.get("hero_ids", [])):
 		var hero: Hero = GameSession.hero_by_id(hero_id)
 		if hero == null:
 			missing = true
 		elif GameSession.is_hero_busy(hero):
 			away = true
+		elif GameSession.is_embodied(hero):
+			body = hero.hero_name
 	if missing:
 		return "Missing"
 	if away:
 		return "Away"
+	if not body.is_empty():
+		return "In town: %s" % body
 	return "Ready"
 
 
@@ -2063,6 +2109,10 @@ func _on_recover_pressed() -> void:
 	if team.size() > MAX_TEAM_SIZE:
 		_status.text = "Select no more than 5 heroes for recovery."
 		return
+	var body_error: String = GameSession.body_refusal(team)
+	if not body_error.is_empty():
+		_status.text = body_error
+		return
 	for hero: Hero in team:
 		if GameSession.is_hero_busy(hero):
 			_status.text = "Recovery cannot start while a team member is away."
@@ -2089,7 +2139,9 @@ func _do_recover(cache: LostCache, team: Array[Hero]) -> void:
 		GameSession.RECOVERY_NO_CACHE:
 			_status.text = "Select one lost cache to recover."
 		GameSession.RECOVERY_INVALID_TEAM:
-			if team.is_empty():
+			if not GameSession.last_action_error.is_empty():
+				_status.text = GameSession.last_action_error
+			elif team.is_empty():
 				_status.text = "Select at least one hero for recovery."
 			elif team.size() > MAX_TEAM_SIZE:
 				_status.text = "Select no more than 5 heroes for recovery."

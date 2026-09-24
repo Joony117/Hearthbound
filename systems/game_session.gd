@@ -20,6 +20,8 @@ const RECOVERY_INSUFFICIENT_POWER: StringName = &"insufficient_power"
 const MAX_EXPEDITION_REPORTS: int = 50
 const EXPEDITION_PULSE_SECONDS: float = 0.25
 const PERIODIC_SAVE_SECONDS: float = 15.0
+## embodied_hero_id when the player walks the town as no one (the overview camera).
+const NO_BODY: String = ""
 const KNOWN_ZONE_IDS: Array[String] = ["verdant_outskirts", "ashfall_reaches", "sundered_vault", "fallen_citadel", "frontier_march"]
 
 var roster: Array[Hero] = []
@@ -40,6 +42,9 @@ var stranded_incidents: Array[Dictionary] = []
 var rescue_clock_seconds: float = 0.0
 var recovery_clock_seconds: float = 0.0
 var recovery_clock_paused: bool = false
+## The roster hero the player walks the town as (ARCHITECTURE.md § The town is the interface). It
+## can be geared and ranked up, but never sent out or sacrificed; NO_BODY when there is none.
+var embodied_hero_id: String = NO_BODY
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
@@ -164,9 +169,13 @@ func advance_turn(_balance: BalanceTable) -> void:
 
 
 func recover_cache(cache: LostCache, team: Array[Hero], balance: BalanceTable) -> StringName:
+	last_action_error = ""
 	if cache == null or not lost_caches.has(cache):
 		return RECOVERY_NO_CACHE
 	if team.is_empty() or team.size() > 5:
+		return RECOVERY_INVALID_TEAM
+	last_action_error = body_refusal(team)
+	if not last_action_error.is_empty():
 		return RECOVERY_INVALID_TEAM
 	for hero: Hero in team:
 		if is_hero_busy(hero):
@@ -407,6 +416,8 @@ func kill_hero(hero: Hero, zone_id: StringName, balance: BalanceTable) -> void:
 		recovery_clock_paused = true
 	hero.equipped.clear()
 	roster.erase(hero)
+	if hero.instance_id == embodied_hero_id:
+		embodied_hero_id = NO_BODY
 	if roster.is_empty() and stones < balance.summon_pull_cost:
 		stones = balance.summon_pull_cost
 	_notify_roster_changed()
@@ -417,6 +428,46 @@ func hero_by_id(id: String) -> Hero:
 		if hero.instance_id == id:
 			return hero
 	return null
+
+
+func is_embodied(hero: Hero) -> bool:
+	return hero != null and hero.instance_id == embodied_hero_id
+
+
+## Deliberate only: the player picks the body. Refused for a hero not on the roster or away; a
+## stationed keeper is allowed (DECISIONS.md 2026-09-23 item 5).
+func embody_hero(id: String) -> bool:
+	last_action_error = ""
+	var hero: Hero = hero_by_id(id)
+	if hero == null:
+		last_action_error = "That hero is not on the roster."
+		return false
+	if is_hero_busy(hero):
+		last_action_error = "%s is away and cannot walk the town." % hero.hero_name
+		return false
+	return _commit_profile_mutation(_set_body_in_memory.bind(hero.instance_id))
+
+
+## False, with last_action_error, when the load is blocked or the save fails (nothing changes then).
+func step_out() -> bool:
+	last_action_error = ""
+	if embodied_hero_id == NO_BODY:
+		return true
+	return _commit_profile_mutation(_set_body_in_memory.bind(NO_BODY))
+
+
+## Checked path only: _commit_profile_mutation refuses a blocked load and rolls back a failed save.
+func _set_body_in_memory(id: String) -> void:
+	embodied_hero_id = id
+	_notify_roster_changed()
+
+
+## The refusal every dispatch entry point shares, naming the body; "" when the party is free of it.
+func body_refusal(team: Array[Hero]) -> String:
+	for hero: Hero in team:
+		if is_embodied(hero):
+			return "%s is your body in town. Step out first." % hero.hero_name
+	return ""
 
 
 func is_hero_busy(hero: Hero) -> bool:
@@ -434,7 +485,7 @@ func is_hero_busy(hero: Hero) -> bool:
 func is_hero_protected(hero: Hero) -> bool:
 	if hero == null:
 		return false
-	if hero.favorite or is_hero_busy(hero):
+	if hero.favorite or is_hero_busy(hero) or is_embodied(hero):
 		return true
 	for preset: Dictionary in team_presets:
 		if hero.instance_id in _string_array(preset.get("hero_ids")):
@@ -622,6 +673,9 @@ func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs:
 			if hero == null or is_hero_busy(hero):
 				return _force_preview_error("A selected hero is missing or already away.")
 			team.append(hero)
+	var body_error: String = body_refusal(team)
+	if not body_error.is_empty():
+		return _force_preview_error(body_error)
 	if team.size() > zone.hero_cap:
 		return _force_preview_error("This force exceeds the mission capacity.", team.size(), zone.hero_cap, squads.size())
 	var policies_error: String = _validate_battle_policies(policies, seen)
@@ -853,6 +907,9 @@ func dispatch_rescue(incident_id: String, preset_id: String, loadout: Dictionary
 			last_action_error = "A rescue hero is missing or already away."
 			return ""
 		team.append(hero)
+	last_action_error = body_refusal(team)
+	if not last_action_error.is_empty():
+		return ""
 	var loadout_error: String = _validate_loadout(loadout)
 	if not loadout_error.is_empty():
 		last_action_error = loadout_error
@@ -1151,7 +1208,9 @@ func _hero_map() -> Dictionary[String, Hero]:
 func _hero_protection_reasons() -> Dictionary[String, String]:
 	var reasons: Dictionary[String, String] = {}
 	for hero: Hero in roster:
-		if hero.favorite:
+		if is_embodied(hero):
+			reasons[hero.instance_id] = "town body"
+		elif hero.favorite:
 			reasons[hero.instance_id] = "favorite"
 		elif is_hero_busy(hero):
 			reasons[hero.instance_id] = "away"
@@ -1841,6 +1900,7 @@ func to_dict() -> Dictionary:
 		"recovery_clock_seconds": recovery_clock_seconds,
 		"recovery_clock_paused": recovery_clock_paused,
 		"saved_at_unix": saved_at_unix,
+		"embodied_hero_id": embodied_hero_id,
 	}
 
 
@@ -1945,6 +2005,10 @@ func from_dict(data: Dictionary) -> void:
 			if entry is Dictionary:
 				stranded_incidents.append((entry as Dictionary).duplicate(true))
 		rescue_clock_seconds = maxf(Item.float_field(data, "rescue_clock_seconds", 0.0, "game session"), 0.0)
+	# Additive key. Missing, stale or away loads as no body: the town is then the overview.
+	var raw_body: Variant = data.get("embodied_hero_id")
+	var body: Hero = hero_by_id(raw_body as String) if raw_body is String else null
+	embodied_hero_id = body.instance_id if body != null and not is_hero_busy(body) else NO_BODY
 	_notify_roster_changed()
 	_notify_expeditions_changed()
 

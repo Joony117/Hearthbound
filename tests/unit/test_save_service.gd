@@ -648,6 +648,65 @@ func test_a_save_without_professions_derives_callings_that_hold_after_resave() -
 	assert_eq(on_disk["roster"][0]["calling"], str(derived))
 
 
+func test_the_embodied_hero_survives_a_disk_round_trip() -> void:
+	var walker := Hero.new("Walker", 0)
+	GameSession.add_hero(walker)
+	GameSession.add_hero(Hero.new("Bystander", 0))
+	assert_true(GameSession.embody_hero(walker.instance_id))
+	assert_true(SaveService.save())
+	var on_disk: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
+	assert_eq(on_disk["embodied_hero_id"], walker.instance_id)
+
+	# _reload_from_disk inlined, so the cleared state is checked: the body must come from the file.
+	var saved_bytes: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
+	GameSession.from_dict({"roster": []})
+	assert_eq(GameSession.embodied_hero_id, GameSession.NO_BODY, "clearing drops the body")
+	_write_save(SaveService.SAVE_PATH, saved_bytes)
+	assert_true(SaveService.load_game())
+	assert_eq(GameSession.embodied_hero_id, walker.instance_id)
+	assert_true(GameSession.is_embodied(GameSession.hero_by_id(walker.instance_id)))
+	assert_push_error_count(0)
+
+
+func test_a_save_without_a_body_loads_with_none_and_no_complaint() -> void:
+	var hero := Hero.new("Elder", 0)
+	GameSession.add_hero(hero)
+	var state: Dictionary = GameSession.to_dict()
+	state["version"] = SaveService.SAVE_VERSION
+	state.erase("embodied_hero_id")
+	# A body in memory before the load, so only the load itself can leave none.
+	assert_true(GameSession.embody_hero(hero.instance_id))
+	_write_save(SaveService.SAVE_PATH, JSON.stringify(state).to_utf8_buffer())
+	assert_true(SaveService.load_game())
+	assert_not_null(GameSession.hero_by_id(hero.instance_id))
+	assert_eq(GameSession.embodied_hero_id, GameSession.NO_BODY)
+	assert_push_error_count(0)
+	assert_push_warning_count(0)
+
+
+func test_a_failed_save_rolls_back_embody_and_step_out() -> void:
+	var walker := Hero.new("Walker", 0)
+	GameSession.add_hero(walker)
+	assert_true(SaveService.save())
+	var before: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
+	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
+	assert_false(GameSession.embody_hero(walker.instance_id))
+	assert_push_error("Save failed")
+	assert_eq(GameSession.embodied_hero_id, GameSession.NO_BODY, "the failed embody is undone")
+	assert_ne(GameSession.last_action_error, "")
+	assert_eq(_read_file_bytes(SaveService.SAVE_PATH), before)
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+
+	assert_true(GameSession.embody_hero(walker.instance_id))
+	var embodied: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
+	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
+	assert_false(GameSession.step_out())
+	assert_push_error("Save failed")
+	assert_eq(GameSession.embodied_hero_id, walker.instance_id, "the failed step out is undone")
+	assert_eq(_read_file_bytes(SaveService.SAVE_PATH), embodied)
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+
+
 ## Clearing the session autosaves over the file, so the saved bytes are put back before loading.
 func _reload_from_disk() -> void:
 	var saved_bytes: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
@@ -739,6 +798,14 @@ func _strand_and_dispatch_rescue(weak_rescuer: bool = false) -> String:
 	var rescue_preset: String = GameSession.save_team_preset("", "Rescue", [rescuer.instance_id], "sundered_vault")
 	var rescue_order_id: String = GameSession.dispatch_rescue(str(incident["id"]), rescue_preset, loadout)
 	assert_ne(rescue_order_id, "", GameSession.last_action_error)
+	if weak_rescuer:
+		# A level-0 rescuer still wins about 1 run in 40 on a random seed (ig-qjh); at 1 HP it
+		# cannot. Each tick reloads the battle from the order, so the pin holds.
+		for order: Dictionary in GameSession.expedition_orders:
+			if str(order["id"]) == rescue_order_id:
+				for actor: Variant in (order["battle"] as Dictionary)["actors"]:
+					if str((actor as Dictionary).get("hero_id", "")) == rescuer.instance_id:
+						(actor as Dictionary)["hp"] = 1.0
 	return rescue_order_id
 
 

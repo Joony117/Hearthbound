@@ -311,6 +311,7 @@ static func _build_selected_hero(content: Control) -> void:
 	availability.theme_type_variation = &"MutedLabel"
 	availability.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_button(box, "Favorite hero", "FavoriteHero", true, true)
+	_button(box, "Walk as this hero", "WalkAsHero", true)
 	var equipped := ItemList.new()
 	_add(box, equipped, "EquippedList", true)
 	equipped.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -398,7 +399,9 @@ static func _build_footer(root: Control) -> void:
 	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status.theme_type_variation = &"MutedLabel"
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var hint := _label(footer, "1–7 · Buildings   Esc · Close / Pause", "Hint")
+	var step_out := _button(footer, "Step out", "StepOut", true)
+	step_out.visible = false
+	var hint := _label(footer, "1–7 · Buildings   Esc · Close / Pause", "Hint", true)
 	hint.theme_type_variation = &"MutedLabel"
 
 
