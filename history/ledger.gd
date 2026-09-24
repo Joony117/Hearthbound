@@ -77,11 +77,7 @@ static func records_for_hero(ledger: Array[Dictionary], hero_id: String) -> Arra
 ## one zone collapse into one line. names maps hero ids to display names; the ledger's own
 ## summoned/died records fill the gaps.
 static func history_lines(ledger: Array[Dictionary], hero_id: String, names: Dictionary, rank_names: PackedStringArray, max_lines: int) -> Array[String]:
-	var all_names: Dictionary = {}
-	for record: Dictionary in ledger:
-		if record.has("name"):
-			all_names[str(record.get("hero", ""))] = str(record.get("name"))
-	all_names.merge(names, true)
+	var all_names: Dictionary = known_names(ledger, names)
 	var records: Array[Dictionary] = records_for_hero(ledger, hero_id)
 	var lines: Array[String] = []
 	var routine_zone: String = ""
@@ -93,7 +89,7 @@ static func history_lines(ledger: Array[Dictionary], hero_id: String, names: Dic
 		arrived = arrived or kind == "summoned"
 		if is_routine(record) and _array(record, "team").has(hero_id) and str(record.get("zone", "")) == routine_zone:
 			routine_count += 1
-			lines[lines.size() - 1] = "Won %d battles at %s." % [routine_count, _zone_name(routine_zone)]
+			lines[lines.size() - 1] = "Won %d battles at %s." % [routine_count, zone_name(routine_zone)]
 			continue
 		if lines.size() >= max_lines:
 			break
@@ -103,6 +99,17 @@ static func history_lines(ledger: Array[Dictionary], hero_id: String, names: Dic
 	if not arrived and lines.size() < max_lines:
 		lines.append("Arrived before the records begin.")
 	return lines
+
+
+## names (hero id -> display name) filled in with the names the summoned and died records carry,
+## so a hero no longer on the roster is still named.
+static func known_names(ledger: Array[Dictionary], names: Dictionary) -> Dictionary:
+	var all_names: Dictionary = {}
+	for record: Dictionary in ledger:
+		if record.has("name"):
+			all_names[str(record.get("hero", ""))] = str(record.get("name"))
+	all_names.merge(names, true)
+	return all_names
 
 
 static func _line(record: Dictionary, hero_id: String, names: Dictionary, rank_names: PackedStringArray) -> String:
@@ -117,14 +124,14 @@ static func _line(record: Dictionary, hero_id: String, names: Dictionary, rank_n
 					return "Given up as Essence to %s." % _who(str(record.get("by", "")), names)
 				"starvation":
 					return "Starved."
-			return "Died at %s." % _zone_name(str(record.get("zone", "")))
+			return "Died at %s." % zone_name(str(record.get("zone", "")))
 		"battle":
 			return _battle_line(record, hero_id, names)
 	return "%s." % str(record.get("kind", "Something")).capitalize()
 
 
 static func _battle_line(record: Dictionary, hero_id: String, names: Dictionary) -> String:
-	var zone: String = _zone_name(str(record.get("zone", "")))
+	var zone: String = zone_name(str(record.get("zone", "")))
 	var rescued: Array = _array(record, "rescued")
 	var rescuers: Array = _array(record, "rescuers")
 	if rescued.has(hero_id):
@@ -162,7 +169,7 @@ static func _who_list(ids: Array, names: Dictionary) -> String:
 	return ", ".join(parts)
 
 
-static func _zone_name(zone_id: String) -> String:
+static func zone_name(zone_id: String) -> String:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(zone_id)) if not zone_id.is_empty() else null
 	return zone.display_name if zone != null else "an unknown place"
 

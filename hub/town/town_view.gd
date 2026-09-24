@@ -28,9 +28,16 @@ const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
 const ARRIVE_RADIUS: float = 2.8
 ## The body walks a 48 m square around the town's origin, keeping its 0.4 m radius inside it.
 const WALK_HALF_EXTENT: float = 23.6
+## Where a bonded partner stands without a House: beside the spawn, outside TownPartner.REARM_DISTANCE
+## so the greeting waits for the player to walk over.
+const PARTNER_SPAWN_OFFSET: Vector3 = Vector3(4.0, 0.0, -3.0)
+## In front of its House, clear of the 4.5 m pick box.
+const PARTNER_DOOR_OFFSET: Vector3 = Vector3(0.0, 0.0, 2.8)
 
 ## The embodied hero, or null when the town is seen from the overview camera.
 var body: TownHero
+## The body's bonded partner standing in town, or null.
+var partner: TownPartner
 ## False while a building or the pause menu is open: no building click counts, and the body
 ## neither walks nor zooms.
 var input_enabled: bool = true:
@@ -109,6 +116,25 @@ func embody(hero: Hero) -> void:
 	body.global_position = standing
 	body.camera.make_current()
 	body.arrived.connect(building_selected.emit)
+
+
+## Stands hero in town as the body's bonded partner, saying line on meeting; null (or no body)
+## removes it. hub.gd picks who and what; the same hero again keeps its figure, so a refresh does
+## not replay the greeting. It stands at its House if it has one, else beside the spawn.
+func show_partner(hero: Hero, line: String) -> void:
+	if partner != null and (hero == null or body == null or partner.hero_id != hero.instance_id):
+		remove_child(partner)
+		partner.queue_free()
+		partner = null
+	if hero == null or body == null:
+		return
+	if partner == null:
+		partner = TownPartner.create(hero)
+		add_child(partner)
+	partner.line = line
+	partner.follow(body)
+	var house: Node3D = _placed.get(str(hero.home))
+	partner.position = house.position + PARTNER_DOOR_OFFSET if house != null else BODY_SPAWN + PARTNER_SPAWN_OFFSET
 
 
 ## Spawns what is new in buildings (GameSession.town_buildings) and frees what is gone. It only draws.

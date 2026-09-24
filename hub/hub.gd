@@ -110,6 +110,10 @@ var _selected_hero_ids: Array[String] = []
 var _selected_item_ids: Array[String] = []
 var _editing_preset_id: String = ""
 var _open_building: StringName = NO_BUILDING
+## The walking hero's bonded partner and greeting from the last roster refresh ("" for none).
+## View state, not a tally: _refresh_partner rebuilds it from the Ledger on every roster change.
+var _partner_id: String = ""
+var _partner_line: String = ""
 var _order_structure_key: String = ""
 # True while the placed-building picker lists who to take out, false while it lists who to put in.
 var _placed_picker_clears: bool = false
@@ -140,6 +144,9 @@ func _ready() -> void:
 	GameSession.expeditions_changed.connect(_refresh_wood)
 	GameSession.expeditions_changed.connect(_refresh_placed_panel)
 	GameSession.expeditions_changed.connect(_on_expeditions_changed)
+	GameSession.roster_changed.connect(_refresh_partner)
+	# expeditions_changed fires on every 0.25 s pulse: it only re-checks whether the partner is away.
+	GameSession.expeditions_changed.connect(_show_partner)
 	GameSession.battle_changed.connect(_on_battle_changed)
 	_populate_rank_filter(_roster_rank_filter)
 	_populate_rank_filter(_inventory_rank_filter)
@@ -164,6 +171,7 @@ func _ready() -> void:
 	_refresh_director_ui()
 	_refresh_body()
 	_refresh_town()
+	_refresh_partner()
 	_open(NO_BUILDING)
 	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
 	_show_pending_arena_result()
@@ -584,7 +592,7 @@ func _refresh_equipped() -> void:
 
 func _refresh_hero_detail() -> void:
 	var hero: Hero = _selected_hero()
-	_hero_detail.text = "" if hero == null else "%s\n\nHistory:\n%s" % [_hero_detail_text(hero), "\n".join(_history_lines(hero))]
+	_hero_detail.text = "" if hero == null else "%s\n\n%sHistory:\n%s" % [_hero_detail_text(hero), _bond_text(hero), "\n".join(_history_lines(hero))]
 	_hero_availability.text = "Select exactly one hero." if hero == null else _hero_state_text(hero)
 	_favorite_hero.disabled = hero == null
 	_favorite_hero.set_pressed_no_signal(hero.favorite if hero != null else false)
@@ -620,10 +628,53 @@ func _hero_state_text(hero: Hero) -> String:
 
 ## The Ledger's reader (SYSTEMS.md § The Ledger): newest first, at most 10 lines.
 func _history_lines(hero: Hero) -> Array[String]:
+	return Ledger.history_lines(GameSession.ledger, hero.instance_id, _roster_names(), BALANCE.rank_names, 10)
+
+
+## The bond and dream lines above History (SYSTEMS.md § Bonds and dreams, slice 1), each block
+## followed by a blank line; "" when the hero has neither. The selected hero only: never per row.
+func _bond_text(hero: Hero) -> String:
+	var living: Dictionary = _roster_names()
+	var names: Dictionary = Ledger.known_names(GameSession.ledger, living)
+	var text: String = ""
+	var bond: Dictionary = Bonds.bond(GameSession.ledger, hero.instance_id, living, BALANCE)
+	if not bond.is_empty():
+		text += "%s\n\n" % Bonds.bond_line(bond, names, GameSession.is_hero_busy(GameSession.hero_by_id(bond["partner"])))
+	var dream: Array[String] = Bonds.dream_lines(Bonds.dream(GameSession.ledger, hero.instance_id), hero.instance_id, names, BALANCE)
+	if not dream.is_empty():
+		text += "%s\n\n" % "\n".join(dream)
+	return text
+
+
+## The walking hero's bonded partner and greeting, read from the Ledger on roster_changed only
+## (every settle that writes a record also changes the roster); never per frame or per pulse.
+func _refresh_partner() -> void:
+	_partner_id = ""
+	_partner_line = ""
+	var walker: Hero = GameSession.hero_by_id(GameSession.embodied_hero_id)
+	if walker != null:
+		var living: Dictionary = _roster_names()
+		var bond: Dictionary = Bonds.bond(GameSession.ledger, walker.instance_id, living, BALANCE)
+		if not bond.is_empty():
+			_partner_id = bond["partner"]
+			_partner_line = Bonds.greeting(bond, Ledger.known_names(GameSession.ledger, living))
+	_show_partner()
+
+
+## The partner stands in town while not away. No Ledger read; TownView never reads GameSession.
+func _show_partner() -> void:
+	var partner: Hero = GameSession.hero_by_id(_partner_id)
+	if partner != null and GameSession.is_hero_busy(partner):
+		partner = null
+	%Town.show_partner(partner, _partner_line)
+
+
+## Roster hero id -> display name.
+func _roster_names() -> Dictionary:
 	var names: Dictionary = {}
 	for member: Hero in GameSession.roster:
 		names[member.instance_id] = member.hero_name
-	return Ledger.history_lines(GameSession.ledger, hero.instance_id, names, BALANCE.rank_names, 10)
+	return names
 
 
 ## The roster tooltip, and the head of the selected-hero detail (which adds the History below it).

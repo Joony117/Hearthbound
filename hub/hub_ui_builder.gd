@@ -336,8 +336,14 @@ static func _build_selected_hero(content: Control) -> void:
 	unequip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var all := _button(actions, "Unequip all", "UnequipAll", true)
 	all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var detail := _label(box, "", "HeroDetail", true)
+	# Stats, bond, dream and ten History lines run past the screen, so the detail scrolls.
+	var detail_scroll := ScrollContainer.new()
+	_add(box, detail_scroll, "HeroDetailScroll")
+	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var detail := _label(detail_scroll, "", "HeroDetail", true)
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
 ## The selected hero's skill bar, over the middle view while it is open (hub.gd hides it with its

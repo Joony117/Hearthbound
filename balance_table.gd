@@ -166,3 +166,10 @@ extends Resource
 @export var skill_ability_lock_seconds: float = 1.0
 @export var skill_combo_window_seconds: float = 6.0
 @export var skill_status_tick_seconds: float = 1.0
+# Bonds and dreams, slice 1 (SYSTEMS.md § Bonds and dreams, slice 1; every row PROVISIONAL).
+@export var bond_points_hard_battle: int = 1
+@export var bond_points_saved: int = 3
+@export var bond_points_rescued: int = 5
+@export var bond_points_death_witnessed: int = 5
+@export var bond_threshold: int = 8
+@export var dream_fight_beside_battles: int = 3
