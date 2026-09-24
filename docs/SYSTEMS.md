@@ -4794,6 +4794,15 @@ itself out. The price is one free building per type, once.
 
 The start stock of 40 now buys four Houses, or a second Lumbermill and two Houses.
 
+### Moving a building (`ig-6m2.2`)
+
+Any building, the seven halls included, can move to a free hex. It keeps its id, so its keeper,
+workers, residents and level go with it.
+
+> ⚠️ **PROVISIONAL** — moving is free in this slice: no wood, no cooldown, no build time.
+> · **Settled by:** the owner playing with movable halls. If free moves feel cheap, a price comes
+> with its own ruling.
+
 ### What the town costs the spine
 
 **The town makes no Summon Stones, Essence or parts.** No income number in § Summon Stones moves,
