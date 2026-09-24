@@ -57,9 +57,21 @@ const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
 const ARRIVE_RADIUS: float = 2.8
 ## A walker this close to a WorkSpot stands at it.
 const AT_SPOT: float = 0.05
+## The overview camera (ig-6m2.8.1). Presentation only: tune by screenshot. hub.tscn sets the start
+## framing and the pitch; these only bound how far the player moves it.
+const OVERVIEW_HEIGHT_MIN: float = 4.5
+const OVERVIEW_HEIGHT_MAX: float = 27.0
+## Metres a second at the start height (9 m); faster higher up, so a screen crosses in the same time.
+const OVERVIEW_PAN_SPEED: float = 20.0
+## Each wheel step moves this share of the distance to the focus.
+const OVERVIEW_ZOOM_STEP: float = 0.1
+## Multiplies the shared atlas on the ground only, towards a natural green.
+const GRASS_TINT: Color = Color(0.72, 0.85, 0.62)
 
 ## The embodied hero, or null when the town is seen from the overview camera.
 var body: TownHero
+## True from a right press over bare town to its release: only such a drag grabs the ground.
+var _grabbing: bool = false
 ## The body's bonded partner's walker, or null (no body, no partner, or not shown).
 var partner: TownWalker:
 	get:
@@ -69,6 +81,7 @@ var partner: TownWalker:
 var input_enabled: bool = true:
 	set(value):
 		input_enabled = value
+		_grabbing = false
 		if body != null:
 			body.controls_enabled = value
 ## The building type being placed, or &"" when a click picks buildings.
@@ -120,10 +133,40 @@ func _ready() -> void:
 	var ground := MultiMeshInstance3D.new()
 	ground.name = "HexGround"
 	ground.multimesh = multimesh
+	var grass := tile_mesh.surface_get_material(0).duplicate() as StandardMaterial3D
+	grass.albedo_color = GRASS_TINT
+	ground.material_override = grass
 	add_child(ground)
 
 
+func _process(delta: float) -> void:
+	if body != null or not input_enabled:
+		return
+	var input := Vector2.ZERO
+	for key: Key in TownHero.MOVE_KEYS:
+		if Input.is_physical_key_pressed(key):
+			input += TownHero.MOVE_KEYS[key]
+	var camera: Camera3D = get_viewport().get_camera_3d()
+	if input == Vector2.ZERO or camera == null:
+		return
+	var right: Vector3 = Vector3(camera.global_basis.x.x, 0.0, camera.global_basis.x.z).normalized()
+	var back: Vector3 = Vector3(camera.global_basis.z.x, 0.0, camera.global_basis.z.z).normalized()
+	var height: float = camera.global_position.y - global_position.y
+	pan_overview((right * input.x + back * input.y).normalized() * OVERVIEW_PAN_SPEED * height / 9.0 * delta)
+
+
+## Arrows pan the overview, so the GUI must not also move focus with them (as TownHero does for
+## the body). _process polls Input, which already has them.
+func _input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if body == null and input_enabled and key != null and key.physical_keycode in TownHero.ARROW_KEYS:
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if body == null and input_enabled and _overview_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	var click := event as InputEventMouseButton
 	if click == null or not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
 		return
@@ -150,11 +193,84 @@ func _unhandled_input(event: InputEvent) -> void:
 		body.walk_to((get_node(NodePath(building_id)) as Node3D).global_position, ARRIVE_RADIUS, building_id)
 
 
+## The wheel zooms and a right drag grabs the ground; true when event was one of them. Both start
+## only over bare town: a wheel or a right press over any control (even a PASS gap) arrives here too.
+func _overview_input(event: InputEvent) -> bool:
+	var press := event as InputEventMouseButton
+	if press != null and press.button_index == MOUSE_BUTTON_RIGHT:
+		_grabbing = press.pressed and get_viewport().gui_get_hovered_control() == null
+		return true
+	var drag := event as InputEventMouseMotion
+	if drag != null and _grabbing and (drag.button_mask & MOUSE_BUTTON_MASK_RIGHT) != 0:
+		var before: Variant = ground_point(drag.position - drag.relative)
+		var now: Variant = ground_point(drag.position)
+		if before != null and now != null:
+			pan_overview((before as Vector3) - (now as Vector3))
+		return true
+	var wheel := press
+	# A wheel over any control still arrives here (mouse_force_pass_scroll_events), so it zooms only
+	# over bare town: the UI root ignores the mouse there, so nothing is hovered.
+	if wheel == null or not wheel.pressed or get_viewport().gui_get_hovered_control() != null:
+		return false
+	if wheel.button_index == MOUSE_BUTTON_WHEEL_UP:
+		zoom_overview(1)
+	elif wheel.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		zoom_overview(-1)
+	else:
+		return false
+	return true
+
+
+## Moves the overview camera by offset on the ground (town space, x and z only). No-op with a body.
+func pan_overview(offset: Vector3) -> void:
+	var camera: Camera3D = get_viewport().get_camera_3d()
+	if body != null or camera == null:
+		return
+	camera.global_position += global_basis * Vector3(offset.x, 0.0, offset.z)
+	_clamp_overview(camera)
+
+
+## Moves the overview camera along its view direction, OVERVIEW_ZOOM_STEP of the way to the focus a
+## step; positive steps zoom in. No-op with a body.
+func zoom_overview(steps: int) -> void:
+	var camera: Camera3D = get_viewport().get_camera_3d()
+	if body != null or camera == null:
+		return
+	var forward: Vector3 = -camera.global_basis.z
+	for step: int in absi(steps):
+		var focus: Vector3 = _focus(camera)
+		camera.global_position += forward * camera.global_position.distance_to(focus) * OVERVIEW_ZOOM_STEP * signi(steps)
+	_clamp_overview(camera)
+
+
+## Where the camera looks at the ground, in global space. The pitch always looks down.
+func _focus(camera: Camera3D) -> Vector3:
+	var hit: Variant = Plane(Vector3.UP, global_position.y).intersects_ray(camera.global_position, -camera.global_basis.z)
+	return camera.global_position if hit == null else hit as Vector3
+
+
+## Height within the bounds (sliding along the view, so the focus stays), then the focus within the
+## map extent of the town origin (sliding on the ground, so the height stays).
+func _clamp_overview(camera: Camera3D) -> void:
+	var forward: Vector3 = -camera.global_basis.z
+	var height: float = camera.global_position.y - global_position.y
+	var bounded: float = clampf(height, OVERVIEW_HEIGHT_MIN, OVERVIEW_HEIGHT_MAX)
+	if bounded != height and forward.y < 0.0:
+		camera.global_position += forward * (height - bounded) / -forward.y
+	var focus: Vector3 = to_local(_focus(camera))
+	var flat := Vector2(focus.x, focus.z)
+	var extent: float = BALANCE.town_map_radius * TownRules.HEX_SIZE * sqrt(3.0)
+	if flat.length() > extent:
+		var back: Vector2 = flat.limit_length(extent) - flat
+		camera.global_position += global_basis * Vector3(back.x, 0.0, back.y)
+
+
 ## Shows this hero walking the town with its follow camera, or none (null) for the overview.
 ## The same hero again is a no-op, so roster refreshes do not reset where it stands.
 func embody(hero: Hero) -> void:
 	if body != null and hero != null and body.hero_id == hero.instance_id:
 		return
+	_grabbing = false
 	var standing: Vector3 = to_global(BODY_SPAWN)
 	if body != null:
 		standing = body.global_position
