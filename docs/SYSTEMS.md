@@ -82,6 +82,21 @@ regroup, anchor or guard move, then cover or formation, then the stance's usual 
 carry, the supplies retreat) wins without a check. Rows are those of § Archetypes: the front row is
 Knight and Rogue, the back row is Ranger, Mage and Cleric.
 
+**A piloted hero is not on auto** (`ig-gy0.6`, design 2026-09-24). While the player controls it:
+- None of this section's rules move it: no evasion, hop, stance move, cover or formation. It
+  claims no telegraph, so the claim passes to the next hero (§ Skills, Counters).
+- It moves only on the player's orders. After a target order it closes in and swings, as the
+  order does today. After a move order it holds at the point and swings only at a target in reach.
+  When its target dies it picks no new one. It stands until the player picks.
+- Anything that returns earlier in the planning pass (the rescue carry, the supplies retreat)
+  still wins, as it does over any direct order.
+- To the other heroes it is an ordinary squadmate. It still counts as the front-liner for
+  formation and hop points. A piloted Knight's target still keeps other Knights off that threat,
+  and its hits still give the cover taunt ("auto or not", below).
+- Its chains run when the player fires a trigger, with no cut-ins, because cut-ins are the AI's. A
+  skill fired by hand that is not a trigger leaves the chain running.
+- Piloting is view state and never saved. When it ends, the hero is on auto again on the next tick.
+
 **Formation.** A back-row hero never walks closer to its reference point (its attack target, else
 its squad's objective point) than its squad's nearest living front-liner is, plus one formation
 spacing (1.8). Already that close, it holds. The rule is off while a living enemy is within the
@@ -451,6 +466,40 @@ band (`DECISIONS.md` 2026-09-23, item 7: counter, revive, heal, chain, buff, att
 half of each one's "AI uses it when" cell is that rule. A tie with a heal goes by bar order, so the
 player's order decides. The telegraph half of each cell arrives with the counters slice, `ig-gy0.4`.
 
+**Chains** (`ig-gy0.5`, design 2026-09-24). The two chain rows above cap and time them.
+- **Steps.** Any known skill except the passive can be a trigger or a step, weaponskills included.
+  A skill may repeat in a chain (Iron Cut, Follow-Through, Iron Cut), since weaponskills have no
+  cooldown. One chain per trigger. On load, a chain over `skill_chain_max_steps` is cut to the cap
+  with a `push_warning`, so lowering the cap never deletes a player's chain. Today's other checks
+  stand (an unknown or unlearned skill drops the chain).
+- **Why 8.** A full kit has seven skills besides the passive. So a chain holds its trigger and the
+  other six class skills, with two steps to spare for repeats or general skills. It also bounds a
+  chain that skips every step: 8 × 3.0 = 24 s at most.
+- **Start.** With no chain running, a trigger starts its chain however it fires: by the picker, as
+  a cut-in (so "after my stun, follow with..." works) or by hand. While one runs, only a trigger
+  fired by hand replaces it. A chain step never starts a chain.
+- **When a step fires.** When it could be fired by hand: off cooldown, the ability lock clear for
+  an ability, a swing due for a weaponskill, not stunned or silenced, and a legal target in range.
+  Its "AI uses it when" cell is ignored, because the chain is the player saying when. An Off step
+  is skipped at once, and a Manual step fires (`DECISIONS.md` 2026-09-23, item 6). Enemy steps aim
+  at the hero's target. Self, ally and area steps pick theirs as the picker does, without the
+  cell's threshold. A chain never moves the hero: a step out of range waits.
+- **Waiting.** Until the next step is ready, the hero keeps swinging (a basic, or the picker's
+  weaponskill) but fires no ability outside the chain. Each step must fire within
+  `skill_chain_step_timeout_seconds` of the one before it, or of the trigger, or it is skipped. The
+  deadline is a saved tick number, and a step may fire on that tick itself. So a timer never ties
+  on a float (`ig-85w`), and a weaponskill step always makes the next swing, even at
+  `battle_basic_interval_max` (3.0 s).
+- **Cut-ins.** Everything above chain in the picker cuts in: counter, revive and heal, including the
+  heal band's shields and self damage reduction (`DECISIONS.md` 2026-09-23, item 7). A cut-in
+  never ends the chain, and the step's deadline keeps running.
+- **End.** The last step fires or is skipped, the hero's target dies or changes (a cover switch or
+  a target order), a new trigger replaces the chain, or the hero is downed.
+- **Saved.** Four optional actor `effect_state` keys, each validated only when present (the § Hero
+  AI on auto pattern): `chain_trigger` (a skill id), `chain_step` (a non-negative integer index
+  into its `then`), `chain_deadline_tick` (a non-negative integer) and `chain_target` (an actor
+  id). A reload mid-chain resumes it. `SIMULATION_VERSION` stays 1.
+
 ### Learning
 
 | Opens at | Slot in every kit |
@@ -713,6 +762,63 @@ row is a `balance.tres` row except the read cost, which is a measurement.
 
 Each fact counts at most once per record for a pair, so one long battle full of revives cannot make
 a bond by itself.
+
+### The dream catalogue — *ig-m6o.2.2.7, design 2026-09-24*
+
+Four dreams, all proved by today's records (`battle`, `summoned`, `ranked_up`, `died`). The dream's
+owner is the hero who holds it. X is the other hero it names, and Z the zone. Each keeps slice 1's
+shape: an opening line, a counted milestone, a last milestone, and an end, fulfilled or lost.
+Dreams on `encounter` and `meal` records wait for those records (`ig-m6o.2.2.4`, `ig-m6o.2.2.5`).
+Profession dreams are `ig-m6o.2.2.8`'s.
+
+**Repay a life debt** (`life_debt`, slice 1, unchanged). X saved the owner. The owner wants to save
+X back.
+
+**Watch over them** (`watch_over`). The other side of the same save: the saver now feels
+responsible.
+- Opens: the owner saves X. It revives or carries X, or rescues X as a listed rescuer. The first
+  such X in the record, as the life debt picks its saver.
+- Desired change: X lives to rise. Beneficiary: X. Methods: fight beside X and keep X up.
+- Milestones: saved X at Z; fight beside X again (n / `dream_fight_beside_battles`); see X rank up.
+- Fulfilled: a `ranked_up` record for X. Lost: X dies.
+
+**Carry their name** (`carry_name`). A death beside the owner becomes a reason to go back.
+- Opens: a `died` record with cause `expedition` whose `battle_order` is a battle with the owner in
+  its team (the death the Bonds already call witnessed). Z is the `died` record's zone.
+- Desired change: beat the place that took X. Beneficiaries: X's memory, and the squad.
+  Methods: go back to Z and win.
+- Milestones: was there when X fell at Z; win at Z (n / `dream_name_victories`), any victory with
+  the owner in the team.
+- Fulfilled: the count is reached. Lost: Z takes another. That is a second witnessed death whose
+  zone is Z.
+
+**Be worth it** (`be_worthy`). A life spent as Essence gets a name in someone's story.
+- Opens: a `died` record with cause `sacrifice` whose `by` is the owner (X was given up for it). A
+  rank-up that spends several heroes opens on the first. The others add nothing.
+- Desired change: the owner's strength repays the life spent. Beneficiaries: X's memory, the
+  roster. Methods: win hard fights.
+- Milestones: X was given up for the owner; win hard fights (n / `dream_worthy_hard_victories`),
+  that is, victories that are not routine (`Ledger.is_routine`) with the owner in the team.
+- Fulfilled: the count is reached. Lost: the owner is carried home, listed in a rescue battle's
+  `rescued`.
+
+**Which dream a hero holds.** One pass, oldest first, one dream at a time (ADR item 6):
+- With no dream open, the first record with a formative event for this hero opens that dream.
+- One battle can both save the owner and have it save someone. The life debt wins then (catalogue
+  order: `life_debt`, `watch_over`). A `died` record opens at most one dream.
+- The record that ends a dream never opens the next, as in slice 1.
+
+| Row | Value | Why |
+|---|---|---|
+| `dream_fight_beside_battles` | 3 | Slice 1's row, now also Watch over's counted milestone. Both count battles beside X |
+| `dream_name_victories` | 3 | Any victory at Z. The life debt's pace, three battles |
+| `dream_worthy_hard_victories` | 2 | Hard fights are rarer than battles, so two, not three |
+
+The catalogue is still one oldest-first read of one hero's dream (ADR item 6). Carry their name adds
+one set to that read: the order ids of the battles the owner fought in. As in slice 1, the first
+two counts include routine victories, which the Ledger evicts first at the cap, so they can shrink
+there. At the cap, a `died` record can also outlive the battle that proves the owner was there.
+The section's PROVISIONAL covers all three numbers.
 
 ---
 
