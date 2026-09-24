@@ -60,11 +60,13 @@ static var _bar_enemy_material: StandardMaterial3D = _bar_material(BAR_ENEMY_COL
 # One overlay for every unit's hit flash; each mesh carries its own strength as an instance uniform.
 static var _flash_material: ShaderMaterial = _build_flash_material()
 # Shared by every unit, so 60 units add no per-unit materials or meshes.
-static var _faction_ring_mesh: TorusMesh = _build_faction_ring_mesh()
+static var _faction_ring_mesh: TorusMesh = _build_ring_mesh(0.49, 0.55)
 static var _ally_ring_material: StandardMaterial3D = _flat_material(ALLY_COLOR)
 static var _enemy_ring_material: StandardMaterial3D = _flat_material(ENEMY_COLOR)
 static var _corpse_material: StandardMaterial3D = _flat_material(CORPSE_DIM)
 static var _halo_material: StandardMaterial3D = _flat_material(HALO_COLOR)
+# The camera looks down, so the tube's width is what reads: 0.18, three times the faction ring's.
+static var _halo_mesh: TorusMesh = _build_ring_mesh(0.40, 0.58)
 
 var actor_id: String = ""
 var hero_id: String = ""
@@ -326,7 +328,7 @@ func _build_visual() -> void:
 		var head := BoneAttachment3D.new()
 		head.bone_name = "head"
 		model.get_node("Rig_Medium/Skeleton3D").add_child(head)
-		_halo = _mesh(_faction_ring_mesh, HALO_OFFSET, Vector3(1.0, 0.3, 1.0), _halo_material, head)
+		_halo = _mesh(_halo_mesh, HALO_OFFSET, Vector3(1.0, 0.3, 1.0), _halo_material, head)
 		_halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var ring_mesh := TorusMesh.new()
 	ring_mesh.inner_radius = 0.48
@@ -614,10 +616,10 @@ func _clear_flash() -> void:
 		mesh.material_overlay = _corpse_material if _dead_posed else null
 
 
-static func _build_faction_ring_mesh() -> TorusMesh:
+static func _build_ring_mesh(inner: float, outer: float) -> TorusMesh:
 	var ring := TorusMesh.new()
-	ring.inner_radius = 0.49
-	ring.outer_radius = 0.55
+	ring.inner_radius = inner
+	ring.outer_radius = outer
 	return ring
 
 
