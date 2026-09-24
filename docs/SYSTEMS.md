@@ -107,15 +107,15 @@ Evidence: `.agent-results/ig-gy0.1/golden_before.json`, captured before any `ig-
 
 | Hero kit | Signature | Passive |
 |---|---|---|
-| Knight | Rally: 16s cooldown; revive a downed ally within 3 to 25% HP, otherwise guard allies within radius 3 for 4s with 30% damage reduction | 10% damage reduction within 3 of another living ally; multiplicative with one Rally effect |
+| Knight | Stand Fast: 16s cooldown; revive a downed ally within 3 to 25% HP, otherwise guard allies within radius 3 for 4s with 30% damage reduction | 10% damage reduction within 3 of another living ally; multiplicative with one Stand Fast effect |
 | Ranger | Piercing Shot: 10s cooldown, range 10, line width 1, 1.8× attack damage | +20% basic range |
-| Mage | Burst: 12s cooldown, range 8, radius 2.5, 1.5× attack damage; auto prefers at least 3 enemies or an elite | Signature cooldown reduced by 10% |
+| Mage | Arcane Bloom: 12s cooldown, range 8, radius 2.5, 1.5× attack damage; auto prefers at least 3 enemies or an elite | Signature cooldown reduced by 10% |
 | Rogue | Flank/Interrupt: 10s cooldown, range 6, moves to an available rear slot, interrupts windup with 0.3s stagger, 1.6× attack damage | +25% basic damage from behind |
 
 **Spawn facing (director ruling, 2026-09-23):** both sides spawn facing the other side's centre; "behind" reads actual facing, so a Rogue earns the rear bonus by flanking a unit turned toward someone else, never from spawn orientation.
 > ⚠️ **PROVISIONAL** — how often an idle-flank bonus now lands is unmeasured · **Settled by:** a played build
 
-The four kits add effects and decision rules, not a seventh hero stat. Multiple Rally effects
+The four kits add effects and decision rules, not a seventh hero stat. Multiple Stand Fast effects
 do not stack their reduction; use the strongest active effect. Knight's ally-proximity
 passive requires another actor, not the Knight itself.
 Flank tests the rear center and then rear ±45-degree positions against actor separation; when
@@ -133,8 +133,8 @@ save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_i
 |---|---|---|
 | Basic attack that crits | 1.0 units, crit gate below | the attacker |
 | Ranger Piercing Shot, each target | 1.0 units | along the shot line |
-| Mage Burst, each target | 1.5 units | the burst center |
-| Knight Rally, Rogue Flank/Interrupt, Cleric | none | — |
+| Mage Arcane Bloom, each target | 1.5 units | the burst center |
+| Knight Stand Fast, Rogue Flank/Interrupt, Cleric | none | — |
 
 > ⚠️ **PROVISIONAL** — the three push distances and the 1.0 s crit gate are arithmetic only (sustained crit pushes stay under the 1.5 u/s every enemy walks at), never seen on screen · **Settled by:** a played build plus the ig-544 starter re-measure below
 
@@ -150,7 +150,7 @@ save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_i
 - **No interrupt.** A push never cancels a windup, telegraph or carry; stagger stays Rogue's
   job. A telegraph stays where it was drawn. An attacker whose target was pushed out of range
   holds its finished windup and strikes on reaching range again.
-- **Area hits resolve, then push.** Piercing Shot and Burst compute every hit at pre-push
+- **Area hits resolve, then push.** Piercing Shot and Arcane Bloom compute every hit at pre-push
   positions, then apply all pushes, so Knight proximity reduction never depends on actor order.
 - **Bounds:** clamp the landing point to the battlefield square; a wall shortens the push. No
   bounce, no impact damage. Overlaps resolve through normal separation next tick.
@@ -174,7 +174,7 @@ because elites are immune and clustered trash is meant to fall.
 
 Rejected: velocity or a knockback timer, and a per-target push cooldown field (new saved state,
 boundary #1; the `last_crit_tick` gate replaces the cooldown); interrupting pushes (steal
-Rogue's role, and crit-heavy teams would erase enemy signatures); a Rally pulse (shoves enemies
+Rogue's role, and crit-heavy teams would erase enemy signatures); a Stand Fast pulse (shoves enemies
 off the Knight holding them); a Flank push (throws the target out of the rear slot Flank just
 took); pushing on the killing hit (moves bodies rescue depends on).
 
@@ -322,9 +322,15 @@ weaponskills never changes how often a hero hits, only how hard.
 between swings without touching the swing timer. That stays.
 
 **Statuses.** Stun, shield, damage reduction, stat changes, bleed, burn, heal over time, root,
-silence and taunt. Damage reduction does not stack: the strongest one applies (today's Rally
+silence and taunt. Damage reduction does not stack: the strongest one applies (today's Stand Fast
 rule). A shield absorbs damage before HP. The same status from any source refreshes, never
-stacks. Stat changes read and change the six stats only.
+stacks. Stat changes read and change five of the six stats: ATK, DEF, SPD, CRIT_RATE and
+CRIT_DMG.
+
+**Amended 2026-09-24 (director rulings).**
+- v1 has no HP stat status. No skill needs one, and validation rejects it.
+- An SPD change (Hunter's Focus) changes only the swing interval.
+- Taunt (Gauntlet Toss) changes only whom the enemy targets.
 
 **Counters.** A counter is an ability with one tag:
 
@@ -341,6 +347,13 @@ fires. If none, the first with a shield covering someone inside it does. If none
 inside it with a dodge uses it. Everyone else in it walks out, as today. Among a hero's usable
 counters it picks the shortest cooldown. One claim per telegraph.
 
+**Amended 2026-09-24 (director ruling): shields and self damage reduction sit in the heal band.**
+Brace, Anvilheart, Sheltering Word and Warding Glyph answer a low ally, in the picker's heal band
+(`DECISIONS.md` 2026-09-23, item 7: counter, revive, heal, chain, buff, attack). The low-HP half
+of each one's "AI uses it when" cell is that rule. A tie with a heal goes by bar order, so the
+player's order decides. The telegraph half of each cell arrives with the counters slice,
+`ig-gy0.4`.
+
 ### Learning
 
 | Opens at | Slot in every kit |
@@ -350,6 +363,10 @@ counters it picks the shortest cooldown. One claim per telegraph.
 | Level 15 | A sixth skill |
 | Level 25 | A seventh skill |
 | Book only | An eighth skill, at any level |
+
+**Amended 2026-09-24 (director ruling).** Heroes start at level 0, and every level check reads
+level 0 as level 1 (`max(level, 1)`): skill unlocks, the general tier minimums and the hall's
+reach (`hero.level + 5 * hall level`). So a new hero has its level-1 skills.
 
 Level caps by rank (§ Ranks) set how many class skills a hero can reach: F (cap 10) five, D (cap
 20) six, C and above (cap 30+) seven, plus its class book skill. General skills come on top (below).
@@ -382,24 +399,42 @@ Five kits of eight. The four signatures and passives keep today's numbers exactl
 slice can prove that nothing changed. Multipliers are on the basic damage formula. "Heal 3.0 ATK"
 means ATK times 3.0. The counter column is the tag.
 
+**Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10: no Square Enix skill name,
+no close copy).** Display names only. Older text that says Burst, Bulwark or Rally means these
+skills.
+
+| Old name | New name | Id |
+|---|---|---|
+| Bulwark | Close Ranks | `knight_bulwark` (kept: saves may hold it) |
+| Rally | Stand Fast | `knight_rally` (kept: saves may hold it) |
+| Challenge | Gauntlet Toss | new id from `ig-gy0.2` |
+| Last Stand | Anvilheart | new id from `ig-gy0.2` |
+| Blindside | Knave's Angle | `rogue_blindside` (kept: saves may hold it) |
+| Steady Shot | Heron Shot | new id from `ig-gy0.2` |
+| Burst | Arcane Bloom | `mage_burst` (kept: saves may hold it) |
+| Blaze | Tinder Hex | new id from `ig-gy0.2` |
+| Skyfall | Hanging Star | new id from `ig-gy0.2` |
+| Smite | Censer Swing | new id from `ig-gy0.2` |
+| Rekindle | Hearthcall | new id from `ig-gy0.2` |
+
 **Knight** (tank)
 
 | Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
 |---|---|---|---|---|---|---|
-| Bulwark | Passive | 1 | — | Today's: 10% less damage within 3 of another living ally | always | — |
-| Rally | Ability | 1 | 16 s | Today's: revive a downed ally within 3 to 25% HP, else allies within 3 take 30% less damage for 4 s | revive first; else 2+ allies within 3 | `shield` |
+| Close Ranks | Passive | 1 | — | Today's: 10% less damage within 3 of another living ally | always | — |
+| Stand Fast | Ability | 1 | 16 s | Today's: revive a downed ally within 3 to 25% HP, else allies within 3 take 30% less damage for 4 s | revive first; else 2+ allies within 3 | `shield` |
 | Iron Cut | Weaponskill | 1 | — | 1.3×, starts the combo | default | — |
 | Follow-Through | Weaponskill | 5 | — | 1.8× right after Iron Cut, else 1.1× | after Iron Cut | — |
 | Buckler Blow | Ability | 5 | 20 s | Range 1.6: 0.8×, 1.5 s stun | a telegraph in range | `stun` |
-| Challenge | Ability | 15 | 15 s | Range 6: the enemy attacks the Knight for 4 s | an enemy hitting a lower-HP ally | — |
+| Gauntlet Toss | Ability | 15 | 15 s | Range 6: taunt for 4 s, so that enemy targets the Knight | an enemy hitting a lower-HP ally | — |
 | Sweeping Blow | Weaponskill | 25 | — | 0.9× to every enemy within 2 | 3+ enemies within 2 | — |
-| Last Stand | Ability | book | 60 s | Self: 60% less damage for 5 s | a telegraph on the Knight, or HP below 30% | `shield` |
+| Anvilheart | Ability | book | 60 s | Self: 60% less damage for 5 s | a telegraph on the Knight, or HP below 30% | `shield` |
 
 **Rogue** (melee damage)
 
 | Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
 |---|---|---|---|---|---|---|
-| Blindside | Passive | 1 | — | Today's: +25% basic damage from behind | always | — |
+| Knave's Angle | Passive | 1 | — | Today's: +25% basic damage from behind | always | — |
 | Flank/Interrupt | Ability | 1 | 10 s | Today's: move to a rear slot, 0.3 s stun, 1.6× | today's rule; also a telegraph in range | `interrupt` |
 | Quick Cut | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
 | Gutting Strike | Weaponskill | 5 | — | After Quick Cut: 1.5× and bleed 0.2 ATK/s for 6 s, else 1.0× | after Quick Cut | — |
@@ -414,25 +449,25 @@ means ATK times 3.0. The counter column is the tag.
 |---|---|---|---|---|---|---|
 | Long Sight | Passive | 1 | — | Today's: +20% basic range | always | — |
 | Piercing Shot | Ability | 1 | 10 s | Today's: range 10, line width 1, 1.8× | today's rule | — |
-| Steady Shot | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
-| True Mark | Weaponskill | 5 | — | 1.7× right after Steady Shot, else 1.1× | after Steady Shot | — |
+| Heron Shot | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
+| True Mark | Weaponskill | 5 | — | 1.7× right after Heron Shot, else 1.1× | after Heron Shot | — |
 | Pinning Shot | Ability | 5 | 15 s | Range 10: 0.5×, interrupt, 1 s root | a telegraph in range | `interrupt` |
 | Barbed Arrow | Weaponskill | 15 | — | 1.0× and bleed 0.15 ATK/s for 8 s | target not bleeding | — |
 | Hail of Arrows | Ability | 25 | 20 s | Range 10, radius 3: 0.8× each | 3+ enemies in the circle | — |
-| Hunter's Focus | Ability | book | 60 s | Self: SPD +40% for 8 s | a fight is on | — |
+| Hunter's Focus | Ability | book | 60 s | Self: SPD +40% for 8 s, which shortens only the swing interval | a fight is on | — |
 
 **Mage** (caster damage)
 
 | Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
 |---|---|---|---|---|---|---|
-| Arcane Flow | Passive | 1 | — | Today's: Burst cooldown −10%. From the kit slice, every Mage ability | always | — |
-| Burst | Ability | 1 | 12 s | Today's: range 8, radius 2.5, 1.5× | today's rule: 3+ enemies or an elite | — |
+| Arcane Flow | Passive | 1 | — | Today's: Arcane Bloom cooldown −10%. From the kit slice, every Mage ability | always | — |
+| Arcane Bloom | Ability | 1 | 12 s | Today's: range 8, radius 2.5, 1.5× | today's rule: 3+ enemies or an elite | — |
 | Ember Bolt | Weaponskill | 1 | — | 1.3×, starts the combo | default | — |
-| Blaze | Weaponskill | 5 | — | After Ember Bolt: 1.6× and burn 0.2 ATK/s for 6 s, else 1.1× | after Ember Bolt | — |
+| Tinder Hex | Weaponskill | 5 | — | After Ember Bolt: 1.6× and burn 0.2 ATK/s for 6 s, else 1.1× | after Ember Bolt | — |
 | Frost Bind | Ability | 5 | 18 s | Range 8: 0.5×, 1.5 s stun | a telegraph in range | `stun` |
 | Chain Spark | Weaponskill | 15 | — | 1.0×, then jumps to 2 more enemies within 3 at 0.6× | 2+ enemies within 3 | — |
 | Warding Glyph | Ability | 25 | 25 s | Range 8: shield 2.0 ATK on an ally for 6 s | an ally inside a telegraph, else an ally below 50% | `shield` |
-| Skyfall | Ability | book | 45 s | Range 8, radius 3: 2.5× after a 1.0 s delay | 3+ enemies or an elite | — |
+| Hanging Star | Ability | book | 45 s | Range 8, radius 3: 2.5× after a 1.0 s delay | 3+ enemies or an elite | — |
 
 **Cleric** (healer)
 
@@ -440,12 +475,12 @@ means ATK times 3.0. The counter column is the tag.
 |---|---|---|---|---|---|---|
 | Grace | Passive | 1 | — | +20% to the Cleric's own heals and shields | always | — |
 | Mend | Ability | 1 | 8 s | Range 6: heal 3.0 ATK to one ally | an ally below `heal_below` (35%) | — |
-| Smite | Weaponskill | 1 | — | 1.1× | default | — |
+| Censer Swing | Weaponskill | 1 | — | 1.1× | default | — |
 | Hush | Ability | 5 | 20 s | Range 8: interrupt, 1.5 s silence (no skills) | a telegraph in range | `interrupt` |
 | Sheltering Word | Ability | 5 | 20 s | Range 6: shield 2.5 ATK for 8 s | an ally inside a telegraph, else the tank below 50% | `shield` |
 | Wellspring | Ability | 15 | 12 s | Range 6: heal 0.3 ATK a second for 10 s | an ally below 70% without it | — |
 | Prayer Circle | Ability | 25 | 30 s | Heal 1.5 ATK to every ally within 4 | 3+ allies below 70% | — |
-| Rekindle | Ability | book | 60 s | Range 4: revive a downed ally to 30% HP | a downed ally | — |
+| Hearthcall | Ability | book | 60 s | Range 4: revive a downed ally to 30% HP | a downed ally | — |
 
 The Cleric has no combo, so its level-5 slot is a second counter. Mend's 3.0 ATK is 48 HP at the
 Cleric's base ATK of 16: about a third of a base Knight.
@@ -467,7 +502,7 @@ general one as the backup.
 | Hearten | 3 | 60 s | Allies within 4: DEF +10% for 10 s | a fight is on and 3+ allies are within 4 | — |
 
 Brace's reduction follows the damage-reduction rule: the strongest one applies, so it never stacks
-with Rally or Last Stand. Hearten from two heroes refreshes, never stacks.
+with Stand Fast or Anvilheart. Hearten from two heroes refreshes, never stacks.
 
 **Enemies** (owner ruling, 2026-09-23). Enemies keep today's signatures and telegraphs,
 and gain their class's starter weaponskill. Enemy Knights gain **Crushing Blow**: a 1.2 s
@@ -811,11 +846,18 @@ catches CRIT_RATE overflow even though the arithmetic below shows no archetype c
 
 | Archetype | T1 (resonance 1) | T2 (resonance 3) | T3 (resonance 6) |
 |---|---|---|---|
-| Knight | Bulwark — DEF +4% | Stalwart — HP +5% | Iron Wall — DEF +8% |
+| Knight | Oaken Guard — DEF +4% | Stalwart — HP +5% | Iron Wall — DEF +8% |
 | Rogue | Opening Strike — CRIT_RATE +1.5pp | Killer Instinct — ATK +5% | Executioner — CRIT_DMG +0.08 |
-| Ranger | Quickdraw — SPD +4% | Marksman — ATK +5% | Deadeye — CRIT_RATE +1.5pp |
+| Ranger | Fleet String — SPD +4% | Marksman — ATK +5% | Deadeye — CRIT_RATE +1.5pp |
 | Mage | Arcane Focus — ATK +5% | Overload — CRIT_DMG +0.06 | Archmage — ATK +6% |
-| Cleric | Devotion — HP +5% | Sanctuary — DEF +4% | Guardian Light — HP +6% |
+| Cleric | Lantern Vow — HP +5% | Sanctuary — DEF +4% | Guardian Light — HP +6% |
+
+**Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10).** The Knight's T1 trait was
+Bulwark, a Square Enix skill name, and it shared that name with the Knight's passive skill (now
+Close Ranks, § Skills). It is now **Oaken Guard**. The Cleric's T1 trait was Devotion, a retired
+Summoner action; it is now **Lantern Vow**. The Ranger's T1 trait Quickdraw is now **Fleet
+String**. Display names only: the ids stay `knight_bulwark`, `cleric_devotion` and
+`ranger_quickdraw`.
 
 Traits accumulate: at resonance 6 all three of an archetype's traits are simultaneously active
 (T1+T2+T3), not the most-recent one alone — the reward for the 6th dupe is the full stack, not a
@@ -1138,10 +1180,15 @@ ahead of `equip_crit_rate_cap`.
 | Archetype | Stage 0 (F cap) | Stage 1 (D cap) | Stage 2 (C cap) |
 |---|---|---|---|
 | Knight | Shield Drill — DEF +3% | Iron Discipline — HP +4% | Veteran's Bastion — DEF +5% |
-| Rogue | Quick Hands — ATK +3% | Feint — CRIT_RATE +1pp | Coup de Grace — CRIT_DMG +0.05 |
+| Rogue | Quick Hands — ATK +3% | Wrong Foot — CRIT_RATE +1pp | Velvet Knife — CRIT_DMG +0.05 |
 | Ranger | Light Step — SPD +3% | Steady Aim — ATK +3% | Trueshot — CRIT_RATE +1pp |
 | Mage | Apprentice Rites — ATK +3% | Mana Burn — CRIT_DMG +0.04 | Spellweaving — ATK +5% |
-| Cleric | Novice Prayer — HP +3% | Ward — DEF +3% | Benediction — HP +5% |
+| Cleric | Novice Prayer — HP +3% | Ward — DEF +3% | Evensong — HP +5% |
+
+**Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10).** Feint (a melee role
+action) is now **Wrong Foot**, Benediction (a White Mage action) is now **Evensong**, and Coup de
+Grace is now **Velvet Knife**. Display names only: the ids stay `rogue_feint`,
+`cleric_benediction` and `rogue_coup_de_grace`.
 
 Same identity split § Traits §3 already used for resonance, held here too: Knight/Cleric lean
 DEF/HP, Rogue leans ATK/CRIT, Mage leans ATK/CRIT_DMG, Ranger splits SPD/ATK/CRIT_RATE — no new
@@ -1158,8 +1205,8 @@ its archetype's smallest trait, for the reachability reason worked out below.
 | Knight | 1 | `knight_iron_discipline` | Iron Discipline | HP (0) | 0.04 |
 | Knight | 2 | `knight_veterans_bastion` | Veteran's Bastion | DEF (2) | 0.05 |
 | Rogue | 0 | `rogue_quick_hands` | Quick Hands | ATK (1) | 0.03 |
-| Rogue | 1 | `rogue_feint` | Feint | CRIT_RATE (4) | 0.01 |
-| Rogue | 2 | `rogue_coup_de_grace` | Coup de Grace | CRIT_DMG (5) | 0.05 |
+| Rogue | 1 | `rogue_feint` | Wrong Foot | CRIT_RATE (4) | 0.01 |
+| Rogue | 2 | `rogue_coup_de_grace` | Velvet Knife | CRIT_DMG (5) | 0.05 |
 | Ranger | 0 | `ranger_light_step` | Light Step | SPD (3) | 0.03 |
 | Ranger | 1 | `ranger_steady_aim` | Steady Aim | ATK (1) | 0.03 |
 | Ranger | 2 | `ranger_trueshot` | Trueshot | CRIT_RATE (4) | 0.01 |
@@ -1168,7 +1215,7 @@ its archetype's smallest trait, for the reachability reason worked out below.
 | Mage | 2 | `mage_spellweaving` | Spellweaving | ATK (1) | 0.05 |
 | Cleric | 0 | `cleric_novice_prayer` | Novice Prayer | HP (0) | 0.03 |
 | Cleric | 1 | `cleric_ward` | Ward | DEF (2) | 0.03 |
-| Cleric | 2 | `cleric_benediction` | Benediction | HP (0) | 0.05 |
+| Cleric | 2 | `cleric_benediction` | Evensong | HP (0) | 0.05 |
 
 None of these fifteen `id`s collide with the fifteen resonance `id`s already authored in
 `heroes/defs/*.tres` (`knight_bulwark`/`knight_stalwart`/`knight_iron_wall` and the other four
@@ -1207,7 +1254,7 @@ array (`heroes/hero.gd:99-122`) on the same hero.
    read as "worth more than one piece of gear at mid rank," not "worth more than the best gear in
    the game."
 
-2. **Worst-case CRIT_RATE, with the instructor trait folded in.** Rogue's `Feint` (+1pp) and
+2. **Worst-case CRIT_RATE, with the instructor trait folded in.** Rogue's `Wrong Foot` (+1pp) and
    Ranger's `Trueshot` (+1pp) are the only instructor traits on the crit channel — added to the
    already-published worst cases: Rogue `43.46%` (base 15% + max-enhanced SSS necklace 26.96pp +
    resonance 1.5pp) `+ 1pp = 44.46%`, `30.54pp` of margin left under the `75%` cap. Ranger
