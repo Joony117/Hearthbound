@@ -155,7 +155,8 @@ save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_i
 - **Bounds:** clamp the landing point to the battlefield square; a wall shortens the push. No
   bounce, no impact damage. Overlaps resolve through normal separation next tick.
 - **Carry:** a pushed carrier takes its carried body along in the same tick. A push that takes a
-  channeling carrier beyond 1.5 of the body stops progress under the existing carry rule.
+  channeling carrier beyond 1.5 of the body pauses the channel; it resumes, never restarts, once
+  the carrier is back in range (carry rule, Downed heroes and rescue).
 - **Determinism:** a push draws no RNG. If source and target coincide, push along the attacker's
   `facing`. Orders, stances, leash and evasion are unchanged; the actor re-plans from where it
   landed.
@@ -250,9 +251,15 @@ the reward and its inventory insertion; retry uses the same reward seed.
 Zero HP downs allied heroes without deleting them or moving their equipment to a cache.
 Any living ally in the deployed force keeps combat active. Victory secures every ally.
 Revival returns someone to the current fight; carrying secures them at extraction. Carry
-requires an ally within 1.5, takes one uninterrupted second, permits one body per carrier,
-reduces movement to 65%, and extracts both within 2 of the exit. Downing the carrier drops
-the body. A retreat only secures downed heroes actually carried out.
+requires an ally within 1.5 and one second of channeling beside the body (designer ruling,
+2026-09-24, `ig-ls3`). The second need not be unbroken: leaving the 1.5 range (a push, a
+dodge), a stun or a root pauses the channel, and it resumes where it stopped. The progress
+belongs to one carrier and one body. It starts over on a new order or a new body, and when
+the body is revived or taken by another carrier, or the carrier is downed. Why: a push never
+interrupts, and with a restart rule a crit push every second (the crit gate's cap) or a stun
+chain could hold off a rescue for good. Carry permits one body per carrier, reduces movement
+to 65%, and extracts both within 2 of the exit. Downing the carrier drops the body. A retreat
+only secures downed heroes actually carried out.
 
 One stranded incident belongs to one source battle; unrelated wipes in the same zone never
 merge. It preserves the battlefield and reserved hero/equipment identities. A rescue uses
@@ -4699,6 +4706,12 @@ effect = 1.0 + per_level_bonus * (building_level + 0.5 * keeper_skill)
 | Drill | Training Hall | Expedition XP +7.5% | +37.5% | `training_hall_xp_bonus` 0.15/level |
 | Tracking | Reliquary | Cache and rescue lifetime +150 s | +750 s | `recovery_duration_seconds_per_level` 300 s/level |
 | Alchemy | Apothecary | Draught parts cost −10% | −50% | none: the Apothecary has no level |
+
+**Tracking never shortens a window** (director ruling, 2026-09-24, `ig-wgj.10`). A Tracking keeper
+can lengthen a running rescue window or cache lifetime, and the time stays when the keeper leaves,
+dies or is unstationed: each one keeps the longest lifetime it has had. Otherwise sending the
+Tracker out would cut every running window by up to 750 s, and could expire an incident at once,
+killing its stranded heroes from an unrelated click.
 
 **Workers (town builder, `ig-6m2`).** Woodcutting, mining and farming are professions too, so a
 worker earns XP in its job like a keeper, with the same ×4 for a passion. A workplace has no level,
