@@ -611,6 +611,51 @@ func test_an_incident_rebuilt_from_a_stranded_rescue_is_repaired_on_load() -> vo
 	assert_push_error_count(0)
 
 
+func test_profession_calling_and_xp_survive_a_disk_round_trip() -> void:
+	var hero := Hero.new("Smith", 0)
+	# Not the derived calling, so a loader that ignores the saved one fails here.
+	var calling: StringName = &"rites" if hero.calling == &"smithing" else &"smithing"
+	hero.calling = calling
+	hero.profession_xp = {&"smithing": 18000.0, &"alchemy": 90.5}
+	GameSession.add_hero(hero)
+	assert_true(SaveService.save())
+
+	_reload_from_disk()
+	var reloaded: Hero = GameSession.hero_by_id(hero.instance_id)
+	assert_eq(reloaded.calling, calling)
+	assert_eq(reloaded.profession_xp, hero.profession_xp)
+
+
+func test_a_save_without_professions_derives_callings_that_hold_after_resave() -> void:
+	var hero := Hero.new("Elder", 0)
+	GameSession.add_hero(hero)
+	var state: Dictionary = GameSession.to_dict()
+	state["version"] = SaveService.SAVE_VERSION
+	for entry: Dictionary in state["roster"]:
+		entry.erase("calling")
+		entry.erase("profession_xp")
+	GameSession.from_dict({"roster": []})
+	_write_save(SaveService.SAVE_PATH, JSON.stringify(state).to_utf8_buffer())
+	assert_true(SaveService.load_game())
+	var derived: StringName = GameSession.hero_by_id(hero.instance_id).calling
+	assert_eq(derived, Hero.calling_for(hero.instance_id))
+	assert_true(GameSession.hero_by_id(hero.instance_id).profession_xp.is_empty())
+	assert_true(SaveService.save())
+
+	_reload_from_disk()
+	assert_eq(GameSession.hero_by_id(hero.instance_id).calling, derived)
+	var on_disk: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
+	assert_eq(on_disk["roster"][0]["calling"], str(derived))
+
+
+## Clearing the session autosaves over the file, so the saved bytes are put back before loading.
+func _reload_from_disk() -> void:
+	var saved_bytes: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
+	GameSession.from_dict({"roster": []})
+	_write_save(SaveService.SAVE_PATH, saved_bytes)
+	assert_true(SaveService.load_game())
+
+
 func test_missing_save_is_refused_without_error() -> void:
 	_remove_file_if_exists(SaveService.SAVE_PATH)
 

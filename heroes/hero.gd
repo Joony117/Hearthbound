@@ -13,6 +13,15 @@ const STAT_CRIT_RATE: StringName = &"crit_rate"
 const STAT_CRIT_DMG: StringName = &"crit_dmg"
 const STAT_NAMES: Array[StringName] = [STAT_HP, STAT_ATK, STAT_DEF, STAT_SPD, STAT_CRIT_RATE, STAT_CRIT_DMG]
 const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
+## Profession -> the town building it works in (hub/town/town.tscn node names, a save id since
+## DECISIONS.md 2026-09-23). Order is the calling order: a calling is an index into this table.
+const PROFESSIONS: Dictionary[StringName, StringName] = {
+	&"smithing": &"Forge",
+	&"rites": &"Sanctum",
+	&"drill": &"TrainingHall",
+	&"tracking": &"Reliquary",
+	&"alchemy": &"Apothecary",
+}
 
 var hero_name: String
 var rank: int
@@ -24,12 +33,47 @@ var taught_traits: Array[StringName] = []
 var equipped: Dictionary[int, Item] = {}
 var instance_id: String
 var favorite: bool = false
+## Born with it: the profession this hero learns fastest and the only one it can make masterwork in.
+var calling: StringName
+## Plain XP seconds per profession. The calling multiplier is applied when XP is earned, not here.
+var profession_xp: Dictionary[StringName, float] = {}
 
 
 func _init(p_name: String = "", p_rank: int = 0) -> void:
 	hero_name = p_name
 	rank = p_rank
 	instance_id = Item.new_instance_id()
+	calling = calling_for(instance_id)
+
+
+## Stable per hero and uniform (instance_id is 16 random bytes); no summon RNG draw, so seeded
+## summons do not shift.
+static func calling_for(p_instance_id: String) -> StringName:
+	return PROFESSIONS.keys()[posmod(p_instance_id.hash(), PROFESSIONS.size())]
+
+
+## Skill 0..profession_skill_cap from plain XP. The scale is the same for every hero and profession.
+static func profession_skill(hero: Hero, profession: StringName, balance: BalanceTable) -> int:
+	var minutes: float = hero.profession_xp.get(profession, 0.0) / 60.0
+	var skill: int = 0
+	while skill < balance.profession_skill_cap and minutes >= balance.profession_xp_minutes_per_level * (skill + 1):
+		minutes -= balance.profession_xp_minutes_per_level * (skill + 1)
+		skill += 1
+	return skill
+
+
+## Work in the calling earns calling_xp_multiplier times the XP; the saved total stays plain XP.
+static func add_profession_xp(hero: Hero, profession: StringName, work_seconds: float, balance: BalanceTable) -> void:
+	if not is_finite(work_seconds) or work_seconds < 0.0:
+		push_error("add_profession_xp: bad work_seconds %s" % work_seconds)
+		return
+	var rate: float = balance.calling_xp_multiplier if profession == hero.calling else 1.0
+	hero.profession_xp[profession] = hero.profession_xp.get(profession, 0.0) + work_seconds * rate
+
+
+## Only a born master makes masterwork: the calling, at the top skill.
+static func is_profession_master(hero: Hero, profession: StringName, balance: BalanceTable) -> bool:
+	return profession == hero.calling and profession_skill(hero, profession, balance) >= balance.profession_skill_cap
 
 
 func rank_label(balance: BalanceTable) -> String:
@@ -238,6 +282,11 @@ func to_dict() -> Dictionary:
 	var equipped_entries: Array[Dictionary] = []
 	for slot: int in equipped_slots:
 		equipped_entries.append({"slot": slot, "item": equipped[slot].to_dict()})
+	var professions: Array = profession_xp.keys()
+	professions.sort_custom(func(a: StringName, b: StringName) -> bool: return str(a) < str(b))
+	var xp_by_profession: Dictionary = {}
+	for profession: StringName in professions:
+		xp_by_profession[str(profession)] = profession_xp[profession]
 	return {
 		"instance_id": instance_id,
 		"favorite": favorite,
@@ -249,7 +298,39 @@ func to_dict() -> Dictionary:
 		"resonance": resonance,
 		"taught_traits": taught_trait_ids,
 		"equipped": equipped_entries,
+		"calling": str(calling),
+		"profession_xp": xp_by_profession,
 	}
+
+
+## Additive keys (no SAVE_VERSION bump). A save without a valid calling gets the one derived from
+## its instance_id, so a legacy hero keeps the same calling across every load until it is saved.
+static func _read_professions(hero: Hero, data: Dictionary) -> void:
+	hero.calling = calling_for(hero.instance_id)
+	# Save-file fields remain Variant until their types are validated.
+	var raw_calling: Variant = data.get("calling")
+	if raw_calling is String and PROFESSIONS.has(StringName(raw_calling as String)):
+		hero.calling = StringName(raw_calling as String)
+	elif raw_calling != null:
+		push_warning("Unknown hero calling '%s'; derived '%s' instead." % [raw_calling, hero.calling])
+	var raw_xp: Variant = data.get("profession_xp")
+	if raw_xp == null:
+		return
+	if not raw_xp is Dictionary:
+		push_error("Invalid hero profession_xp: expected Dictionary, got %s." % type_string(typeof(raw_xp)))
+		return
+	for raw_profession: Variant in raw_xp as Dictionary:
+		var profession := StringName(str(raw_profession))
+		if not PROFESSIONS.has(profession):
+			push_warning("Unknown profession '%s' in hero profession_xp; dropped." % raw_profession)
+			continue
+		var raw_seconds: Variant = (raw_xp as Dictionary)[raw_profession]
+		var seconds: float = 0.0
+		if (raw_seconds is float or raw_seconds is int) and is_finite(float(raw_seconds)) and float(raw_seconds) >= 0.0:
+			seconds = float(raw_seconds)
+		else:
+			push_error("Invalid %s XP: expected a non-negative number, got '%s'; loading 0." % [profession, raw_seconds])
+		hero.profession_xp[profession] = seconds
 
 
 static func from_dict(data: Dictionary) -> Hero:
@@ -259,6 +340,7 @@ static func from_dict(data: Dictionary) -> Hero:
 		hero.instance_id = raw_instance_id as String
 	elif raw_instance_id != null:
 		push_error("Invalid hero instance_id: expected a non-empty String.")
+	_read_professions(hero, data)
 	var raw_favorite: Variant = data.get("favorite")
 	if raw_favorite is bool:
 		hero.favorite = raw_favorite as bool

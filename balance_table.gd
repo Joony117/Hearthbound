@@ -109,6 +109,11 @@ extends Resource
 @export var reliquary_damage_chance_reduction: float = 0.03
 @export var recovery_base_duration_seconds: float = 900.0
 @export var recovery_duration_seconds_per_level: float = 300.0
+# Profession skill level k costs k * this many minutes of XP (SYSTEMS.md § Keepers and professions).
+@export var profession_xp_minutes_per_level: float = 20.0
+@export var profession_skill_cap: int = 5
+# XP from working in a hero's calling; the owner's "immense XP boost", near a RimWorld major passion.
+@export var calling_xp_multiplier: float = 4.0
 
 @export var battle_tick_seconds: float = 0.1
 @export var battle_damage_defense_scale: float = 100.0
