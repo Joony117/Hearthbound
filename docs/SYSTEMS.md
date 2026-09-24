@@ -51,6 +51,74 @@ home, returning home when the target leaves that leash. Squads divide active cap
 objectives before choosing enemies within 12 of their assigned site. Escort squads follow the
 cart together and engage nearby threats; future waypoints do not draw squads away from it.
 
+### Hero AI on auto — *ig-uu7, design 2026-09-24*
+
+Four rules make auto allies fight as a party. They apply only to allies on Auto Battle without a
+direct order, outside rescue battles, and enemy AI does not change. Precedence: direct order, then
+evasion, then a hop, then the stance's own regroup, anchor or guard move, then cover or formation,
+then the stance's usual target. Anything that returns earlier in the planning pass (the rescue
+carry, the supplies retreat) wins without a check. Rows are those of § Archetypes: the front row is
+Knight and Rogue, the back row is Ranger, Mage and Cleric.
+
+**Formation.** A back-row hero never walks closer to its reference point (its attack target, else
+its squad's objective point) than its squad's nearest living front-liner is, plus one formation
+spacing (1.8). Already that close, it holds. The rule is off while a living enemy is within the
+hero's contact range, `max(battle_detection_range, its attack range)`, and when its squad has no
+living front-liner. Contact range is the enemy detection range, so the first enemy to notice the
+squad finds a front-liner nearer. It applies under Advance and Stay Together only; Defend and
+Protect already hold the squad on one spot. Stay Together targets lie inside contact range (within
+6 of a leader the hero stays within 4 of), so there it shapes only the march. A back-row hero may
+pause while its front-liner is busy elsewhere, and moves on when the front-liner does.
+
+**Cover.** A Knight covers a back-row ally of its own squad that an enemy is on. A threat is a
+living enemy targeting such an ally, inside the Knight's stance zone: within 6 of the leader (Stay
+Together), 4 of the anchor (Defend), 4 of the guarded ally (Protect) or 12 of the Knight (Advance).
+Cover chooses only after the stance's regroup, anchor or guard check, so it never pulls a Knight out
+of its stance. A Knight keeps its threat while it stays a threat, and never takes one that another
+Knight is already targeting. A new pick takes the victim first in its cover order (below), then the
+lowest victim HP fraction, then the nearest threat, then spawn order. Rogues do not cover.
+
+Every Knight hit (basic or weaponskill, auto or not) on an enemy targeting a back-row ally gives
+that enemy a taunt from the Knight (`battle_cover_taunt_seconds`), the same status Gauntlet Toss
+uses. The enemy switches on the next tick, when enemy targets are chosen, and stays on the Knight
+after the taunt ends because enemies keep their target. Gauntlet Toss aims at the covered threat
+first (§ The v1 kits, Knight).
+
+**Kiting.** A back-row hero whose attack range exceeds `battle_kite_trigger_range` hops once when
+a living enemy targeting it comes that close and its hop is ready. The hop point sits one formation
+spacing behind the nearest living front-liner, as seen from that enemy, so the tank ends up between
+them. With no living front-liner, or when that point would end nearer the enemy, it hops straight
+away instead. A hop is at most `battle_kite_distance` long and clamped to the battle bounds. A clamp
+that leaves under half of that (cornered) means no hop: stand and fight. The hop ends on arrival or
+once no living enemy targets the hero, and the next is ready `battle_kite_cooldown_seconds` after
+this one started. Evasion cancels a hop in flight; the cooldown stays spent. After a hop the
+stance's own return applies as usual. Clerics swing at melee range 1.6 and would hop, walk back to
+swing and hop again, so the range test leaves them out; formation and cover still protect them.
+
+**Bonds.** A Knight's cover order lists its bond partner first when the partner is a back-row
+teammate, then the other back-row teammates it has bond points with, most first, spawn order
+breaking ties. It is read from the Bonds pair index once per launch and snapshotted with the battle
+like stats; bonds themselves stay derived (`DECISIONS.md` 2026-09-24 "Bonds stay derived"). A Knight
+already covering switches only to a threat on a victim strictly earlier in its cover order, so
+claims never ping-pong.
+
+Cost: each back-row hero and each Knight makes at most one extra pass over the battle's actors per
+tick and works on the short list it collects; the worst case is Frontier March, 50 heroes against
+30. Saved state is three optional actor `effect_state` keys, each validated only when present:
+`kite_point` (two finite numbers), `kite_ready_tick` (a non-negative integer) and `cover_order`
+(hero id Strings). A new run clears the two kite keys. `SIMULATION_VERSION` stays 1.
+
+| `balance.tres` field | Value | Why |
+|---|---|---|
+| `battle_kite_trigger_range` | 3.0 | Melee 1.6 plus a step: about 0.9 s of warning before a 1.5 u/s enemy can swing |
+| `battle_kite_distance` | 4.0 | One hop clears the trigger zone even after the enemy's ~1.6 u of pursuit during it (3 + 4 − 1.6 > 3) |
+| `battle_kite_cooldown_seconds` | 5.0 | At most 12 hops a minute. Each cycle is about 1 s hopping, 2.5 s shooting while the enemy walks back, then 1.5 s in reach |
+| `battle_cover_taunt_seconds` | 3.0 | Equals `battle_basic_interval_max`, so a pull outlasts the gap to the Knight's next hit at any SPD; enemy stickiness holds it after that |
+
+> ⚠️ **PROVISIONAL** — all four come from the arithmetic above, none from play · **Settled by:** the
+> ig-uu7 balance gate on the eight ig-544 starter cases once .3 and .4 land, plus one played run
+> watching a back-row hero under melee pressure
+
 ### Provisional shared combat numbers
 
 All values are starting points, not a claim of tested game feel. Shared values belong in
@@ -440,7 +508,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Iron Cut | Weaponskill | 1 | — | 1.3×, starts the combo | default | — |
 | Follow-Through | Weaponskill | 5 | — | 1.8× right after Iron Cut, else 1.1× | after Iron Cut | — |
 | Buckler Blow | Ability | 5 | 20 s | Range 1.6: 0.8×, 1.5 s stun | a telegraph in range | `stun` |
-| Gauntlet Toss | Ability | 15 | 15 s | Range 6: taunt for 4 s, so that enemy targets the Knight | an enemy hitting a lower-HP ally | — |
+| Gauntlet Toss | Ability | 15 | 15 s | Range 6: taunt for 4 s, so that enemy targets the Knight | the Knight's covered threat (§ Hero AI on auto); else an enemy on a back-row or lower-HP ally | — |
 | Sweeping Blow | Weaponskill | 25 | — | 0.9× to every enemy within 2 | 3+ enemies within 2 | — |
 | Anvilheart | Ability | book | 60 s | Self: 60% less damage for 5 s | a telegraph on the Knight, or HP below 30% | `shield` |
 
