@@ -466,7 +466,16 @@ static func _choose_intentions(state: BattleState) -> void:
 				actor.order_kind = ""
 				actor.order_target_id = ""
 				actor.effect_state["direct_order"] = false
-		if bool(actor.effect_state.get("direct_order", false)) and not actor.order_kind.is_empty() and actor.order_kind != COMMAND_ATTACK_MOVE:
+		# ig-ap2: a direct attack-move keeps its point, on either auto setting. It fights the enemy it
+		# engaged while that one lives and stays in contact range, else the nearest enemy in it, else none.
+		if bool(actor.effect_state.get("direct_order", false)) and actor.order_kind == COMMAND_ATTACK_MOVE:
+			var contact: float = maxf(BALANCE.battle_detection_range, actor.attack_range)
+			var engaged: BattleActor = _actor_by_id(state, actor.order_target_id)
+			if engaged == null or engaged.faction != "enemy" or engaged.life != BattleActor.LIFE_ALIVE or engaged.position.distance_to(actor.position) > contact:
+				engaged = _nearest_enemy_near_point(state, actor.position, actor.position, contact)
+			actor.order_target_id = engaged.id if engaged != null else ""
+			continue
+		if bool(actor.effect_state.get("direct_order", false)) and not actor.order_kind.is_empty():
 			continue
 		# Out of supplies: an ally on auto heads for the exit, ahead of any squad behaviour. A telegraph
 		# evade above still wins its tick, and a direct order skips this (ig-axw).
@@ -527,10 +536,12 @@ static func _move_actors(state: BattleState) -> void:
 			_update_carry(state, actor)
 		var destination: Vector2 = actor.order_point
 		var target: BattleActor = _actor_by_id(state, actor.order_target_id)
-		if target != null and actor.order_kind in [COMMAND_ATTACK, COMMAND_GUARD, COMMAND_CARRY]:
+		# An attack-move with a live target closes on it like ATTACK; with none it walks to its point.
+		var engaging: bool = actor.order_kind == COMMAND_ATTACK_MOVE and target != null and target.life == BattleActor.LIFE_ALIVE
+		if target != null and (actor.order_kind in [COMMAND_ATTACK, COMMAND_GUARD, COMMAND_CARRY] or engaging):
 			destination = target.position
 		var desired_range: float = 0.0
-		if actor.order_kind == COMMAND_ATTACK:
+		if actor.order_kind == COMMAND_ATTACK or engaging:
 			desired_range = actor.attack_range
 		elif actor.order_kind == COMMAND_GUARD:
 			desired_range = BALANCE.battle_guard_radius
@@ -546,8 +557,10 @@ static func _move_actors(state: BattleState) -> void:
 			if actor.order_kind == COMMAND_RETREAT and actor.position.distance_to(_objective_point(state, "exit_position")) <= BALANCE.battle_exit_radius:
 				_extract_actor(state, actor)
 				continue
-			if actor.order_kind in [COMMAND_MOVE, COMMAND_ATTACK_MOVE]:
+			# Only on reaching the point: an attack-move in reach of its target is fighting, not arriving.
+			if actor.order_kind == COMMAND_MOVE or (actor.order_kind == COMMAND_ATTACK_MOVE and not engaging):
 				actor.order_kind = ""
+				actor.order_target_id = ""
 				actor.effect_state["direct_order"] = false
 			continue
 		var speed: float = actor.move_speed
