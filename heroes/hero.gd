@@ -14,8 +14,12 @@ const STAT_CRIT_DMG: StringName = &"crit_dmg"
 const STAT_NAMES: Array[StringName] = [STAT_HP, STAT_ATK, STAT_DEF, STAT_SPD, STAT_CRIT_RATE, STAT_CRIT_DMG]
 const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 const NO_STATION: StringName = &""
-## Profession -> the town building it works in (hub/town/town.tscn node names, a save id since
-## DECISIONS.md 2026-09-23). Order is the calling order: a calling is an index into this table.
+## Every profession a hero can have a passion for: the five halls in PROFESSIONS order, then the town
+## workplaces (DECISIONS.md 2026-09-23, the town builder, item 12). The passion roll indexes this
+## list, so reordering it changes every hero's passions.
+const ALL_PROFESSIONS: Array[StringName] = [&"smithing", &"rites", &"drill", &"tracking", &"alchemy", &"woodcutting", &"mining", &"farming"]
+## Hall profession -> the town building it works in (hub/town/town.tscn node names, a save id since
+## DECISIONS.md 2026-09-23). Station validation reads it, so it holds the five halls only.
 const PROFESSIONS: Dictionary[StringName, StringName] = {
 	&"smithing": &"Forge",
 	&"rites": &"Sanctum",
@@ -34,9 +38,10 @@ var taught_traits: Array[StringName] = []
 var equipped: Dictionary[int, Item] = {}
 var instance_id: String
 var favorite: bool = false
-## Born with it: the profession this hero learns fastest and the only one it can make masterwork in.
-var calling: StringName
-## Plain XP seconds per profession. The calling multiplier is applied when XP is earned, not here.
+## Born with two different ALL_PROFESSIONS: the ones this hero learns fastest and the only ones it
+## can make masterwork in.
+var passions: Array[StringName] = []
+## Plain XP seconds per profession. The passion multiplier is applied when XP is earned, not here.
 var profession_xp: Dictionary[StringName, float] = {}
 ## The town building this hero keeps (a PROFESSIONS value), or NO_STATION. It leaves with the hero,
 ## so permadeath needs no station cleanup (DECISIONS.md 2026-09-23 item 5).
@@ -47,13 +52,23 @@ func _init(p_name: String = "", p_rank: int = 0) -> void:
 	hero_name = p_name
 	rank = p_rank
 	instance_id = Item.new_instance_id()
-	calling = calling_for(instance_id)
+	passions = passions_for(instance_id)
 
 
 ## Stable per hero and uniform (instance_id is 16 random bytes); no summon RNG draw, so seeded
 ## summons do not shift.
-static func calling_for(p_instance_id: String) -> StringName:
-	return PROFESSIONS.keys()[posmod(p_instance_id.hash(), PROFESSIONS.size())]
+static func passions_for(p_instance_id: String) -> Array[StringName]:
+	var first: StringName = ALL_PROFESSIONS[posmod(p_instance_id.hash(), ALL_PROFESSIONS.size())]
+	return [first, _second_passion(p_instance_id, first)]
+
+
+## A second hash over the seven professions left after first.
+static func _second_passion(p_instance_id: String, first: StringName) -> StringName:
+	var others: Array[StringName] = []
+	for profession: StringName in ALL_PROFESSIONS:
+		if profession != first:
+			others.append(profession)
+	return others[posmod((p_instance_id + "#2").hash(), others.size())]
 
 
 ## Skill 0..profession_skill_cap from plain XP. The scale is the same for every hero and profession.
@@ -66,12 +81,12 @@ static func profession_skill(hero: Hero, profession: StringName, balance: Balanc
 	return skill
 
 
-## Work in the calling earns calling_xp_multiplier times the XP; the saved total stays plain XP.
+## Work in either passion earns passion_xp_multiplier times the XP; the saved total stays plain XP.
 static func add_profession_xp(hero: Hero, profession: StringName, work_seconds: float, balance: BalanceTable) -> void:
 	if not is_finite(work_seconds) or work_seconds < 0.0:
 		push_error("add_profession_xp: bad work_seconds %s" % work_seconds)
 		return
-	var rate: float = balance.calling_xp_multiplier if profession == hero.calling else 1.0
+	var rate: float = balance.passion_xp_multiplier if profession in hero.passions else 1.0
 	hero.profession_xp[profession] = hero.profession_xp.get(profession, 0.0) + work_seconds * rate
 
 
@@ -87,9 +102,9 @@ static func is_staffable(building_id: StringName) -> bool:
 	return building_id != NO_STATION and profession_for_building(building_id) != &""
 
 
-## Only a born master makes masterwork: the calling, at the top skill.
+## Only a born master makes masterwork: a passion, at the top skill. Both passions can be mastered.
 static func is_profession_master(hero: Hero, profession: StringName, balance: BalanceTable) -> bool:
-	return profession == hero.calling and profession_skill(hero, profession, balance) >= balance.profession_skill_cap
+	return profession in hero.passions and profession_skill(hero, profession, balance) >= balance.profession_skill_cap
 
 
 func rank_label(balance: BalanceTable) -> String:
@@ -314,22 +329,33 @@ func to_dict() -> Dictionary:
 		"resonance": resonance,
 		"taught_traits": taught_trait_ids,
 		"equipped": equipped_entries,
-		"calling": str(calling),
+		"passions": passions.map(func(profession: StringName) -> String: return str(profession)),
 		"profession_xp": xp_by_profession,
 		"station": str(station),
 	}
 
 
-## Additive keys (no SAVE_VERSION bump). A save without a valid calling gets the one derived from
-## its instance_id, so a legacy hero keeps the same calling across every load until it is saved.
+## Additive keys (no SAVE_VERSION bump). A present "passions" loads as saved when valid, else
+## re-derives from instance_id with a warning. Absent, a legacy "calling" (the build before passions)
+## stays the first passion and the second comes from the hash, and with neither both come from
+## instance_id, so a legacy hero keeps them across every load until it is saved. The next save writes
+## "passions" and drops "calling".
 static func _read_professions(hero: Hero, data: Dictionary) -> void:
-	hero.calling = calling_for(hero.instance_id)
+	hero.passions = passions_for(hero.instance_id)
 	# Save-file fields remain Variant until their types are validated.
-	var raw_calling: Variant = data.get("calling")
-	if raw_calling is String and PROFESSIONS.has(StringName(raw_calling as String)):
-		hero.calling = StringName(raw_calling as String)
-	elif raw_calling != null:
-		push_warning("Unknown hero calling '%s'; derived '%s' instead." % [raw_calling, hero.calling])
+	if data.has("passions"):
+		var saved: Array[StringName] = _valid_passions(data["passions"])
+		if saved.is_empty():
+			push_warning("Invalid hero passions %s; re-derived." % str(data["passions"]))
+		else:
+			hero.passions = saved
+	else:
+		var raw_calling: Variant = data.get("calling")
+		if raw_calling is String and PROFESSIONS.has(StringName(raw_calling as String)):
+			var first := StringName(raw_calling as String)
+			hero.passions = [first, _second_passion(hero.instance_id, first)]
+		elif raw_calling != null:
+			push_warning("Unknown hero calling '%s'; derived passions %s instead." % [raw_calling, str(hero.passions)])
 	var raw_xp: Variant = data.get("profession_xp")
 	if raw_xp == null:
 		return
@@ -338,7 +364,7 @@ static func _read_professions(hero: Hero, data: Dictionary) -> void:
 		return
 	for raw_profession: Variant in raw_xp as Dictionary:
 		var profession := StringName(str(raw_profession))
-		if not PROFESSIONS.has(profession):
+		if not profession in ALL_PROFESSIONS:
 			push_warning("Unknown profession '%s' in hero profession_xp; dropped." % raw_profession)
 			continue
 		var raw_seconds: Variant = (raw_xp as Dictionary)[raw_profession]
@@ -348,6 +374,21 @@ static func _read_professions(hero: Hero, data: Dictionary) -> void:
 		else:
 			push_error("Invalid %s XP: expected a non-negative number, got '%s'; loading 0." % [profession, raw_seconds])
 		hero.profession_xp[profession] = seconds
+
+
+## Two different known professions, or empty.
+static func _valid_passions(raw: Variant) -> Array[StringName]:
+	var result: Array[StringName] = []
+	if not raw is Array or (raw as Array).size() != 2:
+		return result
+	for raw_profession: Variant in raw as Array:
+		if not raw_profession is String or not ALL_PROFESSIONS.has(StringName(raw_profession as String)):
+			result.clear()
+			return result
+		result.append(StringName(raw_profession as String))
+	if result[0] == result[1]:
+		result.clear()
+	return result
 
 
 ## Missing means no station. One keeper per building is GameSession.from_dict's check (it sees the

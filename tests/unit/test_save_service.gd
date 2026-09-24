@@ -611,41 +611,61 @@ func test_an_incident_rebuilt_from_a_stranded_rescue_is_repaired_on_load() -> vo
 	assert_push_error_count(0)
 
 
-func test_profession_calling_and_xp_survive_a_disk_round_trip() -> void:
+func test_passions_and_xp_survive_a_disk_round_trip() -> void:
 	var hero := Hero.new("Smith", 0)
-	# Not the derived calling, so a loader that ignores the saved one fails here.
-	var calling: StringName = &"rites" if hero.calling == &"smithing" else &"smithing"
-	hero.calling = calling
-	hero.profession_xp = {&"smithing": 18000.0, &"alchemy": 90.5}
+	# Not the derived pair, so a loader that ignores the saved one fails here.
+	var passions: Array[StringName] = [&"mining", &"tracking"]
+	if hero.passions == passions:
+		passions = [&"farming", &"rites"]
+	hero.passions = passions
+	# Woodcutting, mining and farming have no hall, but their XP must still survive a load.
+	hero.profession_xp = {&"smithing": 18000.0, &"alchemy": 90.5, &"woodcutting": 60.0, &"mining": 1.5, &"farming": 7.0}
 	GameSession.add_hero(hero)
 	assert_true(SaveService.save())
 
 	_reload_from_disk()
 	var reloaded: Hero = GameSession.hero_by_id(hero.instance_id)
-	assert_eq(reloaded.calling, calling)
+	assert_eq(reloaded.passions, passions)
 	assert_eq(reloaded.profession_xp, hero.profession_xp)
 
 
-func test_a_save_without_professions_derives_callings_that_hold_after_resave() -> void:
-	var hero := Hero.new("Elder", 0)
-	GameSession.add_hero(hero)
+## Boundary #1: a file as the calling build wrote it (a "calling", no "passions") and an older one
+## with neither. The calling stays the first passion, and the next save writes "passions" only.
+func test_a_calling_save_on_disk_migrates_to_passions_and_reloads_identically() -> void:
+	var smith := Hero.new("Smith", 0)
+	var elder := Hero.new("Elder", 0)
+	GameSession.add_hero(smith)
+	GameSession.add_hero(elder)
 	var state: Dictionary = GameSession.to_dict()
 	state["version"] = SaveService.SAVE_VERSION
 	for entry: Dictionary in state["roster"]:
-		entry.erase("calling")
-		entry.erase("profession_xp")
+		entry.erase("passions")
+	# A calling the hash would not pick first, so a loader that ignores it fails here.
+	var calling: StringName = &"rites" if Hero.passions_for(smith.instance_id)[0] != &"rites" else &"alchemy"
+	state["roster"][0]["calling"] = str(calling)
+	state["roster"][1].erase("profession_xp")
 	GameSession.from_dict({"roster": []})
 	_write_save(SaveService.SAVE_PATH, JSON.stringify(state).to_utf8_buffer())
 	assert_true(SaveService.load_game())
-	var derived: StringName = GameSession.hero_by_id(hero.instance_id).calling
-	assert_eq(derived, Hero.calling_for(hero.instance_id))
-	assert_true(GameSession.hero_by_id(hero.instance_id).profession_xp.is_empty())
+	var migrated: Hero = GameSession.hero_by_id(smith.instance_id)
+	assert_eq(migrated.passions, [calling, Hero._second_passion(smith.instance_id, calling)] as Array[StringName])
+	var derived: Array[StringName] = GameSession.hero_by_id(elder.instance_id).passions
+	assert_eq(derived, Hero.passions_for(elder.instance_id))
 	assert_true(SaveService.save())
+	var on_disk: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
+	for entry: Dictionary in on_disk["roster"]:
+		assert_false(entry.has("calling"), "the resave drops calling")
+	assert_eq(on_disk["roster"][0]["passions"], [str(migrated.passions[0]), str(migrated.passions[1])])
+	on_disk.erase("saved_at_unix")
 
 	_reload_from_disk()
-	assert_eq(GameSession.hero_by_id(hero.instance_id).calling, derived)
-	var on_disk: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
-	assert_eq(on_disk["roster"][0]["calling"], str(derived))
+	assert_eq(GameSession.hero_by_id(smith.instance_id).passions, migrated.passions)
+	assert_eq(GameSession.hero_by_id(elder.instance_id).passions, derived)
+	assert_true(SaveService.save())
+	var resaved: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
+	resaved.erase("saved_at_unix")
+	assert_eq(resaved, on_disk, "a second load and save changes nothing")
+	assert_push_warning_count(0)
 
 
 func test_the_embodied_hero_survives_a_disk_round_trip() -> void:

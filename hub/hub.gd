@@ -636,13 +636,17 @@ func _hero_stats_text(hero: Hero) -> String:
 	]
 
 
-## Calling, every profession skill and the station (GAME_SPEC.md § Heroes staff the buildings).
+## Passions, every profession skill and the station (GAME_SPEC.md § Heroes staff the buildings).
 func _profession_text(hero: Hero) -> String:
 	var skills: PackedStringArray = []
 	for profession: StringName in Hero.PROFESSIONS:
 		skills.append("%s %d" % [str(profession).capitalize(), Hero.profession_skill(hero, profession, BALANCE)])
 	var station: String = "none" if hero.station == Hero.NO_STATION else str(hero.station).capitalize()
-	return "Calling: %s\nSkills: %s\nStation: %s" % [str(hero.calling).capitalize(), ", ".join(skills), station]
+	return "Passions: %s\nSkills: %s\nStation: %s" % [_passions_text(hero), ", ".join(skills), station]
+
+
+func _passions_text(hero: Hero) -> String:
+	return ", ".join(PackedStringArray(hero.passions.map(func(profession: StringName) -> String: return str(profession).capitalize())))
 
 
 func _selected_hero() -> Hero:
@@ -775,7 +779,7 @@ func _on_step_out_pressed() -> void:
 		_status.text = GameSession.last_action_error
 
 
-## The open building's keeper row: name, calling and skill here, or Away while it is out.
+## The open building's keeper row: name, skill here and passions, or Away while it is out.
 func _refresh_keeper() -> void:
 	var profession: StringName = Hero.profession_for_building(_open_building)
 	if profession == &"":
@@ -793,19 +797,19 @@ func _refresh_keeper() -> void:
 			keeper.hero_name,
 			str(profession).capitalize(),
 			Hero.profession_skill(keeper, profession, BALANCE),
-			"calling" if keeper.calling == profession else "calling %s" % str(keeper.calling).capitalize(),
+			"passions %s" % _passions_text(keeper),
 		]
 	%KeeperName.tooltip_text = %KeeperName.text
 
 
-## The shared roster picker: every hero with its skill here, callings marked. Rows hold ids, not
+## The shared roster picker: every hero with its skill here, a passion for it marked. Rows hold ids, not
 ## Heroes: a failed save rebuilds the roster while the popup is open, and a held Hero goes stale.
 func _on_assign_keeper_pressed() -> void:
 	var profession: StringName = Hero.profession_for_building(_open_building)
 	var picker: PopupMenu = %KeeperPicker
 	picker.clear()
 	for hero: Hero in GameSession.roster:
-		var marks: String = " · calling" if hero.calling == profession else ""
+		var marks: String = " · passion" if profession in hero.passions else ""
 		if hero.station == _open_building:
 			marks += " · keeper"
 		elif hero.station != Hero.NO_STATION:

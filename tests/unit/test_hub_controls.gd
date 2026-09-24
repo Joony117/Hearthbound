@@ -491,11 +491,11 @@ func test_the_keeper_row_assigns_shows_away_and_unassigns() -> void:
 	var mira := Hero.new("Mira", 7)
 	mira.def_id = &"knight"
 	mira.level = 80
-	mira.calling = &"smithing"
+	mira.passions = [&"smithing", &"drill"]
 	mira.profession_xp[&"smithing"] = 100000.0
 	var bo := Hero.new("Bo", 2)
 	bo.def_id = &"mage"
-	bo.calling = &"rites"
+	bo.passions = [&"rites", &"alchemy"]
 	GameSession.add_hero(mira)
 	GameSession.add_hero(bo)
 	var skill: int = Hero.profession_skill(mira, &"smithing", BALANCE)
@@ -510,14 +510,14 @@ func test_the_keeper_row_assigns_shows_away_and_unassigns() -> void:
 	var picker: PopupMenu = hub.get_node("%KeeperPicker") as PopupMenu
 	assert_true(picker.visible, "the roster picker opens")
 	assert_eq(picker.item_count, 2)
-	assert_eq(picker.get_item_text(0), "Mira — Smithing %d · calling" % skill)
+	assert_eq(picker.get_item_text(0), "Mira — Smithing %d · passion" % skill)
 	assert_eq(picker.get_item_text(1), "Bo — Smithing 0")
 	picker.index_pressed.emit(0)
 	picker.hide()
 	assert_eq(GameSession.keeper_for(&"Forge"), mira)
-	assert_eq(keeper_name.text, "Mira · Smithing %d · calling" % skill)
+	assert_eq(keeper_name.text, "Mira · Smithing %d · passions Smithing, Drill" % skill, "both passions, the matching one too")
 	assert_true(GameSession.station_hero(bo, &"Forge"))
-	assert_eq(keeper_name.text, "Bo · Smithing 0 · calling Rites", "an off-calling keeper names its calling")
+	assert_eq(keeper_name.text, "Bo · Smithing 0 · passions Rites, Alchemy")
 	assert_true(GameSession.station_hero(mira, &"Forge"))
 	assert_false((hub.get_node("%UnassignKeeper") as Button).disabled)
 
@@ -526,7 +526,7 @@ func test_the_keeper_row_assigns_shows_away_and_unassigns() -> void:
 	roster_list.select(0)
 	roster_list.multi_selected.emit(0, true)
 	var detail: String = (hub.get_node("%HeroDetail") as Label).text
-	assert_string_contains(detail, "Calling: Smithing")
+	assert_string_contains(detail, "Passions: Smithing, Drill")
 	assert_string_contains(detail, "Skills: Smithing %d, Rites 0, Drill 0, Tracking 0, Alchemy 0" % skill)
 	assert_string_contains(detail, "Station: Forge")
 	assert_string_contains((hub.get_node("%HeroAvailability") as Label).text, "Keeps the Forge")

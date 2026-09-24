@@ -112,8 +112,8 @@ extends Resource
 # Profession skill level k costs k * this many minutes of XP (SYSTEMS.md § Keepers and professions).
 @export var profession_xp_minutes_per_level: float = 20.0
 @export var profession_skill_cap: int = 5
-# XP from working in a hero's calling; the owner's "immense XP boost", near a RimWorld major passion.
-@export var calling_xp_multiplier: float = 4.0
+# XP from working in either of a hero's passions; the owner's "immense XP boost", near a RimWorld major passion.
+@export var passion_xp_multiplier: float = 4.0
 
 @export var battle_tick_seconds: float = 0.1
 @export var battle_damage_defense_scale: float = 100.0
