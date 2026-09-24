@@ -442,11 +442,7 @@ static func _expire_effects_and_cooldowns(state: BattleState) -> void:
 
 
 static func _choose_intentions(state: BattleState) -> void:
-	if bool(state.policies.get("retreat_when_supplies_empty", false)) and _supply_count(state, BattleState.SUPPLY_KINDS) == 0:
-		for retreating_actor: BattleActor in state.actors:
-			if retreating_actor.faction == "ally" and retreating_actor.life == BattleActor.LIFE_ALIVE and not bool(retreating_actor.effect_state.get("direct_order", false)):
-				retreating_actor.order_kind = COMMAND_RETREAT
-				retreating_actor.order_point = _objective_point(state, "exit_position")
+	var supplies_out: bool = bool(state.policies.get("retreat_when_supplies_empty", false)) and _supply_count(state, BattleState.SUPPLY_KINDS) == 0
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0:
 			continue
@@ -472,8 +468,16 @@ static func _choose_intentions(state: BattleState) -> void:
 				actor.effect_state["direct_order"] = false
 		if bool(actor.effect_state.get("direct_order", false)) and not actor.order_kind.is_empty() and actor.order_kind != COMMAND_ATTACK_MOVE:
 			continue
-		# ponytail: read after the supplies-retreat override at the top, which a rescue never gets
-		# (dispatch_rescue passes no policies). If one ever does, read it before that, or every pass restarts the carry.
+		# Out of supplies: an ally on auto heads for the exit, ahead of any squad behaviour. A telegraph
+		# evade above still wins its tick, and a direct order skips this (ig-axw).
+		if supplies_out and not bool(actor.effect_state.get("direct_order", false)):
+			actor.order_kind = COMMAND_RETREAT
+			actor.order_target_id = ""
+			actor.order_point = _objective_point(state, "exit_position")
+			continue
+		# ponytail: the supplies retreat above skips both this read and the rescue's carry bookkeeping
+		# below; a rescue never gets it (dispatch_rescue passes no policies). If one ever does, keep the
+		# retreat off kind "rescue", or every pass drops the carry.
 		var previous_kind: String = actor.order_kind
 		var previous_target_id: String = actor.order_target_id
 		if not bool(actor.effect_state.get("direct_order", false)):
