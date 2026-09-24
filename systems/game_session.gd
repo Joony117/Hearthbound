@@ -53,13 +53,18 @@ var town_resources: Dictionary = {"wood": preload("res://balance.tres").town_sta
 ## The n in the next placed id "<type>_<n>"; never reused.
 var town_next_id: int = 1
 ## The Ledger (DECISIONS.md 2026-09-24): settled events, appended by this script's mutators through
-## Ledger.append. Additive save keys; seq is never reused.
+## Ledger.append. The records live in SaveService's side file, not in to_dict(); the main save keeps
+## only ledger_next_seq, the high-water mark. seq is never reused.
 var ledger: Array[Dictionary] = []
 var ledger_next_seq: int = 1
+## Ledger.tier() of each record, index for index with ledger, for Ledger.evict().
+var _ledger_tiers: Array[int] = []
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
 var _save_deferred_depth: int = 0
+## Inside a profile mutation, eviction waits for the commit so a rollback can truncate (item 8).
+var _ledger_hold_depth: int = 0
 var _notification_deferred_depth: int = 0
 var _roster_notification_pending: bool = false
 var _expeditions_notification_pending: bool = false
@@ -1967,14 +1972,24 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 	var checkpoint_error_snapshot: String = _checkpoint_error
 	var command_errors_snapshot: Dictionary[String, String] = _command_errors.duplicate()
 	snapshot["version"] = SaveService.SAVE_VERSION
+	# The records are not in the snapshot: a rollback truncates this list back instead (item 8).
+	var ledger_kept: Array[Dictionary] = ledger
+	var tiers_kept: Array[int] = _ledger_tiers
+	var ledger_kept_size: int = ledger.size()
 	_save_deferred_depth += 1
 	_notification_deferred_depth += 1
+	_ledger_hold_depth += 1
 	# Variant is required because most mutations return void while fallible bulk application returns bool.
 	var mutation_result: Variant = mutation.call()
 	_save_deferred_depth -= 1
 	if mutation_result is bool and not (mutation_result as bool):
+		_ledger_hold_depth -= 1
 		_save_deferred_depth += 1
 		from_dict(snapshot)
+		ledger = ledger_kept
+		ledger.resize(ledger_kept_size)
+		_ledger_tiers = tiers_kept
+		_ledger_tiers.resize(ledger_kept_size)
 		_paused_battle_orders = paused_snapshot
 		_checkpoint_save_failed = checkpoint_failed_snapshot
 		_checkpoint_error = checkpoint_error_snapshot
@@ -1985,12 +2000,20 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 		if last_action_error.is_empty():
 			last_action_error = "The profile changed while the operation was being applied."
 		return false
-	if SaveService.save():
+	var saved: bool = SaveService.save()
+	_ledger_hold_depth -= 1
+	if saved:
+		if _ledger_hold_depth == 0:
+			_evict_ledger()
 		_notification_deferred_depth -= 1
 		_flush_deferred_notifications()
 		return true
 	_save_deferred_depth += 1
 	from_dict(snapshot)
+	ledger = ledger_kept
+	ledger.resize(ledger_kept_size)
+	_ledger_tiers = tiers_kept
+	_ledger_tiers.resize(ledger_kept_size)
 	_paused_battle_orders = paused_snapshot
 	_checkpoint_save_failed = checkpoint_failed_snapshot
 	_checkpoint_error = checkpoint_error_snapshot
@@ -2134,7 +2157,6 @@ func to_dict() -> Dictionary:
 		"town_buildings": town_buildings.duplicate(true),
 		"town_resources": town_resources.duplicate(),
 		"town_next_id": town_next_id,
-		"ledger": ledger.duplicate(true),
 		"ledger_next_seq": ledger_next_seq,
 	}
 
@@ -2275,9 +2297,12 @@ func _read_town(data: Dictionary) -> void:
 
 
 ## Additive keys (ig-m6o.1). A save without them loads an empty ledger; nothing is backfilled. A
-## record without a String kind or an increasing int seq is dropped.
+## record without a String kind or an increasing int seq is dropped. SaveService.load_game() hands
+## the side file's committed records in as "ledger"; a legacy save still embeds them. Always a new
+## list, never cleared in place: a rollback puts the old one back (_commit_profile_mutation).
 func _read_ledger(data: Dictionary) -> void:
-	ledger.clear()
+	var fresh: Array[Dictionary] = []
+	ledger = fresh
 	var last_seq: int = 0
 	for entry: Variant in _array_field(data, "ledger"):
 		var record: Variant = Ledger.normalized(entry)
@@ -2287,11 +2312,23 @@ func _read_ledger(data: Dictionary) -> void:
 		ledger.append(record as Dictionary)
 		last_seq = int((record as Dictionary)["seq"])
 	ledger_next_seq = maxi(Item.int_field(data, "ledger_next_seq", 1, "game session"), last_seq + 1)
+	_ledger_tiers = Ledger.tiers(ledger)
+	_evict_ledger()
 
 
-## Appends one Ledger record, stamped now.
+## Appends one Ledger record, stamped now. Outside a profile mutation nothing can roll it back, so it
+## evicts at once; inside one, _commit_profile_mutation evicts after the commit.
 func _record(kind: String, fields: Dictionary) -> void:
-	ledger_next_seq = Ledger.append(ledger, ledger_next_seq, int(Time.get_unix_time_from_system()), kind, fields, preload("res://balance.tres").ledger_max_records)
+	ledger_next_seq = Ledger.append(ledger, ledger_next_seq, int(Time.get_unix_time_from_system()), kind, fields)
+	_ledger_tiers.append(Ledger.tier(ledger.back()))
+	if _ledger_hold_depth == 0:
+		_evict_ledger()
+
+
+func _evict_ledger() -> void:
+	if _ledger_tiers.size() != ledger.size():
+		_ledger_tiers = Ledger.tiers(ledger)
+	Ledger.evict(ledger, _ledger_tiers, preload("res://balance.tres").ledger_max_records)
 
 
 ## One battle record per settled battle; team is every allied actor in the fight, downed or not

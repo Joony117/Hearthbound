@@ -14,29 +14,41 @@ const RESULT_TEXT: Dictionary = {
 }
 
 
-## Appends {seq, time, kind, ...fields}, then evicts over the cap. Returns the next seq.
-static func append(ledger: Array[Dictionary], next_seq: int, time: int, kind: String, fields: Dictionary, max_records: int) -> int:
+## Appends {seq, time, kind, ...fields}. Returns the next seq. Eviction is evict()'s job, run only
+## after the mutation commits, so a rollback can truncate the list back (item 8).
+static func append(ledger: Array[Dictionary], next_seq: int, time: int, kind: String, fields: Dictionary) -> int:
 	var record: Dictionary = {"seq": next_seq, "time": time, "kind": kind}
 	record.merge(fields)
 	ledger.append(record)
-	while ledger.size() > max_records:
-		ledger.remove_at(_eviction_index(ledger))
 	return next_seq + 1
 
 
-## Oldest record of the lowest tier present.
-static func _eviction_index(ledger: Array[Dictionary]) -> int:
-	var best_index: int = 0
-	var best_tier: int = _tier(ledger[0])
-	for index: int in range(1, ledger.size()):
-		var tier: int = _tier(ledger[index])
-		if tier < best_tier:
-			best_index = index
-			best_tier = tier
-	return best_index
+## Evicts over the cap, tiered, oldest first within a tier (item 8). tiers holds tier() of each
+## record, index for index, and is kept in step: the oldest record of the lowest tier is a native
+## find() on it, where a GDScript walk over a full ledger cost about 9 ms on every append.
+## ponytail: one O(n) find plus remove_at per evicted record. A load after a long session evicts
+## every record added since the last load, about 0.3 ms each at the cap; batch it (one pass that
+## picks every victim, then one rebuild) if loads ever get slow.
+static func evict(ledger: Array[Dictionary], tiers: Array[int], max_records: int) -> void:
+	while ledger.size() > max_records:
+		var index: int = -1
+		for tier_index: int in TIER_BY_KIND.size() + 1:
+			index = tiers.find(tier_index)
+			if index >= 0:
+				break
+		ledger.remove_at(index)
+		tiers.remove_at(index)
 
 
-static func _tier(record: Dictionary) -> int:
+## tier() of every record, for evict().
+static func tiers(ledger: Array[Dictionary]) -> Array[int]:
+	var out: Array[int] = []
+	for record: Dictionary in ledger:
+		out.append(tier(record))
+	return out
+
+
+static func tier(record: Dictionary) -> int:
 	if is_routine(record):
 		return 0
 	return int(TIER_BY_KIND.get(str(record.get("kind", "")), 1))

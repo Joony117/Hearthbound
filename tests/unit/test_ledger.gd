@@ -4,23 +4,23 @@ extends GutTest
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 
-var _original_save_existed: bool = false
-var _original_save_bytes: PackedByteArray
+var _originals: Dictionary = {}
 
 
 func before_all() -> void:
-	_original_save_existed = FileAccess.file_exists(SaveService.SAVE_PATH)
-	if _original_save_existed:
-		_original_save_bytes = FileAccess.get_file_as_bytes(SaveService.SAVE_PATH)
+	for path: String in [SaveService.SAVE_PATH, SaveService.LEDGER_PATH]:
+		if FileAccess.file_exists(path):
+			_originals[path] = FileAccess.get_file_as_bytes(path)
 
 
 func after_all() -> void:
 	SaveService.load_blocked = false
 	GameSession.set("_save_deferred_depth", 0)
-	if _original_save_existed:
-		FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE).store_buffer(_original_save_bytes)
-	elif FileAccess.file_exists(SaveService.SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveService.SAVE_PATH))
+	for path: String in [SaveService.SAVE_PATH, SaveService.LEDGER_PATH]:
+		if _originals.has(path):
+			FileAccess.open(path, FileAccess.WRITE).store_buffer(_originals[path])
+		elif FileAccess.file_exists(path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 func before_each() -> void:
@@ -52,12 +52,17 @@ func test_each_writer_records_one_event_and_the_ledger_survives_a_disk_reload_by
 
 	var before: String = JSON.stringify(GameSession.ledger)
 	var first_text: String = _disk_save()
+	assert_false(first_text.contains("\"ledger\":"), "the main save keeps only the mark")
+	assert_string_contains(first_text, "\"ledger_next_seq\": 5")
+	var first_lines: String = FileAccess.get_file_as_string(SaveService.LEDGER_PATH)
+	assert_eq(first_lines.split("\n").size(), 5, "four lines, each ending in a newline")
+	assert_string_contains(first_lines.split("\n")[3], "\"seq\":4,", "one compact record per line")
+	assert_false(first_lines.contains("\t"), "not indented")
 	assert_true(_disk_load())
 	assert_eq(JSON.stringify(GameSession.ledger), before, "ints stay ints after the reload")
 	assert_eq(GameSession.ledger_next_seq, 5)
-	var second_text: String = _disk_save()
-	assert_eq(_ledger_section(second_text), _ledger_section(first_text), "the next save writes the same ledger bytes")
-	assert_string_contains(_ledger_section(first_text), "\"seq\": 4,")
+	_disk_save()
+	assert_eq(FileAccess.get_file_as_string(SaveService.LEDGER_PATH), first_lines, "the next save writes the same ledger bytes")
 
 	assert_true(GameSession.summon_hero(_hero("Later", "mage"), BALANCE))
 	assert_eq(int(GameSession.ledger.back()["seq"]), 5, "seq is never reused")
@@ -151,11 +156,13 @@ func test_eviction_is_tiered_oldest_first_and_seq_is_never_reused() -> void:
 	var routine: Dictionary = {"result": "victory", "moments": [], "team": ["h"]}
 	var eventful: Dictionary = {"result": "victory", "moments": [{"tick": 1, "what": "downed", "hero": "h", "by": "enemy:rogue"}], "team": ["h"]}
 	for entry: Array in [["died", {}], ["summoned", {}], ["ranked_up", {}], ["battle", eventful], ["battle", routine], ["battle", routine]]:
-		next_seq = Ledger.append(ledger, next_seq, 0, entry[0], entry[1], 6)
+		next_seq = Ledger.append(ledger, next_seq, 0, entry[0], entry[1])
+		Ledger.evict(ledger, Ledger.tiers(ledger), 6)
 	var evicted: Array[String] = []
 	for pass_index: int in 6:
 		var before: Array = ledger.map(func(record: Dictionary) -> int: return record["seq"])
-		next_seq = Ledger.append(ledger, next_seq, 0, "died", {}, 6)
+		next_seq = Ledger.append(ledger, next_seq, 0, "died", {})
+		Ledger.evict(ledger, Ledger.tiers(ledger), 6)
 		var gone: Array = before.filter(func(seq: int) -> bool: return not ledger.any(func(record: Dictionary) -> bool: return record["seq"] == seq))
 		assert_eq(gone.size(), 1)
 		evicted.append("%s#%d" % [["", "died", "summoned", "ranked_up", "battle", "battle", "battle"][gone[0]], gone[0]])
@@ -166,14 +173,14 @@ func test_eviction_is_tiered_oldest_first_and_seq_is_never_reused() -> void:
 
 func test_history_lines_collapse_routine_wins_and_name_killers_and_rescuers() -> void:
 	var ledger: Array[Dictionary] = []
-	var next_seq: int = Ledger.append(ledger, 1, 0, "summoned", {"hero": "h:a", "name": "Aldric", "rank": 0, "archetype": "knight"}, 100)
+	var next_seq: int = Ledger.append(ledger, 1, 0, "summoned", {"hero": "h:a", "name": "Aldric", "rank": 0, "archetype": "knight"})
 	for index: int in 3:
-		next_seq = Ledger.append(ledger, next_seq, 0, "battle", {"order": "o%d" % index, "zone": "verdant_outskirts", "battle_kind": "normal", "result": "victory", "team": ["h:a", "h:b"], "kills": {}, "moments": []}, 100)
+		next_seq = Ledger.append(ledger, next_seq, 0, "battle", {"order": "o%d" % index, "zone": "verdant_outskirts", "battle_kind": "normal", "result": "victory", "team": ["h:a", "h:b"], "kills": {}, "moments": []})
 	next_seq = Ledger.append(ledger, next_seq, 0, "battle", {"order": "o9", "zone": "verdant_outskirts", "battle_kind": "normal", "result": "victory", "team": ["h:a", "h:b"], "kills": {"h:a": 2}, "moments": [
 		{"tick": 5, "what": "downed", "hero": "h:b", "by": "enemy:rogue"},
 		{"tick": 9, "what": "revived", "hero": "h:b", "by": "h:a"},
-	]}, 100)
-	next_seq = Ledger.append(ledger, next_seq, 0, "ranked_up", {"hero": "h:a", "from": 0, "to": 1, "via": "essence"}, 100)
+	]})
+	next_seq = Ledger.append(ledger, next_seq, 0, "ranked_up", {"hero": "h:a", "from": 0, "to": 1, "via": "essence"})
 	var zone_name: String = ZoneDefinition.definition_for(&"verdant_outskirts").display_name
 	var names: Dictionary = {"h:b": "Bo"}
 	assert_eq(Ledger.history_lines(ledger, "h:a", names, BALANCE.rank_names, 10), [
@@ -263,7 +270,7 @@ func test_a_partly_failed_rescue_carries_the_original_battle_order_and_records_i
 
 func test_a_rescue_record_without_rescuers_reads_neutral() -> void:
 	var ledger: Array[Dictionary] = []
-	Ledger.append(ledger, 1, 0, "battle", {"order": "o1", "zone": "verdant_outskirts", "battle_kind": "rescue", "result": "timeout", "team": ["h:a", "h:b", "h:c"], "kills": {}, "moments": [], "rescued": ["h:a"]}, 100)
+	Ledger.append(ledger, 1, 0, "battle", {"order": "o1", "zone": "verdant_outskirts", "battle_kind": "rescue", "result": "timeout", "team": ["h:a", "h:b", "h:c"], "kills": {}, "moments": [], "rescued": ["h:a"]})
 	var zone_name: String = ZoneDefinition.definition_for(&"verdant_outskirts").display_name
 	var names: Dictionary = {"h:a": "Ann", "h:b": "Bo", "h:c": "Cy"}
 	assert_eq(Ledger.history_lines(ledger, "h:a", names, BALANCE.rank_names, 1), ["Rescued from %s." % zone_name] as Array[String])
@@ -360,13 +367,23 @@ func test_a_full_ledger_saves_in_reasonable_time() -> void:
 		GameSession._record("battle", {"order": "order:%d" % index, "zone": "verdant_outskirts", "battle_kind": "normal", "result": "victory", "team": team, "kills": {"hero:a": 3, "hero:b": 2}, "moments": [] if index % 4 != 0 else [{"tick": 120, "what": "downed", "hero": "hero:c", "by": "enemy:rogue"}, {"tick": 180, "what": "revived", "hero": "hero:c", "by": "hero:a"}]})
 	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
 	assert_eq(int(GameSession.ledger.back()["seq"]), BALANCE.ledger_max_records + 1)
+	# ig-m6o.9: the first save after a from_dict writes the side file whole, once. After that a commit
+	# appends only its own line, and a save with nothing new writes no ledger bytes.
 	var started: int = Time.get_ticks_msec()
 	var text: String = _disk_save()
 	var save_msec: int = Time.get_ticks_msec() - started
+	GameSession.set("_save_deferred_depth", 0)
+	var started_usec: int = Time.get_ticks_usec()
+	assert_true(GameSession._commit_profile_mutation(func() -> void: GameSession._record("ranked_up", {"hero": "hero:a", "from": 0, "to": 1, "via": "essence"})))
+	var commit_usec: int = Time.get_ticks_usec() - started_usec
+	started_usec = Time.get_ticks_usec()
+	assert_true(SaveService.save())
+	var periodic_usec: int = Time.get_ticks_usec() - started_usec
+	GameSession.set("_save_deferred_depth", 1)
 	started = Time.get_ticks_msec()
 	assert_true(_disk_load())
 	var load_msec: int = Time.get_ticks_msec() - started
-	gut.p("LEDGER CAP: %d records, save %d ms, load %d ms, file %d bytes" % [GameSession.ledger.size(), save_msec, load_msec, text.length()])
+	gut.p("LEDGER CAP: %d records, first save %d ms, commit %.2f ms, periodic save %.2f ms, load %d ms, main save %d bytes, side file %d bytes" % [GameSession.ledger.size(), save_msec, commit_usec / 1000.0, periodic_usec / 1000.0, load_msec, text.length(), FileAccess.get_file_as_bytes(SaveService.LEDGER_PATH).size()])
 	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
 	assert_lt(save_msec, 5000)
 
@@ -489,15 +506,11 @@ func _disk_load_after_save() -> bool:
 
 
 func _write_save(payload: Dictionary) -> void:
+	if FileAccess.file_exists(SaveService.LEDGER_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveService.LEDGER_PATH))
 	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
 	file.store_string(JSON.stringify(payload, "\t"))
 	file.close()
-
-
-## From "ledger" up to the next key: both Ledger keys, as written.
-func _ledger_section(text: String) -> String:
-	var start: int = text.find("\t\"ledger\": ")
-	return text.substr(start, text.find("\t\"lost_caches\"", start) - start)
 
 
 func _json(value: Dictionary) -> Dictionary:
