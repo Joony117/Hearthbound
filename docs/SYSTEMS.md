@@ -500,6 +500,27 @@ baseline. A hero with 32 skills is part of that test, because the owner wants 30
 
 ---
 
+## The Ledger — *ig-m6o.1, accepted 2026-09-24*
+
+The record of settled events that every history reader derives from. The ADR is `DECISIONS.md`
+2026-09-24 "The Ledger", and the scope is `ig-m6o.1`.
+
+| Row | Value | Why |
+|---|---|---|
+| `ledger_max_records` | 10,000 | A routine battle record is a few hundred bytes, so the cap holds the save to roughly 3 MB (an estimate) |
+| `battle_max_moments` | 64 | A five-hero battle with every hero downed and revived three times needs 30 moments. A 50-hero region can exceed it; past the cap, `moments_truncated` is set |
+| History lines in hero detail | 10 | Newest first. Routine victories at one zone collapse into one line |
+
+The eviction order is tiered, oldest first within each tier: routine victory `battle` records (no
+moments, no rescued heroes), then other `battle` records, then `ranked_up`, then `summoned`, and
+`died` last (`DECISIONS.md` 2026-09-24, director amendment).
+
+> ⚠️ **PROVISIONAL** — both caps are estimates. No one has counted records per hour of real play,
+> or timed a save with a full ledger · **Settled by:** the `ig-m6o.1` acceptance test that fills
+> the ledger to the cap and times a real save, plus a played build that counts records per hour
+
+---
+
 ## Ranks — *Phase 2*
 
 `F D C B A S SS SSS` → int `0..7`. Applies to heroes and equipment alike.
@@ -603,6 +624,19 @@ Expeditions' recommended power is pinned against.
 ---
 
 ## Sacrifice → rank up — *Phase 2*
+
+> ⚠️ **PROVISIONAL — spine flag (owner ruling, 2026-09-24).** Power comes from BOTH sources now.
+> Living deeds, finished dreams and Founding also earn Essence and rank-ups, and sacrifice stays
+> the fast, dark path (`GAME_SPEC.md` § Direction). Every number in this section assumes sacrifice
+> is the only Essence source. That includes the ~327-pull spine and the ~15× "manufacture, don't
+> pray" ratio, so they will move. The living-Essence formulas are undecided. Guardrails proposed
+> for `ig-m6o.4`:
+> - Living Essence never makes Summon Stones.
+> - Per hour of play, sacrifice stays the fastest route to SSS.
+> - A deed rank-up (the Risen path) is a milestone, never a farm.
+>
+> · **Settled by:** `ig-m6o.4`. game-designer restates this section with both sources before any
+> formula ships, and the owner signs off on the restated spine.
 
 ```
 yield = essence_base[fodder.rank] * (1.0 + fodder.level / level_cap[fodder.rank])

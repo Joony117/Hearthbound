@@ -7,6 +7,183 @@ document, the document wins or the document gets amended — not silently reinte
 
 ---
 
+## Direction (owner, 2026-09-24)
+
+**Approved by the owner on 2026-09-24,** after an eight-round debate (director vs GPT-6 Astra).
+This is where the game is going, and it outranks older direction text in this file. It is a
+target, not a build list:
+- Each step arrives as a ticket under the `ig-m6o` epic, in order.
+- Nothing is built toward a later step ahead of time.
+- Until a step lands, the rules in the rest of this document hold.
+- Lines this direction contradicts are marked **Amended 2026-09-24**, not deleted.
+
+### The pitch
+
+*Infinite Gacha is a living-world squad RPG where every summon brings someone worth knowing,
+every battle changes their relationships, and the town you build can rise to rescue them.*
+
+**Spine:** summon a person → give them a home → discover whom they love and what they want →
+fight together → let their choices, achievements and losses change the world.
+
+### The six pillars
+
+**1. The Door Opens Onto Lives.** Every summon changes two worlds.
+- Open a homeland rift and glimpse someone mid-adventure, before rank, name, passion and dream
+  appear.
+- Summon extraordinary power, and the pursuer who knows how to defeat it.
+- Watch pity become a beacon: a particular recruit approaches a guaranteed arrival.
+- Pull distinct relatives, rivals and pupils instead of duplicate souls.
+- Face an entire homeland demanding its missing person back.
+- **Joy:** rift potlucks bring singing bread, impossible recipes and embarrassing reunions.
+
+**2. A Home Worth Returning To.** Build streets full of people who have reasons to stay.
+- Neighbours become friends, rivals and collaborators. Adjoining workshops invent techniques.
+- Fulfil a dream by founding a tavern, school or forge that seeds other people's dreams.
+- Feed households through winter. Design evacuation routes around actual rescue promises.
+- Watch apprentices found independent settlements that reinterpret your traditions.
+- Call a retiree into one legendary battle: their pupils and institutions combine into **The
+  Founder Walks Again**.
+- **Joy:** soup factions, petty hobbies, monster pets, nickname traditions and festivals arise
+  from residents' histories.
+
+**3. People Inside the Fight.** Their relationships change what your squad can do.
+- Program skills across bonded heroes: one commits, another counters the retaliation.
+- Pilot a frightened veteran through the killing pattern they finally recognise.
+- Turn a dream into a rescue chain: break pursuit, lift a friend, cast while carrying.
+- Let an apprentice answer the missing beat in a grieving survivor's old combo.
+- Confront a refusal with a visible reason: a hero breaks formation to save someone, and may be
+  right, or tragically mistaken.
+- **Joy:** squads invent sports and ridiculous skill exhibitions. Apprentices parody a nemesis's
+  famous pose.
+
+**4. Power Has Witnesses.** Everyone remembers how you became extraordinary.
+- Raise an overlooked F-rank through deeds into a **Risen** SSS whom fate can no longer ignore.
+- Earn Essence through living achievements, or sacrifice someone for irreversible power.
+- Face protests, hidden victims, purposeful volunteers, and desertions that found rival towns.
+- Unleash the **Parliament of Ghosts**: sacrificed people perform their real techniques,
+  cooperating or resisting according to their promises.
+- Discover that you, the conscious Door, can be loved, hunted, rescued or overthrown by your own
+  heroes.
+- **Joy:** the terrifying champion still has a ridiculous nickname, and a pet that steals their
+  chair.
+
+**5. Fate Has a Face.** Outwit a Guest who engineers collisions from your actual history.
+- Choose Mother Briar's tangled affections, the Gilded Jackal's outrageous wagers or Sister
+  Cinder's unfinished promises.
+- Read omens, bargain over opportunities, and discover the causal chain behind an encounter.
+- Hunt named, scarred nemeses who remember your tactics, and who may eventually retire to teach
+  counters to them.
+- Recover a stolen name through the habits and techniques its forgotten owner left behind.
+- Raise a Risen hero capable of stealing the Guest's chair.
+- **Joy:** the Guest can arrange a disastrous reunion banquet as readily as a siege, and
+  residents create the punchline.
+
+**6. Nothing Ends Without Leaving Something.** Every life changes the world's possibilities.
+- Visit graves with friends. Face hollow bosses carrying the dead hero's real kit and gear.
+- Welcome the Winter of Names, when unfinished dreams return to familiar homes.
+- Discover a dead defender's protection in their doorway. Eventually pilot **The Town Gets Up**
+  to rescue an expedition.
+- Read Chronicle chapters grounded in deeds, with witnesses who disagree about their meaning.
+- Enter **The Old World** (approved, ruling 1): former towns become homeland rifts, your champion
+  becomes a future nemesis, and a chair-thief becomes the next town's Guest.
+- **Joy:** recipes, jokes and festivals outlive their founders. One soul remains one person
+  throughout the afterlife.
+
+### The addiction stack
+
+- **30 seconds:** reveal a person through a rift, recognise a telegraph, land a personal combo.
+- **5 minutes:** check a household, discover a dream complication, pick the next squad or summon.
+- **Session:** pursue a promise, come back with changed relationships, build or celebrate the
+  consequence.
+- **"At work":** "Her brother arrives tomorrow. Will she still volunteer?" Anticipation lasts
+  without punishing you for closing the game.
+- **Hour 5:** squad sports reveal personality once basic automation is familiar.
+- **Hour 20:** former apprentices build an independent town you want to visit.
+- **Hour 100:** a retired nemesis's school teaches your enemies, and your pupils.
+- **Hour 500:** a congress of homeland societies and former worlds contests the Door's future.
+
+### The first hour
+
+- **Minute 0:** summon someone with a passion, a dream and a homeland connection.
+- **Minute 5:** place their home and workplace, and witness a specific interaction with another
+  resident.
+- **Minute 15:** deploy, read a telegraph, pilot a hero and program a short learned-skill chain.
+- **Minute 30:** choose how to tackle an exposed rescue or a dangerous objective. Actual play
+  produces protection, a near-loss or a loss. No death is scripted.
+- **Minute 60:** come back to a relationship change, a dream milestone and a Chronicle entry. An
+  omen connects tomorrow's expedition to what actually happened.
+
+### Owner rulings, 2026-09-24
+
+1. **The Old World: yes, runs stack up.** A fallen or retired town becomes a homeland rift for the
+   next town. This amends the one-roster-forever premise (§ Win and loss).
+2. **Power source: both.** Living deeds, finished dreams and Founding earn Essence and rank-ups.
+   Sacrifice stays as the fast, dark path, with social fallout: protests, hidden victims,
+   volunteers and desertions. This amends sacrifice as the only Essence source (§ Core loop,
+   § Win and loss, § The town builder). The formulas touch the spine, so they wait for a restated
+   spine (`SYSTEMS.md` § Sacrifice → rank up, spine flag).
+3. **Defiance: yes, both.** A mid-fight refusal always shows its reason, and it can be right or
+   wrong. It is never unexplained noise. Overthrowing the player, the Door, is rare and earned.
+   This amends "preferences remain authoritative" (§ Combat model).
+4. **Afterlife: a dead hero is never playable again.** There is no revive and no re-summon, in the
+   Old World too. Ghost visits, hollows and the Parliament are fine: the dead act, but never
+   rejoin the roster. `kill_hero()` stays the only roster exit, and nothing comes back through it.
+5. **Director call: only Risen heroes can steal the Guest's chair.** A Risen hero is one that
+   climbed F→SSS by deeds. A hero born above F cannot take the chair, by design. The underdog is
+   the culmination.
+
+> ⚠️ **PROVISIONAL** — game-designer readings of ruling 1, not owner rulings:
+> - The old town's living people become its rift's population, and can arrive again carrying
+>   their history. The dead never do (ruling 4).
+> - A town "falls" when its Door is overthrown or its roster is lost beyond recovery. "Retired"
+>   is the player's own choice.
+>
+> · **Settled by:** the owner, when `ig-m6o.8` is scoped
+
+### The build order (`ig-m6o`)
+
+Each step lands one new feeling. Each is wired after the one before it.
+
+1. **The Ledger** (`ig-m6o.1`). Record settled events: who did what to whom, when and where.
+   History readers derive from it, and combat still resolves combat. *"The game remembers what we
+   did."* ADR: `DECISIONS.md` 2026-09-24.
+2. **People at home** (`ig-m6o.2`). Quirks, dreams, meals, neighbourhood encounters and Bonds.
+   *Affection and everyday amusement.*
+3. **People in combat** (`ig-m6o.3`). The skill foundation finished, personal chains, informed
+   refusals, rescue motives and recognition. *Trust in a particular squad.*
+4. **Summoning with consequences** (`ig-m6o.4`). Homeland populations, anchors, beacon pity,
+   entourage arrivals and pursuers; deeds and living achievements connect to promotion.
+   *Anticipation about who arrives next.*
+5. **Ambitions become institutions** (`ig-m6o.5`). Founding, apprentices, schools, food pressure,
+   seasons, raids and independent settlements. *Pride in a society with its own future.*
+6. **Death and power remain personal** (`ig-m6o.6`). Graves, sacrifice reactions, the Parliament,
+   hollows, Winter visitors and inherited techniques. *Grief, responsibility and discovery.*
+7. **Fate becomes an opponent** (`ig-m6o.7`). The selectable Guests, causal schemes, evolving
+   nemeses, stolen names, Door overthrow and the chair challenge. *Rivalry with a world that knows
+   you.*
+8. **History becomes spectacle** (`ig-m6o.8`). The Founder's formation, the walking town, the
+   homeland congress and Old World succession. *Astonishment at what these lives built.*
+
+The skills lane (`ig-gy0`) and the town lane (`ig-6m2`) keep going. They are foundations steps 2
+and 3 build on, not rivals.
+
+### Cut
+
+- **Alternate selves.** They undermine irreplaceability. Replaced by worlds transformed by one
+  person's absence.
+- **Anonymous duplicate fodder.** It contradicts personhood. Replaced by distinct entourage
+  members.
+- **Permanent F-rank invisibility.** It contradicts remembered deeds. Replaced by recognition
+  earned through audacity.
+- **Universal ascension, or compulsory death after retirement's final fight.** It treats
+  fulfilment as disposal. Replaced by Founding and the living legendary formation.
+- **Generic banners, and seasons with no people behind them.** Merged into homeland arrivals and
+  the shared winter of hunger, visitors and promises.
+- **A separate joy pillar.** It would isolate happiness from ordinary life. Joy is woven through
+  all six.
+
+---
+
 ## Player fantasy
 
 You are a summoner running a mercenary hall. **You never fight as yourself.**
@@ -19,6 +196,12 @@ need help, a stranded force needs a rescue, and permanent losses leave recoverab
 The feeling being engineered is **attachment vs. expendability**. Every hero is
 simultaneously an investment you've poured materials into and raw material for a better one.
 The game is working when deciding whose life to spend is uncomfortable.
+
+> **Amended 2026-09-24 (§ Direction).** You are also the *Door*, the conscious gate the summons
+> come through. You still never fight as yourself, but your heroes can love, hunt, rescue or
+> overthrow you (ruling 3). The feeling widens rather than flips. Attachment now comes from
+> knowing a person, not only from what you poured into them. Sacrifice stays as the fast, dark
+> path, and now it has witnesses.
 
 Inspired by the manhwa *Pick Me Up, Infinite Gacha*.
 
@@ -41,6 +224,10 @@ Inspired by the manhwa *Pick Me Up, Infinite Gacha*.
 6. **Push** a harder zone, or issue finite repeat orders to established teams. Unlimited farming
    requires a conservative safety forecast for the current team and zone.
 
+> **Amended 2026-09-24 (§ Direction, ruling 2).** Step 5's sacrifice is no longer the only way
+> up. Living deeds, finished dreams and Founding will also earn Essence and rank-ups (`ig-m6o.4`,
+> `ig-m6o.5`). Until those steps land, sacrifice is the only source.
+
 Strength reduces expedition duration with diminishing returns and a nonzero floor. Small
 parties take longer to cover the same workload, so splitting one team into solo parties does
 not multiply income simply because combat already scales with party size. Returns bank rewards
@@ -56,6 +243,12 @@ until the player reviews them; parallel returns and time with the game closed do
 
 **There is no run structure and no meta-loss state.** This is a persistent roster game, not
 a roguelite.
+
+> **Amended 2026-09-24 (§ Direction, ruling 1: the Old World).** Runs stack up. A town can fall,
+> or you can retire it, and it becomes a homeland rift for your next town. Its champion can
+> return as a nemesis, and a chair-thief becomes the next town's Guest. So "one roster forever"
+> no longer holds. Each town is still persistent, with no roguelite resets inside it. The dead
+> never return (ruling 4). Until `ig-m6o.8` lands, there is one town and the text below holds.
 
 - An **expedition** succeeds, retreats, or wipes. That's the only win/loss the player meets.
 - Since 2026-09-23 the town can also kill: a housed hero can starve to death if food stays at 0.
@@ -75,6 +268,13 @@ Circle (base building, `SYSTEMS.md`) erodes this ratio as it levels up, but by d
 any buildings are built. Since 2026-09-23 the last step, SS→SSS, also needs a master priest at
 the Sanctum: a hero with a Rites passion, trained to skill 5 (§ Heroes staff the buildings). That
 changes when you can finish, not what it costs.
+
+> **Amended 2026-09-24 (§ Direction, rulings 2 and 5).** Manufacturing an SSS will have two roads.
+> Sacrifice is the fast, dark one. Living deeds, finished dreams and Founding are the slow, clean
+> one, and their high point is the **Risen**: an F-rank raised to SSS by deeds, the only kind of
+> hero that can steal the Guest's chair. The ~327-pull and ~15× figures below assume sacrifice
+> alone, so they move once living Essence has formulas (`SYSTEMS.md` § Sacrifice → rank up, spine
+> flag).
 
 > ⚠️ **PROVISIONAL** — the ~327-pull and ~12×/~15× ratios are arithmetically verified
 > (`SYSTEMS.md`) but unvalidatable against real play time: there is no Summon Stone income rate
@@ -121,7 +321,10 @@ These are non-negotiable and shape architecture. Changing one requires a `DECISI
 ### Approved autonomous squad direction (`ig-544`, 2026-09-22)
 
 Heroes handle basic attacks and role positioning themselves. Auto Battle advances authored
-objectives, while per-ability/item Auto or Manual preferences remain authoritative. Players
+objectives, while per-ability/item Auto or Manual preferences remain authoritative.
+(**Amended 2026-09-24, § Direction, ruling 3:** a hero may refuse or break an order mid-fight. It
+always shows its reason, and it can be right or wrong (`ig-m6o.3`). Until then, preferences stay
+authoritative.) Players
 select heroes/squads, move, attack-move, hold, guard, retreat, target abilities/items and pause
 the watched battle for orders. There is no direct hero-piloting requirement. Since 2026-09-23
 you *may* take direct control of one hero in a watched battle (§ Skills). It stays optional.
@@ -303,6 +506,9 @@ anything.
 ---
 
 ## Direction — where this goes after the core loop
+
+**2026-09-24:** § Direction (owner, 2026-09-24), at the top of this file, is the current
+direction. This section records how the town and combat got here, and it still specs them.
 
 **2026-09-22 amendment:** the sent/controlled split and direct-piloting intervention below are
 superseded by `ig-544` / `ig-yzc`: one autonomous simulation, optionally watched and commanded.
@@ -551,6 +757,8 @@ you pulled and can lose.
     excludes those. Gear stays loot plus parts.
   - **The town never makes Summon Stones, Essence or parts.** Expedition income and the ~327-pull
     claim in § Win and loss stay where they are.
+    **Amended 2026-09-24 (§ Direction, ruling 2):** Founding and finished dreams will earn Essence
+    (`ig-m6o.5`). Summon Stones and parts stay expedition-only.
 - **Job skills.** The new jobs are professions too: woodcutting (Lumbermill), mining (Mine) and
   farming (Farm) join the five hall professions, so there are eight. A worker earns XP in its job
   like a keeper does, and a skilled worker makes more. Every hero is born with two passions out of
@@ -722,6 +930,19 @@ no recipes and unlock nothing. They only scale bonuses the buildings already giv
 **Clarified 2026-09-23 (`ig-6m2`).** Town workers are roster heroes too, so "town NPCs" still holds.
 "Day/night" and "weather" still hold, so the town builder has no seasons and nobody freezes.
 Turning wood and stone into buildings is not a crafting tree.
+
+**Amended 2026-09-24 (§ Direction).** The direction schedules several items on this list. Each
+leaves the list only when its step's ticket is written, and not before:
+- the pity system: beacon pity (`ig-m6o.4`)
+- achievements: living deeds (`ig-m6o.4`)
+- pets: monster pets
+- seasons: the Winter of Names, and winter food pressure (`ig-m6o.5`, seasons only; day/night and
+  weather stay out)
+- morale: fear and informed refusals (`ig-m6o.3`)
+- story/campaign: the Chronicle and the Guest's schemes (`ig-m6o.7`)
+- non-roster people: homeland populations (`ig-m6o.4`)
+
+Until then, the list binds implementers exactly as before.
 
 **Excluded from the draft is not the same as excluded forever.** Hard constraints above is the
 never list; this one is a *now* list. Direction above already names town NPCs as eventual, and

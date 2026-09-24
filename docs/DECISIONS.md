@@ -7,6 +7,100 @@ Newest first.
 
 ---
 
+## 2026-09-24: The Ledger — one append-only record of settled events on `GameSession`; every history reader derives from it
+
+**ACCEPTED by the director, 2026-09-24, with three amendments** (items 5 and 8 below: every
+`battle` record names its team, an expedition `died` record points at its battle, and eviction
+is tiered so the dead are forgotten last). Drafted for `ig-m6o.1`,
+step 1 of the living-world direction (`GAME_SPEC.md` § Direction, owner, 2026-09-24). Nemesis,
+the Guest, the Chronicle, graves, the Parliament and Risen promotion all read history. A fact
+that is not recorded when it happens can never be told later, so the record comes first.
+`SYSTEMS.md` § The Ledger has the numbers.
+
+**What moves.**
+
+1. **The Ledger is `GameSession` state.** There are two additive keys: `ledger` (a list of
+   records) and `ledger_next_seq` (an int that starts at 1 and is never reused). `SAVE_VERSION` is
+   not bumped (the `P2-23` precedent). A save without the keys loads an empty ledger. Nothing is
+   backfilled. This crosses save boundary #1, so it needs a real disk round-trip, a legacy-save
+   load and a `verifier`.
+2. **A record is `{seq, time, kind, ...fields}`.** `time` is unix seconds when the event settles,
+   and `seq` orders records. Heroes are named by `instance_id`. Enemies have no identity yet, so
+   they appear as `enemy:<archetype>` plus the zone. Only `summoned` and `died` carry a name.
+3. **Append-only.** No code edits a record. Only the size cap removes records (item 8).
+4. **Settled facts only.** A record is written by the same `GameSession` mutator that changes the
+   state it describes, so one snapshot never holds the change without its record, or the reverse.
+   Forecasts, repeat-safety forecasts, previews and the arena prototype write nothing.
+5. **One writer per kind.**
+   - `summoned`: `summon_hero`.
+   - `battle`: `_settle_battle_order` and `_settle_rescue_order`, one record per settled battle.
+     It names its `team`: the `instance_id` of every hero who fought, downed or not. The team is
+     the battle's witness list, so a later per-hero-knowledge reader (a hero knows what they saw)
+     needs no backfill. *Director amendment.*
+   - `died`: `kill_hero`, and only there. An `expedition` death carries `battle_seq`, the `seq`
+     of the `battle` record that caused it, written in the same settle. It is the first causal
+     link between records. *Director amendment.*
+   - `ranked_up`: `rank_up_hero`.
+   - `meal` is reserved for step 2. Eating ticks are not events.
+6. **Permadeath keeps one writer.** `kill_hero()` gains optional `cause` (`expedition`,
+   `sacrifice` or `starvation`) and `by` arguments and writes the `died` record itself. A
+   sacrifice is one `died` record with `by` = the keeper. Rule 8 is unchanged: `kill_hero()` is
+   still the only code that removes a hero, and now it is also the only code that records one
+   leaving.
+7. **Combat resolves combat, and reports moments.** `combat/` never reads or writes the Ledger.
+   - The simulation appends a *moment* to `BattleState.moments` when a hero is downed, revived or
+     carried out: `{tick, what, hero, by}`.
+   - `moments` is an additive `BattleState` key, so a mid-fight save and reload keeps them
+     (boundary #1). `BattleOutcome` gains `moments` as a copy, and `GameSession` writes them into
+     the `battle` record at settle.
+   - Moments draw no RNG and change no result. The forecast still predicts the same battle.
+   - The `legacy_v2` backend reports an empty list (boundary #4: both paths still hand back one
+     `BattleOutcome` type).
+8. **Bounded size.**
+   - `ledger_max_records` caps the list, and `battle_max_moments` caps each battle; past it,
+     `moments_truncated` is set.
+   - Over the cap, eviction is tiered, and within a tier the oldest record goes first:
+     1. routine battles: a victory `battle` with no moments and no rescued heroes
+     2. other `battle` records
+     3. `ranked_up`
+     4. `summoned`
+     5. `died`, last of all. A game about remembering the dead forgets them last.
+     *Director amendment.*
+   - Every reader tolerates gaps ("arrived before the records begin"). Legacy saves need that
+     anyway.
+9. **Rules are pure static functions in one script,** following `ExpeditionOrders`: append with
+   cap and eviction, records for a hero, and history lines. `GameSession` calls it. The first
+   visible reader is the hero detail panel.
+10. **No fourth autoload.**
+
+**Rejected.**
+
+- *Event sourcing: rebuilding game state by replaying the Ledger.* The save stays the state, and
+  the Ledger is history beside it. Replay would make every past bug permanent and every rule
+  change a migration.
+- *A history array on each `Hero`.* A dead hero leaves the roster and would take its history with
+  it. A battle shared by five heroes would be stored five times.
+- *A `Ledger` autoload, or a separate save file.* The cap is three autoloads. A second file could
+  be written without the main save, which breaks item 4's "never one without the other".
+- *Recording every hit or kill.* It would flood the log. A per-battle kill count carries what a
+  history needs.
+- *Mutable records or saved tallies ("battles won: 37").* A tally is a second source of truth
+  that drifts. Readers count.
+- *Letting `combat/` append to the Ledger directly.* The simulation would then have to know about
+  profile state, and the forecast would have to be kept from writing. Moments ride out on the
+  battle's own state instead.
+- *Backfilling legacy heroes' history.* It would be invented.
+
+**Left open on purpose.**
+
+- The cap numbers (`SYSTEMS.md`, PROVISIONAL, settled by measuring records per hour and save
+  write time on a full ledger).
+- The shape of `meal` (step 2).
+- Stable enemy identity for nemeses (step 7, its own ADR).
+- Whether the Ledger carries into the next town in the Old World (step 8, its own ADR).
+
+---
+
 ## 2026-09-23: Skills are data the one simulation reads — bars and chains are profile state, the forecast stays the simulation, and one hero can be piloted inside it
 
 **ACCEPTED by the director, 2026-09-23,** on the owner's four answers. Item 11's no-damage line is
