@@ -35,9 +35,31 @@ Desktop controls use plain A for camera pan and Shift+A to arm attack-move, foll
 right-click destination. Editable text fields suppress battle hotkeys. Shift still adds to
 selection. Enemy Ranger and Mage signatures show their fixed aim for 0.8 seconds before
 resolving; interruption cancels the effect but retains its spent cooldown. Death/downing or
-stun also cancels a pending attack. Allied signatures resolve immediately. Automatic allies
-evade telegraphed danger toward the nearest safe point before resuming their objective, unless
-the player has an explicit move, hold or guard order in effect.
+stun also cancels a pending attack. Allied signatures resolve immediately. Allies on Auto Battle
+walk out of telegraphed danger toward the nearest safe point before resuming their objective. A
+hero under any direct order (move, attack, attack-move, hold, guard, carry or retreat) does not walk
+out: the order is obeyed as given. Its Auto counter skills still answer the telegraph
+(§ Skills, Counters), because they are skills, not moves.
+*Amended 2026-09-24 (extra, from the `ig-ap2` review):* this used to say "unless the player has an
+explicit move, hold or guard order in effect". The code has skipped the walk-out for every direct
+order since `ig-544`, and that is the rule. Why:
+- A direct order beats automation everywhere else in this section.
+- Direct orders exist only in a watched battle, where the player sees the 0.8 s aim and can give a
+  new order. A dispatched battle has no direct orders, so the walk-out always runs there.
+- The doc's version would need a resume after each walk-out for an attack, a carry and a retreat.
+
+**Attack-move** (`ig-ap2`). A direct order to a ground point that fights on the way.
+- The hero keeps its point. Only a new direct order changes it: never the squad AI, a stance or
+  § Hero AI on auto.
+- On the way, it fights the nearest living enemy within its contact range,
+  `max(battle_detection_range, its attack range)` (12 today, the Formation term): it closes to
+  attack range and attacks. It keeps that enemy while the enemy lives and stays in contact range.
+  Otherwise it picks again. With no enemy in contact range, it walks on.
+- It ends on reaching its point with no enemy engaged, like a move. Auto, if on, then takes over.
+- Auto Battle on or off makes no difference while the order stands.
+- Why contact range, not the 6-unit cohesion distance: enemy Rangers and Mages shoot from 8
+  (`battle_ranged_range`) and allied ones from 12 (`battle_ally_ranged_range`). At 6, a hero would
+  walk on under fire it never answers, or walk 6 units into danger before shooting.
 
 Advance pursues the squad's assigned objective without a cohesion leash. Stay Together uses
 the lowest living spawn index as leader, who waits when a living member is over 6 units away;
@@ -54,9 +76,9 @@ cart together and engage nearby threats; future waypoints do not draw squads awa
 ### Hero AI on auto — *ig-uu7, design 2026-09-24*
 
 Four rules make auto allies fight as a party. They apply only to allies on Auto Battle without a
-direct order, outside rescue battles, and enemy AI does not change. Precedence: direct order, then
-evasion, then a hop, then the stance's own regroup, anchor or guard move, then cover or formation,
-then the stance's usual target. Anything that returns earlier in the planning pass (the rescue
+direct order, outside rescue battles, and enemy AI does not change. Precedence: direct order
+(attack-move included, § Attack-move above), then evasion, then a hop, then the stance's own
+regroup, anchor or guard move, then cover or formation, then the stance's usual target. Anything that returns earlier in the planning pass (the rescue
 carry, the supplies retreat) wins without a check. Rows are those of § Archetypes: the front row is
 Knight and Rogue, the back row is Ranger, Mage and Cleric.
 
