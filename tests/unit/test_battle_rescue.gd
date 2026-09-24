@@ -182,6 +182,133 @@ func test_timeout_drops_carried_body_before_withdrawing_carrier() -> void:
 	assert_eq(BattleSimulation.validate_snapshot(state.to_dict()), "")
 
 
+# ig-ls3: carrying needs one second of channeling within range of the body, not one unbroken second
+# (SYSTEMS.md § Downed heroes and rescue). The progress belongs to one (carrier, body) pair.
+func test_carry_pauses_out_of_range_and_resumes_where_it_stopped() -> void:
+	var state: BattleState = _carry_state()
+	var carrier: BattleActor = _actor_for_hero(state, "hero:rescuer")
+	var body: BattleActor = _actor_for_hero(state, "hero:stranded")
+	BattleSimulation.advance(state, 0.5)
+	assert_almost_eq(_progress(carrier), 0.5, 0.001)
+	carrier.position = body.position + Vector2(10.0, 0.0)
+	BattleSimulation.advance(state, 0.5)
+	assert_gt(carrier.position.distance_to(body.position), BattleSimulation.BALANCE.battle_carry_range, "still out of range")
+	assert_almost_eq(_progress(carrier), 0.5, 0.001, "paused, not reset")
+	carrier.position = body.position
+	assert_eq(_ticks_to_lift(state, carrier, body), 5, "resumes: half a second more")
+
+
+func test_a_stun_pauses_the_carry() -> void:
+	var state: BattleState = _carry_state()
+	var carrier: BattleActor = _actor_for_hero(state, "hero:rescuer")
+	var body: BattleActor = _actor_for_hero(state, "hero:stranded")
+	BattleSimulation.advance(state, 0.5)
+	carrier.effect_state["stun_remaining"] = 0.3
+	BattleSimulation.advance(state, 0.2)
+	assert_almost_eq(_progress(carrier), 0.5, 0.001, "held through the stun")
+	assert_eq(_ticks_to_lift(state, carrier, body), 5, "resumes when the stun ends")
+
+
+func test_a_root_pauses_the_carry() -> void:
+	var state: BattleState = _carry_state()
+	var carrier: BattleActor = _actor_for_hero(state, "hero:rescuer")
+	var body: BattleActor = _actor_for_hero(state, "hero:stranded")
+	BattleSimulation.advance(state, 0.5)
+	BattleSimulation._add_status(carrier, "test_root", "root", "test", 0.3, 0.0)
+	BattleSimulation.advance(state, 0.2)
+	assert_almost_eq(_progress(carrier), 0.5, 0.001, "held through the root")
+	assert_eq(_ticks_to_lift(state, carrier, body), 5, "resumes when the root ends")
+
+
+func test_the_rescue_ai_picking_another_body_starts_over() -> void:
+	var state: BattleState = _carry_state([Vector2(10.0, -16.0)])
+	var carrier: BattleActor = _actor_for_hero(state, "hero:rescuer")
+	var first: BattleActor = _actor_for_hero(state, "hero:stranded")
+	var second: BattleActor = _actor_for_hero(state, "hero:stranded:2")
+	BattleSimulation.advance(state, 0.6)
+	assert_eq(carrier.order_target_id, first.id)
+	assert_almost_eq(_progress(carrier), 0.6, 0.001)
+	carrier.position = second.position
+	assert_eq(_ticks_to_lift(state, carrier, second), 10, "a full second on the new body")
+	assert_true(first.carried_by_id.is_empty())
+
+
+func test_the_rescue_ai_keeps_progress_on_the_same_body_across_passes() -> void:
+	var state: BattleState = _carry_state()
+	var carrier: BattleActor = _actor_for_hero(state, "hero:rescuer")
+	var body: BattleActor = _actor_for_hero(state, "hero:stranded")
+	BattleSimulation.advance(state, 0.6)
+	assert_almost_eq(_progress(carrier), 0.6, 0.001, "every pass re-picks the body and keeps its progress")
+	assert_eq(_ticks_to_lift(state, carrier, body), 4, "lifts at one second in all")
+
+
+func test_a_downed_carrier_loses_its_progress() -> void:
+	var state: BattleState = _carry_state()
+	var carrier: BattleActor = _actor_for_hero(state, "hero:rescuer")
+	var body: BattleActor = _actor_for_hero(state, "hero:stranded")
+	var enemy: BattleActor = _actor_for_hero(state, "")
+	BattleSimulation.advance(state, 0.6)
+	BattleSimulation._take_damage(state, enemy, carrier, carrier.hp + 1.0)
+	assert_eq(carrier.life, BattleActor.LIFE_DOWNED)
+	assert_false(carrier.effect_state.has("carry_progress"))
+	BattleSimulation._revive_actor(state, carrier, 0.5, enemy)
+	assert_eq(_ticks_to_lift(state, carrier, body), 10, "a full second after the revive")
+
+
+# A body revived and downed again before the next planning pass is the same pair, but a new channel.
+func test_a_body_revived_and_downed_again_starts_over() -> void:
+	var state: BattleState = _carry_state()
+	var carrier: BattleActor = _actor_for_hero(state, "hero:rescuer")
+	var body: BattleActor = _actor_for_hero(state, "hero:stranded")
+	var enemy: BattleActor = _actor_for_hero(state, "")
+	BattleSimulation.advance(state, 0.6)
+	BattleSimulation._revive_actor(state, body, 0.5, carrier)
+	BattleSimulation._take_damage(state, enemy, body, body.hp + 1.0)
+	assert_eq(body.life, BattleActor.LIFE_DOWNED)
+	assert_false(carrier.effect_state.has("carry_progress"))
+	assert_eq(_ticks_to_lift(state, carrier, body), 10, "a full second on the downed-again body")
+
+
+# Boundary #1: a checkpoint saved mid-channel loads and resumes where it stopped.
+func test_a_checkpoint_mid_channel_resumes_the_carry() -> void:
+	var state: BattleState = _carry_state()
+	BattleSimulation.advance(state, 0.5)
+	var saved: Dictionary = JSON.parse_string(JSON.stringify(state.to_dict())) as Dictionary
+	assert_eq(BattleSimulation.validate_snapshot(saved), "")
+	var loaded: BattleState = BattleState.from_dict(saved)
+	var carrier: BattleActor = _actor_for_hero(loaded, "hero:rescuer")
+	assert_almost_eq(_progress(carrier), 0.5, 0.001)
+	assert_eq(_ticks_to_lift(loaded, carrier, _actor_for_hero(loaded, "hero:stranded")), 5)
+
+
+func _progress(carrier: BattleActor) -> float:
+	return float(carrier.effect_state.get("carry_progress", 0.0))
+
+
+## Advances one tick at a time until carrier holds body (or has already carried it out at a near exit);
+## the tick count, or -1 after 3 seconds.
+func _ticks_to_lift(state: BattleState, carrier: BattleActor, body: BattleActor) -> int:
+	for tick: int in range(1, 31):
+		BattleSimulation.advance(state, 0.1)
+		if carrier.carrying_id == body.id or (body.life == BattleActor.LIFE_EXTRACTED and carrier.life == BattleActor.LIFE_EXTRACTED):
+			return tick
+	return -1
+
+
+## A ranger rescuer (no rally) on top of the stranded mage, no revival to spend, plus downed rogues at bodies.
+func _carry_state(bodies: Array[Vector2] = []) -> BattleState:
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
+	var snapshots: Array[Dictionary] = [
+		{"hero_id": "hero:rescuer", "archetype": "ranger", "hp": 200.0, "atk": 40.0, "defense": 20.0, "speed": 100.0, "crit_rate": 0.0, "crit_damage": 1.5, "squad_id": "rescue", "position": [0.0, -16.0]},
+		{"hero_id": "hero:stranded", "archetype": "mage", "hp": 100.0, "current_hp": 0.0, "life": "downed", "atk": 60.0, "defense": 10.0, "speed": 95.0, "crit_rate": 0.0, "crit_damage": 1.5, "squad_id": "", "position": [0.0, -16.0]},
+		{"id": "enemy:preserved", "hero_id": "", "archetype": "knight", "faction": "enemy", "hp": 100.0, "atk": 0.0, "defense": 10.0, "speed": 20.0, "crit_rate": 0.0, "crit_damage": 1.5, "squad_id": "enemy", "position": [15.0, 15.0]},
+	]
+	for index: int in bodies.size():
+		snapshots.append({"hero_id": "hero:stranded:%d" % (index + 2), "archetype": "rogue", "hp": 100.0, "current_hp": 0.0, "life": "downed", "atk": 60.0, "defense": 10.0, "speed": 100.0, "crit_rate": 0.0, "crit_damage": 1.5, "squad_id": "", "position": [bodies[index].x, bodies[index].y]})
+	var squads: Array[Dictionary] = [{"id": "rescue", "name": "Rescue", "hero_ids": ["hero:rescuer"], "stance": "stay_together", "guard_target_id": ""}]
+	return BattleSimulation.create_run("rescue:carry", snapshots, zone, squads, {"auto_battle": true}, {"healing": 0, "revival": 0}, 12, "rescue")
+
+
 func _actor_for_hero(state: BattleState, hero_id: String) -> BattleActor:
 	for actor: BattleActor in state.actors:
 		if actor.hero_id == hero_id:

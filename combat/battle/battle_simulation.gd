@@ -473,6 +473,10 @@ static func _choose_intentions(state: BattleState) -> void:
 				actor.effect_state["direct_order"] = false
 		if bool(actor.effect_state.get("direct_order", false)) and not actor.order_kind.is_empty() and actor.order_kind != COMMAND_ATTACK_MOVE:
 			continue
+		# ponytail: read after the supplies-retreat override at the top, which a rescue never gets
+		# (dispatch_rescue passes no policies). If one ever does, read it before that, or every pass restarts the carry.
+		var previous_kind: String = actor.order_kind
+		var previous_target_id: String = actor.order_target_id
 		if not bool(actor.effect_state.get("direct_order", false)):
 			actor.order_kind = ""
 			actor.order_target_id = ""
@@ -481,13 +485,19 @@ static func _choose_intentions(state: BattleState) -> void:
 				actor.order_kind = COMMAND_RETREAT
 				actor.order_point = _objective_point(state, "exit_position")
 				actor.effect_state["direct_order"] = false
+				actor.effect_state.erase("carry_progress")
 				continue
 			if not actor.carrying_id.is_empty():
 				actor.order_kind = COMMAND_RETREAT
 				actor.order_point = _objective_point(state, "exit_position")
 				actor.effect_state["direct_order"] = false
+				actor.effect_state.erase("carry_progress")
 				continue
 			var downed: BattleActor = _nearest_unassigned_downed(state, actor)
+			# ig-ls3: carry_progress belongs to one (carrier, body) pair. It survives a planning pass only
+			# when the pass re-picks the same body; any other pick starts over.
+			if downed == null or previous_kind != COMMAND_CARRY or previous_target_id != downed.id:
+				actor.effect_state.erase("carry_progress")
 			if downed != null:
 				actor.order_kind = COMMAND_CARRY
 				actor.order_target_id = downed.id
@@ -1627,6 +1637,10 @@ static func _use_revival(state: BattleState, user: BattleActor, target: BattleAc
 
 static func _revive_actor(state: BattleState, target: BattleActor, fraction: float, by: BattleActor) -> void:
 	_add_moment(state, "revived", target, by)
+	# ig-ls3: a revive ends every channel on this body, even one downed again before the next pass.
+	for carrier: BattleActor in state.actors:
+		if carrier.order_kind == COMMAND_CARRY and carrier.order_target_id == target.id:
+			carrier.effect_state.erase("carry_progress")
 	_drop_from_carrier(state, target)
 	target.life = BattleActor.LIFE_ALIVE
 	target.hp = maxf(target.max_hp * fraction, 1.0)
@@ -1689,6 +1703,8 @@ static func _take_damage(state: BattleState, attacker: BattleActor, target: Batt
 		if not target.hero_id in state.downed_ever_ids:
 			state.downed_ever_ids.append(target.hero_id)
 		_add_moment(state, "downed", target, attacker)
+		# ig-ls3: a downed carrier's channel is over; after a revive it starts at 0.
+		target.effect_state.erase("carry_progress")
 		_drop_carried(state, target)
 		_drop_from_carrier(state, target)
 	else:
