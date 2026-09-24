@@ -41,7 +41,11 @@ that is not recorded when it happens can never be told later, so the record come
    `push_warning`. Acceptance for this amendment adds two crash cases through a real disk
    reload: an append that lands with a main save that fails (the orphan lines are dropped, and
    the next `seq` does not collide), and a missing side file (the ledger loads empty and the
-   game plays on).
+   game plays on).* *Director amendment (Sol, `ig-m6o.9`): a missing side file warns only when
+   `ledger_next_seq` is above 1. At 1 nothing was ever written, so it loads silently. A side
+   file that exists but cannot be opened blocks the load, the same as an unreadable main save,
+   instead of loading empty: the load's compaction would write the empty list over the real
+   history, and a lock is often temporary.*
 2. **A record is `{seq, time, kind, ...fields}`.** `time` is unix seconds when the event settles,
    and `seq` orders records. Heroes are named by `instance_id`. Enemies have no identity yet, so
    they appear as `enemy:<archetype>` plus the zone. Only `summoned` and `died` carry a name.
@@ -109,7 +113,10 @@ that is not recorded when it happens can never be told later, so the record come
      replaces the main save, so an interrupted compaction leaves the old file whole. A torn last
      line (a crash mid-append) is dropped at load, because its main save never landed. The
      budget this meets: at most 2 ms added to any save or profile action, at any ledger size up
-     to the cap (`SYSTEMS.md` § The Ledger, the save budget row).*
+     to the cap (`SYSTEMS.md` § The Ledger, the save budget row).* *Director amendment (Sol,
+     `ig-m6o.9`): a recovery rewrite is exempt from that budget, the same as load compaction. It
+     rewrites the whole file once, on the first save after a failed compaction or a failed undo:
+     about 75 ms at the cap. Steady play only appends.*
 9. **Rules are pure static functions in one script,** following `ExpeditionOrders`: append with
    cap and eviction, records for a hero, and history lines. `GameSession` calls it. The first
    visible reader is the hero detail panel.

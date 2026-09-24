@@ -545,7 +545,7 @@ The record of settled events that every history reader derives from. The ADR is 
 | `ledger_max_records` | 10,000 | A routine battle record is a few hundred bytes, so the cap holds the save to roughly 3 MB (an estimate) |
 | `battle_max_moments` | 64 | A five-hero battle with every hero downed and revived three times needs 30 moments. A 50-hero region can exceed it; past the cap, `moments_truncated` is set |
 | History lines in hero detail | 10 | Newest first. Routine victories at one zone collapse into one line |
-| Ledger save budget | ≤ 2 ms | What the ledger may add to any save or profile action, at any size up to the cap. A save's cost must not grow with history |
+| Ledger save budget | ≤ 2 ms | What the ledger may add to any save or profile action, at any size up to the cap. A save's cost must not grow with history. Load compaction and the one-time recovery rewrite are exempt (`DECISIONS.md` The Ledger, item 8) |
 
 The eviction order is tiered, oldest first within each tier: routine victory `battle` records (no
 moments, no rescued heroes), then other `battle` records, then `ranked_up`, then `summoned`, and
@@ -562,6 +562,15 @@ bytes a record.
 - `ig-m6o.9` moves the records to an append-only side file, so a save writes only what is new.
 - Until it lands, the hitch is real but slow to arrive: a new save starts empty, and it takes
   about 25 hours of play at the guessed rate to reach one frame.
+
+**Measured 2026-09-24 (`ig-m6o.9` acceptance, `tests/unit/test_ledger_file.gd` and
+`test_ledger.gd`).** The side file landed, so the hitch above is gone. At the 10,000-record cap:
+- The ledger adds at most 0.7 ms to a profile commit and 0.2 ms to a periodic save (best of
+  seven, against an empty ledger). The worst case is a ledger with no routine battles.
+- The main save is 659 bytes. The side file is 2.67 MB, about 270 bytes a record.
+- A load takes about 300 ms, up from 197 ms, because it compacts the file behind the load screen.
+- A whole-file rewrite takes about 75 ms. Play does one only in recovery (`DECISIONS.md` The
+  Ledger, item 8).
 
 > ⚠️ **PROVISIONAL** — the 10,000 cap and the 64-moment cap. The save-cost half is measured
 > (above), and the answer is a new save shape, not a lower cap. Records per hour of real play is
