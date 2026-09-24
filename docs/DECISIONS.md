@@ -105,6 +105,12 @@ for 100+ hours at the guessed 60 records an hour.
      state beside `_partner_id`. If a `GameSession` rule needs bonds later, `GameSession` may hold
      the same index as an unsaved field, rebuilt the same way. That needs no new ADR.
    - This replaces the slice's "no cache that outlives one read", which was about the reader.
+   - *Amended 2026-09-24 (`ig-m6o.2.2.9`, director ruling):* the index moved from hub.gd to
+     `GameSession`, the ledger's owner. It was moved, not copied: `GameSession` holds it as an
+     unsaved field, and the hub and `_team_snapshots` (`ig-uu7.4`) read that one index, so one
+     rebuild or fold per ledger change serves both. The key is unchanged (array identity plus
+     `ledger_next_seq`). The rules stay in `Bonds`; `GameSession` only holds and calls. ARCHITECTURE
+     rule 1 holds: `GameSession` never reads hub.gd.
 4. **Never per frame.** Today the ledger changes only when a battle settles or a hero is summoned,
    ranked up or dies, so a rebuild follows one of those.
 5. **The budget, and the trigger to change.** The 39 ms was one hero's bond and dream, not an
@@ -117,6 +123,14 @@ for 100+ hours at the guessed 60 records an hour.
      out.
    - The fold is still derived from the records and still unsaved. It is the upgrade path, not a
      reason to save tallies.
+   - *Amended 2026-09-24 (`ig-m6o.2.2.9`):* `ig-m6o.2.2.1`'s measurements pulled the fold forward
+     before any live-tick record. At the 10,000-record cap the all-pairs rebuild cost 103–129 ms
+     with 5-hero teams and about 4.4 s with 50-hero teams, and a record-writing roster change cost
+     251–351 ms end to end, against the 33 ms no-hitch line (`SYSTEMS.md` § Performance budgets;
+     § Bonds and dreams, the Bond read cost row). The index now folds each appended record in and
+     each evicted record out. A load or a rolled-back append rebuilds, as does an eviction the fold
+     cannot take out exactly (none under today's tiers). The dream stays out of the fold (items 2
+     and 6); the hub keeps each hero's dream until the ledger changes.
 6. **Dreams stay derived too.** A hero's dream is read from its records by a fixed rule, for one
    hero at a time (the detail panel), as the slice does. The dream catalogue keeps that. A dream
    becomes saved per-hero state only when something that is not a record can choose or revise it:
@@ -173,7 +187,8 @@ for 100+ hours at the guessed 60 records an hour.
 - *A read on every pulse or frame.* `ig-m6o.2.1`'s review caught one: the 0.25 s pulse read the
   ledger four times a second.
 - *The incremental fold now.* Eviction and the dream's order make it fiddly, and nothing needs it
-  until records arrive on the live tick. It is item 5's upgrade path.
+  until records arrive on the live tick. It is item 5's upgrade path. *Superseded 2026-09-24 by
+  item 5's amendment.*
 - *A static cache on `Bonds`.* Global state that every test would have to reset. The holder keeps
   the index instead.
 - *Encounter records from walker positions.* Render timing (item 7).
