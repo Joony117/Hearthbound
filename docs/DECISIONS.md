@@ -7,6 +7,133 @@ Newest first.
 
 ---
 
+## 2026-09-24: Bonds stay derived from the Ledger, read in one pass for every pair; knowledge and testimony are per-hero state that points into it
+
+**ACCEPTED by the director, 2026-09-24** (godot-architect role, for `ig-m6o.2.2`), after a
+read-only Sol review. Its six wording fixes are applied. The owner gate on `ig-m6o.2.1` passed,
+and `ig-m6o.2.2`'s body asks two questions before any code:
+are bonds derived or stored, using the slice's measured read cost, and how does testimony relate
+to the Ledger (architecture note 9, on `ig-m6o.2`)? `SYSTEMS.md` § Bonds and dreams has the
+numbers.
+
+**What the slice measured.** One bond and dream read for one hero costs 39 ms at the
+10,000-record cap (best of seven). It walks the whole ledger. The slice reads one hero at a time:
+the selected hero's detail and the body's partner. `ig-m6o.2.2`'s first slice needs every hero's
+partner at once: a partner sign on every roster row and over every bonded walker. A per-hero read
+for each would cost up to N × 39 ms, about 2 s for 50 heroes at the cap. Nobody nears the cap
+for 100+ hours at the guessed 60 records an hour.
+
+**Bonds.**
+
+1. **Bonds stay derived.** No saved bond state: no `Hero` key, no `GameSession` field, no save
+   key. Save boundary #1 is untouched.
+2. **One pass reads every pair.** One oldest-first pass builds directed entries for every ordered
+   hero pair. Both directions share the scoring rules but retain each hero's fact wording, first
+   qualifying save within a record, strongest-fact precedence, and existing partner tie-breaks.
+   `Bonds.bond` for one hero answers from that index, so there is one set of rules. The index
+   keeps every hero it saw; living heroes are filtered when it is asked, not when it is built.
+   - The dream is not in the index. It stays a separate oldest-first read for one hero (item 6).
+   - Hero ids are 128 random bits (`Item.new_instance_id`), so a reused id is negligible. The index
+     treats an id as one hero for life, with no code guard.
+3. **The index is kept until the ledger changes.** The holder identifies the in-memory ledger
+   array and its `ledger_next_seq`; a new array on load or a changed next sequence invalidates the
+   index. Clear it on a rule or balance change.
+   - A rollback needs nothing: it puts the old list back (`_commit_profile_mutation`), truncated,
+     with its old `ledger_next_seq`. `_read_ledger` always builds a new list, never clears one in
+     place. Eviction runs before the deferred notifications flush, so no refresh reads between an
+     append and its eviction.
+   - Every other refresh asks the kept index: `roster_changed`, the 0.25 s pulse, selecting a hero.
+     It is never saved, so it cannot drift: a load or a rule change rebuilds it from the records.
+   - The reader keeps no state. Its holder keeps the index: hub.gd in the first slice, as view
+     state beside `_partner_id`. If a `GameSession` rule needs bonds later, `GameSession` may hold
+     the same index as an unsaved field, rebuilt the same way. That needs no new ADR.
+   - This replaces the slice's "no cache that outlives one read", which was about the reader.
+4. **Never per frame.** Today the ledger changes only when a battle settles or a hero is summoned,
+   ranked up or dies, so a rebuild follows one of those.
+5. **The budget, and the trigger to change.** The 39 ms was one hero's bond and dream, not an
+   all-pairs rebuild. So the first slice times, at the cap and with the largest team size, a full
+   all-pairs rebuild and the end-to-end roster refresh, and prints both. Not a gate.
+   - A slice that writes records on the live tick (meals, encounters) makes the ledger change
+     every few minutes of play. That slice keeps a rebuild within one 60 FPS frame (16.7 ms) at
+     the cap, measured as the worst of seven runs, not the best. If it cannot, it first switches
+     the index to an incremental fold: fold each appended record in, and take each evicted record
+     out.
+   - The fold is still derived from the records and still unsaved. It is the upgrade path, not a
+     reason to save tallies.
+6. **Dreams stay derived too.** A hero's dream is read from its records by a fixed rule, for one
+   hero at a time (the detail panel), as the slice does. The dream catalogue keeps that. A dream
+   becomes saved per-hero state only when something that is not a record can choose or revise it:
+   new knowledge (`GAME_SPEC.md` § Direction § 5) or a player's choice. That lands with the
+   knowledge slice and its own amendment.
+7. **Meals and encounters are settled events.** `meal` (reserved in the Ledger ADR, item 5) and
+   `encounter` are records, one per event, never one per tick or per hero.
+   - The `GameSession` mutator that settles the event writes it, on the live tick only. Never in
+     the offline catch-up, the same as food.
+   - Never from where walker figures meet. Walking is cosmetic (`ig-6m2.6`), so a record that
+     followed render timing would differ between sessions. The event comes from saved state: who
+     is home and not busy, who works where, whose Houses are near.
+   - Each slice settles its record's shape (additive keys) and game-designer sets its volume.
+   - They are evicted first, as a new tier ahead of routine battles. This amends the Ledger ADR's
+     item 8, which puts routine battles first, and that item says so. Each is frequent and matters
+     little alone. A friendship built on them fades at the cap, the same way a bond built on
+     routine victories would, which is why those score nothing.
+   - The slice that adds the first of them changes `Ledger.tier()` and `TIER_BY_KIND`. Today an
+     unknown kind falls to tier 1 with the other battles (`TIER_BY_KIND.get(kind, 1)`), and
+     routine battles are tier 0.
+
+**Testimony against the Ledger (architecture note 9).**
+
+8. **The Ledger holds settled events only** (Ledger ADR, item 4, unchanged). A retelling, a
+   rumour, a belief or a hero's knowledge is never a record. A gossip exchange writes nothing to
+   the Ledger.
+9. **Knowledge and testimony are per-hero saved state that points into the Ledger by `seq`.**
+   - An entry keeps the gist it needs beside the pointer (who, what, where, how it felt), so it
+     survives its record's eviction. Memory keeps the gist and the feeling longer than the wording
+     (`GAME_SPEC.md` § Kept in full, gossip), and forgetting a betrayal does not restore trust.
+   - The entries per hero are capped (number: game-designer), so the save stays small.
+   - It crosses save boundary #1. The knowledge slice brings its own amendment, a real disk
+     round-trip, a legacy save and a verifier.
+10. **Only consequential statements become records:** a Herald's covenant, a confession, a
+    public accusation. Each is a new kind with one writer (Ledger ADR, item 5), added by the slice
+    that first needs it. None is in step 2's first slices.
+11. **Witnessed details** (step 1's missing piece, `GAME_SPEC.md` § 10 ruling) land with the
+    knowledge slice. A battle record's `team` is already the witness list (Ledger ADR, item 5).
+    What each witness knows is knowledge, not a new record field.
+12. The side file (`ig-m6o.9`) keeps a save's write cost flat either way. What items 8–10 protect
+    is the cap and the records-per-hour estimate.
+
+**Rejected.**
+
+- *Saved bond tallies: a per-pair points table in the save.*
+  - The Ledger ADR already rejects saved tallies. A tally is a second source of truth that drifts.
+  - Every bond row is PROVISIONAL, and calibration has not run: the owner's save has no fights
+    yet. A saved tally bakes today's rows into every save, so each tuning pass needs a migration,
+    and a wrong tally can never be recomputed. A derived bond re-reads history under the new rows.
+  - It would carry the most-tuned numbers in the game across save boundary #1.
+  - It grows with pairs: 50 heroes make 1,225.
+  - The cost it would save is removed by items 2 and 3, which save nothing.
+- *A per-hero read for every hero.* Up to N × 39 ms at the cap.
+- *A read on every pulse or frame.* `ig-m6o.2.1`'s review caught one: the 0.25 s pulse read the
+  ledger four times a second.
+- *The incremental fold now.* Eviction and the dream's order make it fiddly, and nothing needs it
+  until records arrive on the live tick. It is item 5's upgrade path.
+- *A static cache on `Bonds`.* Global state that every test would have to reset. The holder keeps
+  the index instead.
+- *Encounter records from walker positions.* Render timing (item 7).
+- *A record per gossip exchange or retelling.* It breaks the cap and the records-per-hour
+  estimate (note 9).
+
+**Left open on purpose.**
+
+- The `meal` and `encounter` shapes and volumes (their slices; the volumes are game-designer's).
+- The knowledge save shape (the knowledge slice's amendment).
+- Where a departed hero's knowledge lives, so step 6's departed testimony can still read it after
+  the hero leaves the roster (the knowledge slice).
+- A relationship layer that must outlive its records goes to knowledge (item 9), not to a bond
+  tally. If one ever cannot, that needs a new ADR.
+
+---
+
 ## 2026-09-24: The Ledger — one append-only record of settled events on `GameSession`; every history reader derives from it
 
 **ACCEPTED by the director, 2026-09-24, with three amendments** (items 5 and 8 below: every
@@ -100,6 +227,9 @@ that is not recorded when it happens can never be told later, so the record come
      4. `summoned`
      5. `died`, last of all. A game about remembering the dead forgets them last.
      *Director amendment.*
+     *Amended 2026-09-24 by "Bonds stay derived" (item 7): `meal` and `encounter` records go
+     first, as a new tier ahead of routine battles. The slice that adds the first of them changes
+     `Ledger.tier()`.*
    - Every reader tolerates gaps ("arrived before the records begin"). Legacy saves need that
      anyway.
    - *Amended 2026-09-24 (`ig-m6o.9`, save budget): eviction stays in-memory, on the list held

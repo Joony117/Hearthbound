@@ -49,7 +49,7 @@ under construction.
 
 ### 2. The machine in one page
 
-The **Ledger records settled facts permanently**: identities, actions, locations, outcomes,
+The **Ledger keeps settled facts, up to its cap**: identities, actions, locations, outcomes,
 causes and witnessed details. Testimony records what someone said, including falsehoods. Each
 person's knowledge, belief and recall develop separately.
 
@@ -1333,6 +1333,11 @@ leaves the list only when its step's ticket is written, and not before:
 - crafting trees: forging memory-forged items (`ig-m6o.5`), only if that ticket rules it is one
 
 Until then, the list binds implementers exactly as before.
+
+**Amended 2026-09-24 (`ig-m6o.2.2` split).** Short spoken lines built from Ledger facts leave the
+dialogue item with the line bank (`ig-m6o.2.2.2`). The partner's greeting (`ig-m6o.2.1`) was the
+first of them. Stated conditions, reasons, requests and diaries stay on the list, and so do moods,
+until `ig-m6o.2.2.8` writes their tickets.
 
 **Excluded from the draft is not the same as excluded forever.** Hard constraints above is the
 never list; this one is a *now* list. Direction above already names town NPCs as eventual, and
