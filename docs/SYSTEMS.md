@@ -434,7 +434,7 @@ means ATK times 3.0. The counter column is the tag.
 | Warding Glyph | Ability | 25 | 25 s | Range 8: shield 2.0 ATK on an ally for 6 s | an ally inside a telegraph, else an ally below 50% | `shield` |
 | Skyfall | Ability | book | 45 s | Range 8, radius 3: 2.5× after a 1.0 s delay | 3+ enemies or an elite | — |
 
-**Cleric** (healer; today it has nothing, `ig-4if`)
+**Cleric** (healer)
 
 | Skill | Kind | Opens | Cooldown | Effect | AI uses it when | Counter |
 |---|---|---|---|---|---|---|

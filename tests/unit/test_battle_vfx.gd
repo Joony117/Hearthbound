@@ -550,6 +550,31 @@ func _attack_renders(view: BattleView, archetype: String, crit_tick: int) -> voi
 	]})
 
 
+func test_cleric_mend_lands_on_the_healed_ally_in_heal_color_without_a_shockwave() -> void:
+	var previous: Dictionary = {
+		"a1": _actor("a1", "ally", "cleric"),
+		"a2": _actor("a2", "ally", "knight", {}, {"hp": 40.0, "position": [3.0, 1.0]}),
+		"a3": _actor("a3", "ally", "rogue", {}, {"hp": 40.0, "position": [30.0, 0.0]}),
+	}
+	var actors: Array = [
+		_actor("a1", "ally", "cleric", {"last_skill_tick": 5}),
+		_actor("a2", "ally", "knight", {}, {"hp": 97.6, "position": [3.0, 1.0]}),
+		_actor("a3", "ally", "rogue", {}, {"hp": 99.0, "position": [30.0, 0.0]}),
+	]
+	var skill: Dictionary = _first(BattleVfx.events_between(previous, actors), "skill")
+	assert_eq(skill["center"], Vector3(3.0, 0.0, 1.0), "the healed ally in Mend's range, not one out of it")
+
+	var vfx := BattleVfx.new()
+	add_child_autofree(vfx)
+	vfx.spawn(skill)
+	var effect: Node = vfx.get_child(0)
+	assert_eq(_rings(effect), 0, "a single-target heal has no shockwave")
+	var impact: CPUParticles3D = effect.find_children("*", "CPUParticles3D", true, false)[0] as CPUParticles3D
+	assert_eq(impact.color, BattleVfx.HEAL_COLOR, "not the enemy red")
+	assert_almost_eq(impact.position.x, 3.0, 0.001)
+	assert_eq(BattleVfx.shake_for(skill), 0.0)
+
+
 func _actor(id: String, faction: String, archetype: String, effects: Dictionary = {}, fields: Dictionary = {}) -> Dictionary:
 	var effect_state: Dictionary = {"last_hit_tick": 1, "last_skill_tick": 1, "attack_target_id": "", "telegraph_kind": "", "stun_remaining": 0.0}
 	effect_state.merge(effects, true)

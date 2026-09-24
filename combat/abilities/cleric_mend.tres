@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"cleric_mend"
+display_name = "Mend"
+kind = "ability"
+archetype = "cleric"
+cooldown_seconds = 8.0
+range_units = 6.0
+ai_rule = "ally_below_heal_below"
+effects = Array[Dictionary]([{
+"type": "heal",
+"multiplier": 3.0
+}])

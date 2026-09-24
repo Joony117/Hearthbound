@@ -12,6 +12,8 @@ const ABILITIES: Dictionary[String, AbilityDefinition] = {
 	"mage_burst": preload("res://combat/abilities/mage_burst.tres"),
 	"rogue_blindside": preload("res://combat/abilities/rogue_blindside.tres"),
 	"rogue_flank_interrupt": preload("res://combat/abilities/rogue_flank_interrupt.tres"),
+	"cleric_grace": preload("res://combat/abilities/cleric_grace.tres"),
+	"cleric_mend": preload("res://combat/abilities/cleric_mend.tres"),
 }
 const ROLE_CYCLE: Array[String] = ["knight", "knight", "ranger", "mage", "rogue"]
 const STANCES: Array[String] = ["advance", "stay_together", "defend", "protect"]
@@ -519,6 +521,8 @@ static func _support_actions(state: BattleState) -> void:
 		if bool(state.policies.get("auto_revive", true)) and downed != null and actor.item_cooldown <= 0.0:
 			if _use_revival(state, actor, downed, false):
 				continue
+		if _auto_heal(state, actor):
+			continue
 		if bool(state.policies.get("auto_heal", true)) and actor.item_cooldown <= 0.0:
 			var hurt: BattleActor = _lowest_health_ally(state, actor.position, BALANCE.battle_revival_range)
 			if hurt != null and hurt.hp / hurt.max_hp < float(state.policies.get("heal_below", 0.35)):
@@ -843,6 +847,8 @@ static func _use_skill(
 		return false
 	if _needs_enemy_target(skill) and (target == null or target.faction == actor.faction or target.life != BattleActor.LIFE_ALIVE):
 		return false
+	if not _heal_effect(skill).is_empty() and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE or target.hp >= target.max_hp):
+		return false
 	# The caster faces what it cast at, manual or auto; a caster that moved faces its target.
 	var face_target: bool = false
 	for effect: Dictionary in skill.effects:
@@ -865,6 +871,8 @@ static func _use_skill(
 					return false
 				actor.position = destination as Vector2
 				face_target = true
+			"heal":
+				target.hp = minf(target.hp + actor.atk * float(effect["multiplier"]) * (1.0 + _passive(actor, "heal_bonus")), target.max_hp)
 			"interrupt":
 				target.effect_state["stun_remaining"] = float(effect["stun_seconds"])
 				_cancel_pending_action(target)
@@ -937,6 +945,13 @@ static func _damage_effect(skill: AbilityDefinition) -> Dictionary:
 	return {}
 
 
+static func _heal_effect(skill: AbilityDefinition) -> Dictionary:
+	for effect: Dictionary in skill.effects:
+		if str(effect["type"]) == "heal":
+			return effect
+	return {}
+
+
 ## The actor's abilities in bar order, passives left out.
 static func _abilities(actor: BattleActor) -> Array[AbilityDefinition]:
 	var abilities: Array[AbilityDefinition] = []
@@ -964,6 +979,19 @@ static func _auto_revive(state: BattleState, actor: BattleActor, downed: BattleA
 	for entry: Dictionary in actor.skills:
 		var skill: AbilityDefinition = ABILITIES[entry["id"]]
 		if skill.ai_revive_first and _auto_ready(actor, entry) and _use_skill(state, actor, skill, downed, downed.position):
+			return true
+	return false
+
+
+## A ready Auto heal ability, cast on the lowest-HP ally in its range when that ally is below
+## heal_below. The support pass's heal slot, ahead of the healing item.
+static func _auto_heal(state: BattleState, actor: BattleActor) -> bool:
+	for entry: Dictionary in actor.skills:
+		var skill: AbilityDefinition = ABILITIES[entry["id"]]
+		if skill.ai_rule != "ally_below_heal_below" or not _auto_ready(actor, entry):
+			continue
+		var hurt: BattleActor = _lowest_health_ally(state, actor.position, skill.range_units)
+		if hurt != null and hurt.hp / hurt.max_hp < float(state.policies.get("heal_below", 0.35)) and _use_skill(state, actor, skill, hurt, hurt.position):
 			return true
 	return false
 
@@ -1090,10 +1118,12 @@ static func _manual_abilities(state: BattleState, actors: Array[BattleActor], ta
 		var abilities: Array[AbilityDefinition] = _abilities(actor)
 		if abilities.is_empty():
 			continue
-		# The signature: the first ability on the bar.
+		# The signature: the first ability on the bar. A clicked unit is the aim, whatever point came
+		# with it (the view sends none); a ground point is only for a cast without a target.
 		var skill: AbilityDefinition = abilities[0]
 		var self_cast: bool = skill.self_centered and target == null
-		used = _use_skill(state, actor, skill, actor if self_cast else target, actor.position if self_cast else point, rng) or used
+		var aim: Vector2 = actor.position if self_cast else (target.position if target != null else point)
+		used = _use_skill(state, actor, skill, actor if self_cast else target, aim, rng) or used
 	state.rng_state = str(rng.state)
 	return used
 
@@ -1567,6 +1597,8 @@ static func _lowest_health_ally(state: BattleState, center: Vector2, radius: flo
 
 ## The skill's AI rule (AbilityDefinition.AI_RULES). Enemies fire whenever ready.
 static func _auto_ability_wanted(state: BattleState, actor: BattleActor, skill: AbilityDefinition, target: BattleActor) -> bool:
+	if skill.ai_rule == "ally_below_heal_below":
+		return false
 	if actor.faction == "enemy":
 		return true
 	match skill.ai_rule:

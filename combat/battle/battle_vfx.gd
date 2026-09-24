@@ -145,6 +145,16 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 					# The sim faces the shot at its first target; the streak follows what it actually pierced.
 					if archetype == "ranger" and not centroid.is_equal_approx(spot):
 						skill["facing"] = (centroid - spot).normalized()
+			elif archetype == "cleric":
+				# Mend lands on the ally in range whose HP rose the most.
+				var best_gain: float = 0.0
+				for other_id: String in current:
+					var other: Dictionary = current[other_id]
+					var gain: float = float(other.get("hp", 0.0)) - float((previous.get(other_id, {}) as Dictionary).get("hp", 0.0))
+					var other_position: Vector3 = _world(other.get("position"))
+					if previous.get(other_id) is Dictionary and str(other.get("faction", "")) == faction and gain > best_gain and other_position.distance_to(spot) <= ability.range_units:
+						best_gain = gain
+						skill["center"] = other_position
 			events.append(skill)
 		var telegraph_kind: String = str(before_effects.get("telegraph_kind", ""))
 		# ponytail: rogue stun is 0.3s (3 ticks of 0.1s) against the 0.25s live pulse, so a frame hitch of 4+ ticks between renders lets the stun expire unseen and the cancel fakes a blast; carry a cancel flag in the snapshot if that shows up.
@@ -251,7 +261,7 @@ func _skill(effect: Node3D, event: Dictionary) -> float:
 	var spot: Vector3 = event.get("position", Vector3.ZERO)
 	var facing: Vector3 = event.get("facing", Vector3.FORWARD)
 	var archetype: String = str(event.get("archetype", ""))
-	var colors: Dictionary = {"knight": KNIGHT_SKILL_COLOR, "ranger": RANGER_SKILL_COLOR, "mage": MAGE_SKILL_COLOR, "rogue": ROGUE_SKILL_COLOR}
+	var colors: Dictionary = {"knight": KNIGHT_SKILL_COLOR, "ranger": RANGER_SKILL_COLOR, "mage": MAGE_SKILL_COLOR, "rogue": ROGUE_SKILL_COLOR, "cleric": HEAL_COLOR}
 	var color: Color = ENEMY_SKILL_COLOR if str(event.get("faction", "")) == "enemy" else colors.get(archetype, ENEMY_SKILL_COLOR)
 	match archetype:
 		"knight":
@@ -268,6 +278,11 @@ func _skill(effect: Node3D, event: Dictionary) -> float:
 			_cast_flash(effect, event.get("previous_position", spot), color)
 			_expanding_ring(effect, spot, color, 0.3, SKILL_SHOCKWAVE_RADIUS * 0.7, SKILL_SHOCKWAVE_SECONDS)
 			_impact(effect, spot, color)
+			return 0.45
+		"cleric":
+			# Single-target heal: no shockwave.
+			_cast_flash(effect, spot, color)
+			_impact(effect, event.get("center", spot), color)
 			return 0.45
 	return 0.0
 
@@ -326,7 +341,12 @@ static func shake_for(event: Dictionary) -> float:
 		"hit":
 			return SHAKE_CRIT if bool(event.get("critical", false)) else 0.0
 		"skill":
-			return SHAKE_MAGE if str(event.get("archetype", "")) == "mage" else SHAKE_SKILL
+			match str(event.get("archetype", "")):
+				"mage":
+					return SHAKE_MAGE
+				"cleric":
+					return 0.0
+			return SHAKE_SKILL
 		"enemy_skill":
 			return SHAKE_MAGE if str(event.get("shape", "")) == "circle" else SHAKE_SKILL
 	return 0.0

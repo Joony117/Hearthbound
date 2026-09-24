@@ -9,8 +9,9 @@ const ARCHETYPES: Array[String] = ["knight", "ranger", "mage", "rogue", "cleric"
 const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ## "always": whenever it is ready. "allies_near": at least ai_count living allies within ai_radius
 ## of the caster, the caster included. "enemies_near_target": at least ai_count opponents within
-## ai_radius of the target, or (ai_or_elite) the target is elite.
-const AI_RULES: Array[String] = ["always", "allies_near", "enemies_near_target"]
+## ai_radius of the target, or (ai_or_elite) the target is elite. "ally_below_heal_below": only in
+## the support pass, on the lowest-HP ally within range_units below the battle's heal_below.
+const AI_RULES: Array[String] = ["always", "allies_near", "enemies_near_target", "ally_below_heal_below"]
 ## The primitives built so far, from the ADR's closed set (heal, shield and taunt come with the
 ## slices that use them), each with the keys it may carry beyond "type".
 ## damage area: "target" (the target only), "circle" (radius_units around the point) or "line"
@@ -18,8 +19,11 @@ const AI_RULES: Array[String] = ["always", "allies_near", "enemies_near_target"]
 ## nobody fails the cast; it must come before any effect that changes state.
 ## status on "self" is always on for a passive; on "allies_near_caster" it is applied for "seconds".
 ## revive lands only on a downed ally target, and "stop" skips the effects after it when it does.
+## heal: multiplier x the caster's ATK to a living, hurt ally target, never past max HP; a skill
+## with a heal cannot be cast at anyone else.
 const EFFECT_KEYS: Dictionary = {
 	"damage": ["area", "multiplier", "required"],
+	"heal": ["multiplier"],
 	"status": ["target", "status", "magnitude", "seconds", "radius"],
 	"revive": ["fraction", "stop"],
 	"interrupt": ["stun_seconds"],
@@ -30,8 +34,9 @@ const STATUS_TARGETS: Array[String] = ["self", "allies_near_caster"]
 ## guard: damage taken x (1 - magnitude) while it lasts; the strongest applies.
 ## ally_near_damage_reduction: damage taken x (1 - magnitude) within radius of a living ally.
 ## rear_basic_damage: basic hits from behind x (1 + magnitude). basic_range: basic range
-## x (1 + magnitude). cooldown_reduction: ability cooldowns x (1 - magnitude).
-const STATUSES: Array[String] = ["guard", "ally_near_damage_reduction", "rear_basic_damage", "basic_range", "cooldown_reduction"]
+## x (1 + magnitude). cooldown_reduction: ability cooldowns x (1 - magnitude). heal_bonus: the
+## caster's own heals x (1 + magnitude).
+const STATUSES: Array[String] = ["guard", "ally_near_damage_reduction", "rear_basic_damage", "basic_range", "cooldown_reduction", "heal_bonus"]
 const MOVE_TO: Array[String] = ["behind_target"]
 
 @export var skill_id: StringName = &""
@@ -77,6 +82,8 @@ func validate() -> String:
 				return "Skill %s %s effect has an unknown field '%s'." % [skill_id, type, key]
 		if type == "damage" and (not str(effect.get("area", "")) in DAMAGE_AREAS or float(effect.get("multiplier", 0.0)) <= 0.0):
 			return "Skill %s damage needs a known area and a positive multiplier." % skill_id
+		if type == "heal" and float(effect.get("multiplier", 0.0)) <= 0.0:
+			return "Skill %s heal needs a positive multiplier." % skill_id
 		if type == "status" and (not str(effect.get("target", "")) in STATUS_TARGETS or not str(effect.get("status", "")) in STATUSES):
 			return "Skill %s status needs a known target and status." % skill_id
 		if type == "move" and not str(effect.get("to", "")) in MOVE_TO:
