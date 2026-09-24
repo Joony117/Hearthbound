@@ -388,6 +388,183 @@ func test_a_full_ledger_saves_in_reasonable_time() -> void:
 	assert_lt(save_msec, 5000)
 
 
+## ig-8hj: a summon whose save fails rolls back stones, roster and Ledger, and the hub shows only
+## the reason, never the pull (locking the save must not be a peek-and-re-roll). Then the next pull,
+## with the save working, shows and lands on disk.
+func test_a_summon_whose_save_fails_shows_only_the_reason_and_memory_and_disk_agree() -> void:
+	GameSession.stones = BALANCE.summon_pull_cost * 2
+	GameSession.roster.append(_hero("Keeper", "knight"))
+	_disk_save()
+	var before: String = _profile()
+	var hub: Node3D = _hub()
+	var status: Label = hub.get_node("%Status") as Label
+	var summon: Button = hub.get_node("%Summon") as Button
+	_with_failing_save(summon.pressed.emit)
+	assert_string_starts_with(status.text, "Save failed")
+	assert_eq(status.text, GameSession.last_action_error)
+	assert_eq(_profile(), before, "stones, roster and Ledger rolled back")
+	assert_eq((hub.get_node("%RosterList") as ItemList).item_count, 1, "the pull never shows")
+	assert_true(_disk_load())
+	assert_eq(_profile(), before, "the disk agrees")
+	# The side file rewritten whole (the first save after a from_dict) keeps the record past the
+	# mark until the next save; the load drops it.
+	SaveService.set("_ledger_synced", false)
+	_with_failing_save(summon.pressed.emit)
+	assert_eq(_profile(), before)
+	assert_true(_disk_load())
+	assert_eq(_profile(), before, "the disk agrees after a whole rewrite too")
+
+	GameSession.set("_save_deferred_depth", 0)
+	summon.pressed.emit()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_string_starts_with(status.text, "Summoned ")
+	var after: String = _profile()
+	assert_true(_disk_load())
+	assert_eq(_profile(), after, "the pull that showed is on disk")
+	assert_eq(GameSession.roster.size(), 2)
+	assert_eq(GameSession.stones, BALANCE.summon_pull_cost)
+	assert_eq(_kinds(), ["summoned"])
+
+
+## ig-8hj: the same for a rank-up; the retry after the rollback uses the rebuilt roster.
+func test_a_rank_up_whose_save_fails_shows_the_reason_and_memory_and_disk_agree() -> void:
+	var keeper := _hero("Keeper", "knight")
+	GameSession.roster.append(keeper)
+	GameSession.essence = Hero.compute_rank_up_cost(keeper, BALANCE)
+	_disk_save()
+	var before: String = _profile()
+	var hub: Node3D = _hub()
+	var status: Label = hub.get_node("%Status") as Label
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	roster_list.select(0)
+	roster_list.multi_selected.emit(0, true)
+	var rank_up: Button = hub.get_node("%RankUp") as Button
+	_with_failing_save(rank_up.pressed.emit)
+	assert_string_starts_with(status.text, "Save failed")
+	assert_eq(status.text, GameSession.last_action_error)
+	assert_eq(_profile(), before, "rank, essence and Ledger rolled back")
+	assert_true(_disk_load())
+	assert_eq(_profile(), before, "the disk agrees")
+	assert_false(GameSession.rank_up_hero(keeper, BALANCE), "the pre-reload Hero is no longer on the roster")
+	assert_eq(GameSession.last_action_error, "That hero is not on the roster.")
+	assert_eq(_profile(), before, "a stale Hero charges nothing")
+
+	roster_list.select(0)
+	roster_list.multi_selected.emit(0, true)
+	GameSession.set("_save_deferred_depth", 0)
+	rank_up.pressed.emit()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_string_starts_with(status.text, "Ranked Keeper up")
+	assert_true(_disk_load())
+	assert_eq(GameSession.hero_by_id(keeper.instance_id).rank, 1, "the rank-up that showed is on disk")
+	assert_eq(GameSession.essence, 0)
+	assert_eq(_kinds(), ["ranked_up"])
+
+
+## ig-8hj, boundary #3: each death path runs inside _commit_profile_mutation, so a failed save
+## leaves the hero alive in memory and on disk. Each test then lets the same step run with the save
+## working and sees the hero die, so it is a real death path.
+func test_an_abandon_whose_save_fails_leaves_the_hero_alive_on_disk() -> void:
+	var source: Dictionary = _stranded_incident("abandon")
+	_disk_save()
+	var incident_id: String = str(GameSession.stranded_incidents[0]["id"])
+	assert_false(_with_failing_save(GameSession.abandon_stranded.bind(incident_id)))
+	assert_string_starts_with(GameSession.last_action_error, "Save failed")
+	_assert_alive(source["hero_id"])
+	assert_true(GameSession.abandon_stranded(incident_id), GameSession.last_action_error)
+	assert_null(GameSession.hero_by_id(source["hero_id"]), "the control: abandon kills")
+	assert_true(_disk_load())
+	_assert_alive(source["hero_id"])
+
+
+func test_a_live_expiry_whose_save_fails_leaves_the_hero_alive_on_disk() -> void:
+	var source: Dictionary = _stranded_incident("expiry")
+	_disk_save()
+	_expire(GameSession.stranded_incidents[0])
+	_with_failing_save(GameSession.tick_expeditions.bind(0.1))
+	_assert_alive(source["hero_id"])
+	GameSession.tick_expeditions(0.1)
+	assert_null(GameSession.hero_by_id(source["hero_id"]), "the control: the expiry kills")
+	assert_true(_disk_load())
+	_assert_alive(source["hero_id"])
+
+
+func test_a_failed_rescue_whose_save_fails_leaves_the_heroes_alive_on_disk() -> void:
+	var doomed: Array[String] = _doomed_rescue("rescue")
+	_with_failing_save(GameSession.tick_expeditions.bind(0.1))
+	for hero_id: String in doomed:
+		_assert_alive(hero_id)
+	GameSession.tick_expeditions(0.1)
+	for hero_id: String in doomed:
+		assert_null(GameSession.hero_by_id(hero_id), "the control: the failed rescue kills")
+	assert_true(_disk_load())
+	for hero_id: String in doomed:
+		_assert_alive(hero_id)
+
+
+func test_an_offline_catch_up_whose_save_fails_leaves_the_heroes_alive_on_disk() -> void:
+	var doomed: Array[String] = _doomed_rescue("offline")
+	var now: float = GameSession.saved_at_unix + 1.0
+	_with_failing_save(GameSession.apply_offline_expedition_progress.bind(now))
+	for hero_id: String in doomed:
+		_assert_alive(hero_id)
+	GameSession.apply_offline_expedition_progress(now)
+	for hero_id: String in doomed:
+		assert_null(GameSession.hero_by_id(hero_id), "the control: the catch-up kills")
+	assert_true(_disk_load())
+	for hero_id: String in doomed:
+		_assert_alive(hero_id)
+
+
+## Runs action with the save forced to fail (a folder where the staged save goes) and returns its
+## result. Saves are live only inside it.
+func _with_failing_save(action: Callable) -> Variant:
+	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
+	GameSession.set("_save_deferred_depth", 0)
+	var result: Variant = action.call()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+	assert_push_error("Save failed")
+	return result
+
+
+## The profile as saved, plus the Ledger, which the main save keeps out.
+func _profile() -> String:
+	var data: Dictionary = GameSession.to_dict()
+	data.erase("saved_at_unix")
+	return JSON.stringify(data) + JSON.stringify(GameSession.ledger)
+
+
+func _assert_alive(hero_id: String) -> void:
+	assert_not_null(GameSession.hero_by_id(hero_id), "%s is alive" % hero_id)
+	assert_eq(_died(hero_id), {}, "no died record for %s" % hero_id)
+
+
+func _expire(incident: Dictionary) -> void:
+	incident["paused"] = false
+	incident["created_recovery_seconds"] = 0.0
+	GameSession.rescue_clock_seconds = BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0 + 1.0
+
+
+## A stranded hero and a rescue in flight, saved to disk like that. Then, in memory only, the
+## window runs out and the rescue fails, so the next settle kills both. Returns their ids.
+func _doomed_rescue(prefix: String) -> Array[String]:
+	var source: Dictionary = _stranded_incident(prefix + "_source")
+	var rescuer: Dictionary = _add_one(prefix + "_rescuer")
+	var rescue_order_id: String = GameSession.dispatch_rescue(str(GameSession.stranded_incidents[0]["id"]), rescuer["preset_id"], _zero_loadout())
+	assert_ne(rescue_order_id, "", GameSession.last_action_error)
+	_disk_save()
+	GameSession.stranded_incidents[0]["expiry_pending"] = true
+	_fail_all_allies(rescue_order_id)
+	return [source["hero_id"], rescuer["hero_id"]] as Array[String]
+
+
+func _hub() -> Node3D:
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	return hub
+
+
 ## Source hero stranded, then a rescue that strands its rescuer too; saved and reloaded twice.
 func _strand_a_rescuer(prefix: String) -> Dictionary:
 	var source: Dictionary = _stranded_incident(prefix + "_source")

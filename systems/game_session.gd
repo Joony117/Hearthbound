@@ -168,14 +168,22 @@ func add_hero(hero: Hero) -> void:
 	_notify_roster_changed()
 
 
+## False, with last_action_error, when stones are short, the load is blocked or the save fails;
+## nothing changes then. The caller reveals hero only on true, so a failed save can't be re-rolled.
 func summon_hero(hero: Hero, balance: BalanceTable) -> bool:
+	last_action_error = ""
 	if stones < balance.summon_pull_cost:
+		last_action_error = "Need %d Summon Stones, have %d." % [balance.summon_pull_cost, stones]
 		return false
-	stones -= balance.summon_pull_cost
+	return _commit_profile_mutation(_summon_in_memory.bind(hero, balance.summon_pull_cost))
+
+
+## Checked path only (_commit_profile_mutation).
+func _summon_in_memory(hero: Hero, cost: int) -> void:
+	stones -= cost
 	roster.append(hero)
 	_record("summoned", {"hero": hero.instance_id, "name": hero.hero_name, "rank": hero.rank, "archetype": str(hero.def_id)})
 	_notify_roster_changed()
-	return true
 
 
 ## Called once per expedition that actually runs. An expedition that never reaches a wave
@@ -410,17 +418,27 @@ func sacrifice_hero(fodder: Hero, target: Hero, balance: BalanceTable) -> bool:
 	return true
 
 
+## False when the rank-up is not allowed, or, with last_action_error, when the load is blocked or
+## the save fails; nothing changes then. A rollback rebuilds the roster, so re-find heroes by id.
 func rank_up_hero(hero: Hero, balance: BalanceTable) -> bool:
+	last_action_error = ""
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
 	if is_hero_busy(hero) or hero.rank >= balance.rank_up_essence_costs.size():
 		return false
 	var cost: int = Hero.compute_rank_up_cost(hero, balance)
 	if essence < cost:
 		return false
+	return _commit_profile_mutation(_rank_up_in_memory.bind(hero, cost))
+
+
+## Checked path only (_commit_profile_mutation).
+func _rank_up_in_memory(hero: Hero, cost: int) -> void:
 	essence -= cost
 	hero.rank += 1
 	_record("ranked_up", {"hero": hero.instance_id, "from": hero.rank - 1, "to": hero.rank, "via": "essence"})
 	_notify_roster_changed()
-	return true
 
 
 ## The single place a hero leaves the roster. See docs/ARCHITECTURE.md rule 8 - permadeath

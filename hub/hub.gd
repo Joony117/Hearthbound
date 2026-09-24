@@ -1099,12 +1099,14 @@ static func is_zone_unlocked(
 			return false
 
 
+## The pull is shown only after its commit lands. A failed save shows only the reason, so locking the
+## save file can't be used to peek at a pull and take it back.
 func _on_summon_pressed() -> void:
 	var hero: Hero = Summon.roll(GameSession.building_levels[0])
 	if GameSession.summon_hero(hero, BALANCE):
 		_status.text = "Summoned %s, rank %s." % [hero.hero_name, hero.rank_label(BALANCE)]
 	else:
-		_status.text = "Need %d Summon Stones, have %d." % [BALANCE.summon_pull_cost, GameSession.stones]
+		_status.text = GameSession.last_action_error
 
 
 func _ask(prompt: String, action: Callable) -> void:
@@ -1161,6 +1163,8 @@ func _on_rank_up_pressed() -> void:
 	var hero_name: String = hero.hero_name
 	if GameSession.rank_up_hero(hero, BALANCE):
 		_status.text = "Ranked %s up to %s for %d essence." % [hero_name, hero.rank_label(BALANCE), cost]
+	elif not GameSession.last_action_error.is_empty():
+		_status.text = GameSession.last_action_error
 	else:
 		_status.text = "Cannot rank up the selected hero."
 
