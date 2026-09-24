@@ -6581,3 +6581,356 @@ per control. The `test_save_service.gd` line-114 flake did not appear in any run
 One thing it deliberately leaves: **the hub's older, pre-`fe1a74b` controls still have no wire
 coverage.** That was a non-goal, not an oversight — seven named controls and nothing else. Whoever
 wants the rest has a working idiom to copy and a proven red-proof method to check it with.
+
+---
+
+## P2-26 — Destructive hub actions ask before they fire                        [DONE]
+
+### Objective
+
+Pressing Expedition, Sacrifice, Salvage or Recover opens a dialog naming exactly what is about to
+happen and what it costs; the action fires only on confirm. A misclick costs a dismissal, not a
+hero.
+
+### Existing architecture
+
+- `hub/hub.gd` handlers run validate-then-mutate inline: `_on_expedition_pressed()` (`:468`),
+  `_on_sacrifice_pressed()` (`:292`), `_on_salvage_pressed()` (`:359`), `_on_recover_pressed()`
+  (`:542`). Every one of them writes its result into `%Status` (`_status: Label`).
+- Two of the four are **irreversible**: `Expedition.resolve()` reaches `GameSession.kill_hero()`,
+  the sole permadeath call site (`ARCHITECTURE.md` r8), and `GameSession.sacrifice_hero()` reaches
+  the same. `salvage_item()` destroys an `Item`. `recover_cache()` advances a turn and can roll
+  `Item.apply_damaged()` on every recovered piece.
+- `hub.tscn`'s buttons connect through `[connection]` blocks to `_on_*_pressed` by name — the scene
+  seam (`CLAUDE.md` boundary 2). `%PauseMenu` is the existing precedent for a `CanvasLayer` overlay
+  living in this scene.
+- Four GUT files press these buttons by **absolute node path** and assert `%Status.text`:
+  `test_expedition.gd` (`:270`, `:311`, `:337`), `test_sanctum.gd` (`:16`), `test_buildings.gd`
+  (`:75`), `test_recovery.gd` (`:165`, `:182`).
+
+### Acceptance criteria
+
+1. One `ConfirmationDialog` node in `hub.tscn`, reused by all four call sites — not four dialogs.
+2. **Validation runs before the dialog, not after.** An invalid press ("Select a hero first.",
+   "Unequip the fodder hero before sacrificing it.", "Select no more than 5 heroes.") produces the
+   same `%Status` text it produces today and opens no dialog. Every existing message is unchanged.
+3. The dialog text names the specific thing: the fodder hero, the target hero and the essence yield
+   for Sacrifice; the team size and zone for Expedition; the item, its rank and the parts yield for
+   Salvage; the cache owner and item count for Recover.
+4. Confirming produces the identical `%Status` text the unguarded press produced today.
+5. Cancelling changes no state: no hero dies, no turn ticks, no item is destroyed, `%Status`
+   is untouched.
+6. A second press while a dialog is open cannot queue a second action.
+7. Existing tests still pass, with the four files above updated to confirm rather than rewritten.
+8. No save key changes, no autoload signature changes.
+
+### Files allowed to change
+
+`hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_expedition.gd`, `tests/unit/test_sanctum.gd`,
+`tests/unit/test_buildings.gd`, `tests/unit/test_recovery.gd`, `docs/TASKS.md`.
+
+### Non-goals
+
+Guards on Enhance, Convert, Rank Up or the five Upgrade buttons — all spend resources, none
+destroys something unrecoverable. Batch anything (`P2-27`). Tooltips (`P2-28`). Any change to
+what the four actions actually do.
+
+### Findings
+
+**Shipped in the commit below.** Director-written and director-implemented per rung 1; no
+`verifier` — it crosses boundary 2 (scene seam) and the four button connections are pinned by GUT
+tests that drive the real `[connection]` blocks, which is the evidence a verifier pass would have
+gone looking for.
+
+The confirm helper is **eight lines** and stores a `Callable`, so the four handlers keep their
+existing shape: validate, summarise, `_ask(...)`. Criterion 6 needed no code — `AcceptDialog`
+defaults `exclusive = true`, so the dialog is modal and the buttons behind it cannot be pressed.
+
+Two things worth carrying forward:
+
+- **The dialog is the feature, not the guard.** Criterion 3's text closes the report's separate
+  "clearer indications of what's being sacrificed, to whom" item outright, because a sentence that
+  has to be true at the moment of decision is a better indication than a tooltip that has to be
+  hunted for. `P2-28` shrank as a result.
+- **`_on_recover_pressed()` could not keep its shape.** It is the one handler that does not
+  validate before mutating — it hands everything to `GameSession.recover_cache()` and switches on
+  the returned `StringName`, so there is no point at which the old code knows the action is legal
+  but has not yet performed it. Splitting it meant duplicating four of its five refusal branches as
+  pre-checks in `hub.gd` (`RECOVERY_NO_CACHE`, `RECOVERY_INVALID_TEAM` twice, and the roster/
+  archetype legs) while leaving `recover_cache()` itself authoritative and unchanged. The duplication
+  is real and deliberate: the alternative was a `can_recover()` on the autoload, which is
+  `DECISIONS.md` 2026-08-06's rejected shape. `RECOVERY_MISSING_ZONE` and
+  `RECOVERY_INSUFFICIENT_POWER` are deliberately **not** pre-checked — they need the zone and the
+  power sum, and re-deriving those in `hub.gd` is how a preview and a payout start disagreeing
+  (`P2-07e`). Those two still refuse after the confirm, which is correct: they cost nothing.
+
+---
+
+## P2-25 — Each hero has ten equipment slots, and picking one filters the bag      [DONE]
+
+### Objective
+
+The Equipped column shows all ten slots, empty ones included, so there is somewhere to click to
+say "show me boots". Clicking a slot filters the Inventory list to items that fit it, ordered
+best-first. That closes three reported items with one mechanism: the slot UI, the per-type tab and
+the sort.
+
+### Existing architecture
+
+- `_refresh_equipped()` (`hub/hub.gd:181`) iterates `hero.equipped`, a `Dictionary` that holds
+  **only filled slots**, so an empty slot renders as nothing at all. Row metadata is the slot
+  ordinal.
+- `_refresh_inventory()` (`hub/hub.gd:154`) appends every `Item` in `GameSession.inventory` in
+  insertion order into one flat `ItemList`. Row metadata is the `Item` itself, which is what
+  `_on_equip_pressed()`/`_on_salvage_pressed()`/`_on_enhance_pressed()` read — none of them care
+  about row order.
+- Both lists are `select_mode = 0` (`SELECT_SINGLE`, `hub.tscn:262`, `:302`) and neither has a
+  `[connection]` today. `%EquippedList` is read only by `_on_unequip_pressed()` (`hub/hub.gd:490`).
+- Both `_refresh_*` functions are connected to `GameSession.roster_changed` (`hub/hub.gd:45`,
+  `:48`) and both `clear()` first, so **any equip, salvage or expedition wipes the selection**.
+- `EquipmentDefinition.Slot` is `{ HEAD, CHEST, LEGS, GLOVES, BOOTS, MAIN_HAND, OFF_HAND, NECKLACE,
+  RING, BELT }` (`equipment/equipment_definition.gd:4`). `P2-05c` and `P2-06c` both warn that this
+  ordinal positionally mirrors `Hero.STAT_NAMES`: **display it, never renumber it.**
+- `Item.definition_for()` (`equipment/item.gd:57`) `push_error`s and returns `null` for a missing
+  definition. Both refresh functions already handle that branch; an item in that state has **no
+  slot**, so no slot filter can show it.
+
+### Acceptance criteria
+
+1. `_refresh_equipped()` renders exactly eleven rows for a selected hero: an `All slots` row first,
+   then all ten `Slot` entries in ordinal order whether filled or empty. A filled row keeps today's
+   text; an empty one reads `Boots — (empty)`. Metadata is `-1` for the `All slots` row and the
+   slot ordinal for the other ten.
+2. Selecting a row sets the filter; `_refresh_inventory()` then shows only items whose
+   `EquipmentDefinition.slot` matches. `-1` shows everything, and is the state a fresh scene starts
+   in.
+3. **Items with a missing definition are reachable only under `All slots`** — they have no slot to
+   match. That is the ticket's answer to "where did my broken item go", and it must be deliberate,
+   not incidental.
+4. The inventory is ordered `rank` descending, then `enhance_level` descending, then `def_id`
+   ascending, in both the filtered and unfiltered views. The third key exists because
+   `Array.sort_custom` is not stable and a test that selects an index needs a defined winner.
+   It is `def_id` and **not** display name because a comparator runs O(n log n) times and
+   `Item.definition_for()` `push_error`s on a miss, which GUT fails a test for; all ten authored
+   display names are the title-cased `def_id`, so the order is identical without the lookup.
+5. **The filter is a member variable, not the list's selection.** `roster_changed` clears
+   `%EquippedList` (see above), so reading the filter off the selection loses it on every equip.
+   After a refresh the row matching the filter is re-selected.
+6. Selecting a different hero leaves the filter alone — slots are hero-independent.
+7. `_on_unequip_pressed()` refuses cleanly rather than acting on a slot with nothing in it:
+   `Select an equipment slot first.` for the `All slots` row, `That slot is empty.` for an unfilled
+   one. It still unequips normally from a filled one.
+8. `_on_equip_pressed()`, `_on_salvage_pressed()` and `_on_enhance_pressed()` are untouched — they
+   read `Item` metadata, which row order does not affect. Equipping an item while its own slot is
+   the active filter leaves the filter intact and the item gone from the list.
+9. `tests/unit/test_buildings.gd:73` breaks on criterion 4: it holds two rank-B rings (`+0` and
+   `+6`) and `select(0)` currently picks the `+0`, which under the new order is at index 1. It must
+   keep salvaging the `+0` for `4` parts — salvaging index 0 destroys the `+6` and leaves a `+0`
+   that *can* be enhanced, which deletes the enhance-cap half of the test. Reach the item by
+   identity and assert its index, so the ordering is pinned without the test being rewritten around
+   it.
+10. No save key changes, no autoload signature changes. The scene seam (`CLAUDE.md` boundary 2) is
+    crossed by the new `[connection]`, so a `verifier` pass is mandatory and a GUT test must drive
+    the real signal — `ItemList.select()` does not emit it (`P2-14`).
+
+### Files allowed to change
+
+`hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_equipment.gd`, `tests/unit/test_buildings.gd`,
+`docs/TASKS.md`.
+
+### Non-goals
+
+Multi-select or batch anything (`P2-27`). Tooltips (`P2-28`). Any change to what equip, unequip,
+salvage or enhance actually do. Renumbering `Slot`. Icons, drag-and-drop, or a paper-doll layout —
+this is still an `ItemList`.
+
+### Findings
+
+**Shipped in the commit below.** Director-written body, Codex-implemented (`gpt-5.6-terra`, medium),
+mandatory boundary-2 `verifier` pass returned **fail** first time and was right to.
+
+**Criterion 9 was wrong as written, and the implementation was right to ignore it.** The criterion
+told the implementer that `test_buildings.gd`'s `select(0)` should now pick the `+6` ring and assert
+`11` parts. It should not: `salvaged_item` is the `+0` and `capped_item` the `+6`, so salvaging
+index 0 **destroys the `+6`** and leaves behind a `+0` that can legally be enhanced — which deletes
+the "already at the `+6` cap" half of the same test. Codex reached the item by identity instead and
+kept both assertions, which preserved what the test exists to prove. The `verifier` correctly
+flagged the divergence from the written criterion; the criterion is what changed. What it was
+actually reaching for — *pin the new order at this call site* — is now one `assert_eq(salvage_index,
+1)` line, which costs nothing and fails if the sort regresses.
+
+Two things worth carrying forward:
+
+- **A `sort_custom` comparator must not call anything that `push_error`s.** The first pass tie-broke
+  on `display_name`, which meant `Item.definition_for()` inside the comparator — a function that
+  `push_error`s on a miss, called O(n log n) times, in a suite where GUT fails a test on any
+  unconsumed `push_error`. No current test puts a missing-definition item in `inventory` during a
+  hub render, so it was a dormant landmine rather than a red gate: exactly the shape that lands on
+  whoever writes the next test. Tie-breaking on `def_id` deletes the lookup and five lines, and
+  orders identically — all ten authored `display_name`s are the title-cased `def_id`.
+- **The scene seam is mutation-proven.** The `verifier` retargeted the new `[connection]`'s *method*
+  to an existing zero-arg handler rather than corrupting the line (`P2-24`'s finding: junk makes
+  `hub.tscn` fail to parse and every test fails for the wrong reason), and the new test failed
+  specifically on the filter assertions. `ItemList.select()` still does not emit `item_selected`, so
+  the test emits it — `P2-14`'s rule, now applied to a second signal.
+
+Three `verifier` `LOW`s were accepted rather than fixed: criterion 8 (equip while filtered) is
+covered by code trace only; the two asserts dropped from `_refresh_equipped()` are stripped in
+release anyway and the loop now iterates the enum, which is what they guarded; and
+`"Select exactly one equipped item."` is unreachable while a hero is selected, since the list
+auto-selects a row.
+
+---
+
+## P2-27 — Sacrifice and salvage in batches                                   [DONE]
+
+### Objective
+
+Pick several fodder heroes, or several inventory items, and spend them in one press. The dialog
+names the whole batch and the summed payout; twelve items cost one confirm instead of twelve.
+
+### Existing architecture
+
+- **Fodder is a single `OptionButton`** (`%FodderOption`, `hub.tscn:154`), filled by
+  `_refresh_hero_option()` (`hub/hub.gd:94`) which also fills `%TargetOption`. An `OptionButton`
+  cannot express a multi-selection at all, so this is a control swap, not a flag.
+- `%InventoryList` is `select_mode = 0` (`SELECT_SINGLE`, `hub.tscn:262`) and has no
+  `[connection]`. Three handlers read it — `_on_equip_pressed()` (`:398`), `_on_salvage_pressed()`
+  (`:417`), `_on_enhance_pressed()` (`:443`) — and all three already guard on
+  `selected.size() != 1`, so widening the mode does not silently change what equip or enhance do.
+- `P2-26` shipped `_ask(prompt, action)` (`:318`) storing a `Callable`; each handler validates,
+  summarises, then `_ask(...)`. The dialog is `exclusive`, so no second action can queue.
+- `GameSession.sacrifice_hero()` (`:205`) and `salvage_item()` (`:142`) each emit
+  `roster_changed`, which is connected to eleven `_refresh_*` functions **and** to
+  `SaveService.save` (`game_session.gd:35`). Every one of those `_refresh_*` calls `clear()` on
+  its list first.
+- `_on_salvage_pressed()` re-derives the salvage formula inline (`hub/hub.gd:426`) although
+  `Item.compute_salvage_yield()` exists — `P2-12` extracted it precisely so there would be one
+  site.
+
+### Acceptance criteria
+
+1. `%FodderOption` becomes `%FodderList`, an `ItemList` with `select_mode = 1` (`SELECT_MULTI` —
+   check the ordinal against the engine, not against this sentence; `SELECT_TOGGLE` is `2`, and
+   `%RosterList` at `hub.tscn:123` is the working precedent),
+   listing the roster in order with the same `[rank]  name — archetype` text and `Hero` metadata
+   `_refresh_hero_option()` writes today. `%TargetOption` stays an `OptionButton` — sacrifice is
+   many-into-one.
+2. The fodder selection survives a refresh by identity, the way `_refresh_roster()` (`:75`)
+   already does it. A hero that has left the roster is simply not re-selected, which is how a
+   completed batch clears its own selection. **`P2-06a`'s auto-select trap does not carry over** —
+   `ItemList.add_item()` does not select index 0 the way `OptionButton.add_item()` does — and the
+   comment at `hub/hub.gd:101` documents a hazard that now applies only to `%TargetOption`. Say so
+   rather than deleting it silently.
+3. `%InventoryList` becomes `select_mode = 1`. `_on_equip_pressed()` and `_on_enhance_pressed()`
+   keep their existing single-selection guard **and their existing message** — batching those is
+   a non-goal, and their guard is what makes widening the mode safe.
+4. Sacrifice validation runs before the dialog. The two batch-independent messages are verbatim:
+   an empty fodder selection or no target gives `Select both a fodder hero and a target hero.`,
+   and the target appearing among the fodder gives `A hero cannot be sacrificed into itself.` The
+   two per-hero refusals **name the offending hero** rather than staying verbatim — with twelve
+   selected, `Unequip the fodder hero before sacrificing it.` is unactionable. No test asserts
+   either string.
+5. One dialog for the whole batch, naming every fodder hero, the target, and the **summed**
+   essence. Confirming calls `GameSession.sacrifice_hero()` once per fodder. Cancelling kills
+   nobody.
+6. **The summed preview provably equals the payout**, and it is checkable rather than hoped for:
+   `Hero.compute_essence_yield()` (`heroes/hero.gd:150`) reads `fodder`, `target.def_id`, the
+   balance and the Sanctum level, none of which an earlier sacrifice in the same batch changes —
+   `sacrifice_hero()` bumps `target.resonance`, which that formula does not read. A test pins it
+   with a batch of three dupes of the target.
+7. Salvage takes `selected.size() < 1` → `Select at least one inventory item.`, one dialog naming
+   the item count and the parts total, and one `GameSession.salvage_item()` call per selected item
+   on confirm.
+8. The salvage preview calls `Item.compute_salvage_yield()` instead of re-deriving it inline. One
+   arithmetic site (`P2-12`); a batch that previews `12` and pays `11` is `P2-07e`'s
+   preview-disagrees-with-payout failure at batch scale.
+9. **A batch of exactly one produces byte-identical status text to today's** for both actions —
+   `Sacrificed Fodder for 98 essence.` and `Salvaged B item into 4 B parts.` A batch of two or
+   more reads `Sacrificed 4 heroes for 312 essence.` and `Salvaged 5 items into 3 C parts, 12 B
+   parts.` The salvage total is **per rank**, not one number: `GameSession.parts` is rank-indexed
+   and a single sum would name a quantity that lands in no bucket. Ranks list in `parts` index
+   order, which is ascending — the order the array is walked in, so no sort is needed.
+10. A `sacrifice_hero()` returning `false` mid-batch does not abort the rest, and the status
+    reports what actually happened — `Sacrificed 3 of 4 heroes for 240 essence.`, carrying the
+    essence actually credited rather than the preview sum.
+11. **Snapshot the `Hero`/`Item` references before the first call, not inside the loop.** Each
+    call emits `roster_changed`, which `clear()`s and rebuilds both lists, so reading metadata off
+    a list index on iteration 2 reads a list that no longer holds what iteration 1 saw. This is
+    the one way this ticket can destroy the wrong thing.
+12. No batch method on `GameSession` — the loop lives in `hub.gd` (`DECISIONS.md` 2026-08-06).
+    `sacrifice_hero()` and `salvage_item()` keep their signatures and stay one-at-a-time.
+13. Existing tests pass. `test_sanctum.gd` and `test_buildings.gd` change only where the control
+    swap and the `select_mode` force it. Two new tests: a three-fodder batch (one dialog, summed
+    essence, nothing dies before the confirm) and a two-rank batch salvage.
+14. No save key changes, no autoload signature changes. The node type change and the two
+    `select_mode` changes cross the scene seam (`CLAUDE.md` boundary 2), so a `verifier` pass is
+    mandatory. Neither list needs a `[connection]` — both handlers read `get_selected_items()` at
+    press time — so `P2-14`/`P2-25`'s "`select()` does not emit" rule bites nothing here, and a
+    test may drive selection with `select()`/`select(i, false)` directly.
+
+### Files allowed to change
+
+`hub/hub.gd`, `hub/hub.tscn`, `tests/unit/test_sanctum.gd`, `tests/unit/test_buildings.gd`,
+`tests/unit/test_equipment.gd`, `docs/TASKS.md`.
+
+`test_equipment.gd` is listed because it drives `%InventoryList` (`:75`) and the `select_mode`
+change is exactly the kind of thing that alters its behaviour. If it needs no edit, say so — five
+consecutive tickets in the archive shipped a wrong allowed-file list, the last by naming a file
+that did not change.
+
+### Non-goals
+
+Batch equip, enhance, convert, rank up or building upgrade. A `GameSession.sacrifice_heroes()` or
+any other batch method on the autoload. Suppressing the N `roster_changed` emits — and therefore
+the N `SaveService.save()` disk writes — a batch of N produces: chatty but correct, and a
+deferred-emit mechanism is a larger change than the batch it would optimise. Tooltips (`P2-28`).
+Any change to what a single sacrifice or salvage does. Preserving the inventory selection across a
+refresh: it is lost today (`P2-25`), losing it after a batch is fail-closed, and a blind second
+press hits the empty-selection refusal.
+
+### Findings
+
+**Shipped in the commit below.** Director-written body, Codex-implemented (`gpt-5.6-terra`, medium),
+mandatory boundary-2 `verifier` pass returned **pass-with-concerns** with one finding that mattered.
+
+**The ticket shipped a wrong enum ordinal, and every gate stayed green on it.** Criterion 1 said
+`select_mode = 2 (SELECT_MULTI)`. `SELECT_MULTI` is `1`; `2` is `SELECT_TOGGLE`. The implementer
+followed the number as written, both gates passed, 148 tests passed, and the batch feature worked —
+because `get_selected_items()` behaves identically under both modes when driven programmatically,
+which is the only way any test in this suite touches a list. The difference is a *mouse* difference:
+`SELECT_TOGGLE` toggles a row on a plain click, `SELECT_MULTI` needs Ctrl. So the hub would have
+shipped with `%RosterList` on one interaction idiom and the two new lists on another, in the same
+panel, described by the ticket as identical. Corrected to `1`.
+
+Three things generalize:
+
+- **`select_mode` is a scene-seam value the test suite cannot see.** Criterion 14 explicitly
+  sanctioned driving selection with `select()`/`select(i, false)` — correct for what it was
+  guarding against (`P2-14`'s "`select()` does not emit"), and it is exactly what routes around the
+  click-handling path `select_mode` governs. A test written that way can never fail on a wrong
+  ordinal. The engine is the authority: `ClassDB.class_get_integer_constant_list("ItemList", true)`
+  answers it in one headless call. **The eighth "reads real, measures nothing" entry** — the value
+  was authored, plausible and load-bearing, and measured a different thing than its label claimed.
+- **A named constant in a ticket is not a check on the numeral beside it.** Writing
+  `2 (SELECT_MULTI)` reads as belt-and-braces and is worth nothing: nothing reconciles the two
+  halves. `%RosterList` at `hub.tscn:123` had carried the right answer since P1 and neither the
+  ticket nor the implementation looked at it.
+- **`SELECT_TOGGLE` may genuinely be the better mode for a batch workflow** — plain-clicking twelve
+  items beats Ctrl-clicking twelve. It was rejected here for consistency, not on merit: switching
+  the whole hub to it is a UX change across three lists and belongs in its own ticket. Re-ask after
+  a played build.
+
+Two `verifier` `LOW`s were accepted rather than fixed. `salvage_item()` returns `void` and no-ops
+silently on an item already gone, so `_do_salvage()` reports the full previewed total where
+`_do_sacrifice()` counts real successes (criterion 10) — unreachable through the UI, since the
+snapshot is taken before the exclusive dialog opens and nothing else can mutate `inventory` in that
+window. And the per-rank salvage total lists ascending by rank index because that is the order the
+array is walked; criterion 9's example had it descending, so **the criterion is what changed.**
+
+One process note worth carrying: the `verifier` ran `git checkout -- hub/hub.gd` to undo a mutation
+and **discarded the entire uncommitted implementation**, which was never staged. It reconstructed
+the file from the diff it had already read and proved the restore by blob hash, and the director
+re-verified the tree independently before continuing. Nothing was lost. The rule it earns:
+**a red-proof that mutates an uncommitted tree has no safe undo** — stage the work first, or the
+mutation and the work share one restore point.
