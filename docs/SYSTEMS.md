@@ -578,8 +578,15 @@ bytes a record.
 
 **Measured 2026-09-24 (`ig-m6o.9` acceptance, `tests/unit/test_ledger_file.gd` and
 `test_ledger.gd`).** The side file landed, so the hitch above is gone. At the 10,000-record cap:
-- The ledger adds at most 0.7 ms to a profile commit and 0.2 ms to a periodic save (best of
-  seven, against an empty ledger). The worst case is a ledger with no routine battles.
+- The ledger adds at most 0.31 ms to any save or profile action (re-measured for `ig-9b6`: 10
+  runs plus a full suite, best of seven, against an empty ledger). It makes no difference whether
+  the ledger holds routine battles or none. A commit takes 0.96-1.21 ms, a periodic save
+  0.92-1.27 ms, and a save with nothing new 0.76-0.95 ms.
+- The first figures (0.7 ms on a commit, 0.2 ms on a periodic save) were wrong in two ways. In the
+  ledger with no routine battles, the test's own routine battle was evicted as soon as it was
+  recorded, so that periodic save appended nothing. And saves a millisecond apart paid an OS wait
+  of about 2 ms after back-to-back appends, at any ledger size. Play saves seconds apart, so the
+  test now waits 20 ms before each timed save. The wait never grew with history.
 - The main save is 659 bytes. The side file is 2.67 MB, about 270 bytes a record.
 - A load takes about 300 ms, up from 197 ms, because it compacts the file behind the load screen.
 - A whole-file rewrite takes about 75 ms. Play does one only in recovery (`DECISIONS.md` The
