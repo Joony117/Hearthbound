@@ -42,6 +42,11 @@ const HIT_FLASH_SECONDS: float = 0.08
 const HIT_FLASH_CRIT_SECONDS: float = 0.16
 const HIT_FLASH_STRENGTH: float = 0.6
 const HIT_FLASH_CRIT_STRENGTH: float = 0.95
+# PROVISIONAL (ig-hpu): faction ring colours and corpse dim, unplayed. Settled by: a played build.
+# The old capsule body colours, now a thin ground ring; the gold selection ring covers it.
+const ALLY_COLOR: Color = Color("a8c9a8")
+const ENEMY_COLOR: Color = Color("e87b68")
+const CORPSE_DIM: Color = Color(0.0, 0.0, 0.0, 0.7)
 
 static var _bar_back_material: StandardMaterial3D = _bar_material(BAR_BACK_COLOR)
 static var _bar_chip_material: StandardMaterial3D = _bar_material(BAR_CHIP_COLOR)
@@ -49,6 +54,11 @@ static var _bar_ally_material: StandardMaterial3D = _bar_material(BAR_ALLY_COLOR
 static var _bar_enemy_material: StandardMaterial3D = _bar_material(BAR_ENEMY_COLOR)
 # One overlay for every unit's hit flash; each mesh carries its own strength as an instance uniform.
 static var _flash_material: ShaderMaterial = _build_flash_material()
+# Shared by every unit, so 60 units add no per-unit materials or meshes.
+static var _faction_ring_mesh: TorusMesh = _build_faction_ring_mesh()
+static var _ally_ring_material: StandardMaterial3D = _flat_material(ALLY_COLOR)
+static var _enemy_ring_material: StandardMaterial3D = _flat_material(ENEMY_COLOR)
+static var _corpse_material: StandardMaterial3D = _flat_material(CORPSE_DIM)
 
 var actor_id: String = ""
 var hero_id: String = ""
@@ -72,6 +82,7 @@ var _attack_cooldown: float = 0.0
 var _dead_posed: bool = false
 var _animate_death: bool = false
 var _selection_ring: MeshInstance3D
+var _faction_ring: MeshInstance3D
 # The health bar sits on the root, not the pivot, so recoil and the death fling never move it.
 var _hp_bar: Node3D
 var _hp_back: MeshInstance3D
@@ -307,6 +318,9 @@ func _build_visual() -> void:
 	ring_mesh.outer_radius = 0.57
 	_selection_ring = _mesh(ring_mesh, Vector3(0.0, 0.045, 0.0), Vector3.ONE, _material(Color("d4b65b")))
 	_selection_ring.visible = false
+	# Flattened so it lies on the ground under the selection ring instead of crossing it.
+	_faction_ring = _mesh(_faction_ring_mesh, Vector3(0.0, 0.01, 0.0), Vector3(1.0, 0.3, 1.0), _ally_ring_material if faction == "ally" else _enemy_ring_material)
+	_faction_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_hp_bar = Node3D.new()
 	_hp_bar.position = Vector3(0.0, BAR_HEIGHT_OFFSET, 0.0)
 	add_child(_hp_bar)
@@ -355,6 +369,8 @@ func _update_status() -> void:
 	_state_label.visible = not dead
 	_downed_marker.visible = downed
 	_selection_ring.visible = selected and life == "alive"
+	# A corpse loses its ring, so a pile of dead reads apart from the living.
+	_faction_ring.visible = not dead
 	_elite_ring.visible = bool(_effects.get("elite", false)) and life == "alive"
 	_guard_bubble.visible = float(_effects.get("guard_remaining", 0.0)) > 0.0 and life == "alive"
 	var label_text: String = "!" if float(_effects.get("attack_windup_remaining", 0.0)) > 0.0 else "STUN" if float(_effects.get("stun_remaining", 0.0)) > 0.0 else ""
@@ -414,6 +430,9 @@ func _track_chip(hp_before: float) -> void:
 # Death is one-way in the sim, so the pose is applied once and never undone.
 func _pose_dead() -> void:
 	_dead_posed = true
+	# The killing hit's flash owns the overlay until it ends; _clear_flash hands it the dim.
+	if _flash_tween == null or not _flash_tween.is_running():
+		_clear_flash()
 	if not _animate_death:
 		return
 	_fall_animated = true
@@ -572,10 +591,26 @@ func _set_flash(strength: float) -> void:
 		mesh.set_instance_shader_parameter(&"flash", strength)
 
 
-# The overlay is an extra draw pass, so it only stays on while a flash runs.
+# The overlay is an extra draw pass, so it only stays on while a flash runs, or on a corpse.
 func _clear_flash() -> void:
 	for mesh: MeshInstance3D in _flash_meshes:
-		mesh.material_overlay = null
+		mesh.material_overlay = _corpse_material if _dead_posed else null
+
+
+static func _build_faction_ring_mesh() -> TorusMesh:
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.49
+	ring.outer_radius = 0.55
+	return ring
+
+
+static func _flat_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if color.a < 1.0:
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	return material
 
 
 static func _build_flash_material() -> ShaderMaterial:

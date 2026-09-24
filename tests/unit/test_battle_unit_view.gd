@@ -415,6 +415,29 @@ func test_hit_flash_shares_one_overlay_and_crits_flash_brighter_and_longer() -> 
 	assert_same(crit._flash_meshes[0].material_overlay, BattleUnitView._flash_material, "crits flash longer")
 
 
+func test_every_unit_stands_on_a_shared_faction_ring_until_it_dies() -> void:
+	var ally: BattleUnitView = _unit({"faction": "ally", "archetype": "knight", "id": "ally-1"})
+	var other_ally: BattleUnitView = _unit({"faction": "ally", "archetype": "mage", "id": "ally-2", "life": "downed"})
+	var enemy: BattleUnitView = _unit({})
+	for unit: BattleUnitView in [ally, other_ally, enemy]:
+		assert_true(unit._faction_ring.visible, "%s %s shows its ring" % [unit.faction, unit.life])
+		assert_same(unit._faction_ring.mesh, BattleUnitView._faction_ring_mesh, "one ring mesh for the battle")
+	assert_same(ally._faction_ring.material_override, BattleUnitView._ally_ring_material)
+	assert_same(other_ally._faction_ring.material_override, BattleUnitView._ally_ring_material)
+	assert_same(enemy._faction_ring.material_override, BattleUnitView._enemy_ring_material)
+	assert_ne(BattleUnitView.ALLY_COLOR, BattleUnitView.ENEMY_COLOR)
+	for mesh: MeshInstance3D in enemy._flash_meshes:
+		assert_null(mesh.material_overlay, "the living are not dimmed")
+
+
+func test_the_killing_hit_flashes_before_the_corpse_dims() -> void:
+	var unit: BattleUnitView = _unit({"effect_state": {"last_hit_tick": 1}})
+	unit.set_actor(_actor({"hp": 0.0, "life": "dead", "effect_state": {"last_hit_tick": 2}}), false)
+	assert_same(unit._flash_meshes[0].material_overlay, BattleUnitView._flash_material, "the blow still flashes")
+	unit._flash_tween.custom_step(BattleUnitView.HIT_FLASH_SECONDS + 0.01)
+	assert_same(unit._flash_meshes[0].material_overlay, BattleUnitView._corpse_material, "then the corpse dims")
+
+
 func test_no_flash_without_a_landed_hit() -> void:
 	var unit: BattleUnitView = _unit({})
 	unit._react({"hit": false, "skill": true, "critical": false, "heavy": false})
@@ -458,6 +481,9 @@ func _assert_dead_look(unit: BattleUnitView) -> void:
 	assert_false(unit._telegraph_line.visible, "telegraph line hidden")
 	assert_false(unit._selection_ring.visible, "selection ring hidden")
 	assert_false(unit._downed_marker.visible, "downed marker hidden")
+	assert_false(unit._faction_ring.visible, "faction ring hidden")
+	for mesh: MeshInstance3D in unit._flash_meshes:
+		assert_same(mesh.material_overlay, BattleUnitView._corpse_material, "the corpse is dimmed")
 
 
 # Mirrors battle_view: set_actor runs before the node enters the tree.
