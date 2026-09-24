@@ -20,6 +20,9 @@ const ENEMY_LOOKS: Dictionary = {
 	"mage": ["Skeleton_Mage", {"handslot.r": "Skeleton_Staff"}, "Ranged_Magic_Shoot"],
 	"ranger": ["Skeleton_Rogue", {"handslot.r": "Skeleton_Crossbow"}, "Ranged_1H_Shoot"],
 }
+# Meshes an ally look leaves off its character model. The Cleric shares the Mage model, whose hat
+# is the Mage's whole top-down read, so a hatless head (and the battle halo) reads as the healer.
+const ALLY_DROPPED_MESHES: Dictionary = {"cleric": ["Mage_Hat"]}
 const LOOPED_CLIPS: Array[String] = ["Idle_A", "Idle_B", "Running_A", "Walking_A", "Skeletons_Idle", "Skeletons_Walking"]
 # Clip file under animations/Rig_Medium_<file>.glb for every clip in the library.
 const CLIP_FILES: Dictionary = {
@@ -32,6 +35,10 @@ const CLIP_FILES: Dictionary = {
 	"Walking_A": "MovementBasic", "Idle_B": "General", "Interact": "General", "PickUp": "General", "Use_Item": "General",
 }
 const ROOT_POSITION_TRACK: NodePath = NodePath("Rig_Medium/Skeleton3D:root")
+const HIPS_POSITION_TRACK: NodePath = NodePath("Rig_Medium/Skeleton3D:hips")
+# Falls whose hips travel along the ground (Skeletons_Death about 1.1 model units); flattened so a
+# body lands where it stood. Hit and attack sways end where they start, so they are left alone.
+const FALL_CLIPS: Array[String] = ["Death_A", "Death_B", "Skeletons_Death"]
 
 static var _clip_library: AnimationLibrary
 
@@ -50,6 +57,15 @@ static func build(faction: String, archetype: String) -> Node3D:
 	var chosen: Array = look(faction, archetype)
 	var model: Node3D = (load(MODEL_DIR + "characters/%s.glb" % chosen[0]) as PackedScene).instantiate() as Node3D
 	attach_weapons(model.get_node("Rig_Medium/Skeleton3D") as Skeleton3D, chosen[1])
+	if faction == "ally":
+		for mesh_name: String in ALLY_DROPPED_MESHES.get(archetype, []):
+			var dropped: Node = model.find_child(mesh_name, true, false)
+			if dropped == null:
+				push_error("The %s model has no mesh '%s' to drop." % [chosen[0], mesh_name])
+				continue
+			# Freed, not hidden, so it costs no skinning.
+			dropped.get_parent().remove_child(dropped)
+			dropped.free()
 	var animator := AnimationPlayer.new()
 	animator.name = "AnimationPlayer"
 	model.add_child(animator)
@@ -84,11 +100,23 @@ static func shared_clips() -> AnimationLibrary:
 		var player: AnimationPlayer = (sources[file] as Node).find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer
 		var animation: Animation = player.get_animation(clip).duplicate(true) as Animation
 		animation.loop_mode = Animation.LOOP_LINEAR if clip in LOOPED_CLIPS else Animation.LOOP_NONE
-		# Skeletons_Death slides the root bone 0.7 back; the fling already moves the corpse, and
-		# town movement is driven by code, so every clip plays in place.
+		# Skeletons_Death slides the root bone 0.7 back (and the hips further, pinned below); the
+		# fling already moves the corpse, and town movement is driven by code, so every clip
+		# plays in place.
 		var root_track: int = animation.find_track(ROOT_POSITION_TRACK, Animation.TYPE_POSITION_3D)
 		if root_track >= 0:
 			animation.remove_track(root_track)
+		# The falls also carry the body through the hips; X/Z are pinned to key 0 and Y kept, so
+		# the body still drops but lands on its spot (arena.gd _pin_hips_in_place does the same).
+		if clip in FALL_CLIPS:
+			var hips_track: int = animation.find_track(HIPS_POSITION_TRACK, Animation.TYPE_POSITION_3D)
+			if hips_track < 0:
+				push_error("Fall clip %s has no hips track to pin." % clip)
+			else:
+				var origin: Vector3 = animation.track_get_key_value(hips_track, 0)
+				for key: int in animation.track_get_key_count(hips_track):
+					var value: Vector3 = animation.track_get_key_value(hips_track, key)
+					animation.track_set_key_value(hips_track, key, Vector3(origin.x, value.y, origin.z))
 		library.add_animation(clip, animation)
 	for scene: Node in sources.values():
 		scene.free()

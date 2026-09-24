@@ -42,11 +42,16 @@ const HIT_FLASH_SECONDS: float = 0.08
 const HIT_FLASH_CRIT_SECONDS: float = 0.16
 const HIT_FLASH_STRENGTH: float = 0.6
 const HIT_FLASH_CRIT_STRENGTH: float = 0.95
-# PROVISIONAL (ig-hpu): faction ring colours and corpse dim, unplayed. Settled by: a played build.
+# PROVISIONAL (ig-hpu): faction ring colours, corpse dim and the healer halo, unplayed. Settled by: a played build.
 # The old capsule body colours, now a thin ground ring; the gold selection ring covers it.
 const ALLY_COLOR: Color = Color("a8c9a8")
 const ENEMY_COLOR: Color = Color("e87b68")
 const CORPSE_DIM: Color = Color(0.0, 0.0, 0.0, 0.7)
+# A warm white halo over a healer's hatless head: not the selection gold, not the ally green.
+const HALO_COLOR: Color = Color("fff1c4")
+const HALO_ARCHETYPES: Array[String] = ["cleric"]
+# Bone-local, from the head bone (model y 1.24) to just above the head top (2.16).
+const HALO_OFFSET: Vector3 = Vector3(0.0, 1.0, 0.0)
 
 static var _bar_back_material: StandardMaterial3D = _bar_material(BAR_BACK_COLOR)
 static var _bar_chip_material: StandardMaterial3D = _bar_material(BAR_CHIP_COLOR)
@@ -59,6 +64,7 @@ static var _faction_ring_mesh: TorusMesh = _build_faction_ring_mesh()
 static var _ally_ring_material: StandardMaterial3D = _flat_material(ALLY_COLOR)
 static var _enemy_ring_material: StandardMaterial3D = _flat_material(ENEMY_COLOR)
 static var _corpse_material: StandardMaterial3D = _flat_material(CORPSE_DIM)
+static var _halo_material: StandardMaterial3D = _flat_material(HALO_COLOR)
 
 var actor_id: String = ""
 var hero_id: String = ""
@@ -83,6 +89,8 @@ var _dead_posed: bool = false
 var _animate_death: bool = false
 var _selection_ring: MeshInstance3D
 var _faction_ring: MeshInstance3D
+# A healer's halo on its head bone, or null.
+var _halo: MeshInstance3D
 # The health bar sits on the root, not the pivot, so recoil and the death fling never move it.
 var _hp_bar: Node3D
 var _hp_back: MeshInstance3D
@@ -313,6 +321,13 @@ func _build_visual() -> void:
 	_animator.animation_finished.connect(_on_clip_finished)
 	for mesh: Node in model.find_children("*", "MeshInstance3D", true, false):
 		_flash_meshes.append(mesh as MeshInstance3D)
+	# After the flash gather, so the halo never takes the hit flash or the corpse dim.
+	if archetype in HALO_ARCHETYPES:
+		var head := BoneAttachment3D.new()
+		head.bone_name = "head"
+		model.get_node("Rig_Medium/Skeleton3D").add_child(head)
+		_halo = _mesh(_faction_ring_mesh, HALO_OFFSET, Vector3(1.0, 0.3, 1.0), _halo_material, head)
+		_halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var ring_mesh := TorusMesh.new()
 	ring_mesh.inner_radius = 0.48
 	ring_mesh.outer_radius = 0.57
@@ -371,6 +386,8 @@ func _update_status() -> void:
 	_selection_ring.visible = selected and life == "alive"
 	# A corpse loses its ring, so a pile of dead reads apart from the living.
 	_faction_ring.visible = not dead
+	if _halo != null:
+		_halo.visible = not dead
 	_elite_ring.visible = bool(_effects.get("elite", false)) and life == "alive"
 	_guard_bubble.visible = float(_effects.get("guard_remaining", 0.0)) > 0.0 and life == "alive"
 	var label_text: String = "!" if float(_effects.get("attack_windup_remaining", 0.0)) > 0.0 else "STUN" if float(_effects.get("stun_remaining", 0.0)) > 0.0 else ""

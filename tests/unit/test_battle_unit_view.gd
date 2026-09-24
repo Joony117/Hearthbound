@@ -375,6 +375,53 @@ func test_units_share_one_clip_library_with_loops_set_and_root_motion_pinned() -
 		assert_eq(animation.find_track(NodePath("Rig_Medium/Skeleton3D:root"), Animation.TYPE_POSITION_3D), -1, "%s root is pinned" % clip)
 
 
+func test_the_falls_drop_in_place_with_the_hips_pinned_on_the_ground() -> void:
+	var source: Node = (load(HeroModel.MODEL_DIR + "animations/Rig_Medium_Special.glb") as PackedScene).instantiate()
+	var raw: Animation = (source.find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer).get_animation(&"Skeletons_Death")
+	var raw_track: int = raw.find_track(HeroModel.HIPS_POSITION_TRACK, Animation.TYPE_POSITION_3D)
+	var raw_start: Vector3 = raw.track_get_key_value(raw_track, 0)
+	var raw_end: Vector3 = raw.track_get_key_value(raw_track, raw.track_get_key_count(raw_track) - 1)
+	assert_gt(Vector2(raw_end.x - raw_start.x, raw_end.z - raw_start.z).length(), 1.0, "the source fall drifts, so the pin matters")
+	source.free()
+	var library: AnimationLibrary = HeroModel.shared_clips()
+	assert_eq(HeroModel.FALL_CLIPS, ["Death_A", "Death_B", "Skeletons_Death"] as Array[String])
+	for clip: String in HeroModel.FALL_CLIPS:
+		var animation: Animation = library.get_animation(clip)
+		var track: int = animation.find_track(HeroModel.HIPS_POSITION_TRACK, Animation.TYPE_POSITION_3D)
+		assert_gt(track, -1, "%s keeps its hips track" % clip)
+		var first: Vector3 = animation.track_get_key_value(track, 0)
+		for key: int in animation.track_get_key_count(track):
+			var value: Vector3 = animation.track_get_key_value(track, key)
+			assert_almost_eq(Vector2(value.x, value.z), Vector2(first.x, first.z), Vector2(1e-4, 1e-4), "%s key %d stays on its spot" % [clip, key])
+		var last: Vector3 = animation.track_get_key_value(track, animation.track_get_key_count(track) - 1)
+		assert_lt(last.y, first.y, "%s still drops" % clip)
+
+
+func test_a_cleric_has_no_hat_and_wears_a_shared_halo_until_it_dies() -> void:
+	var cleric_model: Node3D = HeroModel.build("ally", "cleric")
+	var mage_model: Node3D = HeroModel.build("ally", "mage")
+	assert_null(cleric_model.find_child("Mage_Hat", true, false), "the cleric's hat is off")
+	assert_not_null(mage_model.find_child("Mage_Hat", true, false), "the mage keeps its hat")
+	cleric_model.free()
+	mage_model.free()
+	var cleric: BattleUnitView = _unit({"faction": "ally", "archetype": "cleric", "id": "ally-1"})
+	var other: BattleUnitView = _unit({"faction": "ally", "archetype": "cleric", "id": "ally-2", "life": "downed"})
+	var mage: BattleUnitView = _unit({"faction": "ally", "archetype": "mage", "id": "ally-3"})
+	assert_null(mage._halo, "a mage has no halo")
+	assert_eq((cleric._halo.get_parent() as BoneAttachment3D).bone_name, "head")
+	assert_gt((cleric._halo.get_parent() as BoneAttachment3D).bone_idx, -1, "the head bone resolves")
+	assert_same(cleric._halo.mesh, other._halo.mesh, "one halo mesh")
+	assert_same(cleric._halo.material_override, BattleUnitView._halo_material)
+	assert_same(other._halo.material_override, BattleUnitView._halo_material, "one halo material")
+	assert_ne(BattleUnitView.HALO_COLOR, BattleUnitView.ALLY_COLOR)
+	assert_true(cleric._halo.visible)
+	assert_true(other._halo.visible, "a downed cleric keeps its halo")
+	assert_false(cleric._halo in cleric._flash_meshes, "the halo never flashes or dims")
+	cleric.set_actor(_actor({"faction": "ally", "archetype": "cleric", "id": "ally-1", "hp": 0.0, "life": "dead"}), false)
+	await wait_seconds(0.5)
+	assert_false(cleric._halo.visible, "a dead cleric loses its halo")
+
+
 func test_clips_drive_the_skeleton() -> void:
 	var unit: BattleUnitView = _unit({"faction": "ally", "archetype": "knight", "hp": 20.0})
 	var skeleton: Skeleton3D = unit._animator.get_parent().get_node("Rig_Medium/Skeleton3D") as Skeleton3D
