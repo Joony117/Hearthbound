@@ -87,6 +87,24 @@ The earlier runtime Resource override that printed candidate values but spawned 
 enemies remains invalid evidence. Existing hero stats, zone power/rewards and economic
 formulas are unchanged. Evidence: `.agent-results/logs/ig-544-starter-measure-r1.log`.
 
+**Restated 2026-09-24, after the facing fixes.** Since that measurement, the only combat-rule
+changes are the two facing fixes: `ig-oit` (970856f) and `ig-hb2` (c8b09e2). Stats, enemy
+conversion, zones and kits are unchanged. Rear checks now read real facing. A Rogue no longer
+gets a free rear hit on an enemy that stands with its back to the fight, and Flank picks its slot
+from where the target really faces. Old code gave the faster times, but it was wrong, so the band
+is restated rather than restored. The same eight cases now measure:
+
+- **Five mixed heroes: 72.5–79.0 s.** All four won. This is the current band. It replaces
+  60.1–65.6 as the target for later tuning.
+- **Three starter Knights:** seed 1 won (130.3 s bare, 125.5 s supplied). Seed 2 timed out at
+  180 s, bare and supplied. It is not a stall. The Knights were still trading blows and reviving
+  each other with Rally when the clock ran out. The lone final-wave boss was 87% dead (bare) and
+  57% dead (supplied). This case sits on the timeout edge: the old top was 173.9 of 180 s. Small
+  early changes swing it by tens of seconds either way. In the same change, seed 1 went from
+  173.9 to 130.3 s.
+
+Evidence: `.agent-results/ig-gy0.1/golden_before.json`, captured before any `ig-gy0.1` edit.
+
 | Hero kit | Signature | Passive |
 |---|---|---|
 | Knight | Rally: 16s cooldown; revive a downed ally within 3 to 25% HP, otherwise guard allies within radius 3 for 4s with 30% damage reduction | 10% damage reduction within 3 of another living ally; multiplicative with one Rally effect |
@@ -469,8 +487,9 @@ unlimited repeats, sooner.
 
 > ⚠️ **PROVISIONAL** — the kits' effect on clear time is unmeasured · **Settled by:** the balance
 > pass, which retunes skill multipliers (not the six stats, not zone power) until five mixed
-> F-rank level-1 heroes clear Verdant in the `ig-544` measured band again (60–66 s over seeds 1
-> and 2). General skills get their own check: a C-rank level-30 team of all five classes with
+> F-rank level-1 heroes clear Verdant in the current band again (72.5–79.0 s over seeds 1 and 2,
+> restated 2026-09-24 in § Provisional shared combat numbers), and three starter Knights win
+> Verdant bare on seeds 1–4. General skills get their own check: a C-rank level-30 team of all five classes with
 > full class kits, run at Sundered with and without all six general skills each. With them, clear
 > time may fall by at most 10%, and any change in the `safe` verdict is reported to the director.
 
