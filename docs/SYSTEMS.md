@@ -584,6 +584,32 @@ bytes a record.
 
 ---
 
+## Bonds and dreams, slice 1 — *ig-m6o.2.1, scoped 2026-09-24*
+
+The first test of the living-world bet: one bond, one dream and one moment in town, built only on
+what exists today. Nothing is saved. Both are derived from the Ledger when read, like the History
+list (`DECISIONS.md` 2026-09-24 "The Ledger": readers count, saved tallies are rejected). Every
+row is a `balance.tres` row except the read cost, which is a measurement.
+
+> ⚠️ **PROVISIONAL** — every number in this section is a desk guess. How often a battle is not
+> routine has never been counted, so the pace a bond forms at is unknown · **Settled by:** the
+> slice's calibration run over a real ledger, then the owner gate (`ig-m6o.2.1`)
+
+| Row | Value | Why |
+|---|---|---|
+| `bond_points_hard_battle` | 1 | A `battle` with both heroes in `team` that is not routine: someone downed, a rescue, or not a victory. Routine victories score 0: the Ledger evicts them first, so a bond built on them would fade at the cap |
+| `bond_points_saved` | 3 | A `revived` or `carried` moment between the two, either way round. Its battle is not routine, so it also scores the hard battle: 4 in all |
+| `bond_points_rescued` | 5 | A rescue `battle`: one hero in `rescuers`, the other in `rescued`. With the hard battle, 6 |
+| `bond_points_death_witnessed` | 5 | Both in the `team` of the battle that stranded a hero who then died (`died.battle_order`). With the hard battle, 6 |
+| `bond_threshold` | 8 | Two saves (4 + 4), or one rescue or witnessed death plus two more hard fights (6 + 2). One fact alone never makes a bond |
+| `dream_fight_beside_battles` | 3 | The dream's middle milestone: battles beside the one this hero owes, after the save that opened the debt. Any battle counts, routine too |
+| Bond read cost | Measured, not a gate | One bond and dream read for one hero, at the 10,000-record cap, best of seven, printed for `ig-m6o.2.1`. It feeds `ig-m6o.2.2`'s derived-or-stored ADR. Nobody nears the cap for 100+ hours at the guessed 60 records an hour. Hard rule: it runs on refresh only, never per frame |
+
+Each fact counts at most once per record for a pair, so one long battle full of revives cannot make
+a bond by itself.
+
+---
+
 ## Ranks — *Phase 2*
 
 `F D C B A S SS SSS` → int `0..7`. Applies to heroes and equipment alike.
