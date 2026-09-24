@@ -2,6 +2,7 @@ class_name HubUiBuilder
 extends RefCounted
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
+const KEEPER_ROW_HEIGHT: float = 52.0
 ## The town's buildings in building-list order; number key N opens entry N. Ids are town.tscn node names.
 const BUILDINGS: Array = [
 	[&"SummoningCircle", "Circle"], [&"Forge", "Forge"], [&"TrainingHall", "Training Hall"], [&"Sanctum", "Sanctum"],
@@ -31,6 +32,7 @@ static func build(root: Control, confirm_dialog: ConfirmationDialog, enhance_dia
 	_build_armory(content)
 	_build_selected_hero(content)
 	_build_hall(content)
+	_build_keeper(content)
 	_build_footer(root)
 	_build_confirm_dialog(confirm_dialog)
 	_build_enhance_dialog(enhance_dialog)
@@ -216,7 +218,7 @@ static func _build_teams(content: Control) -> void:
 	_add(content, view, "TeamsView", true)
 	view.visible = false
 	_stop_clicks(view)
-	_anchor_fill(view, 316.0, 0.0, -412.0, 0.0)
+	_anchor_fill(view, 316.0, 0.0, -412.0, -KEEPER_ROW_HEIGHT)
 	view.add_theme_constant_override("separation", 12)
 	var preset_panel := _panel(view, "PresetPanel", true)
 	preset_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -263,7 +265,7 @@ static func _build_armory(content: Control) -> void:
 	var view := _panel(content, "ArmoryView", true)
 	view.visible = false
 	_stop_clicks(view)
-	_anchor_fill(view, 316.0, 0.0, -412.0, 0.0)
+	_anchor_fill(view, 316.0, 0.0, -412.0, -KEEPER_ROW_HEIGHT)
 	var box := _vbox(view, "Inventory")
 	_heading(box, "ARMORY")
 	_add_option(box, "InventoryRankFilter")
@@ -334,6 +336,7 @@ static func _build_hall(content: Control) -> void:
 	view.anchor_left = 0.5
 	view.anchor_right = 0.5
 	view.anchor_bottom = 1.0
+	view.offset_bottom = -KEEPER_ROW_HEIGHT
 	view.offset_left = -240.0
 	view.offset_right = 240.0
 	var scroll := ScrollContainer.new()
@@ -374,6 +377,30 @@ static func _build_hall(content: Control) -> void:
 
 
 ## Each levelled building shows its own level and upgrade button in its own panel.
+## Under the middle column of every staffable building: who keeps it, and the assign/unassign pair.
+static func _build_keeper(content: Control) -> void:
+	var panel := _panel(content, "KeeperPanel", true)
+	panel.visible = false
+	_stop_clicks(panel)
+	panel.anchor_top = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = 316.0
+	panel.offset_top = -KEEPER_ROW_HEIGHT + 8.0
+	panel.offset_right = -412.0
+	var row := HBoxContainer.new()
+	_add(panel, row, "Row")
+	_heading(row, "KEEPER")
+	var keeper := _label(row, "No keeper", "KeeperName", true)
+	keeper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	keeper.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	keeper.mouse_filter = Control.MOUSE_FILTER_PASS
+	_button(row, "Assign keeper", "AssignKeeper", true)
+	_button(row, "Unassign", "UnassignKeeper", true)
+	var picker := PopupMenu.new()
+	_add(panel, picker, "KeeperPicker", true)
+
+
 static func _upgrade_row(parent: Node, level_name: String, building_name: String, button_name: String) -> void:
 	_heading(parent, "UPGRADE")
 	_label(parent, "%s — Lv 0" % building_name, level_name, true)

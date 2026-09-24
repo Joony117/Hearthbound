@@ -8,12 +8,12 @@ const NO_BUILDING: StringName = &""
 ## the open building lists it.
 const BUILDING_PANELS: Dictionary = {
 	&"SummoningCircle": [&"HallView", &"CircleSection"],
-	&"Forge": [&"ArmoryView", &"SharedRosterPanel", &"SelectedHeroPanel"],
-	&"TrainingHall": [&"TeamsView", &"PresetPanel", &"TrainingPanel", &"SharedRosterPanel", &"SelectedHeroPanel"],
-	&"Sanctum": [&"TeamsView", &"AdvancementPanel", &"SharedRosterPanel", &"SelectedHeroPanel"],
-	&"Reliquary": [&"HallView", &"ReliquarySection"],
+	&"Forge": [&"ArmoryView", &"SharedRosterPanel", &"SelectedHeroPanel", &"KeeperPanel"],
+	&"TrainingHall": [&"TeamsView", &"PresetPanel", &"TrainingPanel", &"SharedRosterPanel", &"SelectedHeroPanel", &"KeeperPanel"],
+	&"Sanctum": [&"TeamsView", &"AdvancementPanel", &"SharedRosterPanel", &"SelectedHeroPanel", &"KeeperPanel"],
+	&"Reliquary": [&"HallView", &"ReliquarySection", &"KeeperPanel"],
 	&"TownGate": [&"ExpeditionsView"],
-	&"Apothecary": [&"HallView", &"SupplySection"],
+	&"Apothecary": [&"HallView", &"SupplySection", &"KeeperPanel"],
 }
 const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 	preload("res://zones/defs/verdant_outskirts.tres"),
@@ -129,6 +129,8 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	GameSession.roster_changed.connect(_refresh_director_ui)
 	GameSession.roster_changed.connect(_refresh_body)
+	GameSession.roster_changed.connect(_refresh_keeper)
+	GameSession.expeditions_changed.connect(_refresh_keeper)
 	GameSession.expeditions_changed.connect(_on_expeditions_changed)
 	GameSession.battle_changed.connect(_on_battle_changed)
 	_populate_rank_filter(_roster_rank_filter)
@@ -224,6 +226,9 @@ func _connect_ui_signals() -> void:
 	_favorite_hero.toggled.connect(_on_favorite_hero_toggled)
 	%WalkAsHero.pressed.connect(_on_walk_as_hero_pressed)
 	%StepOut.pressed.connect(_on_step_out_pressed)
+	%AssignKeeper.pressed.connect(_on_assign_keeper_pressed)
+	%UnassignKeeper.pressed.connect(_on_unassign_keeper_pressed)
+	%KeeperPicker.index_pressed.connect(_on_keeper_picked)
 	%StartRecoveryWindow.pressed.connect(_on_start_recovery_window_pressed)
 	_supply_kind.add_item("Healing", 0)
 	_supply_kind.set_item_metadata(0, "healing")
@@ -297,6 +302,8 @@ func _refresh_hero_list(list: ItemList) -> void:
 			flags.append("Away")
 		elif GameSession.is_embodied(hero):
 			flags.append("In town")
+		elif hero.station != Hero.NO_STATION:
+			flags.append("Keeps the %s" % str(hero.station).capitalize())
 		elif protected:
 			flags.append("Preset")
 		var suffix: String = " · %s" % ", ".join(flags) if not flags.is_empty() else ""
@@ -580,12 +587,19 @@ func _hero_state_text(hero: Hero) -> String:
 		return "Away on expedition. Equipment and advancement are locked."
 	if GameSession.is_embodied(hero):
 		return "Your body in town. Gear and rank-up are open; expeditions and sacrifice are not."
+	if hero.station != Hero.NO_STATION:
+		return "Keeps the %s. Gear, rank-up and expeditions are open; sacrifice is not." % str(hero.station).capitalize()
 	if GameSession.is_hero_protected(hero):
 		return "Protected by favorite or team preset."
 	return "Ready"
 
 
+## The selected-hero detail and the roster tooltip, which must stay the same string.
 func _hero_detail_text(hero: Hero) -> String:
+	return "%s\n%s" % [_hero_stats_text(hero), _profession_text(hero)]
+
+
+func _hero_stats_text(hero: Hero) -> String:
 	if hero.def_id == Hero.NO_ARCHETYPE_DEF_ID:
 		return "Rank: %s\nArchetype: No archetype" % hero.rank_label(BALANCE)
 	var definition: HeroDefinition = Hero.definition_for(hero.def_id)
@@ -620,6 +634,15 @@ func _hero_detail_text(hero: Hero) -> String:
 		hero.resonance,
 		trait_text,
 	]
+
+
+## Calling, every profession skill and the station (GAME_SPEC.md § Heroes staff the buildings).
+func _profession_text(hero: Hero) -> String:
+	var skills: PackedStringArray = []
+	for profession: StringName in Hero.PROFESSIONS:
+		skills.append("%s %d" % [str(profession).capitalize(), Hero.profession_skill(hero, profession, BALANCE)])
+	var station: String = "none" if hero.station == Hero.NO_STATION else str(hero.station).capitalize()
+	return "Calling: %s\nSkills: %s\nStation: %s" % [str(hero.calling).capitalize(), ", ".join(skills), station]
 
 
 func _selected_hero() -> Hero:
@@ -729,6 +752,7 @@ func _open(building_id: StringName) -> void:
 	if focus != NO_BUILDING:
 		_building_button(focus).grab_focus()
 	_sync_town_walk()
+	_refresh_keeper()
 	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
 
@@ -748,6 +772,68 @@ func _refresh_body() -> void:
 
 func _on_step_out_pressed() -> void:
 	if not GameSession.step_out():
+		_status.text = GameSession.last_action_error
+
+
+## The open building's keeper row: name, calling and skill here, or Away while it is out.
+func _refresh_keeper() -> void:
+	var profession: StringName = Hero.profession_for_building(_open_building)
+	if profession == &"":
+		return
+	var keeper: Hero = GameSession.keeper_for(_open_building)
+	%AssignKeeper.disabled = SaveService.load_blocked
+	%UnassignKeeper.disabled = keeper == null or SaveService.load_blocked
+	if keeper == null:
+		%KeeperName.text = "No keeper"
+	elif GameSession.is_hero_busy(keeper):
+		%KeeperName.text = "%s · Away" % keeper.hero_name
+	else:
+		# Short enough for the row; a long name trims, and the tooltip keeps the whole line.
+		%KeeperName.text = "%s · %s %d · %s" % [
+			keeper.hero_name,
+			str(profession).capitalize(),
+			Hero.profession_skill(keeper, profession, BALANCE),
+			"calling" if keeper.calling == profession else "calling %s" % str(keeper.calling).capitalize(),
+		]
+	%KeeperName.tooltip_text = %KeeperName.text
+
+
+## The shared roster picker: every hero with its skill here, callings marked. Rows hold ids, not
+## Heroes: a failed save rebuilds the roster while the popup is open, and a held Hero goes stale.
+func _on_assign_keeper_pressed() -> void:
+	var profession: StringName = Hero.profession_for_building(_open_building)
+	var picker: PopupMenu = %KeeperPicker
+	picker.clear()
+	for hero: Hero in GameSession.roster:
+		var marks: String = " · calling" if hero.calling == profession else ""
+		if hero.station == _open_building:
+			marks += " · keeper"
+		elif hero.station != Hero.NO_STATION:
+			marks += " · keeps the %s" % str(hero.station).capitalize()
+		picker.add_item("%s — %s %d%s" % [hero.hero_name, str(profession).capitalize(), Hero.profession_skill(hero, profession, BALANCE), marks])
+		picker.set_item_metadata(picker.item_count - 1, hero.instance_id)
+	if picker.item_count == 0:
+		_status.text = "No heroes to keep the %s." % str(_open_building).capitalize()
+		return
+	picker.popup_centered()
+
+
+func _on_keeper_picked(index: int) -> void:
+	var hero: Hero = GameSession.hero_by_id(str(%KeeperPicker.get_item_metadata(index)))
+	if GameSession.station_hero(hero, _open_building):
+		_status.text = "%s keeps the %s." % [hero.hero_name, str(_open_building).capitalize()]
+	else:
+		_status.text = GameSession.last_action_error
+
+
+func _on_unassign_keeper_pressed() -> void:
+	var keeper: Hero = GameSession.keeper_for(_open_building)
+	if keeper == null:
+		return
+	var keeper_name: String = keeper.hero_name
+	if GameSession.unstation_hero(keeper):
+		_status.text = "%s left the %s." % [keeper_name, str(_open_building).capitalize()]
+	else:
 		_status.text = GameSession.last_action_error
 
 
@@ -1263,7 +1349,7 @@ func _refresh_director_ui() -> void:
 
 
 func _disable_mutating_controls() -> void:
-	for control: BaseButton in [%DispatchSelected, %SavePreset, %DeletePreset, %Sacrifice, %RankUp, %Equip, %Salvage, %Enhance, %Convert, %Summon, %Recover, %StartRecoveryWindow, %UpgradeCircle, %UpgradeForge, %UpgradeTrainingHall, %UpgradeSanctum, %UpgradeReliquary]:
+	for control: BaseButton in [%AssignKeeper, %UnassignKeeper, %DispatchSelected, %SavePreset, %DeletePreset, %Sacrifice, %RankUp, %Equip, %Salvage, %Enhance, %Convert, %Summon, %Recover, %StartRecoveryWindow, %UpgradeCircle, %UpgradeForge, %UpgradeTrainingHall, %UpgradeSanctum, %UpgradeReliquary]:
 		control.disabled = true
 		control.tooltip_text = SaveService.load_block_reason
 
@@ -1449,10 +1535,25 @@ func _refresh_dispatch_summary() -> void:
 			"forecast only; safety is not guaranteed" if bool(preview.get("safe", false)) else "not forecast safe",
 			str(preview.get("reason", "")),
 		]
+	var keepers: String = _absent_keepers_text()
+	if not keepers.is_empty():
+		_dispatch_summary.text += "\n" + keepers
 	_repeat_until_stopped.disabled = preview.is_empty()
 	_dispatch_selected.disabled = preview.is_empty() or not bool(preview.get("valid", false)) or SaveService.load_blocked
 	_combined_zone.visible = _combine_teams.button_pressed
 	%BattleSettingsToggle.text = "Battle settings · allocation per %s" % ("force/order" if _combine_teams.button_pressed else "team/order")
+
+
+## Keepers can be sent out; this only says which counters stand empty meanwhile. Not a modal.
+func _absent_keepers_text() -> String:
+	var absent: PackedStringArray = []
+	for row: int in _preset_dispatch_list.get_selected_items():
+		var preset: Dictionary = _preset_dispatch_list.get_item_metadata(row) as Dictionary
+		for hero_id: Variant in preset.get("hero_ids", []) as Array:
+			var hero: Hero = GameSession.hero_by_id(str(hero_id))
+			if hero != null and hero.station != Hero.NO_STATION:
+				absent.append("%s (%s)" % [str(hero.station).capitalize(), hero.hero_name])
+	return "" if absent.is_empty() else "Runs without its keeper while away: %s" % ", ".join(absent)
 
 
 func _on_battle_settings_toggle_pressed() -> void:

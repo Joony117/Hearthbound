@@ -1,5 +1,6 @@
 extends GutTest
 
+const BALANCE: BalanceTable = preload("res://balance.tres")
 
 var _original_settings_existed: bool = false
 var _original_settings_bytes: PackedByteArray
@@ -403,12 +404,12 @@ func test_enhance_budget_labels_follow_balance_rank_names() -> void:
 
 const BUILDING_ACTIONS: Dictionary = {
 	&"SummoningCircle": ["Summon", "UpgradeCircle"],
-	&"Forge": ["InventoryList", "Equip", "Unequip", "UnequipAll", "Salvage", "Enhance", "Convert", "FavoriteItem", "FavoriteHero", "RosterList", "UpgradeForge"],
-	&"TrainingHall": ["PresetSelector", "SavePreset", "DeletePreset", "RosterList", "EnterArena", "UpgradeTrainingHall"],
-	&"Sanctum": ["RosterList", "TargetOption", "Sacrifice", "RankUp", "FavoriteHero", "UpgradeSanctum"],
-	&"Reliquary": ["LostCacheList", "Recover", "StartRecoveryWindow", "UpgradeReliquary"],
+	&"Forge": ["InventoryList", "Equip", "Unequip", "UnequipAll", "Salvage", "Enhance", "Convert", "FavoriteItem", "FavoriteHero", "RosterList", "UpgradeForge", "KeeperName", "AssignKeeper", "UnassignKeeper"],
+	&"TrainingHall": ["PresetSelector", "SavePreset", "DeletePreset", "RosterList", "EnterArena", "UpgradeTrainingHall", "KeeperName", "AssignKeeper", "UnassignKeeper"],
+	&"Sanctum": ["RosterList", "TargetOption", "Sacrifice", "RankUp", "FavoriteHero", "UpgradeSanctum", "KeeperName", "AssignKeeper", "UnassignKeeper"],
+	&"Reliquary": ["LostCacheList", "Recover", "StartRecoveryWindow", "UpgradeReliquary", "KeeperName", "AssignKeeper", "UnassignKeeper"],
 	&"TownGate": ["PresetDispatchList", "CombineTeams", "RepeatUntilStopped", "BattleSettingsToggle", "DispatchSelected", "OrderCards", "IncidentCards", "RecentReturns"],
-	&"Apothecary": ["SupplyKind", "PreviewSupply", "ConfirmSupply"],
+	&"Apothecary": ["SupplyKind", "PreviewSupply", "ConfirmSupply", "KeeperName", "AssignKeeper", "UnassignKeeper"],
 }
 
 
@@ -434,6 +435,103 @@ func test_every_building_opens_the_panel_holding_its_actions() -> void:
 	town.building_selected.emit(&"Forge")
 	for other: String in ["UpgradeCircle", "UpgradeTrainingHall", "UpgradeSanctum", "UpgradeReliquary", "Summon", "Sacrifice", "PreviewSupply"]:
 		assert_false((hub.get_node("%" + other) as Control).is_visible_in_tree(), "the Forge does not show %s" % other)
+	# The Circle and the Gate take no keeper.
+	for keeperless: StringName in [&"SummoningCircle", &"TownGate"]:
+		town.building_selected.emit(keeperless)
+		assert_false((hub.get_node("%AssignKeeper") as Control).is_visible_in_tree(), "%s has no keeper row" % keeperless)
+
+
+func test_the_keeper_row_assigns_shows_away_and_unassigns() -> void:
+	var mira := Hero.new("Mira", 7)
+	mira.def_id = &"knight"
+	mira.level = 80
+	mira.calling = &"smithing"
+	mira.profession_xp[&"smithing"] = 100000.0
+	var bo := Hero.new("Bo", 2)
+	bo.def_id = &"mage"
+	bo.calling = &"rites"
+	GameSession.add_hero(mira)
+	GameSession.add_hero(bo)
+	var skill: int = Hero.profession_skill(mira, &"smithing", BALANCE)
+	assert_gt(skill, 0)
+	var hub: Node3D = _instantiate_hub()
+	(hub.get_node("%Town") as TownView).building_selected.emit(&"Forge")
+	var keeper_name: Label = hub.get_node("%KeeperName") as Label
+	assert_eq(keeper_name.text, "No keeper")
+	assert_true((hub.get_node("%UnassignKeeper") as Button).disabled)
+
+	(hub.get_node("%AssignKeeper") as Button).pressed.emit()
+	var picker: PopupMenu = hub.get_node("%KeeperPicker") as PopupMenu
+	assert_true(picker.visible, "the roster picker opens")
+	assert_eq(picker.item_count, 2)
+	assert_eq(picker.get_item_text(0), "Mira — Smithing %d · calling" % skill)
+	assert_eq(picker.get_item_text(1), "Bo — Smithing 0")
+	picker.index_pressed.emit(0)
+	picker.hide()
+	assert_eq(GameSession.keeper_for(&"Forge"), mira)
+	assert_eq(keeper_name.text, "Mira · Smithing %d · calling" % skill)
+	assert_true(GameSession.station_hero(bo, &"Forge"))
+	assert_eq(keeper_name.text, "Bo · Smithing 0 · calling Rites", "an off-calling keeper names its calling")
+	assert_true(GameSession.station_hero(mira, &"Forge"))
+	assert_false((hub.get_node("%UnassignKeeper") as Button).disabled)
+
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	assert_string_contains(roster_list.get_item_text(0), "Keeps the Forge")
+	roster_list.select(0)
+	roster_list.multi_selected.emit(0, true)
+	var detail: String = (hub.get_node("%HeroDetail") as Label).text
+	assert_string_contains(detail, "Calling: Smithing")
+	assert_string_contains(detail, "Skills: Smithing %d, Rites 0, Drill 0, Tracking 0, Alchemy 0" % skill)
+	assert_string_contains(detail, "Station: Forge")
+	assert_string_contains((hub.get_node("%HeroAvailability") as Label).text, "Keeps the Forge")
+
+	assert_ne(GameSession.dispatch_expedition([mira.instance_id], "verdant_outskirts", 1, "Out"), "", GameSession.last_action_error)
+	assert_eq(keeper_name.text, "Mira · Away")
+	(hub.get_node("%UnassignKeeper") as Button).pressed.emit()
+	assert_null(GameSession.keeper_for(&"Forge"))
+	assert_eq(keeper_name.text, "No keeper")
+
+
+func test_a_pick_after_a_roster_rollback_stations_the_live_hero() -> void:
+	var mira := Hero.new("Mira", 2)
+	mira.def_id = &"knight"
+	var bo := Hero.new("Bo", 2)
+	bo.def_id = &"mage"
+	GameSession.add_hero(mira)
+	GameSession.add_hero(bo)
+	var hub: Node3D = _instantiate_hub()
+	(hub.get_node("%Town") as TownView).building_selected.emit(&"Forge")
+	(hub.get_node("%AssignKeeper") as Button).pressed.emit()
+	var picker: PopupMenu = hub.get_node("%KeeperPicker") as PopupMenu
+	assert_true(picker.visible)
+	# A failed save while the picker is open rebuilds every Hero from the snapshot.
+	assert_true(SaveService.save())
+	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
+	assert_false(GameSession.station_hero(bo, &"Sanctum"))
+	assert_push_error("Save failed")
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+	assert_false(GameSession.roster.has(mira), "the old Mira object is gone")
+	picker.index_pressed.emit(0)
+	picker.hide()
+	var keeper: Hero = GameSession.keeper_for(&"Forge")
+	assert_not_null(keeper, (hub.get_node("%Status") as Label).text)
+	if keeper != null:
+		assert_eq(keeper.instance_id, mira.instance_id)
+
+
+func test_the_dispatch_summary_names_the_counters_a_force_leaves_empty() -> void:
+	var mira := Hero.new("Mira", 2)
+	mira.def_id = &"knight"
+	GameSession.add_hero(mira)
+	assert_true(GameSession.station_hero(mira, &"Forge"))
+	assert_ne(GameSession.save_team_preset("", "Couriers", [mira.instance_id], "verdant_outskirts"), "")
+	var hub: Node3D = _instantiate_hub()
+	var presets: ItemList = hub.get_node("%PresetDispatchList") as ItemList
+	presets.select(0)
+	presets.multi_selected.emit(0, true)
+	var summary: String = (hub.get_node("%DispatchSummary") as RichTextLabel).text
+	assert_string_contains(summary, "Runs without its keeper while away: Forge (Mira)")
+	assert_false((hub.get_node("%DispatchSelected") as Button).disabled, "a warning, not a block")
 
 
 func test_building_list_and_number_keys_open_the_same_panels() -> void:

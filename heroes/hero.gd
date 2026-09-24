@@ -13,6 +13,7 @@ const STAT_CRIT_RATE: StringName = &"crit_rate"
 const STAT_CRIT_DMG: StringName = &"crit_dmg"
 const STAT_NAMES: Array[StringName] = [STAT_HP, STAT_ATK, STAT_DEF, STAT_SPD, STAT_CRIT_RATE, STAT_CRIT_DMG]
 const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
+const NO_STATION: StringName = &""
 ## Profession -> the town building it works in (hub/town/town.tscn node names, a save id since
 ## DECISIONS.md 2026-09-23). Order is the calling order: a calling is an index into this table.
 const PROFESSIONS: Dictionary[StringName, StringName] = {
@@ -37,6 +38,9 @@ var favorite: bool = false
 var calling: StringName
 ## Plain XP seconds per profession. The calling multiplier is applied when XP is earned, not here.
 var profession_xp: Dictionary[StringName, float] = {}
+## The town building this hero keeps (a PROFESSIONS value), or NO_STATION. It leaves with the hero,
+## so permadeath needs no station cleanup (DECISIONS.md 2026-09-23 item 5).
+var station: StringName = NO_STATION
 
 
 func _init(p_name: String = "", p_rank: int = 0) -> void:
@@ -69,6 +73,18 @@ static func add_profession_xp(hero: Hero, profession: StringName, work_seconds: 
 		return
 	var rate: float = balance.calling_xp_multiplier if profession == hero.calling else 1.0
 	hero.profession_xp[profession] = hero.profession_xp.get(profession, 0.0) + work_seconds * rate
+
+
+## The profession a building's keeper works in; &"" for a building that takes no keeper.
+static func profession_for_building(building_id: StringName) -> StringName:
+	for profession: StringName in PROFESSIONS:
+		if PROFESSIONS[profession] == building_id:
+			return profession
+	return &""
+
+
+static func is_staffable(building_id: StringName) -> bool:
+	return building_id != NO_STATION and profession_for_building(building_id) != &""
 
 
 ## Only a born master makes masterwork: the calling, at the top skill.
@@ -300,6 +316,7 @@ func to_dict() -> Dictionary:
 		"equipped": equipped_entries,
 		"calling": str(calling),
 		"profession_xp": xp_by_profession,
+		"station": str(station),
 	}
 
 
@@ -333,6 +350,16 @@ static func _read_professions(hero: Hero, data: Dictionary) -> void:
 		hero.profession_xp[profession] = seconds
 
 
+## Missing means no station. One keeper per building is GameSession.from_dict's check (it sees the
+## roster). Read on its own: a save may carry a station without any profession_xp.
+static func _read_station(hero: Hero, data: Dictionary) -> void:
+	var raw_station: Variant = data.get("station")
+	if raw_station is String and is_staffable(StringName(raw_station as String)):
+		hero.station = StringName(raw_station as String)
+	elif raw_station != null and not (raw_station is String and (raw_station as String).is_empty()):
+		push_warning("Unknown station '%s' on hero %s; cleared." % [raw_station, hero.instance_id])
+
+
 static func from_dict(data: Dictionary) -> Hero:
 	var hero := Hero.new(str(data.get("name", "?")), maxi(Item.int_field(data, "rank", 0, "hero"), 0))
 	var raw_instance_id: Variant = data.get("instance_id")
@@ -341,6 +368,7 @@ static func from_dict(data: Dictionary) -> Hero:
 	elif raw_instance_id != null:
 		push_error("Invalid hero instance_id: expected a non-empty String.")
 	_read_professions(hero, data)
+	_read_station(hero, data)
 	var raw_favorite: Variant = data.get("favorite")
 	if raw_favorite is bool:
 		hero.favorite = raw_favorite as bool

@@ -462,6 +462,55 @@ func _set_body_in_memory(id: String) -> void:
 	_notify_roster_changed()
 
 
+## Puts hero behind building_id's counter, replacing its keeper and leaving any old station.
+## Protected, never busy: a keeper can still be sent out (DECISIONS.md 2026-09-23 item 5).
+func station_hero(hero: Hero, building_id: StringName) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
+	if not Hero.is_staffable(building_id):
+		last_action_error = "That building takes no keeper."
+		return false
+	if hero.station == building_id:
+		return true
+	return _commit_profile_mutation(_station_in_memory.bind(hero, building_id))
+
+
+func unstation_hero(hero: Hero) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
+	if hero.station == Hero.NO_STATION:
+		return true
+	return _commit_profile_mutation(_station_in_memory.bind(hero, Hero.NO_STATION))
+
+
+func keeper_for(building_id: StringName) -> Hero:
+	if building_id == Hero.NO_STATION:
+		return null
+	for hero: Hero in roster:
+		if hero.station == building_id:
+			return hero
+	return null
+
+
+## Checked path only (_commit_profile_mutation). Clearing the old keeper keeps one per building.
+func _station_in_memory(hero: Hero, building_id: StringName) -> void:
+	var old_keeper: Hero = keeper_for(building_id)
+	if old_keeper != null:
+		old_keeper.station = Hero.NO_STATION
+	hero.station = building_id
+	_notify_roster_changed()
+
+
 ## The refusal every dispatch entry point shares, naming the body; "" when the party is free of it.
 func body_refusal(team: Array[Hero]) -> String:
 	for hero: Hero in team:
@@ -485,7 +534,7 @@ func is_hero_busy(hero: Hero) -> bool:
 func is_hero_protected(hero: Hero) -> bool:
 	if hero == null:
 		return false
-	if hero.favorite or is_hero_busy(hero) or is_embodied(hero):
+	if hero.favorite or is_hero_busy(hero) or is_embodied(hero) or hero.station != Hero.NO_STATION:
 		return true
 	for preset: Dictionary in team_presets:
 		if hero.instance_id in _string_array(preset.get("hero_ids")):
@@ -1210,6 +1259,8 @@ func _hero_protection_reasons() -> Dictionary[String, String]:
 	for hero: Hero in roster:
 		if is_embodied(hero):
 			reasons[hero.instance_id] = "town body"
+		elif hero.station != Hero.NO_STATION:
+			reasons[hero.instance_id] = "Keeps the %s" % str(hero.station).capitalize()
 		elif hero.favorite:
 			reasons[hero.instance_id] = "favorite"
 		elif is_hero_busy(hero):
@@ -1930,6 +1981,16 @@ func from_dict(data: Dictionary) -> void:
 	for entry: Variant in _array_field(data, "roster"):
 		if entry is Dictionary:
 			roster.append(Hero.from_dict(entry))
+	# One keeper per building: the first in roster order keeps a doubly claimed station.
+	var kept: Dictionary[StringName, bool] = {}
+	for hero: Hero in roster:
+		if hero.station == Hero.NO_STATION:
+			continue
+		if kept.has(hero.station):
+			push_warning("%s also claimed the %s; its station was cleared." % [hero.hero_name, hero.station])
+			hero.station = Hero.NO_STATION
+		else:
+			kept[hero.station] = true
 	for entry: Variant in _array_field(data, "inventory"):
 		if entry is Dictionary:
 			inventory.append(Item.from_dict(entry))
