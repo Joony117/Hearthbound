@@ -99,6 +99,13 @@ static func worker_slots(type: StringName, balance: BalanceTable) -> int:
 	return 0
 
 
+## Live-play seconds a new building of this type takes to go up (ig-6m2.3.2); 0 for a hall.
+static func build_seconds(type: StringName, balance: BalanceTable) -> float:
+	if type == HOUSE:
+		return balance.house_build_seconds
+	return balance.workplace_build_seconds if worker_slots(type, balance) > 0 else 0.0
+
+
 static func new_id(type: StringName, number: int) -> String:
 	return "%s_%d" % [type, number]
 

@@ -148,9 +148,11 @@ func _staffed_mine() -> Array[Hero]:
 	return workers
 
 
+## Placed and finished at once: construction (ig-6m2.3.2) is not what this file tests.
 func _place(type: StringName, hex: Vector2i) -> StringName:
 	var id := StringName(GameSession.preview_place_building(type, hex)["id"])
 	assert_true(GameSession.place_building(type, hex), GameSession.last_action_error)
+	GameSession.town_building(id).erase("build_remaining")
 	return id
 
 

@@ -151,10 +151,10 @@ func _ready() -> void:
 	GameSession.expeditions_changed.connect(_refresh_keeper)
 	GameSession.roster_changed.connect(_refresh_town)
 	GameSession.roster_changed.connect(_refresh_walkers)
-	GameSession.expeditions_changed.connect(_refresh_wood)
+	# The live tick emits only expeditions_changed: the build stages and the placed panel move on it.
+	GameSession.expeditions_changed.connect(_refresh_town)
 	GameSession.roster_changed.connect(_refresh_starvation)
 	GameSession.expeditions_changed.connect(_refresh_starvation)
-	GameSession.expeditions_changed.connect(_refresh_placed_panel)
 	GameSession.expeditions_changed.connect(_on_expeditions_changed)
 	GameSession.roster_changed.connect(_refresh_partner)
 	# expeditions_changed fires on every 0.25 s pulse: it only re-checks whether the partner is away.
@@ -1058,9 +1058,13 @@ func _refresh_placed_panel() -> void:
 			TownRules.FARM:
 				made = "%.1f food" % TownRules.food_made(home_count, 60.0, BALANCE)
 		%PlacedInfo.text = "Workers %d/%d: %s\nMakes %s a minute" % [people.size(), TownRules.worker_slots(type, BALANCE), who, made]
+	var building: Dictionary = GameSession.town_building(_open_building)
+	if building.has("build_remaining"):
+		%PlacedInfo.text = "Under construction: %s left
+%s" % [_format_duration(float(building["build_remaining"])), %PlacedInfo.text]
 	%PlacedAssign.text = "Assign resident" if house else "Assign worker"
 	%PlacedClear.text = "Move out" if house else "Unassign"
-	%PlacedAssign.disabled = SaveService.load_blocked
+	%PlacedAssign.disabled = SaveService.load_blocked or building.has("build_remaining")
 	%PlacedClear.disabled = people.is_empty() or SaveService.load_blocked
 
 

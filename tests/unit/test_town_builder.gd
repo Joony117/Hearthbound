@@ -177,9 +177,9 @@ func test_placing_spends_the_cost_exactly_and_takes_the_next_id() -> void:
 	assert_true(GameSession.place_building(TownRules.HOUSE, Vector2i(2, 2)), GameSession.last_action_error)
 	assert_eq(GameSession.town_resources["wood"], BALANCE.town_start_wood - BALANCE.house_wood_cost)
 	assert_eq(_placed(), [
-		{"id": "House_1", "type": "House", "q": 0, "r": 2},
-		{"id": "Lumbermill_2", "type": "Lumbermill", "q": 1, "r": 2},
-		{"id": "House_3", "type": "House", "q": 2, "r": 2},
+		{"id": "House_1", "type": "House", "q": 0, "r": 2, "build_remaining": BALANCE.house_build_seconds},
+		{"id": "Lumbermill_2", "type": "Lumbermill", "q": 1, "r": 2, "build_remaining": BALANCE.workplace_build_seconds},
+		{"id": "House_3", "type": "House", "q": 2, "r": 2, "build_remaining": BALANCE.house_build_seconds},
 	] as Array[Dictionary])
 	assert_eq(GameSession.town_next_id, 4)
 
@@ -227,6 +227,8 @@ func test_the_first_house_is_free_so_lumbermills_first_cannot_lock_the_town() ->
 	assert_false(GameSession.place_building(TownRules.HOUSE, NEXT_HEX))
 	assert_eq(GameSession.last_action_error, "A House costs 10 wood; you have 0.")
 	var mira: Hero = _add_hero("Mira")
+	GameSession._advance_clocks_in_memory(BALANCE.workplace_build_seconds)
+	assert_eq(GameSession.town_resources["wood"], 0.0, "nobody worked while it went up")
 	assert_true(GameSession.assign_home(mira, &"House_4"), GameSession.last_action_error)
 	assert_true(GameSession.station_hero(mira, &"Lumbermill_1"), GameSession.last_action_error)
 	GameSession._advance_clocks_in_memory(60.0)
@@ -462,6 +464,12 @@ func test_the_hub_builds_on_a_clicked_hex_and_staffs_the_building() -> void:
 	assert_eq(town.building_at(camera.unproject_position(placed.global_position + Vector3(0.0, 1.0, 0.0))), &"House_1", "it is clickable")
 	town.building_selected.emit(&"House_1")
 	assert_true((hub.get_node("%PlacedBuildingPanel") as Control).visible)
+	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Under construction: 1:00 left
+Resident 0/1: none")
+	assert_true((hub.get_node("%PlacedAssign") as Button).disabled, "no resident until it is built")
+	GameSession.tick_expeditions(BALANCE.house_build_seconds)
+	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Resident 0/1: none", "the plain live tick refreshes the panel")
+	assert_false((hub.get_node("%PlacedAssign") as Button).disabled)
 	(hub.get_node("%PlacedAssign") as Button).pressed.emit()
 	var picker: PopupMenu = hub.get_node("%PlacedPicker") as PopupMenu
 	picker.index_pressed.emit(0)
@@ -490,7 +498,7 @@ func test_real_clicks_place_refuse_and_open_a_building() -> void:
 	assert_ne(free, Vector2(-1, -1), "a reachable point over a free hex")
 	var hex: Vector2i = TownRules.world_to_hex(town.ground_point(free) as Vector3)
 	_click(hub, free)
-	assert_eq(_placed(), [{"id": "House_1", "type": "House", "q": hex.x, "r": hex.y}] as Array[Dictionary], status.text)
+	assert_eq(_placed(), [{"id": "House_1", "type": "House", "q": hex.x, "r": hex.y, "build_remaining": BALANCE.house_build_seconds}] as Array[Dictionary], status.text)
 	assert_eq(town.placing, &"")
 	var size: Vector2 = hub.get_viewport().get_visible_rect().size
 	var on_house := Vector2(-1, -1)
@@ -606,9 +614,11 @@ func _press_key(hub: Node3D, keycode: Key) -> void:
 		hub.get_viewport().push_input(key)
 
 
+## Placed and finished at once: construction (ig-6m2.3.2) is not what this file tests.
 func _place(type: StringName, hex: Vector2i) -> StringName:
 	var id := StringName(GameSession.preview_place_building(type, hex)["id"])
 	assert_true(GameSession.place_building(type, hex), GameSession.last_action_error)
+	GameSession.town_building(id).erase("build_remaining")
 	return id
 
 

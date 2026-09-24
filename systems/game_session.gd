@@ -116,7 +116,7 @@ func _process(delta: float) -> void:
 	_periodic_save_accumulator += elapsed_seconds
 	if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 		_periodic_save_accumulator = 0.0
-		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _workers_home(TownRules.LUMBERMILL) + _workers_home(TownRules.MINE) + _workers_home(TownRules.FARM) > 0 or not food_eaters().is_empty() or not _working_keepers().is_empty():
+		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _workers_home(TownRules.LUMBERMILL) + _workers_home(TownRules.MINE) + _workers_home(TownRules.FARM) > 0 or not food_eaters().is_empty() or not _working_keepers().is_empty() or town_buildings.any(_is_building):
 			if not SaveService.save():
 				_checkpoint_save_failed = true
 				_checkpoint_error = SaveService.last_write_error
@@ -539,6 +539,10 @@ func station_hero(hero: Hero, building_id: StringName) -> bool:
 		if workers_at(building_id).size() >= TownRules.worker_slots(TownRules.type_of(building_id), preload("res://balance.tres")):
 			last_action_error = "The %s is full." % place_name
 			return false
+		var building: String = still_building(building_id)
+		if not building.is_empty():
+			last_action_error = building
+			return false
 	return _commit_profile_mutation(_station_in_memory.bind(hero, building_id))
 
 
@@ -641,6 +645,20 @@ func town_building(id: StringName) -> Dictionary:
 	return {}
 
 
+## "House 3 is still being built (0:42 left)." while building_id is under construction (ig-6m2.3.2),
+## else "". Under construction = the building has build_remaining; it does nothing until it is gone.
+func still_building(building_id: StringName) -> String:
+	var building: Dictionary = town_building(building_id)
+	if not _is_building(building):
+		return ""
+	var left: int = ceili(float(building["build_remaining"]))
+	return "%s is still being built (%d:%02d left)." % [String(building_id).capitalize(), left / 60, left % 60]
+
+
+static func _is_building(building: Dictionary) -> bool:
+	return building.has("build_remaining")
+
+
 func workers_at(building_id: StringName) -> Array[Hero]:
 	var workers: Array[Hero] = []
 	for hero: Hero in roster:
@@ -678,7 +696,11 @@ func place_building(type: StringName, hex: Vector2i) -> bool:
 
 ## Checked path only (_commit_profile_mutation), after place_plan found the hex free and the wood there.
 func _place_building_in_memory(type: StringName, hex: Vector2i, cost: int) -> void:
-	town_buildings.append({"id": TownRules.new_id(type, town_next_id), "type": String(type), "q": hex.x, "r": hex.y})
+	var building: Dictionary = {"id": TownRules.new_id(type, town_next_id), "type": String(type), "q": hex.x, "r": hex.y}
+	var build_seconds: float = TownRules.build_seconds(type, preload("res://balance.tres"))
+	if build_seconds > 0.0:
+		building["build_remaining"] = build_seconds
+	town_buildings.append(building)
 	town_next_id += 1
 	town_resources["wood"] = float(town_resources["wood"]) - cost
 	_notify_roster_changed()
@@ -721,6 +743,10 @@ func assign_home(hero: Hero, house_id: StringName) -> bool:
 		return false
 	if hero.home == house_id:
 		return true
+	var building: String = still_building(house_id)
+	if not building.is_empty():
+		last_action_error = building
+		return false
 	if residents_of(house_id).size() >= preload("res://balance.tres").house_capacity:
 		last_action_error = "%s is full." % String(house_id).capitalize()
 		return false
@@ -1697,7 +1723,10 @@ func tick_expeditions(delta_seconds: float) -> void:
 			break
 	var farm: int = _workers_home(TownRules.FARM)
 	var starve_death: bool = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, farm, food_eaters().size(), delta_seconds, preload("res://balance.tres"))["death"]
-	if has_due_order or has_expiring_cache or has_expiring_incident or starve_death:
+	# A building that finishes is saved at once: with no other clock running, the periodic save would
+	# never write it, and every reload would build it again.
+	var finishes_build: bool = town_buildings.any(func(building: Dictionary) -> bool: return _is_building(building) and float(building["build_remaining"]) <= delta_seconds)
+	if has_due_order or has_expiring_cache or has_expiring_incident or starve_death or finishes_build:
 		_commit_profile_mutation(_advance_time_in_memory.bind(delta_seconds))
 	else:
 		_advance_clocks_in_memory(delta_seconds)
@@ -1794,6 +1823,12 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	var work: float = TownRules.work_multiplier(town_starving_seconds, balance)
 	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_workers_home(TownRules.LUMBERMILL), delta_seconds, balance) * work
 	town_resources["stone"] = float(town_resources["stone"]) + TownRules.stone_made(_workers_home(TownRules.MINE), delta_seconds, balance) * work
+	# Construction moves on the live tick only too (SYSTEMS.md § Stone and construction). At 0 it is finished.
+	for building: Dictionary in town_buildings:
+		if _is_building(building):
+			building["build_remaining"] = maxf(float(building["build_remaining"]) - delta_seconds, 0.0)
+			if float(building["build_remaining"]) <= 0.0:
+				building.erase("build_remaining")
 	var eaters: Array[Hero] = food_eaters()
 	var step: Dictionary = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, _workers_home(TownRules.FARM), eaters.size(), delta_seconds, balance)
 	town_resources["food"] = step["food"]
@@ -2659,7 +2694,19 @@ func _read_town_building(entry: Variant) -> Dictionary:
 		hex[axis] = value as int
 	if not TownRules.hex_refusal(hex, town_buildings, preload("res://balance.tres")).is_empty():
 		return {}
-	return {"id": raw_id as String, "type": raw_type as String, "q": hex.x, "r": hex.y}
+	var building: Dictionary = {"id": raw_id as String, "type": raw_type as String, "q": hex.x, "r": hex.y}
+	# Additive (ig-6m2.3.2): a missing key, 0 or less, or a bad value loads finished. Clamped to the
+	# type's build time, so a lower tuned time never leaves a longer wait, and a hall (0 s) loads finished.
+	# A repair, never a refusal: a written save always loads.
+	if raw.has("build_remaining"):
+		var remaining: Variant = raw["build_remaining"]
+		if (remaining is float or remaining is int) and is_finite(float(remaining)) and float(remaining) > 0.0:
+			var left: float = minf(float(remaining), TownRules.build_seconds(StringName(raw_type as String), preload("res://balance.tres")))
+			if left > 0.0:
+				building["build_remaining"] = left
+		else:
+			push_warning("%s has a bad build_remaining %s; it loads finished." % [String(id).capitalize(), str(remaining)])
+	return building
 
 
 ## One keeper per hall; a house or workplace keeps at most its capacity, the first in roster order.
@@ -2672,6 +2719,9 @@ func _clear_bad_town_claims() -> void:
 			var house_name: String = String(hero.home).capitalize()
 			if town_building(hero.home).is_empty():
 				push_warning("%s's house, %s, is gone; its home was cleared." % [hero.hero_name, house_name])
+				hero.home = Hero.NO_HOME
+			elif _is_building(town_building(hero.home)):
+				push_warning("%s is still being built; %s's home was cleared." % [house_name, hero.hero_name])
 				hero.home = Hero.NO_HOME
 			elif claims.get(hero.home, 0) >= balance.house_capacity:
 				push_warning("%s is full; %s's home was cleared." % [house_name, hero.hero_name])
@@ -2686,6 +2736,10 @@ func _clear_bad_town_claims() -> void:
 			capacity = TownRules.worker_slots(TownRules.type_of(hero.station), balance)
 			if town_building(hero.station).is_empty():
 				push_warning("%s's workplace, the %s, is gone; its job was cleared." % [hero.hero_name, place_name])
+				hero.station = Hero.NO_STATION
+				continue
+			if _is_building(town_building(hero.station)):
+				push_warning("The %s is still being built; %s's job was cleared." % [place_name, hero.hero_name])
 				hero.station = Hero.NO_STATION
 				continue
 			if hero.home == Hero.NO_HOME:

@@ -29,6 +29,14 @@ const SCENES: Dictionary[StringName, PackedScene] = {
 	TownRules.MINE: preload("res://hub/town/buildings/mine.tscn"),
 	TownRules.FARM: preload("res://hub/town/buildings/farm.tscn"),
 }
+## A building under construction shows these in its Model's place, a quarter of its build time each
+## (SYSTEMS.md § Stone and construction), as a "Stage" child at the hexagon scale.
+const STAGES: Array[PackedScene] = [
+	preload("res://hub/town/models/hexagon/building_scaffolding.gltf"),
+	preload("res://hub/town/models/hexagon/building_stage_A.gltf"),
+	preload("res://hub/town/models/hexagon/building_stage_B.gltf"),
+	preload("res://hub/town/models/hexagon/building_stage_C.gltf"),
+]
 
 const PICK_DISTANCE: float = 200.0
 ## Every building scene puts its Pick body on this layer alone, so other bodies (the avatar) never block a pick.
@@ -212,11 +220,35 @@ func show_buildings(buildings: Array[Dictionary]) -> void:
 		if not _placed.has(id):
 			_placed[id] = _spawn_building(id, StringName(building["type"]), at)
 		_placed[id].position = at
+		_show_stage(_placed[id], building)
 	for id: String in _placed.keys():
 		if not wanted.has(id):
 			_placed[id].queue_free()
 			_placed.erase(id)
 	_update_graph(buildings)
+
+
+## The stage model for how much of building is built, or its own Model once it is finished. Runs on
+## every pulse, so it swaps the Stage node only when the stage changes.
+func _show_stage(node: Node3D, building: Dictionary) -> void:
+	var stage: int = -1
+	if building.has("build_remaining"):
+		var done: float = 1.0 - float(building["build_remaining"]) / TownRules.build_seconds(StringName(building["type"]), BALANCE)
+		stage = clampi(floori(done * STAGES.size()), 0, STAGES.size() - 1)
+	var shown: Node3D = node.get_node_or_null("Stage") as Node3D
+	if (-1 if shown == null else int(shown.get_meta(&"stage"))) == stage:
+		return
+	if shown != null:
+		node.remove_child(shown)
+		shown.queue_free()
+	(node.get_node("Model") as Node3D).visible = stage < 0
+	if stage < 0:
+		return
+	var model := STAGES[stage].instantiate() as Node3D
+	model.name = "Stage"
+	model.scale = Vector3.ONE * TownRules.MODEL_SCALE
+	model.set_meta(&"stage", stage)
+	node.add_child(model)
 
 
 ## A place or a move changes which hexes hold a building: the graph follows, anyone on a hex that

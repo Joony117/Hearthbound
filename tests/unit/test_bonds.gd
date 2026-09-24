@@ -285,6 +285,7 @@ func test_a_walk_reaches_a_partner_at_its_house() -> void:
 			break
 	assert_true(placed, GameSession.last_action_error)
 	var house_id: StringName = StringName(str(GameSession.town_buildings.back()["id"]))
+	GameSession.town_building(house_id).erase("build_remaining")
 	assert_true(GameSession.assign_home(bea, house_id), GameSession.last_action_error)
 	assert_true(GameSession.embody_hero(ada.instance_id))
 	# Bea wanders now (ig-6m2.6.2); hold her at her door, the far corner the walk has to reach.

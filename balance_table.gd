@@ -174,6 +174,9 @@ extends Resource
 @export var mine_wood_cost: int = 20
 @export var mine_worker_slots: int = 2
 @export var stone_per_worker_minute: float = 0.5
+# Construction (SYSTEMS.md § Stone and construction): live-play seconds to go up.
+@export var house_build_seconds: float = 60.0
+@export var workplace_build_seconds: float = 120.0
 # Farms and food (SYSTEMS.md § Food and starvation; every row PROVISIONAL).
 @export var town_start_food: float = 30.0
 @export var food_per_housed_hero_minute: float = 0.2
