@@ -91,6 +91,13 @@ evidence that any of the following still works.
 
 A change touching any of these makes a `verifier` pass mandatory.
 
+**The adversarial reviewer here is GPT-6 Sol**:
+`codex-worker.ps1 -Profile verifier -Effort high` (owner, 2026-09-23). Claude writes most of this
+repo, and a Claude reviewer shares Claude's blind spots. Brief it read-only with no Godot runs, so it can
+review while another worker holds the engine. Fall back to a Claude `verifier-hard`
+only when the wrapper is down or out of quota, and say so in the bead. Codex-authored work goes
+the other way: it gets a Claude reviewer.
+
 **1. Save round-trip.** `Hero.to_dict/from_dict` ↔ `GameSession.to_dict/from_dict`
 (`systems/game_session.gd:31`) ↔ `SaveService` (`systems/save_service.gd`). A field written but
 never read — or read under a different key — fails silently and the import gate stays green.
@@ -134,7 +141,7 @@ answer yourself. Spawning a role to perform an edit you already know how to make
 | Code | global `implementer` → Codex | `*.gd`, `*.tscn`, `project.godot` |
 | "How does X work", tracing a flow | global `researcher` | nothing — read-only |
 | Gates and tests | `godot-tester` | `tests/`, gate runs, the `## Environment` section of `docs/KNOWN_ISSUES.md` |
-| Post-boundary review | global `verifier` | nothing — read-only |
+| Post-boundary review | GPT-6 Sol (`codex-worker.ps1 -Profile verifier -Effort high`); Claude `verifier-hard` as fallback | nothing — read-only |
 
 The four repo roles are additions, not replacements: global routing rule 3 (researcher for
 questions, implementer for changes) and rule 4 (implementer **then** verifier on any
