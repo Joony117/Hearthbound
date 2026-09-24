@@ -411,3 +411,15 @@ Note the clip names on disk carry `_Loop` suffixes (`Idle_Loop`, `Jog_Fwd_Loop`)
 not use. That is not a mismatch: `nodes/use_name_suffixes=true` in the `.import` files makes Godot
 strip the suffix and set the loop mode from it, so the imported name is `Idle`. `P2b-09` recorded the
 imported names; this entry records the source names, and both are correct.
+
+### Godot AI editor plugin: start the backend from the client, not the editor
+
+On this PC the plugin's own server launch fails ("server start blocked: The launched server process
+exited or changed identity before publishing capabilities"), which is a Windows launcher bug in
+v4.2.1 (upstream #1105/#1107). The v4 design lets the MCP client own the backend instead:
+`uvx godot-ai==4.2.1 attach` (the `godot-ai` entry in Claude Code, local scope for `E:\Game`) spawns
+it on 127.0.0.1:8000/9500, and an editor opened after that logs "adopted external server" and
+connects. So if the dock shows blocked, restart the editor once a Claude session with `godot-ai` is up.
+Launch the editor with `GODOT_AI_DISABLE_TELEMETRY=true` and
+`UV_CACHE_DIR=C:\Users\Joony\.cache\uv-godot-ai`. The shared uv cache gets locked by other sessions.
+**An open editor blocks `import_gate.ps1`**, so close it before any gate run.
