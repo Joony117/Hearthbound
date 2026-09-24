@@ -33,8 +33,6 @@ const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
 ## Close enough to a building's centre to count as there. A body stopped on a corner of a 3 m
 ## building stands 2.12 + 0.4 (its radius) = 2.52 m out, so this covers every approach.
 const ARRIVE_RADIUS: float = 2.8
-## The body walks a 48 m square around the town's origin, keeping its 0.4 m radius inside it.
-const WALK_HALF_EXTENT: float = 23.6
 ## Where a bonded partner stands without a House: beside the spawn, outside TownPartner.REARM_DISTANCE
 ## so the greeting waits for the player to walk over.
 const PARTNER_SPAWN_OFFSET: Vector3 = Vector3(4.0, 0.0, -3.0)
@@ -117,12 +115,23 @@ func embody(hero: Hero) -> void:
 		return
 	body = TownHero.create(hero)
 	body.controls_enabled = input_enabled
-	var corner: Vector3 = to_global(Vector3(-WALK_HALF_EXTENT, 0.0, -WALK_HALF_EXTENT))
-	body.bounds = Rect2(corner.x, corner.z, WALK_HALF_EXTENT * 2.0, WALK_HALF_EXTENT * 2.0)
+	var walk: Rect2 = walk_bounds()
+	var corner: Vector3 = to_global(Vector3(walk.position.x, 0.0, walk.position.y))
+	body.bounds = Rect2(Vector2(corner.x, corner.z), walk.size)
 	add_child(body)
 	body.global_position = standing
 	body.camera.make_current()
 	body.arrived.connect(building_selected.emit)
+
+
+## Where the body may stand, as town-space x/z: the map's hex centres grown by one hex, so it reaches
+## every hex a building or a partner can stand on (ig-6m2.9). Corners past the hex map are harmless ground.
+static func walk_bounds() -> Rect2:
+	var rect := Rect2()
+	for hex: Vector2i in TownRules.map_hexes(BALANCE):
+		var at: Vector3 = TownRules.hex_to_world(hex)
+		rect = rect.expand(Vector2(at.x, at.z))
+	return rect.grow(TownRules.HEX_SIZE)
 
 
 ## Stands hero in town as the body's bonded partner, saying line on meeting; null (or no body)

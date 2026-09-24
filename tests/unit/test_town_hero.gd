@@ -267,10 +267,28 @@ func test_the_body_stays_on_the_ground() -> void:
 	var town: TownView = _town_world()[0]
 	town.embody(_add_hero("Walker"))
 	var body: TownHero = town.body
-	body.global_position = town.to_global(Vector3(TownView.WALK_HALF_EXTENT - 0.5, 0.0, 5.0))
+	var edge: float = TownView.walk_bounds().end.x
+	body.global_position = town.to_global(Vector3(edge - 0.5, 0.0, 5.0))
 	_set_key(KEY_D, true)
 	await _step(30)
-	assert_almost_eq(body.global_position.x, town.to_global(Vector3.RIGHT * TownView.WALK_HALF_EXTENT).x, 0.001, "held at the edge")
+	assert_almost_eq(body.global_position.x, town.to_global(Vector3.RIGHT * edge).x, 0.001, "held at the edge")
+
+
+func test_the_body_reaches_the_farthest_hex_in_each_direction() -> void:
+	var town: TownView = _town_world()[0]
+	town.embody(_add_hero("Walker"))
+	var body: TownHero = town.body
+	var radius: int = preload("res://balance.tres").town_map_radius
+	for step: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(-1, 1)]:
+		var hex: Vector2i = step * radius
+		assert_eq(TownRules.ring_distance(hex), radius, "a map-edge hex")
+		# Start one hex short, toward the centre, and walk out with the key that points at it.
+		var centre: Vector3 = town.to_global(TownRules.hex_to_world(hex))
+		var inside: Vector3 = town.to_global(TownRules.hex_to_world(step * (radius - 1)))
+		body.global_position = inside
+		body.walk_to(centre, 0.1, &"Edge")
+		await _step_until_arrived(body)
+		assert_almost_eq(Vector2(body.global_position.x, body.global_position.z).distance_to(Vector2(centre.x, centre.z)), 0.0, 0.2, "reached hex %s" % hex)
 
 
 func test_a_real_wheel_event_zooms_the_follow_camera() -> void:
