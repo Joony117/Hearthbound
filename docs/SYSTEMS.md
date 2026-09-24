@@ -4323,7 +4323,9 @@ Gold stays struck from this line — see Enhancement's gold-removal ruling above
 a "waiting on an income source" deferral: gold is removed from the document, not paused.
 
 No build queues, no adjacency bonuses, no timers, no construction animation. Add complexity
-only when a building needs to express something an integer can't.
+only when a building needs to express something an integer can't. *(2026-09-23: this still holds
+for hall upgrades, which stay instant. Since `ig-6m2.4`, a hall upgrade also costs wood and stone,
+and placed town buildings take time to go up. Both are in § Town builder.)*
 
 ### Forge salvage-yield bonus — scaling law
 
@@ -4568,10 +4570,10 @@ figures are before Circle effects and before levelling fodder.
 
 ---
 
-## Town builder — *ig-6m2, proposed 2026-09-23*
+## Town builder — *ig-6m2, accepted 2026-09-23*
 
 Design: `GAME_SPEC.md` § The town builder. Boundaries: `DECISIONS.md` 2026-09-23, the town builder.
-Only the first slice has numbers. Every row below is a `balance.tres` row.
+Every row below is a `balance.tres` row.
 
 > ⚠️ **PROVISIONAL** — every number in this section is a desk guess. None has been played.
 > · **Settled by:** a played build of the first slice (`ig-6m2.1`), measuring how long it takes to
@@ -4593,6 +4595,19 @@ Only the first slice has numbers. Every row below is a `balance.tres` row.
 2 wood a minute, so a new House every 5 minutes. A second Lumbermill and its two Houses cost 40,
 which is 20 minutes. After that, 4 wood a minute. Housing is bounded by the roster, so this
 stops when you run out of heroes worth keeping.
+
+### The first of each producer is free
+
+**A producer type you have none of costs nothing.** The producers are the Lumbermill, the Mine and
+the Farm. A building still under construction counts as having one, so only one can be free at a
+time. The second one costs full price.
+
+It is a restart rule. Without it, a player who spends the starting wood on Houses before placing a
+Lumbermill can never make wood again. The same goes for a starving town with no wood and no Farm.
+Nothing can be demolished, so there would be no way back. With the rule, a town can never lock
+itself out. The price is one free building per type, once.
+
+The start stock of 40 now buys four Houses, or a second Lumbermill and two Houses.
 
 ### What the town costs the spine
 
@@ -4659,17 +4674,94 @@ warning was acknowledged.
 
 **Pacing check.** Five housed heroes and no farm: food low at 20 minutes, starving at 30, the
 first last warning at 45, and the first death at 50, but only if the player acknowledged that
-warning and still did nothing. A Farm costs 20 wood, 10 minutes of two woodcutters. With production at half
+warning and still did nothing. The first Farm is free (§ The first of each producer is free).
+Later ones cost 20 wood, which is 10 minutes of two woodcutters. With production at half
 speed while starving, the way out is to unhouse heroes until the farms outrun the eating; one
 starving farmer at 0.5 food a minute still feeds two.
 
+**Starving and skill.** Starving halves the final rate, after the worker skill bonus
+(`ig-6m2.7`): `base * (1 + worker_skill_bonus_per_level * skill) * starving_work_multiplier`.
+
+**Food does not make draughts (v1).** Draughts keep their F-parts cost (§ Supplies and automation,
+and the draught table in § Keepers and professions). There are four reasons:
+
+1. Starvation already kills heroes. If food also paid for draughts, a hungry town would cut the
+   revival draughts that save downed heroes, and the two ways to die would feed each other.
+2. Every player would need a staffed Farm before they could brew a single draught.
+3. Hall upgrades are the town's link to the hero game (below). One link is enough for v1.
+4. `ig-wgj.10` and `ig-wgj.11` build on F-parts costs, so nothing has to be reworked.
+
+Food above what the town eats is a buffer: the eating goes up whenever heroes come home.
+
 > ⚠️ **PROVISIONAL** — every row above is unfelt · **Settled by:** a played build of `ig-6m2.5`.
+> If farms beyond the minimum feel pointless, a new bead can give food a second use.
 
-### Later slices: not set
+### Stone and construction (`ig-6m2.3`)
 
-> ⚠️ **PROVISIONAL** — undefined: stone costs and rates, construction time, and how much wood and
-> stone a hall upgrade costs on top of its parts. · **Settled by:** the `game-designer`, when each
-> slice is next (`ig-6m2.3`, `ig-6m2.4`).
+| Row | Value | Why |
+|---|---|---|
+| `mine_wood_cost` | 20 | Same as a Lumbermill. No producer costs stone |
+| `mine_worker_slots` | 2 | |
+| `stone_per_worker_minute` | 0.5 | Stone is the slow resource. One full Mine makes 1 a minute |
+| `house_build_seconds` | 60 | Live play only |
+| `workplace_build_seconds` | 120 | The Lumbermill, Mine and Farm. Live play only |
+
+**One resource, one job.** Wood builds houses and workplaces. Stone pays for hall upgrades (below).
+Food feeds the town. Houses and workplaces cost wood only.
+
+This replaces the slice's first scope, where houses and workplaces cost stone too. The problem was
+a loop: a House that costs stone needs a Mine first, and the Mine's workers need Houses. A fresh
+town would need a start stock of stone just to begin. There is no `town_start_stone`.
+
+**Construction.**
+- A new building shows `building_scaffolding`, then `building_stage_A`, `_B` and `_C`, each for a
+  quarter of its build time. Then it shows its own model.
+- It does nothing until it is finished. It takes no resident and no worker, and assigning one is
+  refused with a reason.
+- Its hex is taken. It can be moved, and it keeps its progress when it is.
+- Build time moves only on the live tick.
+- It is saved as `build_remaining` seconds on the building. A missing key means finished, so every
+  older building loads finished.
+- The seven halls are never under construction, and a hall upgrade stays instant. § Upgrade cost's
+  "no timers" still holds for halls.
+
+**One meaning per model.** `building_scaffolding` and `building_stage_A/B/C` mean "under
+construction" and nothing else. `building_destroyed` means "a hall at level 0". `ig-wgj.6`'s
+level mapping uses no stage model; its new mapping is in that bead.
+
+### Hall upgrades cost wood and stone (`ig-6m2.4`)
+
+| Row | Value | Cost of level `n -> n+1` |
+|---|---|---|
+| `hall_upgrade_wood_per_level` | 20 | `20 * (n + 1)` wood |
+| `hall_upgrade_stone_per_level` | 10 | `10 * (n + 1)` stone |
+
+`n` is the current level, as in § Upgrade cost. The parts cost does not change.
+
+| Level | 0→1 | 1→2 | 2→3 | 3→4 | 4→5 | Total |
+|---|---|---|---|---|---|---|
+| Parts (unchanged) | 20 F | 30 D | 40 C | 50 B | 60 A | |
+| Wood | 20 | 40 | 60 | 80 | 100 | 300 |
+| Stone | 10 | 20 | 30 | 40 | 50 | 150 |
+
+**The parts cost stays.** It is set against the spine: 264 clears to max one hall (§ Upgrade cost).
+Cutting it would make hall power a town reward and move the spine. The town adds a gate. It does
+not replace the parts.
+
+**Pacing check.** Take a modest town: 2 Lumbermills and 1 Mine with 6 workers, making 4 wood and
+1 stone a minute. It pays for 0→1 in 10 minutes of stone and for 4→5 in 50. The parts for the same
+levels take 14 and 140 clears. For anyone who keeps a small town going, the town cost is never the
+long pole. A player with no Mine cannot upgrade a hall at all. That is the point: the town feeds
+the hero game.
+
+- It applies to the five halls that have levels: Circle, Forge, Training Hall, Sanctum and
+  Reliquary. The Apothecary and the Town Gate have none.
+- Levels already reached stay. Nothing is refunded or charged again.
+- The preview shows all three costs. A refusal names every resource that is short, and a refused
+  upgrade spends nothing.
+
+> ⚠️ **PROVISIONAL** — stone, construction and hall-upgrade numbers are desk guesses · **Settled
+> by:** played builds of `ig-6m2.3` and `ig-6m2.4`.
 
 ---
 

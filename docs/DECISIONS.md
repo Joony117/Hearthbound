@@ -239,8 +239,9 @@ the numbers. The owner answered its four questions the same day; items 5, 11 and
 - *Three passions.* 37.5% of heroes would have any given passion. A passion stops being special.
 - *A `calling` field kept next to `passions`.* Two fields for one idea, which drift.
 
-**Left open on purpose.** Whether a hall keeper ever needs a house (the ruling says "for now"). The
-numbers for stone, construction time and hall upgrade costs. Every food number is set but unfelt.
+**Left open on purpose.** Whether a hall keeper ever needs a house (the ruling says "for now"). Stone,
+construction and hall-upgrade numbers now live in `SYSTEMS.md` § Town builder; they and every food
+number are set but unfelt.
 
 ---
 
@@ -440,7 +441,7 @@ buildings have the design. `SYSTEMS.md` § Keepers and professions has the numbe
 - *A crafting system so the Forge can "make masterwork equips".* § Scope boundaries excludes
   crafting trees. Masterwork gates an output tier the building already has, and adds none.
 
-**Left open on purpose.** The town builder has its own entry above (proposed 2026-09-23).
+**Left open on purpose.** The town builder has its own entry above (accepted 2026-09-23).
 Research is parked there (owner, 2026-09-23). Masterwork draughts have their own entry above.
 
 ---

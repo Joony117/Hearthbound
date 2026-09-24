@@ -541,9 +541,12 @@ you pulled and can lose.
   a hall station or a workplace slot. Any hero can do any job. A worker is protected like a keeper,
   not busy: you can still send it out, and its job pauses while it is away.
 - **What the town makes, and what it pays for.**
-  - Wood and stone build houses and workplaces. Later they also help pay for hall upgrades (the
-    numbers are not set).
-  - Food feeds housed heroes, and makes draughts. Farms make it.
+  - Wood builds houses and workplaces. Hall upgrades cost wood and stone on top of their parts, so
+    stone is the town's link to the hero game (`SYSTEMS.md` § Town builder).
+  - Food feeds housed heroes. Farms make it. In v1 it does not make draughts: they keep their parts
+    cost, so a hungry town never also cuts the supplies that rescue heroes.
+  - The first of each producer (Lumbermill, Mine, Farm) is free, so a town can never lock itself
+    out of wood, stone or food.
   - **No iron.** Its only use would be making gear, which is a crafting tree, and § Scope boundaries
     excludes those. Gear stays loot plus parts.
   - **The town never makes Summon Stones, Essence or parts.** Expedition income and the ~327-pull
