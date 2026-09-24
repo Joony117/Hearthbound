@@ -4,34 +4,11 @@ extends Node3D
 ## Emitted once when an animated death clip ends, with the body where it came to rest.
 signal body_landed(at: Vector3)
 
-const MODEL_DIR: String = "res://combat/battle/models/kaykit/"
 # Scales the 2.5-unit KayKit knight to the old unit's height, under the bar.
 const MODEL_SCALE: float = 0.75
-# Per archetype: [character, {hand bone: weapon}, attack clip].
-const ALLY_LOOKS: Dictionary = {
-	"knight": ["Knight", {"handslot.r": "sword_1handed", "handslot.l": "shield_round"}, "Melee_1H_Attack_Chop"],
-	"mage": ["Mage", {"handslot.r": "staff"}, "Ranged_Magic_Shoot"],
-	"ranger": ["Ranger", {"handslot.l": "bow_withString"}, "Ranged_Bow_Release"],
-	"rogue": ["Rogue", {"handslot.r": "dagger", "handslot.l": "dagger"}, "Melee_Dualwield_Attack_Stab"],
-	"cleric": ["Mage", {"handslot.r": "wand"}, "Ranged_Magic_Shoot"],
-}
-const ENEMY_LOOKS: Dictionary = {
-	"knight": ["Skeleton_Warrior", {"handslot.r": "Skeleton_Blade", "handslot.l": "Skeleton_Shield_Small_A"}, "Melee_1H_Attack_Chop"],
-	"rogue": ["Skeleton_Rogue", {"handslot.r": "Skeleton_Blade"}, "Melee_Dualwield_Attack_Stab"],
-	"mage": ["Skeleton_Mage", {"handslot.r": "Skeleton_Staff"}, "Ranged_Magic_Shoot"],
-	"ranger": ["Skeleton_Rogue", {"handslot.r": "Skeleton_Crossbow"}, "Ranged_1H_Shoot"],
-}
+# Models, weapons, attack clips and the clip library come from HeroModel.
 const ALLY_CLIPS: Dictionary = {"idle": "Idle_A", "move": "Running_A", "dead": "Death_A", "downed": "Death_B"}
 const ENEMY_CLIPS: Dictionary = {"idle": "Skeletons_Idle", "move": "Skeletons_Walking", "dead": "Skeletons_Death", "downed": "Death_B"}
-const LOOPED_CLIPS: Array[String] = ["Idle_A", "Running_A", "Skeletons_Idle", "Skeletons_Walking"]
-# Clip file under animations/Rig_Medium_<file>.glb for every clip this view plays.
-const CLIP_FILES: Dictionary = {
-	"Idle_A": "General", "Hit_A": "General", "Hit_B": "General", "Death_A": "General", "Death_B": "General",
-	"Running_A": "MovementBasic",
-	"Melee_1H_Attack_Chop": "CombatMelee", "Melee_Dualwield_Attack_Stab": "CombatMelee",
-	"Ranged_Bow_Release": "CombatRanged", "Ranged_1H_Shoot": "CombatRanged", "Ranged_Magic_Shoot": "CombatRanged",
-	"Skeletons_Idle": "Special", "Skeletons_Walking": "Special", "Skeletons_Death": "Special",
-}
 # Matches battle_vfx: these attacks fly as projectiles, so battle_view never lunges them.
 const PROJECTILE_ARCHETYPES: Array[String] = ["ranger", "mage"]
 const CLIP_BLEND_SECONDS: float = 0.15
@@ -70,8 +47,6 @@ static var _bar_back_material: StandardMaterial3D = _bar_material(BAR_BACK_COLOR
 static var _bar_chip_material: StandardMaterial3D = _bar_material(BAR_CHIP_COLOR)
 static var _bar_ally_material: StandardMaterial3D = _bar_material(BAR_ALLY_COLOR)
 static var _bar_enemy_material: StandardMaterial3D = _bar_material(BAR_ENEMY_COLOR)
-# Built once on first use and shared by every unit.
-static var _clip_library: AnimationLibrary
 # One overlay for every unit's hit flash; each mesh carries its own strength as an instance uniform.
 static var _flash_material: ShaderMaterial = _build_flash_material()
 
@@ -318,26 +293,12 @@ func _apply_pivot() -> void:
 func _build_visual() -> void:
 	_pivot = Node3D.new()
 	add_child(_pivot)
-	var looks: Dictionary = ALLY_LOOKS if faction == "ally" else ENEMY_LOOKS
-	if not looks.has(archetype):
-		push_warning("No %s look for archetype '%s'; drawing the knight." % [faction, archetype])
-	var look: Array = looks.get(archetype, looks["knight"])
 	_clips = ALLY_CLIPS if faction == "ally" else ENEMY_CLIPS
-	_attack_clip = look[2]
-	var model: Node3D = (load(MODEL_DIR + "characters/%s.glb" % look[0]) as PackedScene).instantiate() as Node3D
+	_attack_clip = HeroModel.look(faction, archetype)[2]
+	var model: Node3D = HeroModel.build(faction, archetype)
 	model.scale = Vector3.ONE * MODEL_SCALE
 	_pivot.add_child(model)
-	var skeleton: Skeleton3D = model.get_node("Rig_Medium/Skeleton3D") as Skeleton3D
-	var weapons: Dictionary = look[1]
-	for bone: String in weapons:
-		var slot := BoneAttachment3D.new()
-		slot.bone_name = bone
-		skeleton.add_child(slot)
-		slot.add_child((load(MODEL_DIR + "weapons/%s.gltf" % weapons[bone]) as PackedScene).instantiate())
-	_animator = AnimationPlayer.new()
-	model.add_child(_animator)
-	_animator.root_node = NodePath("..")
-	_animator.add_animation_library("", _shared_clips())
+	_animator = model.get_node("AnimationPlayer") as AnimationPlayer
 	_animator.animation_finished.connect(_on_clip_finished)
 	for mesh: Node in model.find_children("*", "MeshInstance3D", true, false):
 		_flash_meshes.append(mesh as MeshInstance3D)
@@ -568,7 +529,7 @@ func _update_clip() -> void:
 		return
 	# Falls hold their last frame; a unit first seen fallen starts on it.
 	_animator.play(clip, CLIP_BLEND_SECONDS if _animate_death else 0.0)
-	if not _animate_death and not clip in LOOPED_CLIPS:
+	if not _animate_death and not clip in HeroModel.LOOPED_CLIPS:
 		_animator.seek(_animator.current_animation_length, true)
 
 
@@ -630,26 +591,3 @@ void fragment() {
 	var material := ShaderMaterial.new()
 	material.shader = shader
 	return material
-
-
-# Clips are copied out of the Rig_Medium files once: loops set, root motion pinned.
-static func _shared_clips() -> AnimationLibrary:
-	if _clip_library != null:
-		return _clip_library
-	_clip_library = AnimationLibrary.new()
-	var sources: Dictionary = {}
-	for clip: String in CLIP_FILES:
-		var file: String = CLIP_FILES[clip]
-		if not sources.has(file):
-			sources[file] = (load(MODEL_DIR + "animations/Rig_Medium_%s.glb" % file) as PackedScene).instantiate()
-		var player: AnimationPlayer = (sources[file] as Node).find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer
-		var animation: Animation = player.get_animation(clip).duplicate(true) as Animation
-		animation.loop_mode = Animation.LOOP_LINEAR if clip in LOOPED_CLIPS else Animation.LOOP_NONE
-		# Skeletons_Death slides the root bone 0.7 back; the fling already moves the corpse.
-		var root_track: int = animation.find_track(NodePath("Rig_Medium/Skeleton3D:root"), Animation.TYPE_POSITION_3D)
-		if root_track >= 0:
-			animation.remove_track(root_track)
-		_clip_library.add_animation(clip, animation)
-	for scene: Node in sources.values():
-		scene.free()
-	return _clip_library

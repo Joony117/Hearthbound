@@ -336,7 +336,7 @@ func test_each_archetype_wears_its_model_weapons_and_attack_clip() -> void:
 	for row: Array in expected:
 		var unit: BattleUnitView = _unit({"faction": row[0], "archetype": row[1], "hp": 20.0})
 		var model: Node3D = unit._animator.get_parent() as Node3D
-		assert_eq(model.scene_file_path, "%scharacters/%s.glb" % [BattleUnitView.MODEL_DIR, row[2]], "%s %s model" % [row[0], row[1]])
+		assert_eq(model.scene_file_path, "%scharacters/%s.glb" % [HeroModel.MODEL_DIR, row[2]], "%s %s model" % [row[0], row[1]])
 		var held: Dictionary = {}
 		for slot: Node in model.find_children("*", "BoneAttachment3D", true, false):
 			var weapon: Node = slot.get_child(0) if slot.get_child_count() > 0 else null
@@ -361,7 +361,7 @@ func test_a_projectile_attacker_plays_its_attack_when_its_cooldown_restarts() ->
 
 
 func test_units_share_one_clip_library_with_loops_set_and_root_motion_pinned() -> void:
-	var source: Node = (load(BattleUnitView.MODEL_DIR + "animations/Rig_Medium_Special.glb") as PackedScene).instantiate()
+	var source: Node = (load(HeroModel.MODEL_DIR + "animations/Rig_Medium_Special.glb") as PackedScene).instantiate()
 	var source_player: AnimationPlayer = source.find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer
 	assert_gt(source_player.get_animation(&"Skeletons_Death").find_track(NodePath("Rig_Medium/Skeleton3D:root"), Animation.TYPE_POSITION_3D), -1, "the source clip has the root track the pin removes")
 	source.free()
@@ -369,9 +369,9 @@ func test_units_share_one_clip_library_with_loops_set_and_root_motion_pinned() -
 	var second: BattleUnitView = _unit({"faction": "ally", "archetype": "rogue"})
 	assert_same(first._animator.get_animation_library(&""), second._animator.get_animation_library(&""))
 	var library: AnimationLibrary = first._animator.get_animation_library(&"")
-	for clip: String in BattleUnitView.CLIP_FILES:
+	for clip: String in HeroModel.CLIP_FILES:
 		var animation: Animation = library.get_animation(clip)
-		assert_eq(animation.loop_mode == Animation.LOOP_LINEAR, clip in BattleUnitView.LOOPED_CLIPS, "%s loop mode" % clip)
+		assert_eq(animation.loop_mode == Animation.LOOP_LINEAR, clip in HeroModel.LOOPED_CLIPS, "%s loop mode" % clip)
 		assert_eq(animation.find_track(NodePath("Rig_Medium/Skeleton3D:root"), Animation.TYPE_POSITION_3D), -1, "%s root is pinned" % clip)
 
 
