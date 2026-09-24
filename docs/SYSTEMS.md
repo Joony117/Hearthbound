@@ -768,7 +768,8 @@ a bond by itself.
 Four dreams, all proved by today's records (`battle`, `summoned`, `ranked_up`, `died`). The dream's
 owner is the hero who holds it. X is the other hero it names, and Z the zone. Each keeps slice 1's
 shape: an opening line, a counted milestone, a last milestone, and an end, fulfilled or lost.
-Dreams on `encounter` and `meal` records wait for those records (`ig-m6o.2.2.4`, `ig-m6o.2.2.5`).
+Dreams on `encounter` and `meal` records wait for those records (`ig-m6o.2.2.4`, `ig-m6o.2.2.5`) and
+are `ig-m6o.2.2.10`'s.
 Profession dreams are `ig-m6o.2.2.8`'s.
 
 **Repay a life debt** (`life_debt`, slice 1, unchanged). X saved the owner. The owner wants to save

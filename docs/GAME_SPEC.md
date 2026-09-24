@@ -761,7 +761,7 @@ Each skill has a mode:
 - **Auto.** The AI may use it. This is the default, so a hero you never open still fights with
   its whole kit.
 - **Manual.** Only you fire it, by command or while you control the hero.
-- **Off.** Never used.
+- **Off.** Never used by the AI. You can still fire it by hand (director ruling, 2026-09-24).
 
 Bar order is priority: when the AI has two good choices, the one higher on the bar wins. That is
 how you tune the AI without programming it. The 2026-09-22 rejection of "forcing thirty
@@ -794,10 +794,10 @@ Off is never used as a counter.
 
 **Chains: you program the order.** A chain is one trigger skill and the skills you want after it,
 in order. When the trigger fires, by the AI or by you, the hero follows with the rest as each
-becomes ready. A step that cannot fire in time is skipped. A counter or a revive can cut in, and
-the chain carries on after. A Manual skill inside a chain fires: programming it into the chain
-counts as firing it by hand (director ruling, 2026-09-23). A chain is a preference, not an order
-queue. Orders still replace orders.
+becomes ready. A step that cannot fire in time is skipped. A counter, a revive or a heal can cut
+in, as the picker order above says, and the chain carries on after. A Manual skill inside a chain
+fires: programming it into the chain counts as firing it by hand (director ruling, 2026-09-23). A
+chain is a preference, not an order queue. Orders still replace orders.
 
 **Take control of one hero.** In a watched battle you can take one hero over and play it like an
 MMO character. Its AI stops picking skills and targets for it. It keeps auto-attacking your
