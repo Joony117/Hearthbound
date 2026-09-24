@@ -69,3 +69,23 @@ needed:
 - **Modular Character Outfits — Fantasy** (12 outfits, 62 parts, same rig, also CC0). Not staged and
   not scheduled. Recorded because it is the pack that would let the five archetypes look different
   from each other, and because it is the reason this rig was chosen over a one-off model.
+
+### KayKit (Kay Lousberg) — <https://www.kaylousberg.com>
+
+All CC0. The pack licences are copied beside the files as `LICENSE-KayKit-*.txt`. Downloaded
+2026-09-23 from itch.io at the free ($0) tier.
+
+| Staged as | From | Pack |
+|---|---|---|
+| `combat/battle/models/kaykit/characters/{Knight,Mage,Ranger,Rogue}.glb` + `*_texture.png`; `weapons/{sword_1handed,shield_round,shield_badge,staff,wand,bow_withString,dagger}.gltf` + `.bin` | `Free 2.0` (12 MB) | [Character Pack: Adventurers](https://kaylousberg.itch.io/kaykit-adventurers) |
+| `combat/battle/models/kaykit/characters/Skeleton_{Warrior,Rogue,Mage,Minion}.glb` + `skeleton_texture.png`; `weapons/Skeleton_{Blade,Shield_Small_A,Staff,Crossbow}.gltf` + `.bin` | `Free 1.1` (7.7 MB) | [Character Pack: Skeletons](https://kaylousberg.itch.io/kaykit-skeletons) |
+| `combat/battle/models/kaykit/animations/Rig_Medium_{General,MovementBasic,MovementAdvanced,CombatMelee,CombatRanged,Special}.glb` | `Free 1.1` (14 MB) | [Character Animations](https://kaylousberg.itch.io/kaykit-character-animations) |
+
+These are the squad battle's units (`ig-ixj`). Heroes and skeletons share `Rig_Medium`, so one
+animation set drives both sides. The weapon `.gltf` files reference the character textures by
+relative path, which is why the textures appear in both `characters/` and `weapons/`.
+
+**Left out on purpose:** Barbarian and Rogue_Hooded, the other weapons and props, the `Rig_Large`
+clips, the `Simulation` and `Tools` clip sets, the FBX copies, and the duplicate clip files that
+ship inside the Adventurers and Skeletons packs (the Character Animations pack is their superset).
+All are in the same free zips if a later ticket needs them.
