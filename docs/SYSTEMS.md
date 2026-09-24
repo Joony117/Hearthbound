@@ -400,7 +400,7 @@ means ATK times 3.0. The counter column is the tag.
 
 **Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10: no Square Enix skill name,
 no close copy).** Display names only. Older text that says Burst, Bulwark, Rally or Flank means
-these skills. The last five rows come from the one-time web-checked sweep, `ig-x8g` (evidence:
+these skills. The last six rows come from the one-time web-checked sweep, `ig-x8g` (evidence:
 `.agent-results/ig-x8g/names.md`).
 
 | Old name | New name | Id |
@@ -421,6 +421,7 @@ these skills. The last five rows come from the one-time web-checked sweep, `ig-x
 | Pinning Shot | Burr Arrow | `ranger_pinning_shot` (kept) |
 | Brace | Stone Posture | `general_brace` (kept) |
 | Disrupt | Break Cadence | `general_disrupt` (kept) |
+| Tumble | Dust Roll | `general_tumble` (kept) |
 
 **Knight** (tank)
 
@@ -502,7 +503,7 @@ general one as the backup.
 | Catch Breath | 1 | 60 s | Self: heal 20% of max HP | own HP below 40% | — |
 | Field Dressing | 1 | 45 s | Range 2: heal 1.5 ATK to one ally | an ally below 35% and none of the hero's own heals is ready | — |
 | Stone Posture | 2 | 40 s | Self: 25% less damage for 4 s | a telegraph on this hero, or HP below 30% | `shield` |
-| Tumble | 2 | 40 s | Self: dodge, dash 2 out of the danger | the hero is inside a telegraph | `dodge` |
+| Dust Roll | 2 | 40 s | Self: dodge, dash 2 out of the danger | the hero is inside a telegraph | `dodge` |
 | Break Cadence | 3 | 45 s | Range 1.6: interrupt, no damage | a telegraph in range | `interrupt` |
 | Hearten | 3 | 60 s | Allies within 4: DEF +10% for 10 s | a fight is on and 3+ allies are within 4 | — |
 
@@ -886,7 +887,7 @@ catches CRIT_RATE overflow even though the arithmetic below shows no archetype c
 
 | Archetype | T1 (resonance 1) | T2 (resonance 3) | T3 (resonance 6) |
 |---|---|---|---|
-| Knight | Oaken Guard — DEF +4% | Stalwart — HP +5% | Iron Wall — DEF +8% |
+| Knight | Oaken Guard — DEF +4% | Ox Shoulders — HP +5% | Last Rampart — DEF +8% |
 | Rogue | Opening Strike — CRIT_RATE +1.5pp | Sharp Hunger — ATK +5% | Grim Tally — CRIT_DMG +0.08 |
 | Ranger | Fleet String — SPD +4% | Bowyer's Pride — ATK +5% | Cold Squint — CRIT_RATE +1.5pp |
 | Mage | Arcane Focus — ATK +5% | Cracked Vessel — CRIT_DMG +0.06 | Spire Scholar — ATK +6% |
@@ -904,6 +905,8 @@ String**. Display names only: the ids stay `knight_bulwark`, `cleric_devotion` a
 
 | Old name | New name | Id |
 |---|---|---|
+| Stalwart | Ox Shoulders | `knight_stalwart` |
+| Iron Wall | Last Rampart | `knight_iron_wall` |
 | Killer Instinct | Sharp Hunger | `rogue_killer_instinct` |
 | Executioner | Grim Tally | `rogue_executioner` |
 | Marksman | Bowyer's Pride | `ranger_marksman` |
