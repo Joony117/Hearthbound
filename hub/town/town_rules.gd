@@ -15,10 +15,11 @@ const MODEL_SCALE: float = 3.0
 const HEX_SIZE: float = 1.1547 * MODEL_SCALE
 const HOUSE: StringName = &"House"
 const LUMBERMILL: StringName = &"Lumbermill"
-const TYPES: Array[StringName] = [HOUSE, LUMBERMILL]
+const MINE: StringName = &"Mine"
+const TYPES: Array[StringName] = [HOUSE, LUMBERMILL, MINE]
 ## Types whose first one is free (SYSTEMS.md § The first of each producer is free): each producer,
-## and the House its workers need (ig-6m2.10). The Mine and the Farm join when their slices add them.
-const FREE_FIRST: Array[StringName] = [HOUSE, LUMBERMILL]
+## and the House its workers need (ig-6m2.10). The Farm joins when its slice adds it.
+const FREE_FIRST: Array[StringName] = [HOUSE, LUMBERMILL, MINE]
 ## The seven halls: placed buildings whose id is their type (DECISIONS.md 2026-09-23, the town
 ## builder, item 3), one of each, never built or demolished. These are their default hexes, where the
 ## authored halls stood before ig-6m2.2; a new profile, or a save without them, gets them here.
@@ -78,12 +79,19 @@ static func wood_cost(type: StringName, buildings: Array[Dictionary], balance: B
 			return balance.house_wood_cost
 		LUMBERMILL:
 			return balance.lumbermill_wood_cost
+		MINE:
+			return balance.mine_wood_cost
 	return -1
 
 
 ## Worker slots a type offers; 0 for a building that is not a workplace.
 static func worker_slots(type: StringName, balance: BalanceTable) -> int:
-	return balance.lumbermill_worker_slots if type == LUMBERMILL else 0
+	match type:
+		LUMBERMILL:
+			return balance.lumbermill_worker_slots
+		MINE:
+			return balance.mine_worker_slots
+	return 0
 
 
 static func new_id(type: StringName, number: int) -> String:
@@ -154,3 +162,8 @@ static func place_plan(type: StringName, hex: Vector2i, buildings: Array[Diction
 ## Wood made over delta_seconds by this many Lumbermill workers who are home.
 static func wood_made(workers_home: int, delta_seconds: float, balance: BalanceTable) -> float:
 	return balance.wood_per_worker_minute * workers_home * delta_seconds / 60.0
+
+
+## Stone made over delta_seconds by this many Mine workers who are home.
+static func stone_made(workers_home: int, delta_seconds: float, balance: BalanceTable) -> float:
+	return balance.stone_per_worker_minute * workers_home * delta_seconds / 60.0

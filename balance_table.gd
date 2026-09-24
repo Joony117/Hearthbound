@@ -170,6 +170,10 @@ extends Resource
 @export var lumbermill_wood_cost: int = 20
 @export var lumbermill_worker_slots: int = 2
 @export var wood_per_worker_minute: float = 1.0
+# The Mine and stone (SYSTEMS.md § Stone and construction).
+@export var mine_wood_cost: int = 20
+@export var mine_worker_slots: int = 2
+@export var stone_per_worker_minute: float = 0.5
 # The Ledger (SYSTEMS.md § The Ledger; both caps PROVISIONAL).
 @export var ledger_max_records: int = 10000
 @export var battle_max_moments: int = 64

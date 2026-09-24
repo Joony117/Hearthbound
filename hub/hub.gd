@@ -15,7 +15,7 @@ const BUILDING_PANELS: Dictionary = {
 	&"TownGate": [&"ExpeditionsView"],
 	&"Apothecary": [&"HallView", &"SupplySection", &"KeeperPanel"],
 }
-## What a placed House or Lumbermill opens; its id is not a BUILDING_PANELS key.
+## What a placed House or workplace opens; its id is not a BUILDING_PANELS key.
 const PLACED_PANEL: StringName = &"PlacedBuildingPanel"
 const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 	preload("res://zones/defs/verdant_outskirts.tres"),
@@ -909,7 +909,7 @@ func _refresh_town() -> void:
 
 
 func _refresh_wood() -> void:
-	_wood.text = "Wood: %d" % floori(float(GameSession.town_resources["wood"]))
+	_wood.text = "Wood: %d   Stone: %d" % [floori(float(GameSession.town_resources["wood"])), floori(float(GameSession.town_resources["stone"]))]
 
 
 ## Placing starts from the bare town; the next hex click places or says why not.
@@ -947,11 +947,12 @@ func _on_hex_selected(hex: Vector2i) -> void:
 		_status.text = "%s Esc cancels." % GameSession.last_action_error
 
 
-## The open House's resident or Lumbermill's workers, "Away" for one who is out, and the wood rate.
+## The open House's resident or workplace's workers, "Away" for one who is out, and what it makes a minute.
 func _refresh_placed_panel() -> void:
 	if not _is_placed(_open_building):
 		return
-	var house: bool = TownRules.type_of(_open_building) == TownRules.HOUSE
+	var type: StringName = TownRules.type_of(_open_building)
+	var house: bool = type == TownRules.HOUSE
 	var people: Array[Hero] = _placed_people()
 	var names: PackedStringArray = []
 	var home_count: int = 0
@@ -964,10 +965,8 @@ func _refresh_placed_panel() -> void:
 	if house:
 		%PlacedInfo.text = "Resident %d/%d: %s" % [people.size(), BALANCE.house_capacity, who]
 	else:
-		%PlacedInfo.text = "Workers %d/%d: %s\nMakes %.1f wood a minute" % [
-			people.size(), TownRules.worker_slots(TownRules.LUMBERMILL, BALANCE), who,
-			TownRules.wood_made(home_count, 60.0, BALANCE),
-		]
+		var made: String = "%.1f stone" % TownRules.stone_made(home_count, 60.0, BALANCE) if type == TownRules.MINE else "%.1f wood" % TownRules.wood_made(home_count, 60.0, BALANCE)
+		%PlacedInfo.text = "Workers %d/%d: %s\nMakes %s a minute" % [people.size(), TownRules.worker_slots(type, BALANCE), who, made]
 	%PlacedAssign.text = "Assign resident" if house else "Assign worker"
 	%PlacedClear.text = "Move out" if house else "Unassign"
 	%PlacedAssign.disabled = SaveService.load_blocked

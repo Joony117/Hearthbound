@@ -49,7 +49,7 @@ var embodied_hero_id: String = NO_BODY
 ## placed ones in placing order (DECISIONS.md 2026-09-23, the town builder, items 1-3).
 var town_buildings: Array[Dictionary] = TownRules.default_halls()
 ## The shared stockpile. Wood is a float so a partial unit from the live tick survives a save.
-var town_resources: Dictionary = {"wood": preload("res://balance.tres").town_start_wood}
+var town_resources: Dictionary = {"wood": preload("res://balance.tres").town_start_wood, "stone": 0.0}
 ## The n in the next placed id "<type>_<n>"; never reused.
 var town_next_id: int = 1
 ## The Ledger (DECISIONS.md 2026-09-24): settled events, appended by this script's mutators through
@@ -111,7 +111,7 @@ func _process(delta: float) -> void:
 	_periodic_save_accumulator += elapsed_seconds
 	if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 		_periodic_save_accumulator = 0.0
-		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _lumbermill_workers_home() > 0 or not _working_keepers().is_empty():
+		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _workers_home(TownRules.LUMBERMILL) + _workers_home(TownRules.MINE) > 0 or not _working_keepers().is_empty():
 			if not SaveService.save():
 				_checkpoint_save_failed = true
 				_checkpoint_error = SaveService.last_write_error
@@ -744,11 +744,11 @@ func _set_home_in_memory(hero: Hero, house_id: StringName) -> void:
 	_notify_roster_changed()
 
 
-## Lumbermill workers who are home (not away) right now; the live tick pays each of them.
-func _lumbermill_workers_home() -> int:
+## Workers at a workplace of this type who are home (not away) right now; the live tick pays each of them.
+func _workers_home(type: StringName) -> int:
 	var working: int = 0
 	for hero: Hero in roster:
-		if TownRules.type_of(hero.station) == TownRules.LUMBERMILL and not is_hero_busy(hero):
+		if TownRules.type_of(hero.station) == type and not is_hero_busy(hero):
 			working += 1
 	return working
 
@@ -1744,7 +1744,8 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	if not recovery_clock_paused and not lost_caches.is_empty():
 		recovery_clock_seconds += delta_seconds
 	# Live tick only: _advance_orders_in_memory (the offline catch-up) makes nothing (GAME_SPEC.md § Hard constraints).
-	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_lumbermill_workers_home(), delta_seconds, preload("res://balance.tres"))
+	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_workers_home(TownRules.LUMBERMILL), delta_seconds, preload("res://balance.tres"))
+	town_resources["stone"] = float(town_resources["stone"]) + TownRules.stone_made(_workers_home(TownRules.MINE), delta_seconds, preload("res://balance.tres"))
 	for incident: Dictionary in stranded_incidents:
 		if not bool(incident.get("paused", true)):
 			rescue_clock_seconds += delta_seconds
@@ -2455,7 +2456,8 @@ func from_dict(data: Dictionary) -> void:
 	_notify_expeditions_changed()
 
 
-## Additive keys (no SAVE_VERSION bump). A save without town_resources gets town_start_wood once.
+## Additive keys (no SAVE_VERSION bump). A save without town_resources gets town_start_wood once;
+## stone has no start stock, so a save without it (every save before ig-6m2.3.1) reads 0.
 ## A building that is malformed, off the map or on another building is dropped. A hall the save
 ## never names (every ig-6m2.1-era save names none) stands on its default hex before anything is
 ## read, so a building there is dropped, as it was when the halls were authored. A hall the save
@@ -2464,10 +2466,11 @@ func from_dict(data: Dictionary) -> void:
 func _read_town(data: Dictionary) -> void:
 	var balance: BalanceTable = preload("res://balance.tres")
 	town_buildings.clear()
-	town_resources = {"wood": balance.town_start_wood}
+	town_resources = {"wood": balance.town_start_wood, "stone": 0.0}
 	var raw_resources: Variant = data.get("town_resources")
 	if raw_resources is Dictionary:
 		town_resources["wood"] = maxf(Item.float_field(raw_resources as Dictionary, "wood", 0.0, "town resources"), 0.0)
+		town_resources["stone"] = maxf(Item.float_field(raw_resources as Dictionary, "stone", 0.0, "town resources"), 0.0)
 	elif raw_resources != null:
 		push_error("Invalid town_resources: expected Dictionary, got %s." % type_string(typeof(raw_resources)))
 		town_resources["wood"] = 0.0

@@ -98,7 +98,7 @@ static func _build_nav(root: Control) -> void:
 	var build := MenuButton.new()
 	_add(nav, build, "Build", true)
 	build.text = "Build"
-	# hub.gd writes each item's price; the first Lumbermill is free.
+	# hub.gd writes each item's price; the first of each TownRules.FREE_FIRST type is free.
 	for type: StringName in TownRules.TYPES:
 		build.get_popup().add_item(String(type))
 		build.get_popup().set_item_metadata(build.get_popup().item_count - 1, type)
@@ -432,7 +432,7 @@ static func _build_keeper(content: Control) -> void:
 	_add(panel, picker, "KeeperPicker", true)
 
 
-## A placed House or Lumbermill: who lives or works there, and the assign/clear pair.
+## A placed House or workplace: who lives or works there, and the assign/clear pair.
 static func _build_placed(content: Control) -> void:
 	var panel := _panel(content, "PlacedBuildingPanel", true)
 	panel.visible = false
