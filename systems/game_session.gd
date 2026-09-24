@@ -314,8 +314,7 @@ func enhance_item(item: Item, balance: BalanceTable) -> bool:
 	if not inventory.has(item):
 		return false
 	var enhance_level: int = Item.clamped_enhance_level(item, balance)
-	var enhance_cap: int = Item.compute_enhance_cap(building_levels[1], balance)
-	if enhance_level >= enhance_cap:
+	if enhance_level >= enhance_cap(balance):
 		return false
 	var rank_index: int = clampi(item.rank, 0, parts.size() - 1)
 	var cost: int = Item.compute_enhance_cost(item, balance)
@@ -426,6 +425,11 @@ func rank_up_hero(hero: Hero, balance: BalanceTable) -> bool:
 		last_action_error = "That hero is not on the roster."
 		return false
 	if is_hero_busy(hero) or hero.rank >= balance.rank_up_essence_costs.size():
+		return false
+	# The last rank-up, SS->SSS, needs a master priest home at the Sanctum; the target may be the priest
+	# (SYSTEMS.md § Keepers and professions). A hero already at SSS is never re-checked.
+	if hero.rank == balance.rank_names.size() - 2 and not keeper_is_master(&"Sanctum"):
+		last_action_error = "SS->SSS needs a born master priest working here."
 		return false
 	var cost: int = Hero.compute_rank_up_cost(hero, balance)
 	if essence < cost:
@@ -573,6 +577,11 @@ func _home_keeper(building_id: StringName) -> Hero:
 		return null
 	var keeper: Hero = keeper_for(building_id)
 	return null if keeper == null or is_hero_busy(keeper) else keeper
+
+
+## The highest level enhancing may reach now; the single and bulk enhance and every preview read this.
+func enhance_cap(balance: BalanceTable) -> int:
+	return Item.compute_enhance_cap(building_levels[1], keeper_is_master(&"Forge"), balance)
 
 
 ## Parts salvaging item pays now; the salvage and every preview of it read this.
@@ -1392,6 +1401,7 @@ func preview_bulk_enhance(
 		_item_name_map(),
 		parts,
 		building_levels[1],
+		keeper_is_master(&"Forge"),
 		preload("res://balance.tres"),
 	)
 

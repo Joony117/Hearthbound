@@ -172,7 +172,7 @@ func test_a_skill_5_keeper_never_touches_summon_weights_the_enhance_cap_or_the_d
 	var cache := LostCache.new("Lost", &"verdant_outskirts", 0, 0.0)
 	var before: Array = [
 		Summon.weights_for_circle_level(GameSession.building_levels[0], BALANCE.summon_weights),
-		Item.compute_enhance_cap(GameSession.building_levels[1], BALANCE),
+		Item.compute_enhance_cap(GameSession.building_levels[1], true, BALANCE),
 		LostCache.compute_damage_chance(cache, 100, 80.0, 120.0, GameSession.building_levels[4], BALANCE),
 	]
 	for building: StringName in Hero.PROFESSIONS.values():
@@ -182,9 +182,9 @@ func test_a_skill_5_keeper_never_touches_summon_weights_the_enhance_cap_or_the_d
 	assert_eq(Hero.profession_for_building(&"SummoningCircle"), &"", "the Circle takes no keeper")
 	assert_eq([
 		Summon.weights_for_circle_level(GameSession.building_levels[0], BALANCE.summon_weights),
-		Item.compute_enhance_cap(GameSession.building_levels[1], BALANCE),
+		GameSession.enhance_cap(BALANCE),
 		LostCache.compute_damage_chance(cache, 100, 80.0, 120.0, GameSession.building_levels[4], BALANCE),
-	], before)
+	], before, "skill adds nothing to the cap; a master only opens the band up to it (ig-wgj.12)")
 
 
 func test_home_keepers_earn_xp_on_the_live_tick_only() -> void:

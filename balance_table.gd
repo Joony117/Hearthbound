@@ -102,6 +102,8 @@ extends Resource
 @export var summoning_circle_level_cap: int = 5
 @export var forge_enhance_cap_per_level: int = 3
 @export var forge_enhance_cap_max: int = 15
+# Without a master smith home, the enhance cap stops here; +13 to +15 is masterwork (SYSTEMS.md § Keepers and professions).
+@export var forge_masterwork_floor: int = 12
 @export var forge_salvage_yield_bonus: float = 0.10
 @export var training_hall_xp_bonus: float = 0.15
 @export var sanctum_essence_yield_bonus: float = 0.10

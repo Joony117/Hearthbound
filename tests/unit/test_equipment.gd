@@ -158,7 +158,7 @@ func test_hub_rows_carry_hover_detail() -> void:
 	var tooltip: String = inventory_list.get_item_tooltip(0)
 	assert_string_contains(tooltip, "Slot: Ring")
 	assert_string_contains(tooltip, "CRIT_DMG: +%.1f%%" % (Item.compute_stat_magnitude(ring, Item.definition_for(ring.def_id), BALANCE) * 100.0))
-	assert_string_contains(tooltip, "Enhance: +1 / %d" % Item.compute_enhance_cap(GameSession.building_levels[1], BALANCE))
+	assert_string_contains(tooltip, "Enhance: +1 / %d" % Item.compute_enhance_cap(GameSession.building_levels[1], false, BALANCE))
 	assert_string_contains(tooltip, "Salvage: %d B parts" % Item.compute_salvage_yield(ring, GameSession.building_levels[1], 0, BALANCE))
 
 	# The null-definition branch, without rendering one: an unresolvable def_id would push_error on
@@ -300,9 +300,10 @@ func test_item_compute_salvage_yield_clamps_enhance_and_forge_levels() -> void:
 
 
 func test_item_compute_enhance_cap_clamps_forge_level() -> void:
-	assert_eq(Item.compute_enhance_cap(0, BALANCE), 0)
-	assert_eq(Item.compute_enhance_cap(-1, BALANCE), 0)
-	assert_eq(Item.compute_enhance_cap(999, BALANCE), Item.compute_enhance_cap(5, BALANCE))
+	for master: bool in [false, true]:
+		assert_eq(Item.compute_enhance_cap(0, master, BALANCE), 0)
+		assert_eq(Item.compute_enhance_cap(-1, master, BALANCE), 0)
+		assert_eq(Item.compute_enhance_cap(999, master, BALANCE), Item.compute_enhance_cap(5, master, BALANCE))
 
 
 func test_corrupt_forge_level_clamps_to_level_five_in_both_paths() -> void:
@@ -310,6 +311,12 @@ func test_corrupt_forge_level_clamps_to_level_five_in_both_paths() -> void:
 	var salvaged_item := Item.new(&"ring", 4)
 	var balance := BalanceTable.new()
 	GameSession.building_levels[1] = 999
+	# ig-wgj.12: +14 -> +15 is masterwork, so a master smith is home; the clamp is what this tests.
+	var smith := Hero.new("Smith", 0)
+	smith.passions = [&"smithing", &"rites"] as Array[StringName]
+	smith.profession_xp[&"smithing"] = 300.0 * 60.0
+	GameSession.add_hero(smith)
+	assert_true(GameSession.station_hero(smith, &"Forge"), GameSession.last_action_error)
 	GameSession.add_item(enhanced_item)
 	GameSession.add_item(salvaged_item)
 	GameSession.parts[enhanced_item.rank] = 99

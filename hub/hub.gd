@@ -135,6 +135,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_inventory)
 	GameSession.roster_changed.connect(_refresh_parts)
 	GameSession.roster_changed.connect(_refresh_buildings)
+	GameSession.expeditions_changed.connect(_refresh_buildings)
 	GameSession.roster_changed.connect(_refresh_equipped)
 	GameSession.roster_changed.connect(_refresh_hero_detail)
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
@@ -498,7 +499,7 @@ func _refresh_favorite_item_control() -> void:
 func _inventory_tooltip_text(item: Item, definition: EquipmentDefinition) -> String:
 	var forge_level: int = GameSession.building_levels[1]
 	var enhance_level: int = Item.clamped_enhance_level(item, BALANCE)
-	var enhance_cap: int = Item.compute_enhance_cap(forge_level, BALANCE)
+	var enhance_cap: int = GameSession.enhance_cap(BALANCE)
 	var salvage_yield: int = GameSession.salvage_yield(item)
 	if definition == null:
 		return "Definition: Missing (%s)\nEnhance: +%d / %d\nSalvage: %d %s parts" % [
@@ -546,6 +547,17 @@ func _refresh_buildings() -> void:
 	_training_hall_level.text = _building_level_text("Training Hall", 2)
 	_sanctum_level.text = _building_level_text("Sanctum", 3)
 	_reliquary_level.text = _building_level_text("Reliquary", 4)
+	# The mutators hold both masterwork gates; these only say why (ig-wgj.12).
+	_forge_level.tooltip_text = _masterwork_note()
+	%Enhance.tooltip_text = _masterwork_note()
+	%RankUp.tooltip_text = "" if GameSession.keeper_is_master(&"Sanctum") else "SS->SSS needs a born master priest working here."
+
+
+## Why the enhance cap stops short of what this Forge level allows; "" when it does not.
+func _masterwork_note() -> String:
+	if GameSession.enhance_cap(BALANCE) >= Item.compute_enhance_cap(GameSession.building_levels[1], true, BALANCE):
+		return ""
+	return "Masterwork (+13 to +15) needs a born smith at skill 5 working here."
 
 
 func _building_level_text(building_name: String, index: int) -> String:
@@ -1322,8 +1334,7 @@ func _on_enhance_pressed() -> void:
 	if _selected_item_ids.is_empty():
 		_status.text = "Select at least one inventory item."
 		return
-	var forge_level: int = clampi(GameSession.building_levels[1], 0, BALANCE.summoning_circle_level_cap)
-	var enhance_cap: int = mini(BALANCE.forge_enhance_cap_max, forge_level * BALANCE.forge_enhance_cap_per_level)
+	var enhance_cap: int = GameSession.enhance_cap(BALANCE)
 	if enhance_cap <= 0:
 		_status.text = "Cannot enhance: build the Forge first."
 		return
@@ -1468,6 +1479,8 @@ func _update_enhance_preview() -> void:
 		budgets.append(int(budget.value))
 	_pending_bulk_plan = GameSession.preview_bulk_enhance(_selected_item_ids.duplicate(), int(_enhance_target_level.value), budgets)
 	_enhance_preview.text = _format_bulk_plan(_pending_bulk_plan)
+	if not _masterwork_note().is_empty():
+		_enhance_preview.text = _masterwork_note() + "\n\n" + _enhance_preview.text
 	_enhance_dialog.get_ok_button().disabled = not bool(_pending_bulk_plan.get("valid", false))
 
 

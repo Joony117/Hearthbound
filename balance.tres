@@ -95,6 +95,7 @@ wave_loss_damage_coefficient = 1.0
 summoning_circle_level_cap = 5
 forge_enhance_cap_per_level = 3
 forge_enhance_cap_max = 15
+forge_masterwork_floor = 12
 forge_salvage_yield_bonus = 0.1
 training_hall_xp_bonus = 0.15
 sanctum_essence_yield_bonus = 0.1

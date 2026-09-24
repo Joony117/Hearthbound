@@ -41,10 +41,12 @@ static func compute_salvage_yield(item: Item, forge_level: int, keeper_skill: in
 ## The highest enhance_level a Forge at this level permits (docs/SYSTEMS.md, Enhancement). Level 0
 ## returns 0, so a fresh save cannot enhance at all until the Forge is built. This bounds *gaining*
 ## a level; clamped_enhance_level() bounds *trusting* one an item already carries, and the two are
-## deliberately different numbers - see docs/TASKS-DONE.md P2-07d.
-static func compute_enhance_cap(forge_level: int, balance: BalanceTable) -> int:
+## deliberately different numbers - see docs/TASKS-DONE.md P2-07d. Past forge_masterwork_floor only
+## with a master smith home (GameSession.keeper_is_master); clamped_enhance_level still trusts +15.
+static func compute_enhance_cap(forge_level: int, master_smith_home: bool, balance: BalanceTable) -> int:
 	var clamped_forge_level: int = clampi(forge_level, 0, balance.summoning_circle_level_cap)
-	return mini(balance.forge_enhance_cap_max, clamped_forge_level * balance.forge_enhance_cap_per_level)
+	var ceiling: int = balance.forge_enhance_cap_max if master_smith_home else balance.forge_masterwork_floor
+	return mini(ceiling, clamped_forge_level * balance.forge_enhance_cap_per_level)
 
 
 ## Public for the same reason int_field() is: GameSession.enhance_item needs the clamped level to

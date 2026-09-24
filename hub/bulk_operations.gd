@@ -111,6 +111,7 @@ static func preview_enhance(
 	names: Dictionary[String, String],
 	available_parts: Array[int],
 	forge_level: int,
+	master_smith_home: bool,
 	balance: BalanceTable,
 ) -> Dictionary:
 	var plan: Dictionary = _empty_plan("enhance", {
@@ -119,6 +120,7 @@ static func preview_enhance(
 		"budget_parts": budget_parts.duplicate(),
 		"parts_snapshot": available_parts.duplicate(),
 		"forge_level": forge_level,
+		"master_smith_home": master_smith_home,
 	})
 	var selection_error: String = _selection_error(item_ids)
 	if not selection_error.is_empty():
@@ -128,7 +130,7 @@ static func preview_enhance(
 	for budget: int in budget_parts:
 		if budget < 0:
 			return _invalid(plan, "Enhancement budgets cannot be negative.")
-	var enhance_cap: int = Item.compute_enhance_cap(forge_level, balance)
+	var enhance_cap: int = Item.compute_enhance_cap(forge_level, master_smith_home, balance)
 	var bounded_target: int = clampi(target_level, 0, enhance_cap)
 	plan["parameters"]["target_level"] = bounded_target
 	var remaining_budget: Array[int] = []
