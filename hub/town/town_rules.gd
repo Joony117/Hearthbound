@@ -32,6 +32,9 @@ const HALL_HEXES: Dictionary[StringName, Vector2i] = {
 	&"Apothecary": Vector2i(2, -2),
 }
 
+## A hex's six neighbours are these steps away (axial q, r).
+const AXIAL_DIRECTIONS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
+
 
 static func hex_to_world(hex: Vector2i) -> Vector3:
 	return Vector3(HEX_SIZE * sqrt(3.0) * (hex.x + hex.y / 2.0), 0.0, HEX_SIZE * 1.5 * hex.y)

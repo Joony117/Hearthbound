@@ -144,11 +144,13 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_keeper)
 	GameSession.expeditions_changed.connect(_refresh_keeper)
 	GameSession.roster_changed.connect(_refresh_town)
+	GameSession.roster_changed.connect(_refresh_walkers)
 	GameSession.expeditions_changed.connect(_refresh_wood)
 	GameSession.expeditions_changed.connect(_refresh_placed_panel)
 	GameSession.expeditions_changed.connect(_on_expeditions_changed)
 	GameSession.roster_changed.connect(_refresh_partner)
 	# expeditions_changed fires on every 0.25 s pulse: it only re-checks whether the partner is away.
+	GameSession.expeditions_changed.connect(_refresh_walkers)
 	GameSession.expeditions_changed.connect(_show_partner)
 	GameSession.battle_changed.connect(_on_battle_changed)
 	_populate_rank_filter(_roster_rank_filter)
@@ -174,6 +176,7 @@ func _ready() -> void:
 	_refresh_director_ui()
 	_refresh_body()
 	_refresh_town()
+	_refresh_walkers()
 	_refresh_partner()
 	_open(NO_BUILDING)
 	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
@@ -661,6 +664,7 @@ func _bond_text(hero: Hero) -> String:
 ## The walking hero's bonded partner and greeting, read from the Ledger on roster_changed only
 ## (every settle that writes a record also changes the roster); never per frame or per pulse.
 func _refresh_partner() -> void:
+	var old_partner: String = _partner_id
 	_partner_id = ""
 	_partner_line = ""
 	var walker: Hero = GameSession.hero_by_id(GameSession.embodied_hero_id)
@@ -670,7 +674,21 @@ func _refresh_partner() -> void:
 		if not bond.is_empty():
 			_partner_id = bond["partner"]
 			_partner_line = Bonds.greeting(bond, Ledger.known_names(GameSession.ledger, living))
+	# The walkers ran first on this roster_changed, against the old partner.
+	if _partner_id != old_partner:
+		_refresh_walkers()
 	_show_partner()
+
+
+## Keepers and workers in town walk between House and work (ig-6m2.6.1). Not the body, and not the
+## partner, which keeps its TownPartner figure. Runs on the 0.25 s pulse too: TownView keeps unchanged
+## figures, so a quiet pulse changes nothing.
+func _refresh_walkers() -> void:
+	var heroes: Array[Hero] = []
+	for hero: Hero in GameSession.roster:
+		if hero.station != Hero.NO_STATION and not GameSession.is_hero_busy(hero) and not GameSession.is_embodied(hero) and hero.instance_id != _partner_id:
+			heroes.append(hero)
+	%Town.show_walkers(heroes)
 
 
 ## The partner stands in town while not away. No Ledger read; TownView never reads GameSession.

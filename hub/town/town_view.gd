@@ -38,6 +38,8 @@ const ARRIVE_RADIUS: float = 2.8
 const PARTNER_SPAWN_OFFSET: Vector3 = Vector3(4.0, 0.0, -3.0)
 ## In front of its House, clear of the 4.5 m pick box.
 const PARTNER_DOOR_OFFSET: Vector3 = Vector3(0.0, 0.0, 2.8)
+## A walker this close to a WorkSpot stands at it.
+const AT_SPOT: float = 0.05
 
 ## The embodied hero, or null when the town is seen from the overview camera.
 var body: TownHero
@@ -55,6 +57,18 @@ var placing: StringName = &""
 var _overview_camera: Camera3D
 ## Building id (halls included) -> its node, a direct child named by id so building_at and walk_to find it.
 var _placed: Dictionary[String, Node3D] = {}
+## Keepers' and workers' figures by hero id (ig-6m2.6.1); show_walkers keeps them in step with hub.gd.
+var walkers: Dictionary[String, TownWalker] = {}
+## The walk graph (ig-6m2.6, the walkable area): one point per map hex centre, its id the hex's index
+## in map_hexes, joined to its six neighbours. A hex with a building is disabled.
+var _graph := AStar2D.new()
+var _hexes: Array[Vector2i] = []
+var _hex_ids: Dictionary[Vector2i, int] = {}
+## Hex -> the id of the building on it.
+var _occupied: Dictionary[Vector2i, String] = {}
+var _walkers_shown: bool = false
+## The hero who just stopped being the body and where it stood (town space), for the next show_walkers.
+var _stepped_out: Dictionary = {}
 
 
 func _ready() -> void:
@@ -68,6 +82,15 @@ func _ready() -> void:
 	multimesh.instance_count = hexes.size()
 	for index: int in hexes.size():
 		multimesh.set_instance_transform(index, Transform3D(Basis.from_scale(Vector3.ONE * TownRules.MODEL_SCALE), TownRules.hex_to_world(hexes[index])))
+		_graph.add_point(index, _flat(TownRules.hex_to_world(hexes[index])))
+		_graph.set_point_disabled(index, _occupied.has(hexes[index]))
+		_hex_ids[hexes[index]] = index
+	_hexes = hexes
+	for index: int in hexes.size():
+		for step: Vector2i in TownRules.AXIAL_DIRECTIONS:
+			var next: int = _hex_ids.get(hexes[index] + step, -1)
+			if next > index:
+				_graph.connect_points(index, next)
 	var ground := MultiMeshInstance3D.new()
 	ground.name = "HexGround"
 	ground.multimesh = multimesh
@@ -104,6 +127,7 @@ func embody(hero: Hero) -> void:
 	var standing: Vector3 = to_global(BODY_SPAWN)
 	if body != null:
 		standing = body.global_position
+		_stepped_out = {"hero_id": body.hero_id, "at": to_local(standing)}
 		remove_child(body)
 		body.queue_free()
 		body = null
@@ -168,6 +192,204 @@ func show_buildings(buildings: Array[Dictionary]) -> void:
 		if not wanted.has(id):
 			_placed[id].queue_free()
 			_placed.erase(id)
+	_update_graph(buildings)
+
+
+## A place or a move changes which hexes hold a building: the graph follows, anyone on a hex that
+## just got one steps onto free ground, and every figure re-plans from where it stands.
+func _update_graph(buildings: Array[Dictionary]) -> void:
+	var occupied: Dictionary[Vector2i, String] = {}
+	for building: Dictionary in buildings:
+		occupied[Vector2i(building["q"], building["r"])] = building["id"]
+	if occupied == _occupied:
+		return
+	var fresh: Array[Vector2i] = []
+	for hex: Vector2i in occupied:
+		if _occupied.get(hex, "") != occupied[hex]:
+			fresh.append(hex)
+	_occupied = occupied
+	for index: int in _hexes.size():
+		_graph.set_point_disabled(index, _occupied.has(_hexes[index]))
+	if body != null:
+		var standing: Vector3 = to_local(body.global_position)
+		if TownRules.world_to_hex(standing) in fresh:
+			body.global_position = to_global(free_point(standing))
+	for walker: TownWalker in walkers.values():
+		# A station that is gone frees its figure on the next show_walkers.
+		if _placed.has(str(walker.station)):
+			_plan(walker, false)
+
+
+## Draws each of heroes (hub.gd's keepers and workers in town) walking between its House door and its
+## station's WorkSpot, and frees the figures of heroes no longer listed. It reads hero.station and
+## hero.home only. A hero whose station and House are unchanged keeps its figure and its walk, so the
+## 0.25 s pulse changes nothing. A new figure starts at work on the first show, where the body stood
+## for the hero who just stepped out of it, and otherwise at the TownGate, walking in.
+func show_walkers(heroes: Array[Hero]) -> void:
+	var wanted: Dictionary[String, bool] = {}
+	for hero: Hero in heroes:
+		if not _placed.has(str(hero.station)):
+			continue
+		wanted[hero.instance_id] = true
+		var walker: TownWalker = walkers.get(hero.instance_id)
+		if walker != null and walker.station == hero.station and walker.home == hero.home:
+			continue
+		if walker == null:
+			walker = TownWalker.create(hero)
+			add_child(walker)
+			walkers[hero.instance_id] = walker
+			if _stepped_out.get("hero_id", "") == hero.instance_id:
+				walker.position = _stepped_out["at"]
+			elif _placed.has("TownGate"):
+				walker.position = work_spot(&"TownGate")
+		walker.station = hero.station
+		walker.home = hero.home
+		walker.heading_home = false
+		_plan(walker, not _walkers_shown)
+	for id: String in walkers.keys():
+		if not wanted.has(id):
+			remove_child(walkers[id])
+			walkers[id].queue_free()
+			walkers.erase(id)
+	_walkers_shown = true
+	_stepped_out = {}
+
+
+## Gives walker its House <-> work loop and sends it from where it stands to where it is heading. No
+## House, or no route either way: no loop, it goes to its work spot and works. first: already at work,
+## a random way into its shift, so a reload neither streams everyone in nor sends them home together.
+func _plan(walker: TownWalker, first: bool) -> void:
+	var spot: Vector3 = work_spot(walker.station)
+	walker.work_yaw = _yaw(spot, _placed[str(walker.station)].position)
+	var house: StringName = walker.home if _placed.has(str(walker.home)) else Hero.NO_HOME
+	var to_work := PackedVector3Array()
+	var to_home := PackedVector3Array()
+	if house != Hero.NO_HOME:
+		walker.rest_yaw = _yaw(_placed[str(house)].position, work_spot(house))
+		to_work = route(house, walker.station)
+		to_home = route(walker.station, house)
+	walker.set_loop(to_work, to_home)
+	if not walker.has_loop():
+		walker.heading_home = false
+	if first:
+		walker.work_at(spot, walker.rng.randf() * TownWalker.WORK_SECONDS)
+		return
+	var target: StringName = house if walker.heading_home else walker.station
+	if not walker.is_walking() and walker.position.distance_to(work_spot(target)) < AT_SPOT:
+		return
+	var lead: PackedVector3Array = _lead(walker, target)
+	if lead.is_empty():
+		walker.work_at(spot, TownWalker.WORK_SECONDS)
+	else:
+		walker.walk(lead, TownWalker.REST if walker.heading_home else TownWalker.WORK)
+
+
+## The walk from where walker stands to target's WorkSpot. At a building's WorkSpot it leaves through
+## that building's approach hexes. Anywhere else on a building's hex (built over), or at a spot whose
+## approach hexes are all taken, it first steps onto the nearest free ground.
+func _lead(walker: TownWalker, target: StringName) -> PackedVector3Array:
+	var at: Vector3 = walker.position
+	var on: String = _occupied.get(TownRules.world_to_hex(at), "")
+	if on == "":
+		return route(at, target)
+	if at.distance_to(work_spot(StringName(on))) < AT_SPOT:
+		var out: PackedVector3Array = route(StringName(on), target)
+		if not out.is_empty():
+			return out
+	# ponytail: a snap, not a walk, so a hero stepping out of the body beside a building jumps a few
+	# metres; walk it off the hex if the jump shows in play.
+	walker.position = free_point(at)
+	return route(walker.position, target)
+
+
+## The walk between two ends, in town space, or none (empty). An end is a placed building's id (its
+## WorkSpot, reached only through its approach hexes) or a point on free ground (through its hex's
+## centre). Between them it runs through free hex centres, so no leg crosses a building.
+func route(from: Variant, to: Variant) -> PackedVector3Array:
+	var best := PackedVector3Array()
+	var best_length: float = INF
+	for start: Vector2i in _entries(from):
+		for finish: Vector2i in _entries(to):
+			var path := PackedVector3Array([_end_point(from)])
+			for point: Vector2 in _graph.get_point_path(_hex_ids[start], _hex_ids[finish]):
+				path.append(Vector3(point.x, 0.0, point.y))
+			if path.size() == 1:
+				continue
+			path.append(_end_point(to))
+			var length: float = 0.0
+			for index: int in range(1, path.size()):
+				length += path[index - 1].distance_to(path[index])
+			if length < best_length:
+				best = path
+				best_length = length
+	return best
+
+
+## The centre of the free map hex nearest near (town space); ties go to the earlier hex in map_hexes.
+func free_point(near: Vector3) -> Vector3:
+	var best: Vector3 = near
+	var best_distance: float = INF
+	for hex: Vector2i in _hexes:
+		if _occupied.has(hex):
+			continue
+		var centre: Vector3 = TownRules.hex_to_world(hex)
+		var distance: float = _flat(centre).distance_squared_to(_flat(near))
+		if distance < best_distance:
+			best = centre
+			best_distance = distance
+	return best
+
+
+## A placed building's WorkSpot marker, in town space.
+func work_spot(id: StringName) -> Vector3:
+	var building: Node3D = _placed[str(id)]
+	return building.transform * (building.get_node("WorkSpot") as Node3D).position
+
+
+## The two map neighbours of a placed building's hex nearest its WorkSpot, taken or not: the only way
+## in or out of it. Ties go to the earlier hex in map_hexes.
+func approach_hexes(id: StringName) -> Array[Vector2i]:
+	var hex: Vector2i = TownRules.world_to_hex(_placed[str(id)].position)
+	var spot: Vector2 = _flat(work_spot(id))
+	var near: Array[Vector2i] = []
+	for step: Vector2i in TownRules.AXIAL_DIRECTIONS:
+		if _hex_ids.has(hex + step):
+			near.append(hex + step)
+	near.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var to_a: float = spot.distance_to(_flat(TownRules.hex_to_world(a)))
+		var to_b: float = spot.distance_to(_flat(TownRules.hex_to_world(b)))
+		return to_a < to_b - 0.001 or (absf(to_a - to_b) <= 0.001 and _hex_ids[a] < _hex_ids[b]))
+	near.resize(mini(2, near.size()))
+	return near
+
+
+## The hexes an end is entered from: a building's free approach hexes, or a free point's own hex.
+func _entries(end: Variant) -> Array[Vector2i]:
+	var entries: Array[Vector2i] = []
+	if end is Vector3:
+		var hex: Vector2i = TownRules.world_to_hex(end as Vector3)
+		if _hex_ids.has(hex) and not _occupied.has(hex):
+			entries.append(hex)
+		return entries
+	if not _placed.has(str(end)):
+		return entries
+	for hex: Vector2i in approach_hexes(StringName(end)):
+		if not _occupied.has(hex):
+			entries.append(hex)
+	return entries
+
+
+func _end_point(end: Variant) -> Vector3:
+	return end as Vector3 if end is Vector3 else work_spot(StringName(end))
+
+
+static func _flat(point: Vector3) -> Vector2:
+	return Vector2(point.x, point.z)
+
+
+## The yaw that faces from towards to.
+static func _yaw(from: Vector3, to: Vector3) -> float:
+	return atan2(to.x - from.x, to.z - from.z)
 
 
 ## Positioned before it enters the tree, so its pick body registers where it stands: a pick in the

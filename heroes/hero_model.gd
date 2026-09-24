@@ -23,7 +23,10 @@ const ENEMY_LOOKS: Dictionary = {
 # Meshes an ally look leaves off its character model. The Cleric shares the Mage model, whose hat
 # is the Mage's whole top-down read, so a hatless head (and the battle halo) reads as the healer.
 const ALLY_DROPPED_MESHES: Dictionary = {"cleric": ["Mage_Hat"]}
-const LOOPED_CLIPS: Array[String] = ["Idle_A", "Idle_B", "Running_A", "Walking_A", "Skeletons_Idle", "Skeletons_Walking"]
+const LOOPED_CLIPS: Array[String] = [
+	"Idle_A", "Idle_B", "Running_A", "Walking_A", "Skeletons_Idle", "Skeletons_Walking",
+	"Hammering", "Chopping", "Working_A", "Working_C", "Push_Ups", "Sit_Floor_Idle",
+]
 # Clip file under animations/Rig_Medium_<file>.glb for every clip in the library.
 const CLIP_FILES: Dictionary = {
 	"Idle_A": "General", "Hit_A": "General", "Hit_B": "General", "Death_A": "General", "Death_B": "General",
@@ -33,6 +36,9 @@ const CLIP_FILES: Dictionary = {
 	"Skeletons_Idle": "Special", "Skeletons_Walking": "Special", "Skeletons_Death": "Special",
 	# Town: strolling and using stalls.
 	"Walking_A": "MovementBasic", "Idle_B": "General", "Interact": "General", "PickUp": "General", "Use_Item": "General",
+	# Town: work at a station (TownWalker.WORK_CLIPS).
+	"Hammering": "Tools", "Chopping": "Tools", "Working_A": "Tools", "Working_C": "Tools",
+	"Push_Ups": "Simulation", "Sit_Floor_Idle": "Simulation",
 }
 const ROOT_POSITION_TRACK: NodePath = NodePath("Rig_Medium/Skeleton3D:root")
 const HIPS_POSITION_TRACK: NodePath = NodePath("Rig_Medium/Skeleton3D:hips")

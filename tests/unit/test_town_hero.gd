@@ -282,7 +282,7 @@ func test_the_body_reaches_the_farthest_hex_in_each_direction() -> void:
 	for step: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(-1, 1)]:
 		var hex: Vector2i = step * radius
 		assert_eq(TownRules.ring_distance(hex), radius, "a map-edge hex")
-		# Start one hex short, toward the centre, and walk out with the key that points at it.
+		# Start one hex short, toward the centre, and click-walk out to it.
 		var centre: Vector3 = town.to_global(TownRules.hex_to_world(hex))
 		var inside: Vector3 = town.to_global(TownRules.hex_to_world(step * (radius - 1)))
 		body.global_position = inside
