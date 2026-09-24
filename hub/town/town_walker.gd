@@ -1,14 +1,25 @@
 class_name TownWalker
 extends Node3D
 
-## A keeper or worker in town, drawn walking from its House door to its work spot and back
-## (ig-6m2.6.1). A view only: TownView plans its routes over the hex walk graph and hands them in.
-## It never reads GameSession and nothing it does is saved; its randomness is its own RNG.
+## A hero in town. A keeper or worker walks from its House door to its work spot and back
+## (ig-6m2.6.1); a hero with no station wanders the streets and lingers (ig-6m2.6.2). A view only:
+## TownView plans its routes over the hex walk graph and hands them in. It never reads GameSession
+## and nothing it does is saved; its randomness is its own RNG. While it is the body's bonded partner
+## it greets the body (SYSTEMS.md § Bonds and dreams): when the body comes within MEET_DISTANCE it
+## stops, faces it, plays Interact once and shows its line, then walks on; it greets again only after
+## the body has gone back past REARM_DISTANCE.
 
 ## Presentation numbers (ARCHITECTURE § The town is the interface), not balance rows.
 const WALK_SPEED: float = 2.5
 const WORK_SECONDS: float = 20.0
 const HOME_SECONDS: float = 8.0
+## How long a wanderer stays where a trip ends before it picks the next.
+const LINGER_SECONDS: float = 6.0
+## A House boxed in by both diagonal neighbours still leaves a spot 2.67 m from its door.
+const MEET_DISTANCE: float = 3.0
+const REARM_DISTANCE: float = 4.5
+## The line shows this long, and the walk waits for it.
+const LINE_SECONDS: float = 4.0
 const MODEL_SCALE: float = TownHero.MODEL_SCALE
 ## The clip played at work, by the station's building type. A station missing here plays
 ## DEFAULT_WORK_CLIP, so a later workplace never breaks a figure; its slice adds its row.
@@ -26,11 +37,13 @@ const DEFAULT_WORK_CLIP: StringName = &"Working_A"
 const WALK: StringName = &"walk"
 const WORK: StringName = &"work"
 const REST: StringName = &"rest"
+## A wanderer at the end of a trip.
+const LINGER: StringName = &"linger"
 
 var hero_id: String = ""
 var station: StringName = Hero.NO_STATION
 var home: StringName = Hero.NO_HOME
-## WALK, WORK (at the spot) or REST (at the House door).
+## WALK, WORK (at the spot), REST (at the House door) or LINGER (a wanderer between trips).
 var activity: StringName = WORK
 ## Walking home or resting there; otherwise walking to work or working.
 var heading_home: bool = false
@@ -39,13 +52,31 @@ var rng := RandomNumberGenerator.new()
 ## Facing while working (towards the building) and while resting (out from the House), as yaw.
 var work_yaw: float = 0.0
 var rest_yaw: float = 0.0
+## A wanderer's next trip, called when a linger ends (TownView binds it); empty for none.
+var planner: Callable
+## Wanderer trips so far; TownView sends every HOME_EVERY-th one to the House door.
+var trips: int = 0
+## The body it greets while it is the partner, else null (follow()).
+var greet: Node3D
+var line: String = ""
+## How many times it has greeted, for tests.
+var greetings: int = 0
 var _path := PackedVector3Array()
 var _then: StringName = WORK
 var _left: float = 0.0
 var _to_work := PackedVector3Array()
 var _to_home := PackedVector3Array()
+var _linger_clip: StringName = &"Idle_B"
+## NAN keeps the facing it walked in with.
+var _linger_yaw: float = NAN
+var _clip: StringName = &""
+var _following: bool = false
+var _armed: bool = true
+var _line_left: float = 0.0
+var _pause_left: float = 0.0
 var _model: Node3D
 var _animator: AnimationPlayer
+var _label: Label3D
 
 
 static func create(hero: Hero) -> TownWalker:
@@ -58,6 +89,26 @@ static func create(hero: Hero) -> TownWalker:
 	walker._model.scale = Vector3.ONE * MODEL_SCALE
 	walker.add_child(walker._model)
 	walker._animator = walker._model.get_node("AnimationPlayer") as AnimationPlayer
+	# The click target (ig-6m2.6.2), the body's size, on the walker pick layer alone.
+	var pick := StaticBody3D.new()
+	pick.name = "Pick"
+	pick.collision_layer = TownView.WALKER_PICK_LAYER
+	pick.collision_mask = 0
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.4
+	capsule.height = 1.9
+	var shape := CollisionShape3D.new()
+	shape.shape = capsule
+	shape.position.y = capsule.height / 2.0
+	pick.add_child(shape)
+	walker.add_child(pick)
+	walker._label = Label3D.new()
+	walker._label.name = "Line"
+	walker._label.pixel_size = 0.008
+	walker._label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	walker._label.position.y = 2.1
+	walker._label.visible = false
+	walker.add_child(walker._label)
 	return walker
 
 
@@ -89,6 +140,49 @@ func walk(path: PackedVector3Array, then: StringName) -> void:
 	_play(&"Walking_A")
 
 
+## A wanderer's trip: walks path, then lingers playing clip, facing yaw (NAN: as it walked in).
+func wander(path: PackedVector3Array, clip_name: StringName, yaw: float) -> void:
+	_linger_clip = clip_name
+	_linger_yaw = yaw
+	walk(path, LINGER)
+
+
+## Stands at spot lingering, seconds_left before its next trip.
+func linger_at(spot: Vector3, clip_name: StringName, yaw: float, seconds_left: float) -> void:
+	position = spot
+	_path.clear()
+	_linger_clip = clip_name
+	_linger_yaw = yaw
+	_settle(LINGER, seconds_left)
+
+
+## Greets target from now on, or no one (null). The first body it follows greets it only once the
+## body has come from past REARM_DISTANCE, so a load beside it never fires the greeting at once; a
+## body it switches to gets its own first greeting.
+func follow(target: Node3D) -> void:
+	if target == null:
+		greet = null
+		_following = false
+		return
+	if target != greet:
+		_armed = _following or _flat_distance(target) >= REARM_DISTANCE
+		greet = target
+		_following = true
+
+
+func is_showing_line() -> bool:
+	return _label.visible
+
+
+## The clip it plays (or plays again after a greeting).
+func clip() -> StringName:
+	return _clip
+
+
+func facing() -> float:
+	return _model.rotation.y
+
+
 ## Stands at spot working, seconds_left before it heads home (if it has a loop).
 func work_at(spot: Vector3, seconds_left: float) -> void:
 	position = spot
@@ -106,6 +200,22 @@ func destination() -> Vector3:
 
 
 func step(delta: float) -> void:
+	if _line_left > 0.0:
+		_line_left -= delta
+		_label.visible = _line_left > 0.0
+	# Before the pause, so a body it switches to mid-greeting still gets its own.
+	if _following and is_instance_valid(greet):
+		var distance: float = _flat_distance(greet)
+		if _armed and distance <= MEET_DISTANCE:
+			_greet()
+			return
+		if not _armed and distance >= REARM_DISTANCE:
+			_armed = true
+	if _pause_left > 0.0:
+		_pause_left -= delta
+		if _pause_left > 0.0:
+			return
+		_resume()
 	match activity:
 		WALK:
 			var move: float = WALK_SPEED * delta
@@ -121,7 +231,7 @@ func step(delta: float) -> void:
 					_model.rotation.y = atan2(to.x, to.z)
 					move = 0.0
 			if _path.is_empty():
-				_settle(_then, WORK_SECONDS if _then == WORK else HOME_SECONDS)
+				_settle(_then, {WORK: WORK_SECONDS, REST: HOME_SECONDS, LINGER: LINGER_SECONDS}[_then])
 		WORK:
 			if has_loop():
 				_left -= delta
@@ -131,16 +241,62 @@ func step(delta: float) -> void:
 			_left -= delta
 			if _left <= 0.0 and has_loop():
 				walk(_to_work, WORK)
+		LINGER:
+			_left -= delta
+			if _left <= 0.0 and planner.is_valid():
+				planner.call()
 
 
 func _settle(what: StringName, seconds: float) -> void:
 	activity = what
 	heading_home = what == REST
 	_left = seconds
-	_model.rotation.y = work_yaw if what == WORK else rest_yaw
-	_play(work_clip(station) if what == WORK else &"Idle_A")
+	_face()
+	_play({WORK: work_clip(station), REST: &"Idle_A", LINGER: _linger_clip}[what])
 
 
-func _play(clip: StringName) -> void:
-	if _animator.current_animation != clip:
-		_animator.play(clip, 0.15)
+func _face() -> void:
+	match activity:
+		WORK:
+			_model.rotation.y = work_yaw
+		REST:
+			_model.rotation.y = rest_yaw
+		LINGER:
+			if not is_nan(_linger_yaw):
+				_model.rotation.y = _linger_yaw
+
+
+func _greet() -> void:
+	_armed = false
+	greetings += 1
+	var to_body: Vector3 = greet.global_position - global_position
+	_model.rotation.y = atan2(to_body.x, to_body.z)
+	_animator.play(&"Interact")
+	_animator.queue(&"Idle_A")
+	_label.text = line
+	_label.visible = true
+	_line_left = LINE_SECONDS
+	_pause_left = LINE_SECONDS
+
+
+## After a greeting: back to what it was doing, facing as it did.
+func _resume() -> void:
+	if activity != WALK:
+		_face()
+	var again: StringName = _clip
+	_clip = &""
+	_play(again)
+
+
+func _flat_distance(target: Node3D) -> float:
+	return Vector2(target.global_position.x - global_position.x, target.global_position.z - global_position.z).length()
+
+
+func _play(clip_name: StringName) -> void:
+	if _clip == clip_name:
+		return
+	_clip = clip_name
+	_animator.play(clip_name, 0.15)
+	# Interact plays once; a stall user then stands.
+	if clip_name == &"Interact":
+		_animator.queue(&"Idle_B")

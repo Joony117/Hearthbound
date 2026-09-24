@@ -215,9 +215,11 @@ func test_the_partner_stands_in_town_greets_once_per_approach_and_leaves_with_an
 	assert_true(GameSession.embody_hero(ada.instance_id))
 	assert_not_null(town.partner, "Bea stands in town")
 	assert_eq(town.partner.hero_id, B)
-	assert_eq(town.partner.position, TownView.BODY_SPAWN + TownView.PARTNER_SPAWN_OFFSET, "no House: beside the spawn")
+	assert_eq(town.partner, town.walkers.get(B), "Bea is her own walker, wherever her role takes her")
 	await _frames(2)
-	assert_eq(town.partner.greetings, 0, "the spawn is out of reach")
+	assert_eq(town.partner.greetings, 0, "no greeting on arrival")
+	town.body.global_position = town.partner.global_position + Vector3(0.0, 0.0, 6.0)
+	await _frames(2)
 	town.body.global_position = town.partner.global_position + Vector3(-1.5, 0.0, 0.0)
 	await _frames(2)
 	assert_eq(town.partner.greetings, 1)
@@ -257,6 +259,8 @@ func test_a_new_walker_gets_its_own_greeting() -> void:
 	var hub: Node3D = _hub()
 	var town: TownView = hub.get_node("%Town") as TownView
 	assert_true(GameSession.embody_hero(ada.instance_id))
+	town.body.global_position = town.partner.global_position + Vector3(0.0, 0.0, 6.0)
+	await _frames(2)
 	town.body.global_position = town.partner.global_position + Vector3(-1.5, 0.0, 0.0)
 	await _frames(2)
 	assert_eq(town.partner.greetings, 1)
@@ -283,8 +287,9 @@ func test_a_walk_reaches_a_partner_at_its_house() -> void:
 	var house_id: StringName = StringName(str(GameSession.town_buildings.back()["id"]))
 	assert_true(GameSession.assign_home(bea, house_id), GameSession.last_action_error)
 	assert_true(GameSession.embody_hero(ada.instance_id))
-	var house: Node3D = town.get_node(NodePath(house_id)) as Node3D
-	assert_eq(town.partner.position, house.position + TownView.PARTNER_DOOR_OFFSET, "Bea stands at her door")
+	# Bea wanders now (ig-6m2.6.2); hold her at her door, the far corner the walk has to reach.
+	town.partner.linger_at(town.work_spot(house_id), &"Idle_A", 0.0, 1.0e6)
+	await get_tree().physics_frame
 	# Start 7 m out on the camera side and walk in with W, as a player would.
 	town.body.global_position = town.partner.global_position + Vector3(0.0, 0.0, 7.0)
 	await get_tree().physics_frame
@@ -297,7 +302,114 @@ func test_a_walk_reaches_a_partner_at_its_house() -> void:
 	assert_eq(town.partner.greetings, 1, "the walk reaches her")
 
 
+# ig-6m2.6.2: the partner is an ordinary walker. The greeting stops its walk, and the walk goes on.
+func test_the_partner_stops_walking_to_greet_and_walks_on() -> void:
+	var town: TownView = _bonded_town()
+	var bea: TownWalker = town.partner
+	var start: Vector3 = town.free_point(Vector3(-12.0, 0.0, 12.0))
+	bea.linger_at(start, &"Idle_B", NAN, 1.0e6)
+	bea.wander(PackedVector3Array([start + Vector3(12.0, 0.0, 0.0)]), &"Idle_B", NAN)
+	town.body.global_position = town.to_global(start + Vector3(0.0, 0.0, 8.0))
+	bea.step(0.1)
+	town.body.global_position = town.to_global(bea.position + Vector3(0.0, 0.0, 2.0))
+	bea.step(0.1)
+	assert_eq(bea.greetings, 1, "within MEET_DISTANCE: it greets")
+	assert_true(bea.is_showing_line())
+	var stopped: Vector3 = bea.position
+	for _step: int in 39:
+		bea.step(0.1)
+	assert_eq(bea.position, stopped, "it stands while the line shows")
+	for _step: int in 3:
+		bea.step(0.1)
+	assert_ne(bea.position, stopped, "then walks on")
+	assert_eq(bea.clip(), &"Walking_A")
+	assert_false(bea.is_showing_line())
+	for _step: int in 40:
+		bea.step(0.1)
+	assert_eq(bea.greetings, 1, "the body stayed: no second greeting")
+	town.body.global_position = town.to_global(bea.position + Vector3(0.0, 0.0, 1.0))
+	bea.step(0.1)
+	assert_eq(bea.greetings, 2, "past REARM_DISTANCE and back: again")
+
+
+# A load that puts the body beside its partner never fires the greeting at once.
+func test_a_partner_inside_rearm_distance_at_the_start_waits() -> void:
+	var town: TownView = _bonded_town(false)
+	var bea: TownWalker = town.walkers[B]
+	bea.linger_at(TownView.BODY_SPAWN + Vector3(1.5, 0.0, 0.0), &"Idle_B", NAN, 1.0e6)
+	assert_true(GameSession.embody_hero(A))
+	assert_eq(town.partner, bea)
+	for _step: int in 5:
+		bea.step(0.1)
+	assert_eq(bea.greetings, 0, "it starts disarmed")
+	town.body.global_position = town.to_global(bea.position + Vector3(0.0, 0.0, 6.0))
+	bea.step(0.1)
+	town.body.global_position = town.to_global(bea.position + Vector3(0.0, 0.0, 1.5))
+	bea.step(0.1)
+	assert_eq(bea.greetings, 1, "the body came back: now it greets")
+
+
+# The ig-6m2.2 case: the old fixed spot sat in hex (1, 0). With the Sanctum moved off it and a House
+# on it, the partner still never stands or walks inside a box.
+func test_a_house_on_the_old_partner_spot_never_swallows_the_partner() -> void:
+	GameSession.town_resources["wood"] = 1000.0
+	var sanctum: Dictionary = GameSession.town_building(&"Sanctum")
+	assert_eq(Vector2i(sanctum["q"], sanctum["r"]), Vector2i(1, 0), "the Sanctum starts on the old spot")
+	var moved: bool = false
+	for hex: Vector2i in [Vector2i(3, -3), Vector2i(-3, 3), Vector2i(2, 2), Vector2i(-2, -2)]:
+		if GameSession.move_building(&"Sanctum", hex):
+			moved = true
+			break
+	assert_true(moved, GameSession.last_action_error)
+	assert_true(GameSession.place_building(TownRules.HOUSE, Vector2i(1, 0)), GameSession.last_action_error)
+	var town: TownView = _bonded_town()
+	var bea: TownWalker = town.partner
+	var boxes: Array[Rect2] = _boxes(town)
+	for _step: int in 600:
+		bea.step(0.1)
+		for box: Rect2 in boxes:
+			if box.has_point(Vector2(bea.position.x, bea.position.z)):
+				fail_test("the partner is inside a box at %s" % bea.position)
+				return
+	assert_eq(_walker_figures(town, B), 1)
+
+
 ## ---- helpers
+
+## A hub with Ada and Bea bonded and, unless embody is false, Ada as the body.
+func _bonded_town(embody: bool = true) -> TownView:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var town: TownView = _hub().get_node("%Town") as TownView
+	if embody:
+		assert_true(GameSession.embody_hero(A))
+		assert_not_null(town.partner)
+	return town
+
+
+func _walker_figures(town: TownView, hero_id: String) -> int:
+	var count: int = 0
+	for child: Node in town.get_children():
+		if child is TownWalker and (child as TownWalker).hero_id == hero_id:
+			count += 1
+	return count
+
+
+## Every placed building's pick box grown by 0.3 m, as town-space x/z (as test_town_walkers does).
+func _boxes(town: TownView) -> Array[Rect2]:
+	var boxes: Array[Rect2] = []
+	for building: Dictionary in GameSession.town_buildings:
+		var node: Node3D = town.get_node(NodePath(str(building["id"])))
+		var pick: Node3D = node.get_node("Pick") as Node3D
+		var shape: CollisionShape3D = pick.find_children("*", "CollisionShape3D", false, false)[0] as CollisionShape3D
+		var size: Vector3 = (shape.shape as BoxShape3D).size
+		var centre: Vector3 = node.transform * pick.transform * shape.position
+		boxes.append(Rect2(centre.x - size.x / 2.0, centre.z - size.z / 2.0, size.x, size.z).grow(0.3))
+	return boxes
+
 
 func _battle(team: Array, result: String, extra: Dictionary = {}) -> void:
 	_battle_in(_ledger, team, result, extra)

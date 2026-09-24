@@ -17,6 +17,10 @@ const BUILDING_PANELS: Dictionary = {
 }
 ## What a placed House or workplace opens; its id is not a BUILDING_PANELS key.
 const PLACED_PANEL: StringName = &"PlacedBuildingPanel"
+## What a click on a hero in town opens (ig-6m2.6.2): the roster with that hero selected, and its
+## detail. Not a building, so it is no BUILDING_PANELS key (those are the 1-7 buttons).
+const HERO_VIEW: StringName = &"Hero"
+const HERO_PANELS: Array[StringName] = [&"SharedRosterPanel", &"SelectedHeroPanel"]
 const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 	preload("res://zones/defs/verdant_outskirts.tres"),
 	preload("res://zones/defs/ashfall_reaches.tres"),
@@ -191,6 +195,7 @@ func _ready() -> void:
 
 func _connect_ui_signals() -> void:
 	%Town.building_selected.connect(_open)
+	%Town.hero_selected.connect(_open_hero)
 	%Town.hex_selected.connect(_on_hex_selected)
 	(%Build as MenuButton).get_popup().index_pressed.connect(_on_build_picked)
 	%PlacedAssign.pressed.connect(_on_placed_assign_pressed)
@@ -681,21 +686,37 @@ func _refresh_partner() -> void:
 		if not bond.is_empty():
 			_partner_id = bond["partner"]
 			_partner_line = Bonds.greeting(bond, Ledger.known_names(GameSession.ledger, living))
-	# The walkers ran first on this roster_changed, against the old partner.
+	_show_partner()
+	# The walkers ran first on this roster_changed, against the old partner, who may have been cut by
+	# the wanderer cap.
 	if _partner_id != old_partner:
 		_refresh_walkers()
-	_show_partner()
 
 
-## Keepers and workers in town walk between House and work (ig-6m2.6.1). Not the body, and not the
-## partner, which keeps its TownPartner figure. Runs on the 0.25 s pulse too: TownView keeps unchanged
+## Every hero in town walks (ig-6m2.6): on the roster, not away, and not the body. In pick order, so
+## the wanderer cap keeps the same heroes each visit: keepers and workers, the partner, then
+## favorites, higher rank, lower instance_id. Runs on the 0.25 s pulse too: TownView keeps unchanged
 ## figures, so a quiet pulse changes nothing.
 func _refresh_walkers() -> void:
 	var heroes: Array[Hero] = []
 	for hero: Hero in GameSession.roster:
-		if hero.station != Hero.NO_STATION and not GameSession.is_hero_busy(hero) and not GameSession.is_embodied(hero) and hero.instance_id != _partner_id:
+		if not GameSession.is_hero_busy(hero) and not GameSession.is_embodied(hero):
 			heroes.append(hero)
+	heroes.sort_custom(_walks_before)
 	%Town.show_walkers(heroes)
+
+
+func _walks_before(a: Hero, b: Hero) -> bool:
+	var a_works: bool = a.station != Hero.NO_STATION
+	if a_works != (b.station != Hero.NO_STATION):
+		return a_works
+	if (a.instance_id == _partner_id) != (b.instance_id == _partner_id):
+		return a.instance_id == _partner_id
+	if a.favorite != b.favorite:
+		return a.favorite
+	if a.rank != b.rank:
+		return a.rank > b.rank
+	return a.instance_id < b.instance_id
 
 
 ## The partner stands in town while not away. No Ledger read; TownView never reads GameSession.
@@ -863,8 +884,8 @@ func _open(building_id: StringName) -> void:
 	var closing: StringName = _open_building
 	%Town.placing = &""
 	_moving = NO_BUILDING
-	_open_building = building_id if BUILDING_PANELS.has(building_id) or _is_placed(building_id) else NO_BUILDING
-	var shown: Array = BUILDING_PANELS.get(_open_building, [PLACED_PANEL] if _is_placed(_open_building) else [])
+	_open_building = building_id if BUILDING_PANELS.has(building_id) or _is_placed(building_id) or building_id == HERO_VIEW else NO_BUILDING
+	var shown: Array = BUILDING_PANELS.get(_open_building, [PLACED_PANEL] if _is_placed(_open_building) else HERO_PANELS if _open_building == HERO_VIEW else [])
 	for panels: Array in BUILDING_PANELS.values():
 		for panel_name: StringName in panels:
 			(get_node("%%%s" % panel_name) as Control).visible = shown.has(panel_name)
@@ -873,7 +894,7 @@ func _open(building_id: StringName) -> void:
 	for other: StringName in BUILDING_PANELS:
 		_building_button(other).theme_type_variation = &"ActiveNavButton" if other == _open_building else &""
 	_close_panel.visible = _open_building != NO_BUILDING
-	%MoveBuilding.visible = _open_building != NO_BUILDING
+	%MoveBuilding.visible = _open_building != NO_BUILDING and _open_building != HERO_VIEW
 	# An open building owns the whole screen: a click in a gap between its panels must not pick
 	# the building behind it. Children still get their clicks first.
 	($UI/Root as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE if _open_building == NO_BUILDING else Control.MOUSE_FILTER_STOP
@@ -886,6 +907,28 @@ func _open(building_id: StringName) -> void:
 	_refresh_placed_panel()
 	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
+
+
+## A click on a hero in town: the roster with only that hero selected, and its detail. A roster
+## filter that hides the hero is cleared, so the click always lands on it.
+func _open_hero(hero_id: String) -> void:
+	if GameSession.hero_by_id(hero_id) == null:
+		return
+	_open(HERO_VIEW)
+	_roster_list.deselect_all()
+	_selected_hero_ids.assign([hero_id])
+	_refresh_roster()
+	if _selected_hero() == null:
+		_roster_min_rank = -1
+		_roster_rank_filter.select(0)
+		_roster_archetype_filter_index = -1
+		_roster_type_filter.select(0)
+		_roster_availability_filter_index = 0
+		_roster_availability_filter.select(0)
+		_roster_favorites_only.set_pressed_no_signal(false)
+		_selected_hero_ids.assign([hero_id])
+		_refresh_roster()
+	_on_roster_list_multi_selected(-1, true)
 
 
 ## The body walks only in the bare town: never behind an open building or the pause menu.

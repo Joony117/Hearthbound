@@ -1,11 +1,14 @@
 class_name TownView
 extends Node3D
 
-## The 3D town as the hub's menu. A left click on a building names it; hub.gd decides what opens.
-## It never touches panels or GameSession. The GUI stops clicks on panels before they get here.
-## With an embodied hero, a click walks the hero to the building and names it on arrival.
+## The 3D town as the hub's menu. A left click on a building names it, and one on a hero in town
+## names the hero; hub.gd decides what opens. It never touches panels or GameSession. The GUI stops
+## clicks on panels before they get here. With an embodied hero, a click on a building walks the hero
+## there and names it on arrival; a click on a hero names it at once.
 
 signal building_selected(building_id: StringName)
+## A left click on a walker (ig-6m2.6.2): keepers, workers, wanderers and the partner alike.
+signal hero_selected(hero_id: String)
 ## While placing, a left click names the hex under it instead of a building. hub.gd places or refuses.
 signal hex_selected(hex: Vector2i)
 
@@ -30,23 +33,29 @@ const SCENES: Dictionary[StringName, PackedScene] = {
 const PICK_DISTANCE: float = 200.0
 ## Every building scene puts its Pick body on this layer alone, so other bodies (the avatar) never block a pick.
 const PICK_LAYER: int = 2
+## Every walker's pick body is on this layer alone (layer 3, as a mask bit like PICK_LAYER). One ray
+## looks at both, so a walker standing in front of its building takes the click. The body is on none.
+const WALKER_PICK_LAYER: int = 4
+## Wanderers shown at once; keepers, workers and the partner always show on top of it.
+## ⚠️ PROVISIONAL — measured on one RTX 4090 only: 830 fps average at 16 wanderers, 23 figures
+## (ig-6m2.6.2 notes) · Settled by: the same run on weaker hardware or a fuller town.
+const AMBIENT_HERO_CAP: int = 16
+## A wanderer with a House ends every HOME_EVERY-th trip at its door.
+const HOME_EVERY: int = 4
 ## Where a new body stands, in town space: the open ground in front of the Training Hall.
 const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
 ## Close enough to a building's centre to count as there. A body stopped on a corner of a 3 m
 ## building stands 2.12 + 0.4 (its radius) = 2.52 m out, so this covers every approach.
 const ARRIVE_RADIUS: float = 2.8
-## Where a bonded partner stands without a House: beside the spawn, outside TownPartner.REARM_DISTANCE
-## so the greeting waits for the player to walk over.
-const PARTNER_SPAWN_OFFSET: Vector3 = Vector3(4.0, 0.0, -3.0)
-## In front of its House, clear of the 4.5 m pick box.
-const PARTNER_DOOR_OFFSET: Vector3 = Vector3(0.0, 0.0, 2.8)
 ## A walker this close to a WorkSpot stands at it.
 const AT_SPOT: float = 0.05
 
 ## The embodied hero, or null when the town is seen from the overview camera.
 var body: TownHero
-## The body's bonded partner standing in town, or null.
-var partner: TownPartner
+## The body's bonded partner's walker, or null (no body, no partner, or not shown).
+var partner: TownWalker:
+	get:
+		return walkers.get(_partner_id) if body != null else null
 ## False while a building or the pause menu is open: no building click counts, and the body
 ## neither walks nor zooms.
 var input_enabled: bool = true:
@@ -59,7 +68,8 @@ var placing: StringName = &""
 var _overview_camera: Camera3D
 ## Building id (halls included) -> its node, a direct child named by id so building_at and walk_to find it.
 var _placed: Dictionary[String, Node3D] = {}
-## Keepers' and workers' figures by hero id (ig-6m2.6.1); show_walkers keeps them in step with hub.gd.
+## Every in-town hero's figure by hero id: keepers and workers (ig-6m2.6.1), wanderers up to the cap
+## and the partner (ig-6m2.6.2). show_walkers keeps them in step with hub.gd.
 var walkers: Dictionary[String, TownWalker] = {}
 ## The walk graph (ig-6m2.6, the walkable area): one point per map hex centre, its id the hex's index
 ## in map_hexes, joined to its six neighbours. A hex with a building is disabled.
@@ -68,6 +78,12 @@ var _hexes: Array[Vector2i] = []
 var _hex_ids: Dictionary[Vector2i, int] = {}
 ## Hex -> the id of the building on it.
 var _occupied: Dictionary[Vector2i, String] = {}
+## Where wanderers go: the free hexes that touch a building (the streets, not the empty map edge).
+var _streets: Array[Vector2i] = []
+## A hall's free approach hex -> the hall: a wanderer there uses its stall.
+var _stalls: Dictionary[Vector2i, String] = {}
+var _partner_id: String = ""
+var _partner_line: String = ""
 var _walkers_shown: bool = false
 ## The hero who just stopped being the body and where it stood (town space), for the next show_walkers.
 var _stepped_out: Dictionary = {}
@@ -110,6 +126,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if hit != null:
 			get_viewport().set_input_as_handled()
 			hex_selected.emit(TownRules.world_to_hex(hit as Vector3))
+		return
+	var picked: Node = _pick(click.position)
+	if picked is TownWalker:
+		get_viewport().set_input_as_handled()
+		hero_selected.emit((picked as TownWalker).hero_id)
 		return
 	var building_id: StringName = building_at(click.position)
 	if building_id == &"":
@@ -160,23 +181,24 @@ static func walk_bounds() -> Rect2:
 	return rect.grow(TownRules.HEX_SIZE)
 
 
-## Stands hero in town as the body's bonded partner, saying line on meeting; null (or no body)
-## removes it. hub.gd picks who and what; the same hero again keeps its figure, so a refresh does
-## not replay the greeting. It stands at its House if it has one, else beside the spawn.
+## Makes hero the body's bonded partner, saying line on meeting; null (or no body) makes no one.
+## hub.gd picks who and what, and lists the partner in show_walkers like anyone in town: its own
+## walker greets, and walks, works or wanders by its role. The same hero again keeps its greeting
+## state, so a refresh does not replay it.
 func show_partner(hero: Hero, line: String) -> void:
-	if partner != null and (hero == null or body == null or partner.hero_id != hero.instance_id):
-		remove_child(partner)
-		partner.queue_free()
-		partner = null
-	if hero == null or body == null:
-		return
-	if partner == null:
-		partner = TownPartner.create(hero)
-		add_child(partner)
-	partner.line = line
-	partner.follow(body)
-	var house: Node3D = _placed.get(str(hero.home))
-	partner.position = house.position + PARTNER_DOOR_OFFSET if house != null else BODY_SPAWN + PARTNER_SPAWN_OFFSET
+	var id: String = "" if hero == null or body == null else hero.instance_id
+	if id != _partner_id and walkers.has(_partner_id):
+		walkers[_partner_id].follow(null)
+	_partner_id = id
+	_partner_line = line
+	_attach_partner()
+
+
+func _attach_partner() -> void:
+	var walker: TownWalker = walkers.get(_partner_id)
+	if walker != null:
+		walker.line = _partner_line
+		walker.follow(body)
 
 
 ## Spawns what is new in buildings (GameSession.town_buildings), stands each on its hex (a move) and
@@ -212,6 +234,21 @@ func _update_graph(buildings: Array[Dictionary]) -> void:
 	_occupied = occupied
 	for index: int in _hexes.size():
 		_graph.set_point_disabled(index, _occupied.has(_hexes[index]))
+	_streets.clear()
+	for hex: Vector2i in _hexes:
+		if _occupied.has(hex):
+			continue
+		for step: Vector2i in TownRules.AXIAL_DIRECTIONS:
+			if _occupied.has(hex + step):
+				_streets.append(hex)
+				break
+	_stalls.clear()
+	for id: String in _occupied.values():
+		if TownRules.type_of(StringName(id)) != &"":
+			continue
+		for hex: Vector2i in approach_hexes(StringName(id)):
+			if not _occupied.has(hex) and not _stalls.has(hex):
+				_stalls[hex] = id
 	if body != null:
 		var standing: Vector3 = to_local(body.global_position)
 		if TownRules.world_to_hex(standing) in fresh:
@@ -220,34 +257,47 @@ func _update_graph(buildings: Array[Dictionary]) -> void:
 		# A station that is gone frees its figure on the next show_walkers.
 		if _placed.has(str(walker.station)):
 			_plan(walker, false)
+		elif walker.station == Hero.NO_STATION:
+			_wander(walker, false)
 
 
-## Draws each of heroes (hub.gd's keepers and workers in town) walking between its House door and its
-## station's WorkSpot, and frees the figures of heroes no longer listed. It reads hero.station and
-## hero.home only. A hero whose station and House are unchanged keeps its figure and its walk, so the
-## 0.25 s pulse changes nothing. A new figure starts at work on the first show, where the body stood
-## for the hero who just stepped out of it, and otherwise at the TownGate, walking in.
+## Draws heroes (hub.gd's in-town heroes, in pick order) and frees the figures of heroes no longer
+## listed. A hero whose station is placed walks between its House door and the station's WorkSpot;
+## any other wanders, the first AMBIENT_HERO_CAP of them in list order, and the partner always. It
+## reads hero.station and hero.home only. A hero whose station and House are unchanged keeps its
+## figure and its walk, so the 0.25 s pulse changes nothing. A new figure starts at work (or on a
+## street) on the first show, where the body stood for the hero who just stepped out of it, and
+## otherwise at the TownGate, walking in. A hero whose role changes re-plans from where it stands.
 func show_walkers(heroes: Array[Hero]) -> void:
 	var wanted: Dictionary[String, bool] = {}
+	var wanderers: int = 0
 	for hero: Hero in heroes:
-		if not _placed.has(str(hero.station)):
-			continue
+		var works: bool = _placed.has(str(hero.station))
+		if not works and hero.instance_id != _partner_id:
+			if wanderers >= AMBIENT_HERO_CAP:
+				continue
+			wanderers += 1
 		wanted[hero.instance_id] = true
+		var station: StringName = hero.station if works else Hero.NO_STATION
 		var walker: TownWalker = walkers.get(hero.instance_id)
-		if walker != null and walker.station == hero.station and walker.home == hero.home:
+		if walker != null and walker.station == station and walker.home == hero.home:
 			continue
 		if walker == null:
 			walker = TownWalker.create(hero)
+			walker.planner = _wander.bind(walker, false)
 			add_child(walker)
 			walkers[hero.instance_id] = walker
 			if _stepped_out.get("hero_id", "") == hero.instance_id:
 				walker.position = _stepped_out["at"]
 			elif _placed.has("TownGate"):
 				walker.position = work_spot(&"TownGate")
-		walker.station = hero.station
+		walker.station = station
 		walker.home = hero.home
 		walker.heading_home = false
-		_plan(walker, not _walkers_shown)
+		if works:
+			_plan(walker, not _walkers_shown)
+		else:
+			_wander(walker, not _walkers_shown and _stepped_out.get("hero_id", "") != hero.instance_id)
 	for id: String in walkers.keys():
 		if not wanted.has(id):
 			remove_child(walkers[id])
@@ -255,6 +305,36 @@ func show_walkers(heroes: Array[Hero]) -> void:
 			walkers.erase(id)
 	_walkers_shown = true
 	_stepped_out = {}
+	_attach_partner()
+
+
+## A wanderer's next trip from where it stands: to a street hex its RNG picks, where it uses the stall
+## (a hall's approach hex: it faces the hall and plays Interact) or stands (Idle_B); every HOME_EVERY-th
+## trip ends at its House door instead (Idle_A). first: already out on a street, a random way into its
+## linger. No street, or no way there: it stands where it is and tries again after a linger.
+func _wander(walker: TownWalker, first: bool) -> void:
+	walker.trips += 1
+	if not first and _placed.has(str(walker.home)) and walker.trips % HOME_EVERY == 0:
+		var home_lead: PackedVector3Array = _lead(walker, walker.home)
+		if not home_lead.is_empty():
+			walker.wander(home_lead, &"Idle_A", _yaw(_placed[str(walker.home)].position, work_spot(walker.home)))
+			return
+	if _streets.is_empty():
+		walker.linger_at(walker.position, &"Idle_B", NAN, TownWalker.LINGER_SECONDS)
+		return
+	var hex: Vector2i = _streets[walker.rng.randi() % _streets.size()]
+	var at: Vector3 = TownRules.hex_to_world(hex)
+	var hall: String = _stalls.get(hex, "")
+	var clip: StringName = &"Interact" if hall != "" else &"Idle_B"
+	var yaw: float = _yaw(at, _placed[hall].position) if hall != "" else NAN
+	if first:
+		walker.linger_at(at, clip, yaw, walker.rng.randf() * TownWalker.LINGER_SECONDS)
+		return
+	var lead: PackedVector3Array = _lead(walker, at)
+	if lead.is_empty():
+		walker.linger_at(walker.position, &"Idle_B", NAN, TownWalker.LINGER_SECONDS)
+	else:
+		walker.wander(lead, clip, yaw)
 
 
 ## Gives walker its House <-> work loop and sends it from where it stands to where it is heading. No
@@ -286,10 +366,11 @@ func _plan(walker: TownWalker, first: bool) -> void:
 		walker.walk(lead, TownWalker.REST if walker.heading_home else TownWalker.WORK)
 
 
-## The walk from where walker stands to target's WorkSpot. At a building's WorkSpot it leaves through
-## that building's approach hexes. Anywhere else on a building's hex (built over), or at a spot whose
-## approach hexes are all taken, it first steps onto the nearest free ground.
-func _lead(walker: TownWalker, target: StringName) -> PackedVector3Array:
+## The walk from where walker stands to target (a building's WorkSpot, or a point on free ground). At a
+## building's WorkSpot it leaves through that building's approach hexes. Anywhere else on a building's
+## hex (built over), or at a spot whose approach hexes are all taken, it first steps onto the nearest
+## free ground.
+func _lead(walker: TownWalker, target: Variant) -> PackedVector3Array:
 	var at: Vector3 = walker.position
 	var on: String = _occupied.get(TownRules.world_to_hex(at), "")
 	if on == "":
@@ -414,15 +495,23 @@ func ground_point(screen_position: Vector2) -> Variant:
 	return null if hit == null else to_local(hit as Vector3)
 
 
-## A building's id is its node name; its pick body is a direct child of it. Only the town's own
-## bodies count, so nothing else in the world can name a building.
+## The building a click at screen_position names, or &"" (nothing, or a walker in front of it). A
+## building's id is its node name.
 func building_at(screen_position: Vector2) -> StringName:
+	var picked: Node = _pick(screen_position)
+	return &"" if picked == null or picked is TownWalker else StringName(picked.name)
+
+
+## What a click at screen_position lands on: the nearest building or walker under it (the owner of the
+## pick body, which is a direct child of it), or null. One ray over both pick layers. Only the town's
+## own bodies count, so nothing else in the world can name one.
+func _pick(screen_position: Vector2) -> Node:
 	var camera: Camera3D = get_viewport().get_camera_3d()
 	if camera == null:
-		return &""
+		return null
 	var from: Vector3 = camera.project_ray_origin(screen_position)
-	var query := PhysicsRayQueryParameters3D.create(from, from + camera.project_ray_normal(screen_position) * PICK_DISTANCE, PICK_LAYER)
+	var query := PhysicsRayQueryParameters3D.create(from, from + camera.project_ray_normal(screen_position) * PICK_DISTANCE, PICK_LAYER | WALKER_PICK_LAYER)
 	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty() or not is_ancestor_of(hit["collider"] as Node):
-		return &""
-	return (hit["collider"] as Node).get_parent().name
+		return null
+	return (hit["collider"] as Node).get_parent()
