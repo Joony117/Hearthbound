@@ -12,7 +12,7 @@ size = Vector3(3, 3, 3)
 script = ExtResource("1_town")
 
 [node name="SummoningCircle" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 1.5, 0)
 mesh = SubResource("BoxMesh_1")
 
 [node name="Label" type="Label3D" parent="SummoningCircle"]
@@ -28,7 +28,7 @@ collision_layer = 2
 shape = SubResource("BoxShape_1")
 
 [node name="Forge" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 1.5, 0)
 mesh = SubResource("BoxMesh_1")
 
 [node name="Label" type="Label3D" parent="Forge"]
@@ -60,7 +60,7 @@ collision_layer = 2
 shape = SubResource("BoxShape_1")
 
 [node name="Sanctum" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 1.5, 0)
 mesh = SubResource("BoxMesh_1")
 
 [node name="Label" type="Label3D" parent="Sanctum"]
@@ -76,7 +76,7 @@ collision_layer = 2
 shape = SubResource("BoxShape_1")
 
 [node name="Reliquary" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 1.5, 0)
 mesh = SubResource("BoxMesh_1")
 
 [node name="Label" type="Label3D" parent="Reliquary"]
@@ -92,7 +92,7 @@ collision_layer = 2
 shape = SubResource("BoxShape_1")
 
 [node name="TownGate" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, 1.5, -8)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 1.5, -10.3923)
 mesh = SubResource("BoxMesh_1")
 
 [node name="Label" type="Label3D" parent="TownGate"]
@@ -108,7 +108,7 @@ collision_layer = 2
 shape = SubResource("BoxShape_1")
 
 [node name="Apothecary" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, 1.5, -8)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 1.5, -10.3923)
 mesh = SubResource("BoxMesh_1")
 
 [node name="Label" type="Label3D" parent="Apothecary"]

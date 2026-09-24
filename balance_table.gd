@@ -151,3 +151,11 @@ extends Resource
 @export var battle_supply_allocation_cap: int = 100
 @export var healing_supply_parts_cost: int = 5
 @export var revival_supply_parts_cost: int = 15
+# Town builder, first slice (SYSTEMS.md § Town builder; every row there is PROVISIONAL, unplayed).
+@export var town_map_radius: int = 8
+@export var town_start_wood: float = 40.0
+@export var house_wood_cost: int = 10
+@export var house_capacity: int = 1
+@export var lumbermill_wood_cost: int = 20
+@export var lumbermill_worker_slots: int = 2
+@export var wood_per_worker_minute: float = 1.0

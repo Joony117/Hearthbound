@@ -33,6 +33,7 @@ static func build(root: Control, confirm_dialog: ConfirmationDialog, enhance_dia
 	_build_selected_hero(content)
 	_build_hall(content)
 	_build_keeper(content)
+	_build_placed(content)
 	_build_footer(root)
 	_build_confirm_dialog(confirm_dialog)
 	_build_enhance_dialog(enhance_dialog)
@@ -77,6 +78,8 @@ static func _build_header(root: Control) -> void:
 	essence.theme_type_variation = &"SectionHeading"
 	_label(header, "·", "TurnSeparator").theme_type_variation = &"SectionHeading"
 	_label(header, "Turn 0", "Turns", true).theme_type_variation = &"SectionHeading"
+	_label(header, "·", "WoodSeparator").theme_type_variation = &"SectionHeading"
+	_label(header, "Wood: 0", "Wood", true).theme_type_variation = &"SectionHeading"
 
 
 static func _build_nav(root: Control) -> void:
@@ -91,6 +94,13 @@ static func _build_nav(root: Control) -> void:
 		key.physical_keycode = (KEY_1 + index) as Key
 		button.shortcut = Shortcut.new()
 		button.shortcut.events = [key]
+	var build := MenuButton.new()
+	_add(nav, build, "Build", true)
+	build.text = "Build"
+	# hub.gd writes each item's price; the first Lumbermill is free.
+	for type: StringName in TownRules.TYPES:
+		build.get_popup().add_item(String(type))
+		build.get_popup().set_item_metadata(build.get_popup().item_count - 1, type)
 	_button(nav, "Close · Esc", "ClosePanel", true).visible = false
 
 
@@ -399,6 +409,28 @@ static func _build_keeper(content: Control) -> void:
 	_button(row, "Unassign", "UnassignKeeper", true)
 	var picker := PopupMenu.new()
 	_add(panel, picker, "KeeperPicker", true)
+
+
+## A placed House or Lumbermill: who lives or works there, and the assign/clear pair.
+static func _build_placed(content: Control) -> void:
+	var panel := _panel(content, "PlacedBuildingPanel", true)
+	panel.visible = false
+	_stop_clicks(panel)
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.offset_left = -240.0
+	panel.offset_right = 240.0
+	var box := _vbox(panel, "VBox")
+	var title := _label(box, "", "PlacedTitle", true)
+	title.theme_type_variation = &"SectionHeading"
+	var info := _label(box, "", "PlacedInfo", true)
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var row := HBoxContainer.new()
+	_add(box, row, "Row")
+	_button(row, "Assign", "PlacedAssign", true).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_button(row, "Clear", "PlacedClear", true).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var picker := PopupMenu.new()
+	_add(panel, picker, "PlacedPicker", true)
 
 
 static func _upgrade_row(parent: Node, level_name: String, building_name: String, button_name: String) -> void:

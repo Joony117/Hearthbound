@@ -15,6 +15,8 @@ const BUILDING_PANELS: Dictionary = {
 	&"TownGate": [&"ExpeditionsView"],
 	&"Apothecary": [&"HallView", &"SupplySection", &"KeeperPanel"],
 }
+## What a placed House or Lumbermill opens; its id is not a BUILDING_PANELS key.
+const PLACED_PANEL: StringName = &"PlacedBuildingPanel"
 const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 	preload("res://zones/defs/verdant_outskirts.tres"),
 	preload("res://zones/defs/ashfall_reaches.tres"),
@@ -28,6 +30,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _target_option: OptionButton = %TargetOption
 @onready var _essence: Label = %Essence
 @onready var _stones: Label = %Stones
+@onready var _wood: Label = %Wood
 @onready var _turns: Label = %Turns
 @onready var _lost_cache_list: ItemList = %LostCacheList
 @onready var _recovery_clock_status: Label = %RecoveryClockStatus
@@ -108,6 +111,8 @@ var _selected_item_ids: Array[String] = []
 var _editing_preset_id: String = ""
 var _open_building: StringName = NO_BUILDING
 var _order_structure_key: String = ""
+# True while the placed-building picker lists who to take out, false while it lists who to put in.
+var _placed_picker_clears: bool = false
 
 
 func _enter_tree() -> void:
@@ -131,6 +136,9 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_body)
 	GameSession.roster_changed.connect(_refresh_keeper)
 	GameSession.expeditions_changed.connect(_refresh_keeper)
+	GameSession.roster_changed.connect(_refresh_town)
+	GameSession.expeditions_changed.connect(_refresh_wood)
+	GameSession.expeditions_changed.connect(_refresh_placed_panel)
 	GameSession.expeditions_changed.connect(_on_expeditions_changed)
 	GameSession.battle_changed.connect(_on_battle_changed)
 	_populate_rank_filter(_roster_rank_filter)
@@ -155,6 +163,7 @@ func _ready() -> void:
 	_refresh_zone_unlocks()
 	_refresh_director_ui()
 	_refresh_body()
+	_refresh_town()
 	_open(NO_BUILDING)
 	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
 	_show_pending_arena_result()
@@ -162,6 +171,11 @@ func _ready() -> void:
 
 func _connect_ui_signals() -> void:
 	%Town.building_selected.connect(_open)
+	%Town.hex_selected.connect(_on_hex_selected)
+	(%Build as MenuButton).get_popup().index_pressed.connect(_on_build_picked)
+	%PlacedAssign.pressed.connect(_on_placed_assign_pressed)
+	%PlacedClear.pressed.connect(_on_placed_clear_pressed)
+	%PlacedPicker.index_pressed.connect(_on_placed_picked)
 	for building_id: StringName in BUILDING_PANELS:
 		_building_button(building_id).pressed.connect(_open.bind(building_id))
 	_close_panel.pressed.connect(_open.bind(NO_BUILDING))
@@ -253,8 +267,11 @@ func _connect_ui_signals() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		# Esc closes the open building first; only an empty town opens the pause menu.
-		if _open_building != NO_BUILDING and not _pause_menu.visible:
+		# Esc stops placing, then closes the open building; only an empty town opens the pause menu.
+		if %Town.placing != &"" and not _pause_menu.visible:
+			%Town.placing = &""
+			_status.text = "Stopped building."
+		elif _open_building != NO_BUILDING and not _pause_menu.visible:
 			_open(NO_BUILDING)
 		else:
 			_pause_menu.visible = not _pause_menu.visible
@@ -642,7 +659,8 @@ func _profession_text(hero: Hero) -> String:
 	for profession: StringName in Hero.PROFESSIONS:
 		skills.append("%s %d" % [str(profession).capitalize(), Hero.profession_skill(hero, profession, BALANCE)])
 	var station: String = "none" if hero.station == Hero.NO_STATION else str(hero.station).capitalize()
-	return "Passions: %s\nSkills: %s\nStation: %s" % [_passions_text(hero), ", ".join(skills), station]
+	var home: String = "none" if hero.home == Hero.NO_HOME else str(hero.home).capitalize()
+	return "Passions: %s\nSkills: %s\nStation: %s\nHome: %s" % [_passions_text(hero), ", ".join(skills), station, home]
 
 
 func _passions_text(hero: Hero) -> String:
@@ -740,11 +758,13 @@ func _populate_protection_filter() -> void:
 ## Opens one building's panel, or none (NO_BUILDING) so the town shows.
 func _open(building_id: StringName) -> void:
 	var closing: StringName = _open_building
-	_open_building = building_id if BUILDING_PANELS.has(building_id) else NO_BUILDING
-	var shown: Array = BUILDING_PANELS.get(_open_building, [])
+	%Town.placing = &""
+	_open_building = building_id if BUILDING_PANELS.has(building_id) or _is_placed(building_id) else NO_BUILDING
+	var shown: Array = BUILDING_PANELS.get(_open_building, [PLACED_PANEL] if _is_placed(_open_building) else [])
 	for panels: Array in BUILDING_PANELS.values():
 		for panel_name: StringName in panels:
 			(get_node("%%%s" % panel_name) as Control).visible = shown.has(panel_name)
+	(get_node("%%%s" % PLACED_PANEL) as Control).visible = shown.has(PLACED_PANEL)
 	for other: StringName in BUILDING_PANELS:
 		_building_button(other).theme_type_variation = &"ActiveNavButton" if other == _open_building else &""
 	_close_panel.visible = _open_building != NO_BUILDING
@@ -753,10 +773,11 @@ func _open(building_id: StringName) -> void:
 	($UI/Root as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE if _open_building == NO_BUILDING else Control.MOUSE_FILTER_STOP
 	# Focus stays on the building list, so every panel is reachable without a mouse.
 	var focus: StringName = _open_building if _open_building != NO_BUILDING else closing
-	if focus != NO_BUILDING:
+	if BUILDING_PANELS.has(focus):
 		_building_button(focus).grab_focus()
 	_sync_town_walk()
 	_refresh_keeper()
+	_refresh_placed_panel()
 	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
 
@@ -772,6 +793,130 @@ func _refresh_body() -> void:
 	%Town.embody(body)
 	%StepOut.visible = body != null
 	%Hint.text = "WASD · Walk   Wheel · Zoom   1–7 · Buildings   Esc · Close / Pause" if body != null else "1–7 · Buildings   Esc · Close / Pause"
+
+
+func _is_placed(building_id: StringName) -> bool:
+	return TownRules.type_of(building_id) != &"" and not GameSession.town_building(building_id).is_empty()
+
+
+func _refresh_town() -> void:
+	%Town.show_buildings(GameSession.town_buildings)
+	var menu: PopupMenu = (%Build as MenuButton).get_popup()
+	for index: int in menu.item_count:
+		var type: StringName = menu.get_item_metadata(index)
+		menu.set_item_text(index, "%s · %d wood" % [type, TownRules.wood_cost(type, GameSession.town_buildings, BALANCE)])
+	_refresh_wood()
+	_refresh_placed_panel()
+
+
+func _refresh_wood() -> void:
+	_wood.text = "Wood: %d" % floori(float(GameSession.town_resources["wood"]))
+
+
+## Placing starts from the bare town; the next hex click places or says why not.
+func _on_build_picked(index: int) -> void:
+	var type: StringName = (%Build as MenuButton).get_popup().get_item_metadata(index)
+	_open(NO_BUILDING)
+	%Town.placing = type
+	_status.text = "Click a free hex for the %s (%d wood). Esc cancels." % [type, TownRules.wood_cost(type, GameSession.town_buildings, BALANCE)]
+
+
+func _on_hex_selected(hex: Vector2i) -> void:
+	var type: StringName = %Town.placing
+	var plan: Dictionary = GameSession.preview_place_building(type, hex)
+	if GameSession.place_building(type, hex):
+		%Town.placing = &""
+		_status.text = "Built %s for %d wood." % [str(plan["id"]).capitalize(), int(plan["cost"])]
+	else:
+		_status.text = "%s Esc cancels." % GameSession.last_action_error
+
+
+## The open House's resident or Lumbermill's workers, "Away" for one who is out, and the wood rate.
+func _refresh_placed_panel() -> void:
+	if not _is_placed(_open_building):
+		return
+	var house: bool = TownRules.type_of(_open_building) == TownRules.HOUSE
+	var people: Array[Hero] = _placed_people()
+	var names: PackedStringArray = []
+	var home_count: int = 0
+	for hero: Hero in people:
+		var away: bool = GameSession.is_hero_busy(hero)
+		names.append("%s · Away" % hero.hero_name if away else hero.hero_name)
+		home_count += 0 if away else 1
+	var who: String = "none" if names.is_empty() else ", ".join(names)
+	%PlacedTitle.text = str(_open_building).capitalize().to_upper()
+	if house:
+		%PlacedInfo.text = "Resident %d/%d: %s" % [people.size(), BALANCE.house_capacity, who]
+	else:
+		%PlacedInfo.text = "Workers %d/%d: %s\nMakes %.1f wood a minute" % [
+			people.size(), TownRules.worker_slots(TownRules.LUMBERMILL, BALANCE), who,
+			TownRules.wood_made(home_count, 60.0, BALANCE),
+		]
+	%PlacedAssign.text = "Assign resident" if house else "Assign worker"
+	%PlacedClear.text = "Move out" if house else "Unassign"
+	%PlacedAssign.disabled = SaveService.load_blocked
+	%PlacedClear.disabled = people.is_empty() or SaveService.load_blocked
+
+
+func _placed_people() -> Array[Hero]:
+	if TownRules.type_of(_open_building) == TownRules.HOUSE:
+		return GameSession.residents_of(_open_building)
+	return GameSession.workers_at(_open_building)
+
+
+## The shared roster picker: every hero, with where it lives and works. Rows hold ids (a failed save
+## rebuilds the roster while the popup is open).
+func _on_placed_assign_pressed() -> void:
+	var picker: PopupMenu = %PlacedPicker
+	picker.clear()
+	for hero: Hero in GameSession.roster:
+		var marks: String = ""
+		if hero.home != Hero.NO_HOME:
+			marks += " · lives in %s" % str(hero.home).capitalize()
+		if hero.station != Hero.NO_STATION:
+			marks += " · works at %s" % str(hero.station).capitalize()
+		picker.add_item("%s%s" % [hero.hero_name, marks])
+		picker.set_item_metadata(picker.item_count - 1, hero.instance_id)
+	_placed_picker_clears = false
+	if picker.item_count == 0:
+		_status.text = "No heroes to assign."
+		return
+	picker.popup_centered()
+
+
+## One person here is taken out at once; more open the picker to choose.
+func _on_placed_clear_pressed() -> void:
+	var people: Array[Hero] = _placed_people()
+	_placed_picker_clears = true
+	if people.size() == 1:
+		_apply_placed_pick(people[0])
+		return
+	var picker: PopupMenu = %PlacedPicker
+	picker.clear()
+	for hero: Hero in people:
+		picker.add_item(hero.hero_name)
+		picker.set_item_metadata(picker.item_count - 1, hero.instance_id)
+	picker.popup_centered()
+
+
+func _on_placed_picked(index: int) -> void:
+	_apply_placed_pick(GameSession.hero_by_id(str(%PlacedPicker.get_item_metadata(index))))
+
+
+func _apply_placed_pick(hero: Hero) -> void:
+	var place: String = str(_open_building).capitalize()
+	var house: bool = TownRules.type_of(_open_building) == TownRules.HOUSE
+	var done: bool
+	if house:
+		done = GameSession.clear_home(hero) if _placed_picker_clears else GameSession.assign_home(hero, _open_building)
+	else:
+		done = GameSession.unstation_hero(hero) if _placed_picker_clears else GameSession.station_hero(hero, _open_building)
+	if not done:
+		_status.text = GameSession.last_action_error
+	elif house:
+		_status.text = ("%s moved out of %s." if _placed_picker_clears else "%s moved into %s.") % [hero.hero_name, place]
+	else:
+		_status.text = ("%s left the %s." if _placed_picker_clears else "%s works at the %s.") % [hero.hero_name, place]
 
 
 func _on_step_out_pressed() -> void:
@@ -1548,16 +1693,27 @@ func _refresh_dispatch_summary() -> void:
 	%BattleSettingsToggle.text = "Battle settings · allocation per %s" % ("force/order" if _combine_teams.button_pressed else "team/order")
 
 
-## Keepers can be sent out; this only says which counters stand empty meanwhile. Not a modal.
+## Keepers and workers can be sent out; this only says which counters stand empty and which
+## workplaces run short meanwhile. Not a modal.
 func _absent_keepers_text() -> String:
 	var absent: PackedStringArray = []
+	var short: Dictionary[StringName, Array] = {}
 	for row: int in _preset_dispatch_list.get_selected_items():
 		var preset: Dictionary = _preset_dispatch_list.get_item_metadata(row) as Dictionary
 		for hero_id: Variant in preset.get("hero_ids", []) as Array:
 			var hero: Hero = GameSession.hero_by_id(str(hero_id))
-			if hero != null and hero.station != Hero.NO_STATION:
+			if hero == null or hero.station == Hero.NO_STATION:
+				continue
+			if TownRules.is_workplace_id(hero.station):
+				short.get_or_add(hero.station, []).append(hero.hero_name)
+			else:
 				absent.append("%s (%s)" % [str(hero.station).capitalize(), hero.hero_name])
-	return "" if absent.is_empty() else "Runs without its keeper while away: %s" % ", ".join(absent)
+	var lines: PackedStringArray = []
+	if not absent.is_empty():
+		lines.append("Runs without its keeper while away: %s" % ", ".join(absent))
+	for workplace: StringName in short:
+		lines.append("%s runs short while away (%s)" % [str(workplace).capitalize(), ", ".join(PackedStringArray(short[workplace]))])
+	return "\n".join(lines)
 
 
 func _on_battle_settings_toggle_pressed() -> void:

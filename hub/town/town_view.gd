@@ -6,6 +6,17 @@ extends Node3D
 ## With an embodied hero, a click walks the hero to the building and names it on arrival.
 
 signal building_selected(building_id: StringName)
+## While placing, a left click names the hex under it instead of a building. hub.gd places or refuses.
+signal hex_selected(hex: Vector2i)
+
+const BALANCE: BalanceTable = preload("res://balance.tres")
+const HEX_TILE: PackedScene = preload("res://hub/town/models/hexagon/hex_grass.gltf")
+const MODELS: Dictionary[StringName, PackedScene] = {
+	TownRules.HOUSE: preload("res://hub/town/models/hexagon/building_home_A_blue.gltf"),
+	TownRules.LUMBERMILL: preload("res://hub/town/models/hexagon/building_lumbermill_blue.gltf"),
+}
+## A placed building's pick box: covers the Lumbermill (4.1 m at x3.0) and the House.
+const PLACED_PICK_SIZE: Vector3 = Vector3(4.5, 3.0, 4.5)
 
 const PICK_DISTANCE: float = 200.0
 ## town.tscn puts every building's Pick body on this layer alone, so other bodies (the avatar) never block a pick.
@@ -15,7 +26,7 @@ const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
 ## Close enough to a building's centre to count as there. A body stopped on a corner of a 3 m
 ## building stands 2.12 + 0.4 (its radius) = 2.52 m out, so this covers every approach.
 const ARRIVE_RADIUS: float = 2.8
-## hub.tscn's Ground is a 48 m square at the town's origin; the body keeps its 0.4 m radius on it.
+## The body walks a 48 m square around the town's origin, keeping its 0.4 m radius inside it.
 const WALK_HALF_EXTENT: float = 23.6
 
 ## The embodied hero, or null when the town is seen from the overview camera.
@@ -27,7 +38,28 @@ var input_enabled: bool = true:
 		input_enabled = value
 		if body != null:
 			body.controls_enabled = value
+## The building type being placed, or &"" when a click picks buildings.
+var placing: StringName = &""
 var _overview_camera: Camera3D
+## Placed building id -> its node, a direct child named by id so building_at and walk_to find it.
+var _placed: Dictionary[String, Node3D] = {}
+
+
+func _ready() -> void:
+	var tile: Node = HEX_TILE.instantiate()
+	var tile_mesh: Mesh = (tile.find_children("*", "MeshInstance3D")[0] as MeshInstance3D).mesh
+	tile.free()
+	var hexes: Array[Vector2i] = TownRules.map_hexes(BALANCE)
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = tile_mesh
+	multimesh.instance_count = hexes.size()
+	for index: int in hexes.size():
+		multimesh.set_instance_transform(index, Transform3D(Basis.from_scale(Vector3.ONE * TownRules.MODEL_SCALE), TownRules.hex_to_world(hexes[index])))
+	var ground := MultiMeshInstance3D.new()
+	ground.name = "HexGround"
+	ground.multimesh = multimesh
+	add_child(ground)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -35,6 +67,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if click == null or not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
 		return
 	if not input_enabled:
+		return
+	if placing != &"":
+		var hit: Variant = ground_point(click.position)
+		if hit != null:
+			get_viewport().set_input_as_handled()
+			hex_selected.emit(TownRules.world_to_hex(hit as Vector3))
 		return
 	var building_id: StringName = building_at(click.position)
 	if building_id == &"":
@@ -71,6 +109,56 @@ func embody(hero: Hero) -> void:
 	body.global_position = standing
 	body.camera.make_current()
 	body.arrived.connect(building_selected.emit)
+
+
+## Spawns what is new in buildings (GameSession.town_buildings) and frees what is gone. It only draws.
+func show_buildings(buildings: Array[Dictionary]) -> void:
+	var wanted: Dictionary[String, bool] = {}
+	for building: Dictionary in buildings:
+		var id: String = building["id"]
+		wanted[id] = true
+		if not _placed.has(id):
+			_placed[id] = _spawn_building(id, StringName(building["type"]), Vector2i(building["q"], building["r"]))
+	for id: String in _placed.keys():
+		if not wanted.has(id):
+			_placed[id].queue_free()
+			_placed.erase(id)
+
+
+func _spawn_building(id: String, type: StringName, hex: Vector2i) -> Node3D:
+	var node := Node3D.new()
+	node.name = id
+	node.position = TownRules.hex_to_world(hex)
+	var model := MODELS[type].instantiate() as Node3D
+	model.scale = Vector3.ONE * TownRules.MODEL_SCALE
+	node.add_child(model)
+	var label := Label3D.new()
+	label.text = id.capitalize()
+	# Smaller than a hall's 0.02: placed buildings stand nearer the overview camera and would cover the halls.
+	label.pixel_size = 0.014
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.position.y = 4.4
+	node.add_child(label)
+	var pick := StaticBody3D.new()
+	pick.name = "Pick"
+	pick.collision_layer = PICK_LAYER
+	var shape := CollisionShape3D.new()
+	shape.shape = BoxShape3D.new()
+	(shape.shape as BoxShape3D).size = PLACED_PICK_SIZE
+	shape.position.y = PLACED_PICK_SIZE.y / 2.0
+	pick.add_child(shape)
+	node.add_child(pick)
+	add_child(node)
+	return node
+
+
+## Where the ray under screen_position meets the ground, in town space; null when it never does.
+func ground_point(screen_position: Vector2) -> Variant:
+	var camera: Camera3D = get_viewport().get_camera_3d()
+	if camera == null:
+		return null
+	var hit: Variant = Plane(Vector3.UP, global_position.y).intersects_ray(camera.project_ray_origin(screen_position), camera.project_ray_normal(screen_position))
+	return null if hit == null else to_local(hit as Vector3)
 
 
 ## A building's id is its node name; its pick body is a direct child of it. Only the town's own

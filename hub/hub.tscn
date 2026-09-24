@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://hub/hub.gd" id="1_hub"]
 [ext_resource type="PackedScene" path="res://ui/pause_menu.tscn" id="2_pause"]
@@ -11,12 +11,6 @@ background_color = Color(0.11, 0.12, 0.15, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.5, 0.55, 0.66, 1)
 ambient_light_energy = 0.7
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_1"]
-size = Vector2(48, 48)
-
-[sub_resource type="StandardMaterial3D" id="Mat_ground"]
-albedo_color = Color(0.22, 0.24, 0.27, 1)
 
 [sub_resource type="SystemFont" id="SystemFontGeorgia"]
 font_names = PackedStringArray("Georgia")
@@ -33,10 +27,6 @@ transform = Transform3D(1, 0, 0, 0, 0.866, 0.5, 0, -0.5, 0.866, 0, 9, 15)
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 12, 0)
 shadow_enabled = true
-
-[node name="Ground" type="MeshInstance3D" parent="."]
-mesh = SubResource("PlaneMesh_1")
-surface_material_override/0 = SubResource("Mat_ground")
 
 [node name="Town" parent="." instance=ExtResource("4_town")]
 unique_name_in_owner = true

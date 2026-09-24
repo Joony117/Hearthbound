@@ -45,6 +45,13 @@ var recovery_clock_paused: bool = false
 ## The roster hero the player walks the town as (ARCHITECTURE.md § The town is the interface). It
 ## can be geared and ranked up, but never sent out or sacrificed; NO_BODY when there is none.
 var embodied_hero_id: String = NO_BODY
+## Placed town buildings, {id: String, type: String, q: int, r: int}, in placing order. The halls are
+## not in it yet (DECISIONS.md 2026-09-23, the town builder, items 1-3).
+var town_buildings: Array[Dictionary] = []
+## The shared stockpile. Wood is a float so a partial unit from the live tick survives a save.
+var town_resources: Dictionary = {"wood": preload("res://balance.tres").town_start_wood}
+## The n in the next placed id "<type>_<n>"; never reused.
+var town_next_id: int = 1
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
@@ -95,7 +102,7 @@ func _process(delta: float) -> void:
 	_periodic_save_accumulator += elapsed_seconds
 	if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 		_periodic_save_accumulator = 0.0
-		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused):
+		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _lumbermill_workers_home() > 0:
 			if not SaveService.save():
 				_checkpoint_save_failed = true
 				_checkpoint_error = SaveService.last_write_error
@@ -472,11 +479,20 @@ func station_hero(hero: Hero, building_id: StringName) -> bool:
 	if hero == null or not roster.has(hero):
 		last_action_error = "That hero is not on the roster."
 		return false
-	if not Hero.is_staffable(building_id):
+	var workplace: bool = TownRules.is_workplace_id(building_id) and not town_building(building_id).is_empty()
+	if not workplace and not Hero.is_staffable(building_id):
 		last_action_error = "That building takes no keeper."
 		return false
 	if hero.station == building_id:
 		return true
+	if workplace:
+		var place_name: String = String(building_id).capitalize()
+		if hero.home == Hero.NO_HOME:
+			last_action_error = "%s needs a house before working at the %s." % [hero.hero_name, place_name]
+			return false
+		if workers_at(building_id).size() >= TownRules.worker_slots(TownRules.type_of(building_id), preload("res://balance.tres")):
+			last_action_error = "The %s is full." % place_name
+			return false
 	return _commit_profile_mutation(_station_in_memory.bind(hero, building_id))
 
 
@@ -502,13 +518,117 @@ func keeper_for(building_id: StringName) -> Hero:
 	return null
 
 
-## Checked path only (_commit_profile_mutation). Clearing the old keeper keeps one per building.
+## Checked path only (_commit_profile_mutation). Clearing a hall's old keeper keeps one per hall; a
+## workplace's slot count was checked by station_hero.
 func _station_in_memory(hero: Hero, building_id: StringName) -> void:
-	var old_keeper: Hero = keeper_for(building_id)
-	if old_keeper != null:
-		old_keeper.station = Hero.NO_STATION
+	if Hero.is_staffable(building_id):
+		var old_keeper: Hero = keeper_for(building_id)
+		if old_keeper != null:
+			old_keeper.station = Hero.NO_STATION
 	hero.station = building_id
 	_notify_roster_changed()
+
+
+## The placed building with this id, or {} when there is none.
+func town_building(id: StringName) -> Dictionary:
+	for building: Dictionary in town_buildings:
+		if building["id"] == String(id):
+			return building
+	return {}
+
+
+func workers_at(building_id: StringName) -> Array[Hero]:
+	var workers: Array[Hero] = []
+	for hero: Hero in roster:
+		if hero.station == building_id:
+			workers.append(hero)
+	return workers
+
+
+func residents_of(house_id: StringName) -> Array[Hero]:
+	var residents: Array[Hero] = []
+	for hero: Hero in roster:
+		if hero.home == house_id:
+			residents.append(hero)
+	return residents
+
+
+## What place_building would do, exactly: {valid, reason, cost, id}.
+func preview_place_building(type: StringName, hex: Vector2i) -> Dictionary:
+	var plan: Dictionary = TownRules.place_plan(type, hex, town_buildings, float(town_resources["wood"]), town_next_id, preload("res://balance.tres"))
+	if SaveService.load_blocked:
+		plan["valid"] = false
+		plan["reason"] = SaveService.load_block_reason
+	return plan
+
+
+## Spends the cost exactly and takes the next id. A refusal (last_action_error) spends nothing.
+func place_building(type: StringName, hex: Vector2i) -> bool:
+	last_action_error = ""
+	var plan: Dictionary = preview_place_building(type, hex)
+	if not bool(plan["valid"]):
+		last_action_error = str(plan["reason"])
+		return false
+	return _commit_profile_mutation(_place_building_in_memory.bind(type, hex, int(plan["cost"])))
+
+
+## Checked path only (_commit_profile_mutation), after place_plan found the hex free and the wood there.
+func _place_building_in_memory(type: StringName, hex: Vector2i, cost: int) -> void:
+	town_buildings.append({"id": TownRules.new_id(type, town_next_id), "type": String(type), "q": hex.x, "r": hex.y})
+	town_next_id += 1
+	town_resources["wood"] = float(town_resources["wood"]) - cost
+	_notify_roster_changed()
+
+
+## Moves hero into house_id, leaving any old house. One hero per house (house_capacity).
+func assign_home(hero: Hero, house_id: StringName) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
+	if TownRules.type_of(house_id) != TownRules.HOUSE or town_building(house_id).is_empty():
+		last_action_error = "That is not a house."
+		return false
+	if hero.home == house_id:
+		return true
+	if residents_of(house_id).size() >= preload("res://balance.tres").house_capacity:
+		last_action_error = "%s is full." % String(house_id).capitalize()
+		return false
+	return _commit_profile_mutation(_set_home_in_memory.bind(hero, house_id))
+
+
+## A workplace job needs a home, so losing the house also ends one.
+func clear_home(hero: Hero) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
+	if hero.home == Hero.NO_HOME:
+		return true
+	return _commit_profile_mutation(_set_home_in_memory.bind(hero, Hero.NO_HOME))
+
+
+## Checked path only (_commit_profile_mutation).
+func _set_home_in_memory(hero: Hero, house_id: StringName) -> void:
+	hero.home = house_id
+	if house_id == Hero.NO_HOME and TownRules.is_workplace_id(hero.station):
+		hero.station = Hero.NO_STATION
+	_notify_roster_changed()
+
+
+## Lumbermill workers who are home (not away) right now; the live tick pays each of them.
+func _lumbermill_workers_home() -> int:
+	var working: int = 0
+	for hero: Hero in roster:
+		if TownRules.type_of(hero.station) == TownRules.LUMBERMILL and not is_hero_busy(hero):
+			working += 1
+	return working
 
 
 ## The refusal every dispatch entry point shares, naming the body; "" when the party is free of it.
@@ -1278,6 +1398,8 @@ func _hero_protection_reasons() -> Dictionary[String, String]:
 	for hero: Hero in roster:
 		if is_embodied(hero):
 			reasons[hero.instance_id] = "town body"
+		elif TownRules.is_workplace_id(hero.station):
+			reasons[hero.instance_id] = "Works at the %s" % str(hero.station).capitalize()
 		elif hero.station != Hero.NO_STATION:
 			reasons[hero.instance_id] = "Keeps the %s" % str(hero.station).capitalize()
 		elif hero.favorite:
@@ -1425,6 +1547,8 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 			_notify_battle_changed(str(order.get("id", "")))
 	if not recovery_clock_paused and not lost_caches.is_empty():
 		recovery_clock_seconds += delta_seconds
+	# Live tick only: _advance_orders_in_memory (the offline catch-up) makes nothing (GAME_SPEC.md § Hard constraints).
+	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_lumbermill_workers_home(), delta_seconds, preload("res://balance.tres"))
 	for incident: Dictionary in stranded_incidents:
 		if not bool(incident.get("paused", true)):
 			rescue_clock_seconds += delta_seconds
@@ -1971,6 +2095,9 @@ func to_dict() -> Dictionary:
 		"recovery_clock_paused": recovery_clock_paused,
 		"saved_at_unix": saved_at_unix,
 		"embodied_hero_id": embodied_hero_id,
+		"town_buildings": town_buildings.duplicate(true),
+		"town_resources": town_resources.duplicate(),
+		"town_next_id": town_next_id,
 	}
 
 
@@ -2000,16 +2127,8 @@ func from_dict(data: Dictionary) -> void:
 	for entry: Variant in _array_field(data, "roster"):
 		if entry is Dictionary:
 			roster.append(Hero.from_dict(entry))
-	# One keeper per building: the first in roster order keeps a doubly claimed station.
-	var kept: Dictionary[StringName, bool] = {}
-	for hero: Hero in roster:
-		if hero.station == Hero.NO_STATION:
-			continue
-		if kept.has(hero.station):
-			push_warning("%s also claimed the %s; its station was cleared." % [hero.hero_name, hero.station])
-			hero.station = Hero.NO_STATION
-		else:
-			kept[hero.station] = true
+	_read_town(data)
+	_clear_bad_town_claims()
 	for entry: Variant in _array_field(data, "inventory"):
 		if entry is Dictionary:
 			inventory.append(Item.from_dict(entry))
@@ -2091,6 +2210,93 @@ func from_dict(data: Dictionary) -> void:
 	embodied_hero_id = body.instance_id if body != null and not is_hero_busy(body) else NO_BODY
 	_notify_roster_changed()
 	_notify_expeditions_changed()
+
+
+## Additive keys (no SAVE_VERSION bump). A save without town_resources gets town_start_wood once.
+## A building that is malformed, off the map, on a hall or on another building is dropped.
+func _read_town(data: Dictionary) -> void:
+	var balance: BalanceTable = preload("res://balance.tres")
+	town_buildings.clear()
+	town_resources = {"wood": balance.town_start_wood}
+	var raw_resources: Variant = data.get("town_resources")
+	if raw_resources is Dictionary:
+		town_resources["wood"] = maxf(Item.float_field(raw_resources as Dictionary, "wood", 0.0, "town resources"), 0.0)
+	elif raw_resources != null:
+		push_error("Invalid town_resources: expected Dictionary, got %s." % type_string(typeof(raw_resources)))
+		town_resources["wood"] = 0.0
+	var highest: int = 0
+	for entry: Variant in _array_field(data, "town_buildings"):
+		var building: Dictionary = _read_town_building(entry)
+		if building.is_empty():
+			push_warning("Invalid town building %s; dropped." % str(entry))
+			continue
+		town_buildings.append(building)
+		highest = maxi(highest, String(building["id"]).get_slice("_", 1).to_int())
+	town_next_id = maxi(Item.int_field(data, "town_next_id", 1, "game session"), highest + 1)
+
+
+## {} unless entry is a well-formed building on a free hex with an unused id.
+func _read_town_building(entry: Variant) -> Dictionary:
+	if not entry is Dictionary:
+		return {}
+	var raw: Dictionary = entry as Dictionary
+	var raw_id: Variant = raw.get("id")
+	var raw_type: Variant = raw.get("type")
+	if not raw_id is String or not raw_type is String or TownRules.type_of(StringName(raw_id as String)) != StringName(raw_type as String):
+		return {}
+	if not town_building(StringName(raw_id as String)).is_empty():
+		return {}
+	var hex := Vector2i.ZERO
+	for axis: int in 2:
+		var value: Variant = raw.get(["q", "r"][axis])
+		if value is float and is_finite(value as float) and (value as float) == floorf(value as float):
+			value = int(value as float)
+		if not value is int:
+			return {}
+		hex[axis] = value as int
+	if not TownRules.hex_refusal(hex, town_buildings, preload("res://balance.tres")).is_empty():
+		return {}
+	return {"id": raw_id as String, "type": raw_type as String, "q": hex.x, "r": hex.y}
+
+
+## One keeper per hall; a house or workplace keeps at most its capacity, the first in roster order.
+## A job or home at a building that is gone is cleared, and so is a workplace job without a home.
+func _clear_bad_town_claims() -> void:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var claims: Dictionary[StringName, int] = {}
+	for hero: Hero in roster:
+		if hero.home != Hero.NO_HOME:
+			var house_name: String = String(hero.home).capitalize()
+			if town_building(hero.home).is_empty():
+				push_warning("%s's house, %s, is gone; its home was cleared." % [hero.hero_name, house_name])
+				hero.home = Hero.NO_HOME
+			elif claims.get(hero.home, 0) >= balance.house_capacity:
+				push_warning("%s is full; %s's home was cleared." % [house_name, hero.hero_name])
+				hero.home = Hero.NO_HOME
+			else:
+				claims[hero.home] = claims.get(hero.home, 0) + 1
+		if hero.station == Hero.NO_STATION:
+			continue
+		var place_name: String = String(hero.station).capitalize()
+		var capacity: int = 1
+		if not Hero.is_staffable(hero.station):
+			capacity = TownRules.worker_slots(TownRules.type_of(hero.station), balance)
+			if town_building(hero.station).is_empty():
+				push_warning("%s's workplace, the %s, is gone; its job was cleared." % [hero.hero_name, place_name])
+				hero.station = Hero.NO_STATION
+				continue
+			if hero.home == Hero.NO_HOME:
+				push_warning("%s has no house, so it left the %s." % [hero.hero_name, place_name])
+				hero.station = Hero.NO_STATION
+				continue
+		if claims.get(hero.station, 0) < capacity:
+			claims[hero.station] = claims.get(hero.station, 0) + 1
+		elif capacity == 1 and Hero.is_staffable(hero.station):
+			push_warning("%s also claimed the %s; its station was cleared." % [hero.hero_name, hero.station])
+			hero.station = Hero.NO_STATION
+		else:
+			push_warning("The %s is full; %s's job was cleared." % [place_name, hero.hero_name])
+			hero.station = Hero.NO_STATION
 
 
 ## Dictionary.get()'s default only applies to a *missing* key, so an explicit "roster": null

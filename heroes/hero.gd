@@ -14,6 +14,7 @@ const STAT_CRIT_DMG: StringName = &"crit_dmg"
 const STAT_NAMES: Array[StringName] = [STAT_HP, STAT_ATK, STAT_DEF, STAT_SPD, STAT_CRIT_RATE, STAT_CRIT_DMG]
 const DEF_PATH_TEMPLATE: String = "res://heroes/defs/%s.tres"
 const NO_STATION: StringName = &""
+const NO_HOME: StringName = &""
 ## Every profession a hero can have a passion for: the five halls in PROFESSIONS order, then the town
 ## workplaces (DECISIONS.md 2026-09-23, the town builder, item 12). The passion roll indexes this
 ## list, so reordering it changes every hero's passions.
@@ -46,6 +47,9 @@ var profession_xp: Dictionary[StringName, float] = {}
 ## The town building this hero keeps (a PROFESSIONS value), or NO_STATION. It leaves with the hero,
 ## so permadeath needs no station cleanup (DECISIONS.md 2026-09-23 item 5).
 var station: StringName = NO_STATION
+## The placed House this hero lives in, or NO_HOME. A workplace job needs one (DECISIONS.md
+## 2026-09-23, the town builder, item 5). Like station, it leaves with the hero.
+var home: StringName = NO_HOME
 
 
 func _init(p_name: String = "", p_rank: int = 0) -> void:
@@ -332,6 +336,7 @@ func to_dict() -> Dictionary:
 		"passions": passions.map(func(profession: StringName) -> String: return str(profession)),
 		"profession_xp": xp_by_profession,
 		"station": str(station),
+		"home": str(home),
 	}
 
 
@@ -391,14 +396,21 @@ static func _valid_passions(raw: Variant) -> Array[StringName]:
 	return result
 
 
-## Missing means no station. One keeper per building is GameSession.from_dict's check (it sees the
-## roster). Read on its own: a save may carry a station without any profession_xp.
+## Missing means no station. A hall id or a placed workplace id's shape is kept here; whether that
+## building exists and has room is GameSession.from_dict's check (it sees the roster and the town).
+## Read on its own: a save may carry a station without any profession_xp.
 static func _read_station(hero: Hero, data: Dictionary) -> void:
 	var raw_station: Variant = data.get("station")
-	if raw_station is String and is_staffable(StringName(raw_station as String)):
+	if raw_station is String and (is_staffable(StringName(raw_station as String)) or TownRules.is_workplace_id(StringName(raw_station as String))):
 		hero.station = StringName(raw_station as String)
 	elif raw_station != null and not (raw_station is String and (raw_station as String).is_empty()):
 		push_warning("Unknown station '%s' on hero %s; cleared." % [raw_station, hero.instance_id])
+	# Additive key. Missing means no house; GameSession.from_dict checks the house exists and has room.
+	var raw_home: Variant = data.get("home")
+	if raw_home is String and TownRules.type_of(StringName(raw_home as String)) == TownRules.HOUSE:
+		hero.home = StringName(raw_home as String)
+	elif raw_home != null and not (raw_home is String and (raw_home as String).is_empty()):
+		push_warning("Unknown home '%s' on hero %s; cleared." % [raw_home, hero.instance_id])
 
 
 static func from_dict(data: Dictionary) -> Hero:
