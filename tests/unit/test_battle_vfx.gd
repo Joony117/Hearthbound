@@ -133,7 +133,7 @@ func test_ally_skill_uses_ability_numbers() -> void:
 	var skill: Dictionary = _first(BattleVfx.events_between({"a1": before}, [after]), "skill")
 
 	assert_eq(skill["archetype"], "knight")
-	assert_eq(skill["radius"], BattleSimulation.ABILITIES["knight"].radius_units)
+	assert_eq(skill["radius"], BattleSimulation.ABILITIES["knight_rally"].radius_units)
 
 
 func test_mage_skill_centers_on_hit_enemies_in_range() -> void:

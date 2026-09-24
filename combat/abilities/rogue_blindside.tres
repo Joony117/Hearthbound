@@ -4,15 +4,13 @@
 
 [resource]
 script = ExtResource("1")
-skill_id = &"ranger_piercing_shot"
-display_name = "Piercing Shot"
-kind = "ability"
-archetype = "ranger"
-cooldown_seconds = 10.0
-range_units = 10.0
-radius_units = 1.0
+skill_id = &"rogue_blindside"
+display_name = "Blindside"
+kind = "passive"
+archetype = "rogue"
 effects = Array[Dictionary]([{
-"type": "damage",
-"area": "line",
-"multiplier": 1.8
+"type": "status",
+"target": "self",
+"status": "rear_basic_damage",
+"magnitude": 0.25
 }])

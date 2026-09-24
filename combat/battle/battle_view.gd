@@ -786,9 +786,17 @@ func _update_selected_panel() -> void:
 		var live_hero: Hero = live_hero_value as Hero
 		if live_hero != null:
 			hero_name = live_hero.hero_name
-	var ability_definition: AbilityDefinition = BattleSimulation.ABILITIES.get(archetype) as AbilityDefinition
+	# The signature: the first ability on the actor's list, the one a manual cast fires.
+	var ability_definition: AbilityDefinition = null
+	var ability_auto: bool = true
+	for entry: Variant in selected_actor.get("skills", []) as Array:
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((entry as Dictionary).get("id", ""))) as AbilityDefinition
+		if skill != null and skill.kind != "passive":
+			ability_definition = skill
+			ability_auto = str((entry as Dictionary).get("mode", "auto")) != "manual"
+			break
 	var ability_name: String = ability_definition.display_name if ability_definition != null else "Signature"
-	var ability_cooldown: float = float(selected_actor.get("ability_cooldown", 0.0))
+	var ability_cooldown: float = float((selected_actor.get("skill_cooldowns", {}) as Dictionary).get(str(ability_definition.skill_id), 0.0)) if ability_definition != null else 0.0
 	var item_cooldown: float = float(selected_actor.get("item_cooldown", 0.0))
 	_selected_label.text = "%s · %s · HP %.0f / %.0f" % [hero_name, archetype.capitalize(), float(selected_actor.get("hp", 0.0)), float(selected_actor.get("max_hp", 0.0))]
 	_selected_label.clip_text = true
@@ -803,7 +811,7 @@ func _update_selected_panel() -> void:
 	_selected_heal_button.tooltip_text = "Item cooldown %.1f seconds" % item_cooldown if item_cooldown > 0.0 else "Use a healing draught"
 	_selected_revive_button.disabled = not available or item_cooldown > 0.0 or int(supplies.get("revival", 0)) <= 0
 	_selected_revive_button.tooltip_text = "Item cooldown %.1f seconds" % item_cooldown if item_cooldown > 0.0 else "Use a revival draught"
-	_selected_ability_auto.set_pressed_no_signal(bool(selected_actor.get("ability_auto", true)))
+	_selected_ability_auto.set_pressed_no_signal(ability_auto)
 	var policies: Dictionary = _snapshot.get("policies", {}) as Dictionary
 	_selected_auto_heal.set_pressed_no_signal(bool(policies.get("auto_heal", true)))
 	_selected_auto_revive.set_pressed_no_signal(bool(policies.get("auto_revive", true)))

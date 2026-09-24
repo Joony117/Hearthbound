@@ -11,13 +11,14 @@ func test_knight_rally_revives_without_profile_mutation() -> void:
 	assert_true(bool(result["accepted"]))
 	assert_eq(downed.life, BattleActor.LIFE_ALIVE)
 	assert_almost_eq(downed.hp, downed.max_hp * 0.25, 0.0001)
-	assert_gt(knight.ability_cooldown, 0.0)
+	assert_gt(knight.skill_cooldowns["knight_rally"], 0.0)
 
 
 func test_reserved_last_revival_is_automatic_only() -> void:
 	var state: BattleState = _rescue_state(true)
 	var ranger: BattleActor = state.actors[0]
 	ranger.archetype = "ranger"
+	ranger.set_default_kit()
 	var downed: BattleActor = state.actors[1]
 	BattleSimulation.advance(state, 0.1)
 	assert_eq(downed.life, BattleActor.LIFE_DOWNED)
@@ -33,6 +34,7 @@ func test_carry_extracts_one_body_without_duplication() -> void:
 	var state: BattleState = _rescue_state(false)
 	var carrier: BattleActor = state.actors[0]
 	carrier.archetype = "ranger"
+	carrier.set_default_kit()
 	var downed: BattleActor = state.actors[1]
 	carrier.position = Vector2(0, -16)
 	downed.position = carrier.position
@@ -108,7 +110,7 @@ func test_rescue_auto_battle_false_does_not_assign_objective_movement() -> void:
 	var state: BattleState = _rescue_state(false)
 	state.policies["auto_battle"] = false
 	state.policies["auto_revive"] = false
-	state.actors[0].ability_auto = false
+	state.actors[0].set_abilities_auto(false)
 	var rescuer: BattleActor = state.actors[0]
 
 	BattleSimulation.advance(state, 0.1)
@@ -120,7 +122,7 @@ func test_rescue_skips_source_mission_progress_and_requires_extraction() -> void
 	var state: BattleState = _rescue_state(false)
 	state.policies["auto_battle"] = false
 	state.policies["auto_revive"] = false
-	state.actors[0].ability_auto = false
+	state.actors[0].set_abilities_auto(false)
 	var original_actor_count: int = state.actors.size()
 	var preserved_enemy: BattleActor = state.actors[2]
 	preserved_enemy.hp = 0.0
@@ -164,7 +166,7 @@ func test_timeout_drops_carried_body_before_withdrawing_carrier() -> void:
 	state.policies["auto_revive"] = false
 	state.max_seconds = 0.1
 	var carrier: BattleActor = state.actors[0]
-	carrier.ability_auto = false
+	carrier.set_abilities_auto(false)
 	var body: BattleActor = state.actors[1]
 	carrier.carrying_id = body.id
 	body.carried_by_id = carrier.id

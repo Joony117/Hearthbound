@@ -4,10 +4,20 @@
 
 [resource]
 script = ExtResource("1")
-ability_id = &"mage_burst"
+skill_id = &"mage_burst"
 display_name = "Burst"
+kind = "ability"
+archetype = "mage"
 cooldown_seconds = 12.0
 range_units = 8.0
 radius_units = 2.5
-magnitude = 1.5
-passive_magnitude = 0.1
+ai_rule = "enemies_near_target"
+ai_count = 3
+ai_radius = 2.5
+ai_or_elite = true
+effects = Array[Dictionary]([{
+"type": "damage",
+"area": "circle",
+"multiplier": 1.5,
+"required": true
+}])

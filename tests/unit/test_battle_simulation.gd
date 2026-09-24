@@ -30,6 +30,7 @@ func test_invalid_command_is_atomic_and_valid_move_gets_sequence() -> void:
 	carried.id = "hero:carried"
 	carried.hero_id = "hero:carried"
 	carried.archetype = "knight"
+	carried.set_default_kit()
 	carried.faction = "ally"
 	carried.spawn_index = state.actors.size()
 	carried.max_hp = 100.0
@@ -59,7 +60,7 @@ func test_basic_attack_uses_speed_interval_in_actual_combat() -> void:
 	var state: BattleState = BattleSimulation.create_run("order:interval", [snapshot], _zone(20), _squads(["hero:slow"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 4)
 	var attacker: BattleActor = state.actors[0]
 	var target: BattleActor = state.actors[1]
-	attacker.ability_auto = false
+	attacker.set_abilities_auto(false)
 	attacker.position = Vector2.ZERO
 	target.position = Vector2(0.0, 1.0)
 	target.effect_state["home_position"] = [0.0, 1.0]
@@ -114,6 +115,7 @@ func test_enemy_telegraph_is_serialized_before_effect() -> void:
 	var state: BattleState = BattleSimulation.create_run("order:telegraph", [_hero("hero:a", "knight")], zone, _squads(["hero:a"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 7)
 	var enemy: BattleActor = state.actors[1]
 	enemy.archetype = "mage"
+	enemy.set_default_kit()
 	enemy.attack_range = 8.0
 	enemy.position = Vector2(0, -14)
 	enemy.effect_state["home_position"] = [0.0, -14.0]
@@ -124,7 +126,7 @@ func test_enemy_telegraph_is_serialized_before_effect() -> void:
 	assert_eq(enemy.effect_state["telegraph_kind"], "circle")
 	assert_almost_eq(float(enemy.effect_state["telegraph_total"]), 0.8, 0.0001)
 	assert_eq(enemy.effect_state["telegraph_point"], [state.actors[0].position.x, state.actors[0].position.y])
-	assert_gt(enemy.ability_cooldown, 0.0)
+	assert_gt(enemy.skill_cooldowns["mage_burst"], 0.0)
 
 
 func test_auto_attack_reacquires_after_its_target_dies() -> void:
@@ -139,6 +141,7 @@ func test_auto_attack_reacquires_after_its_target_dies() -> void:
 	var second_enemy := BattleActor.new()
 	second_enemy.id = "enemy:second"
 	second_enemy.archetype = "rogue"
+	second_enemy.set_default_kit()
 	second_enemy.faction = "enemy"
 	second_enemy.spawn_index = state.actors.size()
 	second_enemy.max_hp = 100.0
@@ -201,7 +204,7 @@ func test_manual_ability_uses_and_persists_saved_rng_atomically() -> void:
 	assert_true(bool(result["accepted"]))
 	assert_ne(state.rng_state, rng_before)
 	assert_almost_eq(target.hp, 865.0, 0.0001)
-	assert_gt(ranger.ability_cooldown, 0.0)
+	assert_gt(ranger.skill_cooldowns["ranger_piercing_shot"], 0.0)
 
 	var invalid: BattleState = BattleSimulation.create_run("order:manual-invalid", [_hero("hero:ranger", "ranger")], _zone(20), _squads(["hero:ranger"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 2468)
 	var invalid_before: Dictionary = invalid.to_dict()
@@ -234,13 +237,13 @@ func test_rogue_rear_passive_applies_to_basic_hit_but_not_signature() -> void:
 	basic_rogue.position = Vector2(0.0, 1.0)
 	basic_rogue.atk = 100.0
 	basic_rogue.crit_rate = 0.0
-	basic_rogue.ability_auto = false
+	basic_rogue.set_abilities_auto(false)
 	basic_target.position = Vector2.ZERO
 	basic_target.facing = Vector2.UP
 	basic_target.max_hp = 1000.0
 	basic_target.hp = 1000.0
 	basic_target.defense = 0.0
-	basic_target.ability_auto = false
+	basic_target.set_abilities_auto(false)
 	# Stunned, so it cannot turn to fight back and stays facing away.
 	basic_target.effect_state["stun_remaining"] = 10.0
 	BattleSimulation.issue_command(basic_state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [basic_rogue.id], "target_id": basic_target.id})
@@ -270,10 +273,10 @@ func test_stationary_attackers_turn_to_face_their_targets() -> void:
 	var enemy: BattleActor = state.actors[1]
 	hero.position = Vector2(0.0, 1.0)
 	hero.facing = Vector2.DOWN
-	hero.ability_auto = false
+	hero.set_abilities_auto(false)
 	enemy.position = Vector2.ZERO
 	enemy.facing = Vector2.UP
-	enemy.ability_auto = false
+	enemy.set_abilities_auto(false)
 	BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [hero.id], "target_id": enemy.id})
 	BattleSimulation.advance(state, 0.1)
 	assert_eq(hero.position, Vector2(0.0, 1.0), "already in range, so the hero never walks")
@@ -320,7 +323,7 @@ func test_rear_bonus_does_not_depend_on_which_side_the_tick_reaches_first() -> v
 		rogue.position = Vector2(0.0, 1.0)
 		rogue.atk = 100.0
 		rogue.crit_rate = 0.0
-		rogue.ability_auto = false
+		rogue.set_abilities_auto(false)
 		rogue.attack_range = 2.0
 		# Facing away from the rogue until it picks the rogue as its target this very tick.
 		enemy.position = Vector2.ZERO
@@ -328,7 +331,7 @@ func test_rear_bonus_does_not_depend_on_which_side_the_tick_reaches_first() -> v
 		enemy.max_hp = 1000.0
 		enemy.hp = 1000.0
 		enemy.defense = 0.0
-		enemy.ability_auto = false
+		enemy.set_abilities_auto(false)
 		enemy.attack_range = 2.0
 		BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [rogue.id], "target_id": enemy.id})
 		# The rogue's swing is wound up and lands on the first tick.
@@ -351,13 +354,13 @@ func test_rogue_gets_no_rear_bonus_on_a_target_fighting_it() -> void:
 	rogue.position = Vector2(0.0, 1.0)
 	rogue.atk = 100.0
 	rogue.crit_rate = 0.0
-	rogue.ability_auto = false
+	rogue.set_abilities_auto(false)
 	target.position = Vector2.ZERO
 	target.facing = Vector2.UP
 	target.max_hp = 1000.0
 	target.hp = 1000.0
 	target.defense = 0.0
-	target.ability_auto = false
+	target.set_abilities_auto(false)
 	BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [rogue.id], "target_id": target.id})
 	while int(target.effect_state.get("last_hit_tick", 0)) == 0:
 		BattleSimulation.advance(state, 0.1)

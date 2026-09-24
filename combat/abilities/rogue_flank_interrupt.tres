@@ -4,10 +4,21 @@
 
 [resource]
 script = ExtResource("1")
-ability_id = &"rogue_flank_interrupt"
+skill_id = &"rogue_flank_interrupt"
 display_name = "Flank / Interrupt"
+kind = "ability"
+archetype = "rogue"
+counter_tag = "interrupt"
 cooldown_seconds = 10.0
 range_units = 6.0
-magnitude = 1.6
-passive_magnitude = 0.25
-effect_duration_seconds = 0.3
+effects = Array[Dictionary]([{
+"type": "move",
+"to": "behind_target"
+}, {
+"type": "interrupt",
+"stun_seconds": 0.3
+}, {
+"type": "damage",
+"area": "target",
+"multiplier": 1.6
+}])

@@ -188,7 +188,7 @@ func test_inspector_controls_persist_and_show_signature_cooldown_and_item_polici
 	var squad_button: Button = view._squad_row.get_child(0) as Button
 	assert_string_contains(view._selected_label.text, "Inspector Knight")
 	assert_string_contains(skill_button.text, "Rally")
-	controller.snapshots["battle-1"]["actors"][0]["ability_cooldown"] = 2.0
+	controller.snapshots["battle-1"]["actors"][0]["skill_cooldowns"]["knight_rally"] = 2.0
 	view._render_snapshot(controller.snapshots["battle-1"])
 	assert_eq(view._selected_ability_button, skill_button)
 	assert_true(skill_button.disabled)
@@ -360,6 +360,9 @@ func _make_live_view(controller: FakeBattleController) -> BattleView:
 
 
 func _actor(actor_id: String, hero_id: String, faction: String, archetype: String, point: Array[float]) -> Dictionary:
+	var kit := BattleActor.new()
+	kit.archetype = archetype
+	kit.set_default_kit()
 	return {
 		"id": actor_id,
 		"hero_id": hero_id,
@@ -380,7 +383,6 @@ func _actor(actor_id: String, hero_id: String, faction: String, archetype: Strin
 		"attack_range": 1.6,
 		"move_speed": 2.0,
 		"attack_cooldown": 0.0,
-		"ability_cooldown": 0.0,
 		"item_cooldown": 0.0,
 		"order_kind": "",
 		"order_target_id": "",
@@ -388,7 +390,8 @@ func _actor(actor_id: String, hero_id: String, faction: String, archetype: Strin
 		"carried_by_id": "",
 		"carrying_id": "",
 		"guard_target_id": "",
-		"ability_auto": true,
+		"skills": kit.skills,
+		"skill_cooldowns": kit.skill_cooldowns,
 		"effect_state": {},
 	}
 

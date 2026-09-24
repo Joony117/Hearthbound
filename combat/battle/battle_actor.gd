@@ -9,6 +9,7 @@ const VALID_LIFE: Array[String] = [LIFE_ALIVE, LIFE_DOWNED, LIFE_EXTRACTED, LIFE
 const VALID_ARCHETYPES: Array[String] = ["knight", "ranger", "mage", "rogue", "cleric"]
 const VALID_FACTIONS: Array[String] = ["ally", "enemy"]
 const VALID_ORDERS: Array[String] = ["", "move", "attack", "attack_move", "hold", "guard", "carry", "retreat"]
+const SKILL_MODES: Array[String] = ["auto", "manual"]
 
 var id: String = ""
 var hero_id: String = ""
@@ -29,7 +30,6 @@ var life: String = LIFE_ALIVE
 var attack_range: float = 1.6
 var move_speed: float = 1.5
 var attack_cooldown: float = 0.0
-var ability_cooldown: float = 0.0
 var item_cooldown: float = 0.0
 var order_kind: String = ""
 var order_target_id: String = ""
@@ -37,7 +37,10 @@ var order_point: Vector2 = Vector2.ZERO
 var carried_by_id: String = ""
 var carrying_id: String = ""
 var guard_target_id: String = ""
-var ability_auto: bool = true
+## [{id, mode}] in bar order; mode is "auto" or "manual" (a passive is always "auto").
+var skills: Array[Dictionary] = []
+## {skill_id: seconds} for every ability in skills.
+var skill_cooldowns: Dictionary = {}
 var effect_state: Dictionary = {}
 
 
@@ -62,7 +65,6 @@ func to_dict() -> Dictionary:
 		"attack_range": attack_range,
 		"move_speed": move_speed,
 		"attack_cooldown": attack_cooldown,
-		"ability_cooldown": ability_cooldown,
 		"item_cooldown": item_cooldown,
 		"order_kind": order_kind,
 		"order_target_id": order_target_id,
@@ -70,7 +72,8 @@ func to_dict() -> Dictionary:
 		"carried_by_id": carried_by_id,
 		"carrying_id": carrying_id,
 		"guard_target_id": guard_target_id,
-		"ability_auto": ability_auto,
+		"skills": skills.duplicate(true),
+		"skill_cooldowns": skill_cooldowns.duplicate(),
 		"effect_state": effect_state.duplicate(true),
 	}
 
@@ -96,7 +99,6 @@ static func from_dict(data: Dictionary) -> BattleActor:
 	actor.attack_range = _number(data.get("attack_range"), 1.6)
 	actor.move_speed = _number(data.get("move_speed"), 1.5)
 	actor.attack_cooldown = _number(data.get("attack_cooldown"), 0.0)
-	actor.ability_cooldown = _number(data.get("ability_cooldown"), 0.0)
 	actor.item_cooldown = _number(data.get("item_cooldown"), 0.0)
 	actor.order_kind = str(data.get("order_kind", ""))
 	actor.order_target_id = str(data.get("order_target_id", ""))
@@ -104,7 +106,17 @@ static func from_dict(data: Dictionary) -> BattleActor:
 	actor.carried_by_id = str(data.get("carried_by_id", ""))
 	actor.carrying_id = str(data.get("carrying_id", ""))
 	actor.guard_target_id = str(data.get("guard_target_id", ""))
-	actor.ability_auto = bool(data.get("ability_auto", true))
+	if data.get("skills") is Array:
+		for entry: Variant in data.get("skills") as Array:
+			if entry is Dictionary:
+				actor.skills.append({"id": str((entry as Dictionary).get("id", "")), "mode": str((entry as Dictionary).get("mode", "auto"))})
+		if data.get("skill_cooldowns") is Dictionary:
+			for skill_id: Variant in data.get("skill_cooldowns") as Dictionary:
+				actor.skill_cooldowns[str(skill_id)] = _number((data.get("skill_cooldowns") as Dictionary)[skill_id], 0.0)
+	else:
+		# A checkpoint from before skills were data (ig-gy0.1): the archetype's kit, its signature
+		# carrying the old ability_cooldown and the old ability_auto mode.
+		actor.set_default_kit(bool(data.get("ability_auto", true)), _number(data.get("ability_cooldown"), 0.0))
 	var raw_effects: Variant = data.get("effect_state")
 	actor.effect_state = (raw_effects as Dictionary).duplicate(true) if raw_effects is Dictionary else {}
 	return actor
@@ -128,12 +140,12 @@ static func validate_dict(data: Dictionary) -> String:
 	for key: String in ["position", "facing", "order_point"]:
 		if not _valid_vector(data.get(key)):
 			return "Battle actor %s must contain two finite numbers." % key
-	for key: String in ["hp", "max_hp", "atk", "defense", "speed", "crit_rate", "crit_damage", "attack_range", "move_speed", "attack_cooldown", "ability_cooldown", "item_cooldown"]:
+	for key: String in ["hp", "max_hp", "atk", "defense", "speed", "crit_rate", "crit_damage", "attack_range", "move_speed", "attack_cooldown", "item_cooldown"]:
 		if not _valid_number(data.get(key)):
 			return "Battle actor %s must be finite." % key
 	if float(data.get("max_hp")) <= 0.0 or float(data.get("hp")) < 0.0 or float(data.get("hp")) > float(data.get("max_hp")):
 		return "Battle actor HP is outside its valid range."
-	for key: String in ["atk", "defense", "speed", "attack_range", "move_speed", "attack_cooldown", "ability_cooldown", "item_cooldown"]:
+	for key: String in ["atk", "defense", "speed", "attack_range", "move_speed", "attack_cooldown", "item_cooldown"]:
 		if float(data.get(key)) < 0.0:
 			return "Battle actor %s must be non-negative." % key
 	if float(data.get("crit_rate")) < 0.0 or float(data.get("crit_rate")) > 1.0 or float(data.get("crit_damage")) < 1.0:
@@ -148,8 +160,9 @@ static func validate_dict(data: Dictionary) -> String:
 		return "Living battle actors need positive HP."
 	if str(data.get("life")) in [LIFE_DOWNED, LIFE_DEAD] and float(data.get("hp")) != 0.0:
 		return "Downed and dead battle actors must have zero HP."
-	if not data.get("ability_auto") is bool:
-		return "Battle actor ability_auto must be a bool."
+	var skills_error: String = _validate_skills(data)
+	if not skills_error.is_empty():
+		return skills_error
 	if not data.get("effect_state") is Dictionary:
 		return "Battle actor effect_state must be a Dictionary."
 	var effects: Dictionary = data.get("effect_state") as Dictionary
@@ -178,6 +191,61 @@ static func validate_dict(data: Dictionary) -> String:
 		return "Battle actor direct_order effect must be a bool."
 	if effects.has("carry_progress") and (not _valid_number(effects.get("carry_progress")) or float(effects.get("carry_progress")) < 0.0):
 		return "Battle actor carry_progress must be finite and non-negative."
+	return ""
+
+
+## The archetype's kit (BattleSimulation.default_kit), every ability ready. auto sets the
+## abilities' mode; cooldown is what the signature has left.
+func set_default_kit(auto: bool = true, cooldown: float = 0.0) -> void:
+	skills.clear()
+	skill_cooldowns.clear()
+	for skill: AbilityDefinition in BattleSimulation.default_kit(archetype):
+		var ability: bool = skill.kind != "passive"
+		skills.append({"id": str(skill.skill_id), "mode": "manual" if ability and not auto else "auto"})
+		if ability:
+			skill_cooldowns[str(skill.skill_id)] = cooldown
+
+
+## Every ability on the list to Auto or Manual; passives stay on.
+func set_abilities_auto(auto: bool) -> void:
+	for entry: Dictionary in skills:
+		if BattleSimulation.ABILITIES[entry["id"]].kind != "passive":
+			entry["mode"] = "auto" if auto else "manual"
+
+
+## Both shapes load: skills + skill_cooldowns, or the old ability_cooldown + ability_auto.
+static func _validate_skills(data: Dictionary) -> String:
+	if not data.has("skills"):
+		if not _valid_number(data.get("ability_cooldown")) or float(data.get("ability_cooldown")) < 0.0:
+			return "Battle actor ability_cooldown must be finite and non-negative."
+		if not data.get("ability_auto") is bool:
+			return "Battle actor ability_auto must be a bool."
+		return ""
+	if not data.get("skills") is Array or not data.get("skill_cooldowns") is Dictionary:
+		return "Battle actor skills must be an Array and skill_cooldowns a Dictionary."
+	var seen: Dictionary = {}
+	var abilities: Dictionary = {}
+	for entry: Variant in data.get("skills") as Array:
+		if not entry is Dictionary or (entry as Dictionary).size() != 2 or not (entry as Dictionary).get("id") is String or not (entry as Dictionary).get("mode") is String:
+			return "Every battle actor skill must be {id, mode} Strings."
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((entry as Dictionary)["id"])) as AbilityDefinition
+		if skill == null or not skill.archetype in [str(data.get("archetype")), "general"]:
+			return "Battle actor skill %s is unknown or from another class." % str((entry as Dictionary)["id"])
+		if not str((entry as Dictionary)["mode"]) in SKILL_MODES or (skill.kind == "passive" and str((entry as Dictionary)["mode"]) != "auto"):
+			return "Battle actor skill %s mode is invalid." % str((entry as Dictionary)["id"])
+		if seen.has(skill.skill_id):
+			return "Battle actor skill %s is listed twice." % str(skill.skill_id)
+		seen[skill.skill_id] = true
+		if skill.kind != "passive":
+			abilities[skill.skill_id] = true
+	var cooldowns: Dictionary = data.get("skill_cooldowns") as Dictionary
+	if cooldowns.size() != abilities.size():
+		return "Battle actor skill_cooldowns must hold exactly its abilities."
+	for skill_id: Variant in cooldowns:
+		if not skill_id is String or not abilities.has(StringName(skill_id as String)):
+			return "Battle actor skill_cooldowns must hold exactly its abilities."
+		if not _valid_number(cooldowns[skill_id]) or float(cooldowns[skill_id]) < 0.0:
+			return "Battle actor skill cooldowns must be finite and non-negative."
 	return ""
 
 

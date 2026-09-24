@@ -116,8 +116,8 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 				"tick": _tick(current[attack_target], "last_hit_tick"),
 			})
 		var skill_visible: bool = archetype in ["knight", "rogue"] or faction == "ally"
-		if skill_visible and _tick(after, "last_skill_tick") > _tick(before, "last_skill_tick") and BattleSimulation.ABILITIES.has(archetype):
-			var ability: AbilityDefinition = BattleSimulation.ABILITIES[archetype]
+		var ability: AbilityDefinition = BattleSimulation.signature_for(archetype)
+		if skill_visible and _tick(after, "last_skill_tick") > _tick(before, "last_skill_tick") and ability != null:
 			var skill: Dictionary = {
 				"kind": "skill",
 				"actor_id": actor_id,

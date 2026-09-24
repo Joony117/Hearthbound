@@ -97,6 +97,71 @@ func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
 		assert_ne(GameSession.validate_saved_state(broken, 3), "", "last_crit_tick %s is rejected" % str(bad_value))
 
 
+## ig-gy0.1: a v3 profile saved by SaveService before skills were data (ability_cooldown and
+## ability_auto on each actor, the Mage set to manual) loads, migrates and finishes exactly as it
+## did before the change. The expected finish was recorded by the pre-change build.
+func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> void:
+	var fixture_path: String = "res://tests/fixtures/battle_checkpoint_pre_skills.json"
+	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fixture_path)) as Dictionary
+	var expected: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fixture_path.replace(".json", ".expected.json"))) as Dictionary
+	var raw_actor: Dictionary = (((saved["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"] as Array)[0]
+	assert_true(raw_actor.has("ability_cooldown") and not raw_actor.has("skills"), "the fixture is the old shape")
+	# Through the real loader. Saved "in the future" so offline progress adds no wall-clock time.
+	saved["saved_at_unix"] = Time.get_unix_time_from_system() + 3600.0
+	var original_save: PackedByteArray = FileAccess.get_file_as_bytes(SaveService.SAVE_PATH)
+	var original_existed: bool = FileAccess.file_exists(SaveService.SAVE_PATH)
+	var save_file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	save_file.store_string(JSON.stringify(saved, "\t"))
+	save_file.close()
+	var loaded: bool = SaveService.load_game()
+	if original_existed:
+		FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE).store_buffer(original_save)
+	else:
+		DirAccess.remove_absolute(SaveService.SAVE_PATH)
+	assert_true(loaded, SaveService.load_block_reason)
+	assert_false(SaveService.load_blocked, SaveService.load_block_reason)
+	var order_id: String = str(expected["order_id"])
+	assert_false(GameSession.get_battle_snapshot(order_id).is_empty())
+
+	var state := BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
+	for actor: BattleActor in state.actors:
+		if actor.faction == "ally":
+			var mode: String = "manual" if actor.hero_id == "hero:checkpoint:2" else "auto"
+			assert_eq(str(actor.skills[1]["mode"]), mode, "%s signature mode survives migration" % actor.hero_id)
+	var resaved: Dictionary = _json_round_trip(state.to_dict())
+	assert_eq(BattleSimulation.validate_snapshot(resaved), "", "the migrated battle saves in the new shape")
+	state = BattleState.from_dict(resaved)
+	var outcome: BattleOutcome = BattleSimulation.advance(state, state.max_seconds)
+	assert_eq(_exact_json(outcome.to_dict()), _exact_json(expected["outcome"]))
+	assert_eq(_exact_json(_pre_skills_shape(state)), _exact_json(expected["final"]), "final state matches the pre-change finish")
+
+	GameSession.tick_expeditions(0.1)
+	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
+	assert_eq(GameSession.validate_saved_state(profile, 3), "", "the session re-saves the migrated battle")
+	assert_true(((((profile["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"] as Array)[0] as Dictionary).has("skills"))
+
+
+## The battle as the pre-skills build recorded it: one signature cooldown and one auto flag per actor.
+func _pre_skills_shape(state: BattleState) -> Dictionary:
+	var data: Dictionary = state.to_dict()
+	for index: int in state.actors.size():
+		var actor: BattleActor = state.actors[index]
+		var actor_data: Dictionary = (data["actors"] as Array)[index]
+		actor_data.erase("skills")
+		actor_data.erase("skill_cooldowns")
+		var cooldown: float = 0.0
+		for value: float in actor.skill_cooldowns.values():
+			cooldown += value
+		actor_data["signature_cooldown"] = cooldown
+		actor_data["signature_auto"] = not actor.skills.any(func(entry: Dictionary) -> bool: return entry["mode"] == "manual")
+	return data
+
+
+## Full precision, sorted keys, and ints read back as floats like the parsed expectation.
+func _exact_json(value: Variant) -> String:
+	return JSON.stringify(JSON.parse_string(JSON.stringify(value, "", true, true)), "", true, true)
+
+
 func _json_round_trip(profile: Dictionary) -> Dictionary:
 	return JSON.parse_string(JSON.stringify(profile)) as Dictionary
 
