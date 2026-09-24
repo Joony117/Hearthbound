@@ -7,6 +7,63 @@ Newest first.
 
 ---
 
+## 2026-09-24: Performance: budgets at each scene's worst case; threads only for measured pure-data work
+
+**ACCEPTED by the director, 2026-09-24** (godot-architect role, for `ig-7sn.1`). The owner asked:
+"make sure we're optimizing and planning for performance as we go. threading, code perf audits,
+etc". Sol's read-only audit (`.agent-results/perf-audit/sol-code-audit-2026-09-24.md`) supplies
+the candidates and risk ratings below. It ranked risks by reading; nothing is measured yet.
+Item 0 amends a hard constraint in `GAME_SPEC.md`, which needs an entry here.
+
+**Decision.**
+
+0. **60 FPS holds at each scene's worst case**, as listed in `SYSTEMS.md` § Performance budgets.
+   This replaces "60 FPS with 5 heroes and ~20 enemies" in `GAME_SPEC.md` § Hard constraints.
+   The zones now field up to 50 heroes (frontier_march) and 30 enemies a wave (fallen_citadel).
+   Director ruling, 2026-09-24: a target that leaves out the real worst case is no target. When a
+   new scene or a bigger zone raises a worst case, its row in that table changes with it.
+1. **Measure first.** No thread goes in without a measured number over its budget in
+   `SYSTEMS.md` § Performance budgets. The baseline (`ig-7sn.2`) comes first.
+2. **Cheaper fixes first.** A redundant refresh, copy or cache miss is fixed before anything is
+   threaded. The audit's order-card and double-detail findings are `ig-7sn.3`.
+3. **Engine options before our own threads, each measured.** The physics engine is decided by
+   the gore spike (`ig-c9y.2`). The physics thread (`physics/3d/run_on_separate_thread`) is not
+   free here: `town_view.gd` picks with `direct_space_state.intersect_ray` from input, and with a
+   separate physics thread Godot allows space queries only during the physics step. It goes on
+   only after that pick moves into the physics step and a measurement shows the win.
+4. **Our own threads run pure-data jobs on `WorkerThreadPool`.** A job takes copied plain data
+   (Dictionaries, Arrays, packed arrays). It touches no Node, no autoload, no signal and no
+   Resource that anything writes, and it returns a value. The main thread applies the result,
+   and first checks a change key (such as `ledger_next_seq`) so a stale result is dropped.
+5. **The battle simulation stays on the main thread** (boundary #4). Dispatched battles may run
+   on workers only with all of these: one job per order; the same tick chunks and RNG state as
+   the main-thread run; results committed on the main thread in each order's fixed place, never
+   in completion order; and a test showing byte-identical `BattleState.to_dict()` checkpoints
+   both ways for the same seeds. Building that amends this entry first.
+6. **No thread touches the save** (boundary #1). `GameSession.to_dict()`, the file writes and
+   the validation stay on the main thread. Preparing the text of an already detached payload is
+   a candidate, but save order needs its own review first.
+
+**Candidates, with the audit's risk to battle determinism.**
+
+| Job | Pure data? | Risk |
+|---|---|---|
+| Ledger history, bond and dream scans over an unchanging Ledger snapshot | Yes | None. Drop a stale result by Ledger sequence |
+| Town route search over a copied graph and endpoints. The live AStar and the nodes stay on the main thread | After the copy | Low |
+| Preparing save text from a detached payload | Maybe | Low. Save order needs its own review |
+| Independent battle simulations | After each order's state is detached | High if committed in completion order. Low only under item 5 |
+
+**Rejected.**
+
+- **Threads by default.** They add ordering bugs, and they pay off only where a measurement says
+  the work is over budget.
+- **View work on threads** (nodes, the scene tree, `BattleVfx`). Godot's scene tree is not
+  thread-safe.
+- **A thread pool around `BattleSimulation` without item 5's test.** It could pass every gate and
+  still drift the outcome.
+
+---
+
 ## 2026-09-24: Bonds stay derived from the Ledger, read in one pass for every pair; knowledge and testimony are per-hero state that points into it
 
 **ACCEPTED by the director, 2026-09-24** (godot-architect role, for `ig-m6o.2.2`), after a

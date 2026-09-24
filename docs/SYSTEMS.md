@@ -626,6 +626,42 @@ a bond by itself.
 
 ---
 
+## Performance budgets — *ig-7sn, drafted 2026-09-24*
+
+What each scene may cost per frame at its worst case. This table is the hard constraint's worst
+case: 60 FPS holds at each row (`GAME_SPEC.md` § Hard constraints, amended 2026-09-24;
+`DECISIONS.md` 2026-09-24 "Performance: budgets at each scene's worst case", item 0).
+`CODING_RULES.md` § Performance says how hot-path code is measured against these. The baseline
+(`ig-7sn.2`) fills the Measured column. These are targets, not test gates: a miss files a bead
+under `ig-7sn`.
+
+> ⚠️ **PROVISIONAL** — the only machine measured so far is the owner's (RTX 4090). Half a frame
+> on it is a guess at the headroom a mid-range PC needs to keep 60 FPS (`GAME_SPEC.md` § Hard
+> constraints) · **Settled by:** the same scenes measured on a mid-range PC
+
+Every scene has the same target. 60 FPS is 16.7 ms a frame. On the owner's PC, with vsync off,
+p99 must stay at or under 8.3 ms (half a frame). No frame outside a load or a scene change may
+take over 33 ms: two frames, which the owner sees as a hitch. The pulse lands on one frame in
+fifteen, so p99 includes it.
+
+| Scene | Worst case it must hold | Measured |
+|---|---|---|
+| Hub | 100 heroes, the Ledger at its 10,000-record cap, and a roster action with its save. The roster has no cap; 100 fills all five zones at their hero caps (95) | — |
+| Town | Every figure out: 16 wanderers (`AMBIENT_HERO_CAP`), every keeper and worker, and the body. Plus the frame of one building change | — |
+| Watched battle | fallen_citadel (30 heroes, 30-enemy waves, a boss with 10 adds) and frontier_march (50 heroes, 30 objective enemies). Gore adds on top of this (`ig-c9y`) | — |
+| Dispatched battles | All five zones dispatched at their hero caps while the hub or town is shown. The 0.25 s pulse advances every battle on the main thread, and nothing caps how many run | — |
+| Load | Offline catch-up of every dispatched battle. No target yet: measured and recorded | — |
+
+> ⚠️ **PROVISIONAL** — the 100-hero roster is a measurement assumption, since the roster has no
+> cap · **Settled by:** a roster cap if one is ever set, or a real save that outgrows 100
+
+Budgets set elsewhere still hold: the Ledger adds at most 2 ms to a save (§ The Ledger); a bond
+index rebuild fits one frame, 16.7 ms, once the ledger changes on the live tick (`DECISIONS.md`
+2026-09-24 "Bonds stay derived", item 5); battle effects cap at 40 live (`MAX_LIVE_EFFECTS` in
+`battle_vfx.gd`).
+
+---
+
 ## Ranks — *Phase 2*
 
 `F D C B A S SS SSS` → int `0..7`. Applies to heroes and equipment alike.

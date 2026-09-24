@@ -138,6 +138,32 @@ Those get harvested into `KNOWN_ISSUES.md`.
 
 ---
 
+## Performance
+
+A **hot path** is code that runs every frame, on the `GameSession` pulse (every 0.25 s), on each
+battle snapshot the view receives, or on a refresh the owner triggers with a click.
+
+Hot-path code states its worst case and measures it once, when it lands:
+
+- **State it.** A comment or the doc beside it names what the code loops over and that thing's
+  cap: heroes, Ledger records, units, live effects. If there is no cap, say so, and name the size
+  it was measured at.
+- **Measure it.** A test prints the best and the worst of seven runs at that worst case. It is not
+  a gate. Record the number beside its row in `SYSTEMS.md`, the way § Bonds and dreams records the
+  bond read cost.
+- **Compare it** with its scene's budget in `SYSTEMS.md` § Performance budgets. A miss files a
+  bead under `ig-7sn`. It blocks the slice that found it only if that slice's bead says so.
+
+Derived reads sit behind a change key and rebuild when the key changes, never per frame. The bond
+index is the model (`DECISIONS.md` 2026-09-24 "Bonds stay derived"). Anything that spawns nodes
+has a live cap, and pools them if a measurement shows creation or cleanup over budget. Optimise
+only what a number shows is slow.
+
+Threads follow `DECISIONS.md` 2026-09-24 "Performance: budgets at each scene's worst case; threads
+only for measured pure-data work".
+
+---
+
 ## Tests
 
 GUT 9.x, arriving in Phase 2. Test what can break **silently**:

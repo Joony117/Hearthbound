@@ -672,7 +672,10 @@ These are non-negotiable and shape architecture. Changing one requires a `DECISI
 - **Controller support remains a target.** The approved first RTS implementation and its
   acceptance use desktop mouse/keyboard controls. The former action-combat gamepad requirement
   does not imply an already implemented RTS controller interface; that work remains explicit.
-- **60 FPS** with 5 heroes and ~20 enemies active on mid-range hardware.
+- **60 FPS on mid-range hardware at each scene's worst case**, as listed in `SYSTEMS.md`
+  § Performance budgets (the largest zones field up to 50 heroes and 30 enemies at once).
+  Amended 2026-09-24 (`ig-7sn.1`, `DECISIONS.md` 2026-09-24 "Performance: budgets at each
+  scene's worst case"): it said 5 heroes and ~20 enemies, which left out the real worst case.
 - **Save system required**, human-readable, versioned from the first commit.
 - **Timed sent expeditions; immediate management actions.** Dispatched runs can finish while
   the game is closed. Repeats launch only while the game is running: reopening resolves each
