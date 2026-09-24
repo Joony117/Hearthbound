@@ -92,7 +92,7 @@ func test_rmb_guards_living_ally_carries_downed_ally_and_moves_past_dead_or_hidd
 	var downed: Dictionary = _actor("body-1", "body-2", "ally", "knight", [2.0, 2.0])
 	downed["life"] = BattleActor.LIFE_DOWNED
 	controller.snapshots["battle-1"]["actors"].append(downed)
-	var dead_enemy: Dictionary = _actor("enemy-dead", "", "enemy", "", [5.0, 2.0])
+	var dead_enemy: Dictionary = _actor("enemy-dead", "", "enemy", "rogue", [5.0, 2.0])
 	dead_enemy["life"] = BattleActor.LIFE_DEAD
 	controller.snapshots["battle-1"]["actors"].append(dead_enemy)
 	var view := _make_live_view(controller)
@@ -338,7 +338,7 @@ func _make_controller() -> FakeBattleController:
 		"team_name": "Test Team",
 		"actors": [
 			_actor("hero-1", "hero-1", "ally", "knight", [-3.0, 0.0]),
-			_actor("enemy-1", "", "enemy", "", [3.0, 0.0]),
+			_actor("enemy-1", "", "enemy", "knight", [3.0, 0.0]),
 		],
 		"squads": [{"id": "squad-1", "name": "Test Squad", "hero_ids": ["hero-1"], "stance": "stay_together", "guard_target_id": ""}],
 		"objective_state": {"markers": [{"id": "exit", "kind": "exit", "label": "Extraction", "position": [0.0, -16.0], "radius": 2.0, "progress": 0.0, "active": true, "complete": false}]},
