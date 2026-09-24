@@ -11,13 +11,14 @@ document, the document wins or the document gets amended — not silently reinte
 
 **This is Direction v2, the debate's final text.** The owner approved v1 on 2026-09-24, then asked
 the same day for more ideas and sharper versions of v1's. v2 is the answer; the owner has it for
-review, and § 13 is open. It replaces v1, which came from an eight-round debate (director vs GPT-6
-Astra). v2 came from a second debate the same day: ten rounds at max reasoning. It outranks older
-direction text in this file.
+review, and ruled on its four open decisions the same day (§ 13). It replaces v1, which came from
+an eight-round debate (director vs GPT-6 Astra). v2 came from a second debate the same day: ten
+rounds at max reasoning. It outranks older direction text in this file.
 - Both debates' raw rounds are archived in `docs/archive/direction/`. They are history, not spec:
   grep them for the detail behind a `[rN]` tag.
-- Sections 1–14 are Astra's final text. Only headings, line wrapping and quote marks changed, and
-  the owner's rulings in § 11 are numbered so older references stay stable.
+- Sections 1–14 are Astra's final text. Only headings, line wrapping and quote marks changed, the
+  owner's rulings in § 11 are numbered so older references stay stable, and later rulings are added
+  with their date (§ 10, § 11 ruling 7, § 13, § 14).
 - The final is compressed. **§ Kept in full**, below § 14, lists what it compressed, and all of it
   stays in force. A short line never means an idea was cut. Only § 12 cuts anything.
 - Every new number belongs to game-designer. The text says "number: game designer" wherever one is
@@ -314,11 +315,13 @@ results; it does not create a competing simulation authority.
 The skills lane (`ig-gy0`) and the town lane (`ig-6m2`) keep going. They are foundations steps 2
 and 3 build on, not rivals.
 
-> ⚠️ **PROVISIONAL** — step 1's list is wider than what `ig-m6o.1` built (settled events, a live
-> `time`, and the died → battle link). Reading: each missing piece lands with its first reader,
-> never ahead of it. Witnessed details come with step 2's knowledge, Essence provenance with
-> step 4, item identities with step 5's ownership, and enemy identities with step 7's nemeses
-> (architecture note 1, on `ig-m6o.7`). · **Settled by:** the director, when `ig-m6o.2` is scoped
+**Step 1's missing pieces** (director ruling, 2026-09-24). Step 1's list is wider than what
+`ig-m6o.1` built (settled events, a live `time`, and the died → battle link). Each missing piece
+lands with its first reader, never ahead of it: witnessed details with step 2's knowledge, Essence
+provenance with step 4, item identities with step 5's ownership, and enemy identities with step
+7's nemeses (architecture note 1, on `ig-m6o.7`). Nothing reopens `ig-m6o.1`. So step 3's
+Recognition (§ 6) works within one battle only, and recognition across battles lands with step
+7's enemy identities.
 
 ### 11. The standing rulings
 
@@ -341,13 +344,9 @@ their v1 numbers.
 6. **One soul, one presence:** visits and transfers vacate prior active roles; dream projections
    are views of the same living actor.
 7. **Live-time only:** hunger, memory, travel, seasons and old worlds freeze when closed, without
-   catch-up.
-
-> ⚠️ **PROVISIONAL — flagged conflict, not reconciled.** Ruling 7 and § 9 ("nothing progresses
-> offline") meet § Hard constraints' timed sent expeditions, which finish while the game is closed
-> and resolve once on reopening (owner-approved 2026-09-22, `ig-6l4`). Game-designer reading:
-> expeditions stay the one owner-approved exception, and everything else in ruling 7 freezes. ·
-> **Settled by:** the owner
+   catch-up. (One exception, owner ruling 2026-09-24: timed sent expeditions still finish while
+   the game is closed and resolve once on reopening, as § Hard constraints has said since
+   `ig-6l4`. Everything else freezes, and § 9's "nothing progresses offline" reads the same way.)
 
 > ⚠️ **PROVISIONAL** — game-designer readings of ruling 1 and § 7, not owner rulings:
 > - The old town's living people stay in the old world, unless they physically travel with the
@@ -382,19 +381,21 @@ consequences.
 Spine test: every activity must change a particular person, relationship, institution or
 inherited obligation.
 
-### 13. Decisions for the owner — OPEN
+### 13. Decisions for the owner — ruled 2026-09-24
 
-**Open as of 2026-09-24.** The director is asking the owner. Nothing gets built on either option
-until the owner rules. Each is recorded on the bead where it lands.
+The owner answered all four on 2026-09-24 ("A all"). Each ruling is also on the bead where it
+lands. The agreed core reopens no standing rulings.
 
-The agreed core reopens no standing rulings. The following additions are proposals:
-
-- **Miracle-born person:** genuinely new mortal person or embodied construct? **Recommend the
-  person**, with a new identity and no invented past. (`ig-m6o.5`)
-- **A former town summons the Door:** binding covenant arrival or ordinary invitation? **Recommend
-  covenant arrival**, placing you under the society your heroes built. (`ig-m6o.8`)
-- **Concordance between worlds:** one coupled formation or separate allied walking cities?
-  **Recommend the coupled formation**, with every community retaining agency. (`ig-m6o.8`)
+- **Miracle-born person** (`ig-m6o.5`): **a genuinely new mortal person**, not an embodied
+  construct, with a new identity and no invented past. It is rare and costly; how rare and what it
+  costs are numbers for the game designer.
+- **A former town summons the Door** (`ig-m6o.8`): **a covenant arrival, binding only if the
+  player or their Herald agreed to it earlier.** Without that earlier agreement it is an ordinary
+  invitation the player can decline.
+- **Concordance between worlds** (`ig-m6o.8`): **one coupled formation**, not separate allied
+  walking cities. Every community keeps its agency.
+- **Expeditions while the game is closed** (raised under § 11): **keep the `ig-6l4` exception.**
+  See ruling 7.
 
 ### 14. Three last twists
 
@@ -406,11 +407,16 @@ stories' imaginary past. They persist as a mortal person with their own dream. *
 choose which expectations to accept. **Feel:** wonder and responsibility. **Loop:** witness their
 first deed that actually belongs to them. **Links:** authored accounts, belief, Founding, dreams.
 
+> **Owner ruling 2026-09-24 (§ 13).** A genuinely new person, and rare and costly.
+
 **You Become Someone Else's Summon** (`ig-m6o.8`). A former apprentice's fulfilled covenant names
 the Door as its promised arrival. Your actual anchor crosses into their settlement under its
 charter; ordinary hero-pull weights remain unchanged. **Do:** negotiate with people who once
 followed you and seek a willing representative. **Feel:** vulnerable belonging. **Loop:** earn or
 challenge your place in their society. **Links:** Heralds, covenants, Old World, defiance.
+
+> **Amended 2026-09-24 (owner, § 13).** The arrival binds only if the player or their Herald
+> agreed to it earlier. Otherwise it is an invitation the player can decline.
 
 **The Multiverse Answers the Counter** (`ig-m6o.8`). Schools in different worlds master
 complementary motifs; reciprocal promises pull their actual regions into a shared formation. Their
@@ -672,8 +678,8 @@ These are non-negotiable and shape architecture. Changing one requires a `DECISI
   the game is closed. Repeats launch only while the game is running: reopening resolves each
   already-dispatched run once, then starts its next run at full duration if its order continues.
   There is no chain of offline farming. This supersedes the original no-clock rule by owner
-  approval on 2026-09-22 (`DECISIONS.md`, `ig-6l4`). **Flagged 2026-09-24:** § Direction ruling 7
-  says nothing progresses offline. The conflict is open (§ Direction § 11, PROVISIONAL).
+  approval on 2026-09-22 (`DECISIONS.md`, `ig-6l4`). § Direction ruling 7 (nothing progresses
+  offline) keeps this as its one exception (owner ruling, 2026-09-24).
 - **The town never kills while the game is closed.** Hunger runs only on the live clock, and its
   death clock waits for you to look (§ Heroes eat, and can starve to death). A sent expedition's
   own risk is the only death that can resolve on reopen, and you chose it when you sent the run.
