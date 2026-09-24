@@ -83,7 +83,7 @@ static func create(hero: Hero) -> TownHero:
 static func sign_label() -> Label3D:
 	var label := Label3D.new()
 	label.name = "Sign"
-	label.pixel_size = 0.006
+	label.pixel_size = 0.012
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.modulate = Color(1.0, 0.8, 0.85)
 	label.position.y = 2.1
