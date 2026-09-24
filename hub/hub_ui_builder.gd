@@ -286,18 +286,33 @@ static func _build_armory(content: Control) -> void:
 	view.visible = false
 	_stop_clicks(view)
 	_anchor_fill(view, 316.0, 0.0, -412.0, -KEEPER_ROW_HEIGHT)
-	var box := _vbox(view, "Inventory")
+	# The filters sit in pairs so the list keeps its room at 720 (ig-ght); a column that still cannot
+	# fit scrolls, and the list never shrinks below four rows.
+	var scroll := ScrollContainer.new()
+	_add(view, scroll, "Scroll")
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var box := _vbox(scroll, "Inventory")
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_heading(box, "ARMORY")
-	_add_option(box, "InventoryRankFilter")
-	_button(box, "Exact rank", "InventoryExactRank", true, true)
-	_add_option(box, "InventorySlotFilter")
-	_add_option(box, "InventoryProtectionFilter")
-	_button(box, "Favorite item", "FavoriteItem", true, true)
+	var rank_row := HBoxContainer.new()
+	_add(box, rank_row, "RankRow")
+	_add_option(rank_row, "InventoryRankFilter").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_button(rank_row, "Exact rank", "InventoryExactRank", true, true)
+	var filter_row := HBoxContainer.new()
+	_add(box, filter_row, "FilterRow")
+	_add_option(filter_row, "InventorySlotFilter").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_add_option(filter_row, "InventoryProtectionFilter").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var pick_row := HBoxContainer.new()
+	_add(box, pick_row, "PickRow")
+	_button(pick_row, "Favorite item", "FavoriteItem", true, true).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_button(pick_row, "Select all visible", "SelectAllInventory", true)
 	var list := ItemList.new()
 	_add(box, list, "InventoryList", true)
 	list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Four rows and a bit: the whole column fits the 720 canvas unscrolled, with the list at five rows.
+	list.custom_minimum_size.y = 112.0
 	list.select_mode = ItemList.SELECT_MULTI
-	_button(box, "Select all visible", "SelectAllInventory", true)
 	var actions := HBoxContainer.new()
 	_add(box, actions, "Actions")
 	for data: Array in [["Equip", "Equip"], ["Salvage", "Salvage"], ["Enhance", "Enhance"]]:

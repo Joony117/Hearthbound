@@ -667,6 +667,64 @@ func test_a_click_in_a_gap_between_panels_does_not_open_the_building_behind() ->
 	assert_eq(hub._open_building, &"Forge")
 
 
+func test_every_open_panel_gives_its_lists_room_on_screen() -> void:
+	# ig-ght: a panel too full for the 1280x720 canvas scrolls; it never crushes its list.
+	for index: int in 3:
+		var hero := Hero.new("Room Hero %d" % index, 2)
+		hero.def_id = [&"knight", &"mage", &"cleric"][index]
+		GameSession.add_hero(hero)
+	GameSession.add_item(Item.new(&"ring", 2))
+	GameSession.add_item(Item.new(&"boots", 3))
+	var hub: Node3D = _instantiate_hub()
+	var screen: Rect2 = hub.get_viewport().get_visible_rect()
+	var views: Array = hub.BUILDING_PANELS.keys()
+	views.append(hub.HERO_VIEW)
+	var checked: int = 0
+	for view: StringName in views:
+		hub._open(view)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		for node: Node in hub.find_children("*", "ItemList", true, false):
+			var list: ItemList = node as ItemList
+			if not list.is_visible_in_tree():
+				continue
+			checked += 1
+			var rect: Rect2 = list.get_global_rect()
+			assert_gte(rect.size.y, 100.0, "%s: %s is %.0f px tall" % [view, list.name, rect.size.y])
+			assert_true(screen.encloses(rect), "%s: %s at %s is on screen" % [view, list.name, rect])
+	assert_gt(checked, 0, "the sweep saw lists")
+
+
+func test_a_click_on_an_inventory_row_selects_it_and_equip_equips() -> void:
+	var hero := Hero.new("Click Hero", 2)
+	hero.def_id = &"knight"
+	GameSession.add_hero(hero)
+	var ring := Item.new(&"ring", 2)
+	GameSession.add_item(ring)
+	GameSession.add_item(Item.new(&"boots", 3))
+	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var roster: ItemList = hub.get_node("%RosterList") as ItemList
+	var inventory: ItemList = hub.get_node("%InventoryList") as ItemList
+	# Four 23 px rows (the theme's row height at 720); the crushed list was 12 px.
+	assert_gte(inventory.size.y, 92.0, "the Armory list shows four rows")
+	_click(hub, _row_point(hub, roster, 0))
+	assert_eq(roster.get_selected_items(), PackedInt32Array([0]), "a click on the roster row picked the hero")
+	var row: int = -1
+	for index: int in inventory.item_count:
+		if inventory.get_item_metadata(index) == ring:
+			row = index
+	_click(hub, _row_point(hub, inventory, row))
+	assert_eq(inventory.get_selected_items(), PackedInt32Array([row]), "a click on the ring's row picked it")
+	var equip: Button = hub.get_node("%Equip") as Button
+	var equip_at: Vector2 = equip.get_global_rect().get_center()
+	assert_eq(_hovered(hub, equip_at), equip, "Equip is under the pointer")
+	_click(hub, equip_at)
+	assert_eq(hero.equipped.get(Item.definition_for(ring.def_id).slot), ring, "Equip put the ring on")
+
+
 func test_while_paused_the_town_ignores_clicks_and_number_keys() -> void:
 	var hub: Node3D = _instantiate_hub()
 	await get_tree().physics_frame
@@ -760,6 +818,14 @@ func _town_point(hub: Node3D, open: StringName, where: Callable) -> Vector2:
 func _reachable(hub: Node3D, at: Vector2) -> bool:
 	var hovered: Control = _hovered(hub, at)
 	return hovered == null or hub.is_ancestor_of(hovered)
+
+
+## The centre of a list row, asserted to be that list under the pointer (not a control over it).
+func _row_point(hub: Node3D, list: ItemList, index: int) -> Vector2:
+	assert_between(index, 0, list.item_count - 1, "%s has row %d" % [list.name, index])
+	var at: Vector2 = list.get_global_transform() * list.get_item_rect(index).get_center()
+	assert_eq(_hovered(hub, at), list, "%s row %d is under the pointer at %s" % [list.name, index, at])
+	return at
 
 
 func _hovered(hub: Node3D, at: Vector2) -> Control:
