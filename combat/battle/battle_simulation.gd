@@ -515,6 +515,17 @@ static func _support_actions(state: BattleState) -> void:
 
 
 static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -> void:
+	# Every attacker in range turns to its target before anyone strikes, so a rear check
+	# (_is_behind, _rogue_flank_position) never depends on which actor the loop reaches first.
+	# Movement only turns units that are walking.
+	for actor: BattleActor in state.actors:
+		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0:
+			continue
+		if actor.faction == "enemy" and str(actor.effect_state.get("telegraph_kind", "")) != "":
+			continue
+		var in_range: BattleActor = _in_range_target(state, actor)
+		if in_range != null:
+			_face(actor, in_range.position)
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0:
 			continue
@@ -522,10 +533,8 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 			if float(actor.effect_state.get("telegraph_remaining", 0.0)) <= 0.0:
 				_resolve_enemy_telegraph(state, actor, rng)
 			continue
-		var target: BattleActor = _actor_by_id(state, actor.order_target_id)
-		if target == null or target.life != BattleActor.LIFE_ALIVE or target.faction == actor.faction:
-			continue
-		if actor.position.distance_to(target.position) > actor.attack_range:
+		var target: BattleActor = _in_range_target(state, actor)
+		if target == null:
 			continue
 		if actor.ability_auto and actor.ability_cooldown <= 0.0 and _auto_ability_wanted(state, actor, target):
 			if actor.faction == "enemy" and actor.archetype in ["ranger", "mage"]:
@@ -828,9 +837,26 @@ static func _use_ability(
 			_damage(state, actor, target, ability.magnitude, rng)
 		_:
 			return false
+	# The caster faces what it cast at, manual or auto; the rogue faces the target it landed behind.
+	_face(actor, target.position if actor.archetype == "rogue" else point)
 	actor.ability_cooldown = ability.cooldown_seconds * (1.0 - ability.passive_magnitude if actor.archetype == "mage" else 1.0)
 	actor.effect_state["last_skill_tick"] = state.tick
 	return true
+
+
+static func _in_range_target(state: BattleState, actor: BattleActor) -> BattleActor:
+	var target: BattleActor = _actor_by_id(state, actor.order_target_id)
+	if target == null or target.life != BattleActor.LIFE_ALIVE or target.faction == actor.faction:
+		return null
+	if actor.position.distance_to(target.position) > actor.attack_range:
+		return null
+	return target
+
+
+static func _face(actor: BattleActor, at: Vector2) -> void:
+	var aim: Vector2 = at - actor.position
+	if aim != Vector2.ZERO:
+		actor.facing = aim.normalized()
 
 
 static func _start_enemy_telegraph(state: BattleState, actor: BattleActor, target: BattleActor) -> void:

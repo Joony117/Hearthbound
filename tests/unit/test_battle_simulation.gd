@@ -241,10 +241,112 @@ func test_rogue_rear_passive_applies_to_basic_hit_but_not_signature() -> void:
 	basic_target.hp = 1000.0
 	basic_target.defense = 0.0
 	basic_target.ability_auto = false
+	# Stunned, so it cannot turn to fight back and stays facing away.
+	basic_target.effect_state["stun_remaining"] = 10.0
 	BattleSimulation.issue_command(basic_state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [basic_rogue.id], "target_id": basic_target.id})
 	while int(basic_target.effect_state.get("last_hit_tick", 0)) == 0:
 		BattleSimulation.advance(basic_state, 0.1)
 	assert_almost_eq(basic_target.hp, 875.0, 0.0001)
+
+
+func test_stationary_attackers_turn_to_face_their_targets() -> void:
+	var state: BattleState = BattleSimulation.create_run("order:face", [_hero("hero:knight", "knight")], _zone(20), _squads(["hero:knight"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
+	var hero: BattleActor = state.actors[0]
+	var enemy: BattleActor = state.actors[1]
+	hero.position = Vector2(0.0, 1.0)
+	hero.facing = Vector2.DOWN
+	hero.ability_auto = false
+	enemy.position = Vector2.ZERO
+	enemy.facing = Vector2.UP
+	enemy.ability_auto = false
+	BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [hero.id], "target_id": enemy.id})
+	BattleSimulation.advance(state, 0.1)
+	assert_eq(hero.position, Vector2(0.0, 1.0), "already in range, so the hero never walks")
+	assert_almost_eq(hero.facing.dot(Vector2.UP), 1.0, 0.0001, "the hero turns from facing away to face the enemy")
+	assert_eq(enemy.order_target_id, hero.id)
+	assert_almost_eq(enemy.facing.dot(Vector2.DOWN), 1.0, 0.0001, "the enemy turns to face the hero it attacks")
+
+
+func test_rogue_signature_faces_the_target_it_lands_behind() -> void:
+	var state: BattleState = BattleSimulation.create_run("order:rogue-land", [_hero("hero:rogue", "rogue")], _zone(20), _squads(["hero:rogue"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
+	var rogue: BattleActor = state.actors[0]
+	var target: BattleActor = state.actors[1]
+	rogue.position = Vector2.ZERO
+	rogue.facing = Vector2.UP
+	target.position = Vector2(0.0, 2.0)
+	target.facing = Vector2.DOWN
+	target.max_hp = 1000.0
+	target.hp = 1000.0
+	var result: Dictionary = BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ABILITY, "actor_ids": [rogue.id], "target_id": target.id, "point": [target.position.x, target.position.y]})
+	assert_true(bool(result["accepted"]))
+	assert_ne(rogue.position, Vector2.ZERO, "the rogue teleported")
+	assert_almost_eq(rogue.facing.dot((target.position - rogue.position).normalized()), 1.0, 0.0001, "and strikes facing its target")
+
+
+func test_a_manual_cast_turns_the_caster_to_its_aim() -> void:
+	var state: BattleState = BattleSimulation.create_run("order:ranger-aim", [_hero("hero:ranger", "ranger")], _zone(20), _squads(["hero:ranger"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
+	var ranger: BattleActor = state.actors[0]
+	var target: BattleActor = state.actors[1]
+	ranger.position = Vector2.ZERO
+	ranger.facing = Vector2.DOWN
+	target.position = Vector2(3.0, 0.0)
+	target.max_hp = 1000.0
+	target.hp = 1000.0
+	var result: Dictionary = BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ABILITY, "actor_ids": [ranger.id], "target_id": target.id, "point": [3.0, 0.0]})
+	assert_true(bool(result["accepted"]))
+	assert_almost_eq(ranger.facing.dot(Vector2.RIGHT), 1.0, 0.0001)
+
+
+func test_rear_bonus_does_not_depend_on_which_side_the_tick_reaches_first() -> void:
+	for reversed: bool in [false, true]:
+		var state: BattleState = BattleSimulation.create_run("order:rogue-order", [_hero("hero:rogue", "rogue")], _zone(20), _squads(["hero:rogue"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
+		var rogue: BattleActor = state.actors[0]
+		var enemy: BattleActor = state.actors[1]
+		rogue.position = Vector2(0.0, 1.0)
+		rogue.atk = 100.0
+		rogue.crit_rate = 0.0
+		rogue.ability_auto = false
+		rogue.attack_range = 2.0
+		# Facing away from the rogue until it picks the rogue as its target this very tick.
+		enemy.position = Vector2.ZERO
+		enemy.facing = Vector2.UP
+		enemy.max_hp = 1000.0
+		enemy.hp = 1000.0
+		enemy.defense = 0.0
+		enemy.ability_auto = false
+		enemy.attack_range = 2.0
+		BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [rogue.id], "target_id": enemy.id})
+		# The rogue's swing is wound up and lands on the first tick.
+		rogue.effect_state["attack_windup_remaining"] = 0.0
+		rogue.effect_state["attack_target_id"] = enemy.id
+		rogue.attack_cooldown = 0.0
+		if reversed:
+			state.actors.reverse()
+		assert_eq(enemy.order_target_id, "", "the enemy has not chosen yet")
+		BattleSimulation.advance(state, 0.1)
+		assert_eq(enemy.order_target_id, rogue.id)
+		assert_eq(int(enemy.effect_state.get("last_hit_tick", 0)), state.tick, "reversed=%s: the swing landed this tick" % reversed)
+		assert_almost_eq(enemy.hp, 900.0, 0.0001, "reversed=%s: the enemy turned to the rogue before it struck" % reversed)
+
+
+func test_rogue_gets_no_rear_bonus_on_a_target_fighting_it() -> void:
+	var state: BattleState = BattleSimulation.create_run("order:rogue-front", [_hero("hero:rogue", "rogue")], _zone(20), _squads(["hero:rogue"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
+	var rogue: BattleActor = state.actors[0]
+	var target: BattleActor = state.actors[1]
+	rogue.position = Vector2(0.0, 1.0)
+	rogue.atk = 100.0
+	rogue.crit_rate = 0.0
+	rogue.ability_auto = false
+	target.position = Vector2.ZERO
+	target.facing = Vector2.UP
+	target.max_hp = 1000.0
+	target.hp = 1000.0
+	target.defense = 0.0
+	target.ability_auto = false
+	BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [rogue.id], "target_id": target.id})
+	while int(target.effect_state.get("last_hit_tick", 0)) == 0:
+		BattleSimulation.advance(state, 0.1)
+	assert_almost_eq(target.hp, 900.0, 0.0001, "the target turned to fight the rogue, so the rogue is in front of it")
 
 
 func test_exact_overlap_separates_deterministically_inside_bounds() -> void:
