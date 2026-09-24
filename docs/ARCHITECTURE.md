@@ -222,6 +222,54 @@ The one thing this does *not* settle is whether a level-3 building looks differe
 one. Levels already persist (`GameSession`), nothing renders them, and that is art, not
 architecture.
 
+### The town is the interface (`ig-wgj`, 2026-09-23)
+
+This amends the section above in one place. **Panels open when you click a building, not when you
+walk near one.** The owner wants the UI integrated into the town. The ruling that the town is this
+scene still holds, and so do rules 1, 5 and 8.
+
+- **The town is a view, under `hub/town/`.** Its buildings, walk spots and heroes sit in a
+  sub-scene instanced by `hub.tscn`, with their own scripts. That is instancing, not routing, so
+  there is still one main scene. The town reports clicks upward, as a building or hero id, and
+  `hub.gd` decides which panel opens. The town never opens a panel and never mutates the profile.
+  The panels keep their `%UniqueName` contracts.
+- **The embodied hero is profile state.** Its id lives on `GameSession`, is saved, and is dropped
+  on load if that hero is no longer home. It is checked where mutations happen, not only in the UI:
+  `is_hero_protected()` covers sacrifice and bulk sacrifice, and every dispatch entry point refuses
+  it. It is **not** folded into `is_hero_busy()`. That would also block equipping and ranking up
+  the body you are in.
+- **A keeper's station and skills are hero state.** `station`, `calling` and `profession_xp`
+  are `Hero` fields, saved in `Hero.to_dict/from_dict` (save boundary #1). `station` holds a
+  building node name from `hub/town/town.tscn`, so renaming a building node is a save change.
+  Masterwork (calling + skill 5) is a gate `GameSession` checks inside the action it gates:
+  `enhance_item` past +12, `rank_up_hero` for SS→SSS, and the masterwork draught craft. The UI only
+  reflects it. A station counts in
+  `is_hero_protected()`, but not in `is_hero_busy()` and not at the dispatch entry points: keepers
+  can be sent out, and only sacrifice refuses them. Because the station lives on the hero,
+  `kill_hero()` needs no extra code, and rule 8 keeps one writer. Keeper skill reaches a building
+  as one more argument to the pure formula that already reads that building's level. `combat/`
+  never reads it. XP builds up only on the live tick, never in the offline catch-up. Details:
+  `DECISIONS.md` 2026-09-23, item 5.
+- **Ambient heroes are views onto the roster.** They are derived from roster membership and
+  `is_hero_busy()`, and refreshed from the existing `roster_changed`/`expeditions_changed` signals.
+  Keepers who are home stand at their building instead of wandering.
+  Their positions and activities are never saved. A hero leaving or dying reaches the town as one
+  of those signals, never as the town calling a mutator.
+- **One KayKit loader.** Town heroes and battle units get their model, weapons and shared
+  `AnimationLibrary` from one helper under `heroes/`. `combat/battle/battle_unit_view.gd` calls
+  it too. Nothing copies the loader, and nothing reaches into `BattleUnitView` internals from
+  `hub/`. `combat/` still never references `hub/` (rule 7).
+- **Presentation numbers stay in the view scripts** (walk speed, camera distance, the cap on
+  ambient heroes), following `battle_unit_view.gd`'s precedent. They are not balance, so they are
+  not `balance.tres` rows (rule 9).
+- **No fourth autoload.** Town state is either profile state (`GameSession`) or view state
+  (`hub/town/`). Nothing sits in between.
+
+A future base builder or NPC economy would move real boundaries: building placement becomes save
+state, economy rules need a home (pure functions under `hub/`, the `ExpeditionOrders` precedent),
+and anything that runs while the game is closed collides with `GAME_SPEC.md` § Hard constraints.
+None of that is decided here. See `DECISIONS.md` 2026-09-23.
+
 ---
 
 ## Project layout

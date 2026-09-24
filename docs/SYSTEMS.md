@@ -390,6 +390,9 @@ if fodder.def_id == target.def_id:
 F→D costs four fresh F heroes exactly (`4 × 10 = 40`, no remainder). SS→SSS does **not** land
 on six — six fresh SS yields `6 × 2,600 = 15,600`, short of the `16,000` cost; it takes **seven**
 (`18,200`, an excess of `2,200`). Corrected from an earlier draft that hadn't been checked.
+Since 2026-09-23, SS→SSS also needs a master priest at the Sanctum (§ Keepers and professions).
+That adds no Essence and is not in the table.
+
 Brutally expensive at the top **by design** — that is the long-term goal of the whole game. The
 "N fresh heroes of the rank just below" count isn't flat across the table, it climbs gently:
 `4, 5, 5, 5, 6, 6, 7` for F→D through SS→SSS.
@@ -3956,7 +3959,7 @@ not the "one system" claim.
 | Building | Effect per level | Magnitudes | Read by |
 |---|---|---|---|
 | Summoning Circle | `circle_multiplier = 1 + 0.15*level` (cap 5) applied to the A/S/SS/SSS block, table renormalized — see Summoning | 2 | summon |
-| Forge | Enhance cap `level * 3` (max 15); salvage yield +10% | 2 (arguably 3: rate, cap, ceiling) | forge |
+| Forge | Enhance cap `level * 3` (max 15; past 12 only with a master smith home, § Keepers and professions); salvage yield +10% | 2 (arguably 3: rate, cap, ceiling) | forge |
 | Training Hall | Post-expedition XP +15% | 1 | expedition |
 | Sanctum | Sacrifice essence yield +10% | 1 | sacrifice |
 | Reliquary | Cache lifetime +5 active recovery minutes; recovery damage chance −3% | 2 | recovery |
@@ -4173,6 +4176,155 @@ there is no level 5→6 to grind toward.
 > small (0-2 extra parts per salvage at the ranks players actually farm) registers at all versus
 > needing to be read off a tooltip. · **Settled by:** a played build with `P2-07d` wired, salvaging
 > real drops against a Forge leveled past 1.
+
+### Keepers and professions (`ig-wgj`, 2026-09-23)
+
+The design is in `GAME_SPEC.md` § Heroes staff the buildings. These are its numbers. They become
+`balance.tres` rows (rule 9), not constants in code.
+
+**Skill.** Every hero has an XP total per profession, counted in seconds. XP turns into a skill
+level from 0 to 5. The scale is the same for every hero and every profession (owner ruling,
+2026-09-23: born + practice, no cap below 5). Level `k` costs `20 * k` minutes of XP:
+
+| Level | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| XP minutes for this level | 20 | 40 | 60 | 80 | 100 |
+| Total XP minutes | 20 | 60 | 120 | 200 | 300 |
+
+**XP.** Only a keeper who is home earns XP, and only in its own building's profession:
+
+```
+xp_seconds += work_seconds * (calling_xp_multiplier if profession == hero.calling else 1.0)
+calling_xp_multiplier = 4.0
+```
+
+| Real minutes of work to reach skill | 1 | 3 | 5 |
+|---|---|---|---|
+| In its calling (×4) | 5 | 30 | 75 |
+| Any other profession (×1) | 20 | 120 | 300 |
+
+×4 is the owner's "immense XP boost". It sits close to a RimWorld major passion against no passion
+(1.5 / 0.35 ≈ 4.3).
+
+XP builds up on the live tick, the same pass that ages the recovery clock
+(`GameSession._advance_clocks_in_memory`). It never builds up in the catch-up that resolves orders
+after the game was closed. XP persists the same way `recovery_clock_seconds` does.
+
+**Masterwork.** A hero is a master of a profession when that profession is its calling *and* its
+skill there is 5. A building's masterwork tier is open only while its keeper is home and is a master
+of the building's profession.
+
+- **Forge.** This amends the Forge row of § Base buildings:
+
+  ```
+  enhance_cap = min(forge_enhance_cap_per_level * forge_level,
+                    forge_enhance_cap_max if master_smith_home else forge_masterwork_floor)
+  forge_masterwork_floor = 12
+  ```
+
+  Only `Item.compute_enhance_cap` changes. `Item.clamped_enhance_level`, the clamp that decides how
+  far a saved level is trusted, stays at 15. So gear already at +13 to +15 keeps its level, and
+  bulk enhance obeys the same cap. Without a master, the enhanced share of an item tops out at
+  `1 + 0.08 * 12 = ×1.96` instead of `×2.2`. That only widens the margin under the 75% `CRIT_RATE`
+  cap (§ Enhancement), so nothing needs a re-check.
+- **Apothecary.** Built now, on the owner's ruling of 2026-09-23 (`ig-wgj.11`). The save and
+  battle rules are in `DECISIONS.md` 2026-09-23, masterwork draughts. These numbers are unplayed:
+
+  | Draught | Regular | Masterwork |
+  |---|---|---|
+  | Healing | 40% max HP · 5 F parts | 60% max HP · 15 F parts |
+  | Revival | 35% max HP · 15 F parts | 50% max HP · 45 F parts |
+
+  The Alchemy discount applies to both tiers. Masterwork draughts are separate stocks with separate
+  per-run allocations. Auto-use spends the regular draught first, and a masterwork one only when
+  that run's regular stock of the same kind is gone. Manual use can pick either.
+- **Rites** (owner ruling, 2026-09-23, against the designer's and the director's advice).
+  `rank_up_hero` refuses SS→SSS unless the Sanctum's keeper is home and is a master priest
+  (calling Rites, skill 5). Every other rank-up is unchanged. Heroes already at SSS keep their rank.
+  The target may be the priest itself: it is stationed and home.
+- **Drill, Tracking.** No masterwork. Skill bonus only.
+
+**The Rites gate against the spine.** It adds no Essence cost. It adds a condition on when you can
+finish.
+
+- **Essence.** You keep one Rites-born hero instead of feeding it. At the average of 78.38 Essence
+  per pull, that costs at most about one pull; an F-rank priest costs 10 Essence, about 0.13 pull.
+  The figures below become ~327 → ~328, ~219 → ~220 and ~188 → ~189. The ~188 case already has a
+  skill-5 Rites keeper, so a Rites-born one meets the gate for free.
+- **Finding a Rites-born hero.** The calling is uniform over five professions, whatever the rank, so
+  each new hero has a 1 in 5 chance. The chance of at least one in `n` new heroes is `1 − 0.8^n`:
+
+  | New heroes | 5 | 10 | 14 | 21 |
+  |---|---|---|---|---|
+  | At least one Rites-born | 67% | 89% | 96% | 99% |
+
+  That is 5 pulls on average: 500 stones, or about 20 Verdant, 7 Ashfall or 2.5 Sundered clears at
+  § Summon Stones' income (1,308 / 436 / 164 clears per ~327 pulls). Pulls are always possible:
+  expeditions pay stones, and § Roster-wipe recovery floor covers an empty roster. A lost priest is
+  a delay, never a dead end.
+- **Time.** A Rites-born keeper reaches master after 75 minutes of live play at the Sanctum
+  (300 XP-minutes at ×4). The training runs alongside the grind. The ~219-pull grind is about 110
+  Sundered clears: roughly 9 hours of one squad's timers at base duration, or 2.3 hours at the 75 s
+  floor. So a priest stationed early is ready long before the final rank-up, and the gate costs no
+  time.
+- **Worst case.** You lose your only master at SS and no Rites-born hero is left on the roster. The
+  wait is about 5 pulls plus 75 minutes of live play.
+
+**Bonus.** Each skill level is worth half a building level of that building's own effect. It is
+added inside the building's existing term:
+
+```
+effect = 1.0 + per_level_bonus * (building_level + 0.5 * keeper_skill)
+```
+
+| Profession | Building | Per skill level | At skill 5 | Term it joins |
+|---|---|---|---|---|
+| Smithing | Forge | Salvage yield +5% | +25% | `forge_salvage_yield_bonus` 0.10/level |
+| Rites | Sanctum | Essence yield +5% | +25% | `sanctum_essence_yield_bonus` 0.10/level |
+| Drill | Training Hall | Expedition XP +7.5% | +37.5% | `training_hall_xp_bonus` 0.15/level |
+| Tracking | Reliquary | Cache and rescue lifetime +150 s | +750 s | `recovery_duration_seconds_per_level` 300 s/level |
+| Alchemy | Apothecary | Draught parts cost −10% | −50% | none: the Apothecary has no level |
+
+A skill-5 keeper is worth 2.5 building levels, and a skill-3 keeper 1.5. A keeper stacks past the
+building cap on purpose: a maxed Forge with a skill-5 smith reads as level 7.5 for salvage.
+
+Alchemy's cost is `max(1, roundi(base * (1 - 0.10 * skill)))`:
+
+| Skill | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| Healing (base 5 F parts) | 5 | 5 | 4 | 4 | 3 | 3 |
+| Revival (base 15 F parts) | 15 | 14 | 12 | 11 | 9 | 8 |
+
+For healing, skills 1 and 3 change nothing over the level below. That is the zero-effect level
+the Forge section already warns about. It is accepted here because draughts are cheap either way.
+
+**What a keeper never touches.** Three magnitudes are pinned by other rulings, so keepers stay
+off them:
+
+- Summon weights, because they wear down the ~12× manufacture floor. That is why the Circle has
+  no keeper.
+- The Forge enhance cap, because it is tied to `enhance_level` 0–15. A keeper never raises it.
+  Masterwork only decides who may use the band from +13 to +15.
+- The Reliquary damage-chance term, because it cancels exactly at level 5. More would go negative.
+
+**Checked against the spine.** Rites makes Essence cheaper, so it only widens the manufacture
+advantage. It cannot break the ≥12× floor in `GAME_SPEC.md` § Win and loss. It does lower the pull
+count. With the ~327 pulls from § Sacrifice (324.5 of feeding plus ~2.5 to land the keeper), a
+level-5 Sanctum (×1.5) brings it to ~219, and a skill-5 Rites keeper on top (×1.75) to ~188. Both
+figures are before Circle effects and before levelling fodder.
+
+> ⚠️ **PROVISIONAL** — the Rites gate's time cost. "It costs no time if a priest is stationed
+> early" rests on the grind taking hours of live play, and nothing in this codebase measures
+> session length. A player with several strong squads farming Sundered at the floor could run the
+> last ~110 clears in under 75 minutes, and then the gate is a real wait. · **Settled by:** a played
+> build that reaches SS→SSS, timing the live play from the first stationed priest to the rank-up.
+
+> ⚠️ **PROVISIONAL** — every number in this section is unfelt: the 20-minute level, the ×4 calling
+> multiplier, the +12 masterwork floor, the half-level bonus, Alchemy's 10% and the masterwork
+> draughts. The ~219, ~188 and Rites-gate figures are single-pass arithmetic and have not been
+> cross-checked. · **Settled by:** a played build with two or more
+> keepers working for a real session, measuring how many minutes of work a session actually
+> yields; the pull figures, by a Codex arithmetic check against § Sacrifice.
 
 ---
 

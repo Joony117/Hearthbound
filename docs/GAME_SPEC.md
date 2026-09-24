@@ -69,7 +69,8 @@ you don't keep into one target takes ~327 — about 15× cheaper, which is what 
 don't pray" needs to be true to hold up as a claim rather than flavor text. The Summoning
 Circle (base building, `SYSTEMS.md`) erodes this ratio as it levels up, but by design not past
 ~12× even at its cap — checked so the claim holds at every stage of the game, not just before
-any buildings are built.
+any buildings are built. Since 2026-09-23 the last step, SS→SSS, also needs a born master priest
+at the Sanctum (§ Heroes staff the buildings). That changes when you can finish, not what it costs.
 
 > ⚠️ **PROVISIONAL** — the ~327-pull and ~12×/~15× ratios are arithmetically verified
 > (`SYSTEMS.md`) but unvalidatable against real play time: there is no Summon Stone income rate
@@ -168,6 +169,220 @@ The town and caravan paragraphs remain historical future directions, not extra s
 combat implementation. In particular, the old demand that every future result fit
 `CombatResult` is replaced by the explicit `BattleOutcome` boundary in `ARCHITECTURE.md`.
 
+**2026-09-23 amendment:** the town is scheduled (`ig-wgj`). § The town hub below is its spec and
+supersedes the town bullet further down. Caravans, controlled expeditions and hopping in stay
+unscheduled.
+
+### The town hub — scheduled 2026-09-23 (`ig-wgj`)
+
+The owner's direction, 2026-09-23: the town is the main hub. **The menu goes away and the town
+becomes the interface.**
+
+- **You use a building by clicking it.** The Forge is the blacksmith: click it to equip, enhance,
+  salvage and convert gear, and to upgrade the Forge itself. Click the Summoning Circle to summon.
+  Every action the hub has today stays reachable. What changes is that a building opens it
+  instead of a tab.
+- **The town looks alive.** Your heroes who are home walk around and use its stalls. "Home" means
+  not away on an expedition and not stranded. A hero you send out leaves the town, and a hero who
+  returns shows up again. Heroes you station at a building work there (§ Heroes staff the
+  buildings). You walk the town as one of them (§ The town avatar).
+- **Buildings show their level.** Upgrading a building changes how it looks. Levels already
+  persist (`P2-07b`); this slice only draws them.
+- **Later: a base builder with an NPC-driven economy.** This is direction only: no ticket and no
+  scaffolding. See the end of this subsection.
+
+Where today's actions live:
+
+| Building | Opens | Today it is in |
+|---|---|---|
+| Summoning Circle | Summon; Circle upgrade | Hall tab |
+| Forge | Inventory, equip/unequip, enhance, salvage, convert; Forge upgrade | Armory tab, plus the Hall upgrade list |
+| Sanctum | Sacrifice and rank-up; Sanctum upgrade | Teams tab (Advancement) |
+| Training Hall | Team presets, practice battle; Training Hall upgrade | Teams tab and Hall tab |
+| Reliquary | Lost-gear recovery; Reliquary upgrade | Hall tab |
+| Town Gate (new, no level) | Dispatch, active orders, recent returns, stranded incidents | Expeditions tab |
+| Apothecary stall (new, no level) | Supply crafting | Hall tab |
+
+Clicking a hero in town opens that hero's detail. Any panel that needs you to pick heroes shows
+the shared roster list, as the Teams and Armory tabs do today. Summon Stones, Essence and the
+status line stay on screen as a HUD. A compact building list, bound to a key, stays as a backup
+so that nothing can only be reached with the mouse: controller support is still a hard-constraint
+target. The two new buildings have no level, and they gain none here. Giving them levels would
+add save state and a balance row, and nothing asks for either.
+
+**Owner rulings, 2026-09-23 (`ig-wgj`).**
+
+- **Far click.** If you have a body, clicking a building walks your hero there, and the panel opens
+  when the hero arrives. With no body, the panel opens at once.
+- **Fallback.** The building list is bound to keys 1-7.
+- **Townsfolk.** Only your heroes live in the town. The heroes run the buildings themselves
+  (§ Heroes staff the buildings, below). There are no decorative keepers and no NPCs.
+
+### Heroes staff the buildings — owner ruling 2026-09-23 (`ig-wgj`)
+
+The owner, 2026-09-23: "I want the heroes themselves be the shopkeep NPCs, they have their own
+blacksmith skills, research skills, ect".
+
+**The shopkeepers are your own heroes.** You station a roster hero at a building, and that hero
+works there. Nobody is hired. The town still has no NPCs, so § Scope boundaries holds. Every face
+behind a counter is a hero you pulled and can lose.
+
+**Professions.** Each profession belongs to one building:
+
+| Profession | Building | What a working keeper improves |
+|---|---|---|
+| Smithing | Forge | Salvage yield |
+| Rites | Sanctum | Sacrifice Essence yield |
+| Drill | Training Hall | Expedition XP |
+| Tracking | Reliquary | How long lost-gear caches and rescue windows last |
+| Alchemy | Apothecary | The parts cost of supply draughts |
+
+The Summoning Circle and the Town Gate take no keeper in this pass.
+
+- **Circle.** A keeper bonus on summon odds would wear down the ~12× "manufacture, don't pray"
+  margin that § Win and loss guards. A Circle keeper needs its own ruling and its own check.
+- **Gate.** It has nothing for a keeper to improve.
+- **Research.** The owner parked "research skills" for the base builder on 2026-09-23. It has no
+  system today, and it gets none in this pass.
+
+The numbers are in `SYSTEMS.md` § Keepers and professions.
+
+**Where skills come from: born + practice.** Owner, 2026-09-23: "Born + practice. The calling is an
+immense xp boost, like the progression system in rim world. Also only the ones with calling can make
+masterwork(the final tier) equips/food/etc".
+
+- **Born: a calling, rolled once.** Every hero is born with one calling: one of the five
+  professions, picked at random when the hero is created. The roll ignores rank and archetype, on
+  purpose. An F-rank Knight can be a born smith, and an SS Mage can be useless at the Forge. Dupes
+  of one definition roll their callings separately, so two copies of the same hero are not
+  interchangeable.
+- **Practice: XP from working.** A keeper earns XP in its building's profession by working there
+  while you play. XP only builds up during live play, on the same clock that ages recovery caches.
+  It never builds up while the game is closed (§ Hard constraints).
+- **The calling is a huge XP boost,** like a RimWorld passion. A hero learns its calling several
+  times faster than anything else. Every hero can reach the top skill level in every profession;
+  a born smith just gets there in a fraction of the time.
+- **Only a born master makes masterwork.** Masterwork is the top tier of a profession's output
+  (below). It needs a keeper whose calling *is* that profession and whose skill is at the top
+  level. A hero who learned the trade without the calling gets the full skill bonus, but never
+  masterwork.
+- **Skill lasts the hero's life.** A hero keeps what it learned when you move it to another building,
+  and when it ranks up. Death and sacrifice erase it. Skill cannot be passed on, recovered or
+  inherited. What a master already made stays made.
+
+**Professions are not stats.** The six combat stats are settled by ADR, and a profession is not a
+seventh. No combat path reads a profession: not the battle simulation, not `hero_power`, not the
+repeat safety forecast, not rank multipliers and not gear. Gear never changes a profession, and a
+profession never changes a fight. Exactly one thing reads a profession: its own building, while
+that keeper is home.
+
+**What a keeper changes.** A building has one keeper, and a hero keeps one building. A keeper who is
+home adds a skill bonus on top of the building's level bonus. With no keeper, or with its keeper
+away, a building works as it does today, except for masterwork. Masterwork is the only thing that
+needs a keeper. Keepers are visible: they stand at their building doing its work, like hammering at
+the Forge. Clicking a keeper opens the building.
+
+**Masterwork, profession by profession.** "Equips/food/etc" means professions whose output comes in
+tiers. Today only two buildings make anything, so only those two have a masterwork tier. Nothing
+here adds a recipe or a crafting tree.
+
+| Profession | What the building makes today | Masterwork | Needs |
+|---|---|---|---|
+| Smithing | Enhancement levels on gear, +1 to +15 | Enhancing past +12, into +13 to +15. A level-5 Forge opens that band, and only a born master smith may use it. | Nothing new. It gates a band that exists today. |
+| Alchemy | Healing and revival draughts | A masterwork draught of each kind, stronger than the regular one (PROVISIONAL, below) | A new supply tier. It changes battle rules and the supplies save. |
+| Rites | Rank-ups, F→D through SS→SSS | The final rank-up, SS→SSS. Only a born master priest who is stationed at the Sanctum and home can perform it. | Nothing new. It gates a step that exists today. |
+| Drill | Expedition XP. It makes nothing. | None. Skill bonus only. | — |
+| Tracking | Longer lost-gear and rescue windows. It makes nothing. | None. Skill bonus only. | — |
+
+The Forge row changes today's game. A level-5 Forge enhances to +15 on its own today. After this, it
+stops at +12 unless a born master smith is home at the Forge. Gear already past +12 keeps its
+level: the gate limits gaining a level, not keeping one. This is the owner's rule applied to the
+one output tier the Forge has.
+
+**The Rites gate touches the spine, and the owner chose it knowingly (2026-09-23).** The designer
+and the director both recommended against it. An SSS hero is the game's long-term goal (§ Win and
+loss). From now on, the last step to it needs a born master priest: a hero whose calling is Rites,
+at skill 5, stationed at the Sanctum and home when you press rank-up. Heroes already at SSS keep
+their rank.
+
+- **The risk.** Your master priest can die on an expedition, or you can feed away every hero born
+  for Rites. Either way, your SS hero cannot finish until you raise another master. The essence you
+  saved is not lost, but the goal is on hold.
+- **The way out is a delay, never a dead end.** One hero in five is born for Rites, whatever its
+  rank. You can always pull again: expeditions pay Summon Stones, and an empty roster gets a free
+  pull (`SYSTEMS.md` § Roster-wipe recovery floor). Once a Rites-born hero works at the Sanctum, it
+  reaches master in 75 minutes of live play. `SYSTEMS.md` § Keepers and professions has the odds
+  and the time.
+- **How to never wait.** Keep one Rites-born hero and station it early. Its training then runs
+  alongside the grind, and the gate costs you nothing but the one hero you did not feed.
+
+**The tension: keepers can leave, and keepers can die.** This brings the game's core tension home.
+
+- **A keeper can be sent out.** Stationing does not reserve a hero. The dispatch screen says what
+  you give up, for example "The Forge runs without Mira while she's away". The hero stays assigned,
+  and the bonus comes back when the keeper does. A keeper on an endless repeat order is a keeper in
+  name only.
+- **A keeper who dies takes the skill with them.** Permadeath empties the station and erases the
+  skill. Recovery brings the gear back. It never brings the skill back. When your best fighter is
+  also your best smith, that is a real dilemma.
+- **A stationed keeper cannot be sacrificed.** It is protected like team-preset members and the
+  body. You unassign it first, as a separate, deliberate act. Feeding a born smith to another hero
+  should be a choice, not a bulk-select accident.
+- **Fodder gets a second job.** The spine says to feed every hero you don't keep, at any rank. A
+  calling pulls the other way. That F-rank Knight is 10 Essence in the Sanctum, or your Forge's
+  future master. Both answers should hurt.
+
+**A keeper can be your body.** Walking as a keeper does not stop its work, because the body is at
+home. While you are that hero, its counter stands empty. The body rules still apply: you cannot
+dispatch the hero you are in.
+
+**How this feeds the economy later.** Professions are the labor a future NPC economy would read.
+More slots per building would mean more keepers, and production would scale with keeper skill.
+Whether anyone besides roster heroes ever works in the town is still § Scope boundaries' call.
+Nothing is built toward it now.
+
+**Owner rulings on staffing, 2026-09-23.**
+
+- Keepers can be sent out, and death erases the skill.
+- Skill is born + practice, and masterwork is reserved to the calling.
+- The Forge's +13 to +15 band needs a master smith who is home.
+- Masterwork draughts are built now, after the keeper bonuses (`DECISIONS.md` 2026-09-23,
+  masterwork draughts).
+- SS→SSS needs a master priest.
+- Research is parked for the base builder.
+
+> ⚠️ **PROVISIONAL** — masterwork draughts have never been played. They heal or revive for more,
+> cost more, and are spent after the regular stock (`SYSTEMS.md`). Whether a stronger draught
+> changes how raids feel, or only how often you craft, is unknown. · **Settled by:** a played build
+> with masterwork draughts in a 30-hero raid.
+
+> ⚠️ **PROVISIONAL** — whether the Rites gate feels like a fair delay or like a wall. The arithmetic
+> says it costs nothing to a player who stations a Rites-born hero early, and at most about 75
+> minutes plus a few pulls to one who loses theirs. Nobody has lost a master priest at SS yet.
+> · **Settled by:** a played build that reaches SS→SSS, once with a master kept and once after
+> losing one.
+
+**Base builder and NPC economy — direction only.** The owner eventually wants to lay out and grow
+the town, with an economy run by NPCs. Nothing gets built toward that now. Three questions are
+recorded here so that no town slice closes them off by accident:
+
+1. **Placement.** The choice is authored plots or free placement. Today building positions are
+   authored in the scene and are not save state. Either answer makes them save state.
+2. **Offline.** Under § Hard constraints, only dispatched expeditions progress while the game is
+   closed. An economy that produced while closed would need a `DECISIONS.md` entry amending that
+   line. The default is that it runs only during play, like the recovery clock.
+3. **Output.** An economy that mints Summon Stones or parts competes with expedition income. That
+   moves every income number in `SYSTEMS.md` and the ~327-pull claim in § Win and loss.
+
+"Defend it against attack" (the old town bullet) belongs to this same later tier. Keeper
+professions (§ Heroes staff the buildings) are the labor this economy would read. They do not
+answer any of the three questions above.
+
+> ⚠️ **PROVISIONAL** — undefined as a whole: placement, what NPCs produce, and whether anything
+> runs while closed. · **Settled by:** an owner ruling when the base-builder epic is scheduled,
+> made against measured Summon Stone and parts income from a played build, since economy output
+> is priced against it.
+
 Recorded 2026-08-11. **None of this is the draft, none of it is next, and none of it gets
 built toward speculatively** — no scaffolding, no interfaces with one implementation, no
 "we'll need this later" fields. It is written down because it changes what "the hub" and
@@ -227,6 +442,17 @@ before you can feed it to a zone is the strongest version of that decision the t
 Permadeath itself is untouched — `Expedition.resolve()` stays the only writer, and the town
 observes the roster rather than editing it.
 
+**Pinned down 2026-09-23 (`ig-wgj`).** "Spending" includes sacrifice. The body you are in cannot be
+fed to another hero, just as it cannot be dispatched. It can still be geared, enhanced and
+ranked up, because none of that spends it. Only a hero who is home can be a body: a hero reserved
+by an order or a stranded incident cannot, and that covers the downed ones too. You pick a body
+deliberately, from a hero's detail ("Walk as this hero"). The game never picks one for you,
+because that would quietly lock your best hero out of dispatch. Your choice is saved with the
+profile. A new profile, or one whose body is gone, starts at the fixed overview until you choose.
+The other heroes you see walking around are also views onto the roster. Where they stand and
+what they are doing is never saved. A hero stationed at a building can still be your body, and its
+building keeps working (§ Heroes staff the buildings).
+
 The remaining death case is the **empty roster**: a wipe can leave you with no hero to embody.
 The town's answer is that it is a place you can be standing in with no body — the camera detaches
 to a fixed overview of the square and the panels still work, which is exactly the state the hub
@@ -255,6 +481,10 @@ Explicitly **not** in the rough draft, and not to be invented by an implementer:
 story/campaign, dialogue, town NPCs, crafting trees, gear set bonuses, hero injuries or
 morale, pity system, achievements, difficulty settings, procedural dungeon generation,
 day/night, weather, mounts, pets, guilds.
+
+**Clarified 2026-09-23 (`ig-wgj`).** Heroes stationed at buildings are roster heroes, not town
+NPCs, so the "town NPCs" exclusion still holds. "Crafting trees" still holds too. Professions have
+no recipes and unlock nothing. They only scale bonuses the buildings already give.
 
 **Excluded from the draft is not the same as excluded forever.** Hard constraints above is the
 never list; this one is a *now* list. Direction above already names town NPCs as eventual, and
