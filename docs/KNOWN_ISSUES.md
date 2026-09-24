@@ -45,6 +45,15 @@ There is no logic worth testing in the walking skeleton. Verification for Phase 
 plus a clean headless import.
 **Fix in:** Phase 2, step 3.
 
+### A quit while saves fail resumes from the last good save
+Every profile action commits or rolls back (`ig-8hj`), so a failed save never keeps a pull, a
+rank-up or a death. Expedition progress is different: the periodic save writes it every 15 s
+(`PERIODIC_SAVE_SECONDS`). Until that save fails, a failed settle just retries on the next pulse,
+silently. The failed periodic save shows the error and pauses expeditions. A quit before then
+resumes from the last good save, up to 15 s back, the same as a crash.
+**Revisit if:** a player hits it. The draft fix pauses at once and shows a lasting "can't save"
+banner on the first failed commit.
+
 ---
 
 ## Open questions
