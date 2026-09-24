@@ -13,14 +13,14 @@ magnitude = 0.05
 [sub_resource type="Resource" id="TraitDefinition_overload"]
 script = ExtResource("2_trait")
 id = &"mage_overload"
-display_name = "Overload"
+display_name = "Cracked Vessel"
 stat = 5
 magnitude = 0.06
 
 [sub_resource type="Resource" id="TraitDefinition_archmage"]
 script = ExtResource("2_trait")
 id = &"mage_archmage"
-display_name = "Archmage"
+display_name = "Spire Scholar"
 stat = 1
 magnitude = 0.06
 

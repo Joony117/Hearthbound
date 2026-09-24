@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 skill_id = &"ranger_piercing_shot"
-display_name = "Piercing Shot"
+display_name = "Threadneedle"
 kind = "ability"
 archetype = "ranger"
 cooldown_seconds = 10.0

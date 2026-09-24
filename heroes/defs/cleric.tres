@@ -12,7 +12,7 @@ magnitude = 0.05
 [sub_resource type="Resource" id="TraitDefinition_sanctuary"]
 script = ExtResource("2_trait")
 id = &"cleric_sanctuary"
-display_name = "Sanctuary"
+display_name = "Quiet Nave"
 stat = 2
 magnitude = 0.04
 
@@ -31,7 +31,7 @@ magnitude = 0.03
 [sub_resource type="Resource" id="TraitDefinition_ward"]
 script = ExtResource("2_trait")
 id = &"cleric_ward"
-display_name = "Ward"
+display_name = "Chapel Stone"
 stat = 2
 magnitude = 0.03
 

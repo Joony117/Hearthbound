@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 skill_id = &"general_brace"
-display_name = "Brace"
+display_name = "Stone Posture"
 kind = "ability"
 archetype = "general"
 tier = 2

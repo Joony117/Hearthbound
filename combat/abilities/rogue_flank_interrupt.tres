@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 skill_id = &"rogue_flank_interrupt"
-display_name = "Flank / Interrupt"
+display_name = "Turncoat Cut"
 kind = "ability"
 archetype = "rogue"
 counter_tag = "interrupt"

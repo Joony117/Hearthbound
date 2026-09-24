@@ -13,21 +13,21 @@ magnitude = 0.04
 [sub_resource type="Resource" id="TraitDefinition_marksman"]
 script = ExtResource("2_trait")
 id = &"ranger_marksman"
-display_name = "Marksman"
+display_name = "Bowyer's Pride"
 stat = 1
 magnitude = 0.05
 
 [sub_resource type="Resource" id="TraitDefinition_deadeye"]
 script = ExtResource("2_trait")
 id = &"ranger_deadeye"
-display_name = "Deadeye"
+display_name = "Cold Squint"
 stat = 4
 magnitude = 0.015
 
 [sub_resource type="Resource" id="TraitDefinition_light_step"]
 script = ExtResource("2_trait")
 id = &"ranger_light_step"
-display_name = "Light Step"
+display_name = "Soft Tread"
 stat = 3
 magnitude = 0.03
 
@@ -41,7 +41,7 @@ magnitude = 0.03
 [sub_resource type="Resource" id="TraitDefinition_trueshot"]
 script = ExtResource("2_trait")
 id = &"ranger_trueshot"
-display_name = "Trueshot"
+display_name = "Split Feather"
 stat = 4
 magnitude = 0.01
 

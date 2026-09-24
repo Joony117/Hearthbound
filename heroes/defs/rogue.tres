@@ -13,14 +13,14 @@ magnitude = 0.015
 [sub_resource type="Resource" id="TraitDefinition_killer_instinct"]
 script = ExtResource("2_trait")
 id = &"rogue_killer_instinct"
-display_name = "Killer Instinct"
+display_name = "Sharp Hunger"
 stat = 1
 magnitude = 0.05
 
 [sub_resource type="Resource" id="TraitDefinition_executioner"]
 script = ExtResource("2_trait")
 id = &"rogue_executioner"
-display_name = "Executioner"
+display_name = "Grim Tally"
 stat = 5
 magnitude = 0.08
 

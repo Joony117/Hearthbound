@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 skill_id = &"general_disrupt"
-display_name = "Disrupt"
+display_name = "Break Cadence"
 kind = "ability"
 archetype = "general"
 tier = 3

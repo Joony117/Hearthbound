@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 skill_id = &"ranger_pinning_shot"
-display_name = "Pinning Shot"
+display_name = "Burr Arrow"
 kind = "ability"
 archetype = "ranger"
 unlock_level = 5
