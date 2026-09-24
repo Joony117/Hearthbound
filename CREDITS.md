@@ -80,12 +80,26 @@ All CC0. The pack licences are copied beside the files as `LICENSE-KayKit-*.txt`
 | `combat/battle/models/kaykit/characters/{Knight,Mage,Ranger,Rogue}.glb` + `*_texture.png`; `weapons/{sword_1handed,shield_round,shield_badge,staff,wand,bow_withString,dagger}.gltf` + `.bin` | `Free 2.0` (12 MB) | [Character Pack: Adventurers](https://kaylousberg.itch.io/kaykit-adventurers) |
 | `combat/battle/models/kaykit/characters/Skeleton_{Warrior,Rogue,Mage,Minion}.glb` + `skeleton_texture.png`; `weapons/Skeleton_{Blade,Shield_Small_A,Staff,Crossbow}.gltf` + `.bin` | `Free 1.1` (7.7 MB) | [Character Pack: Skeletons](https://kaylousberg.itch.io/kaykit-skeletons) |
 | `combat/battle/models/kaykit/animations/Rig_Medium_{General,MovementBasic,MovementAdvanced,CombatMelee,CombatRanged,Special}.glb` | `Free 1.1` (14 MB) | [Character Animations](https://kaylousberg.itch.io/kaykit-character-animations) |
+| `combat/battle/models/kaykit/animations/Rig_Medium_{Simulation,Tools}.glb` | `Free 1.1` (14 MB), the same zip | [Character Animations](https://kaylousberg.itch.io/kaykit-character-animations) |
+| `hub/town/models/hexagon/building_{tower_base,tower_A,tower_B,blacksmith,archeryrange,barracks,church,castle,market}_blue.gltf`, `building_{destroyed,stage_B,stage_C}.gltf`, `wall_straight_gate.gltf`; props `{barrel,crate_A_big,crate_open,weaponrack,target,tent,wheelbarrow,flag_blue}.gltf`; nature `{tree_single_A,tree_single_B,rock_single_A}.gltf`; each with its `.bin`, plus `hexagons_medieval.png` | `1.0 FREE` (33 MB) | [Medieval Hexagon Pack](https://kaylousberg.itch.io/kaykit-medieval-hexagon) |
+| `hub/town/models/resource_bits/{Iron_Bars_Stack_Small,Gold_Bars_Stack_Small,Wood_Log_Stack,Wood_Planks_Stack_Medium,Stone_Bricks_Stack_Medium,Textiles_Stack_Small,Pallet_Wood_Covered_A}.gltf` + `.bin` + `resource_bits_texture.png` | `1.0 FREE` (8.1 MB) | [Resource Bits](https://kaylousberg.itch.io/resource-bits) |
 
-These are the squad battle's units (`ig-ixj`). Heroes and skeletons share `Rig_Medium`, so one
+The first three rows are the squad battle's units (`ig-ixj`). The last four are the town (`ig-wgj.3`):
+the Simulation and Tools clips are for keepers at work and townsfolk; the Hexagon and Resource Bits
+models are the buildings by level tier and the square's props. Every Hexagon file shares the one
+`hexagons_medieval.png` (the pack ships identical copies per folder), so the staged files sit flat in
+one directory. Heroes and skeletons share `Rig_Medium`, so one
 animation set drives both sides. The weapon `.gltf` files reference the character textures by
 relative path, which is why the textures appear in both `characters/` and `weapons/`.
 
 **Left out on purpose:** Barbarian and Rogue_Hooded, the other weapons and props, the `Rig_Large`
-clips, the `Simulation` and `Tools` clip sets, the FBX copies, and the duplicate clip files that
+clips, the FBX copies, and the duplicate clip files that
 ship inside the Adventurers and Skeletons packs (the Character Animations pack is their superset).
-All are in the same free zips if a later ticket needs them.
+From the town packs: the green, red and yellow building colours (the blue set is the only one
+used); the other nine blue buildings (home_A, home_B, tavern, mine, lumbermill, windmill,
+watermill, well, tower_catapult); bridges, fences, the other walls, scaffolding,
+`building_dirt`, `building_grain`, `building_stage_A` and the catapult projectile; every hex tile
+(base, coast, river, road); the other props and nature pieces (mountains, hills, clouds, water
+plants); the other 69 Resource Bits (bars, nuggets, fuel, parts, loose planks); and each pack's FBX,
+FBX(Unity) and OBJ copies, samples and PDF guide. All are in the same free zips if a later ticket
+needs them.
