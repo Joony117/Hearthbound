@@ -643,11 +643,16 @@ Expeditions' recommended power is pinned against.
 > Living deeds, finished dreams and Founding also earn Essence and rank-ups, and sacrifice stays
 > the fast, dark path (`GAME_SPEC.md` § Direction). Every number in this section assumes sacrifice
 > is the only Essence source. That includes the ~327-pull spine and the ~15× "manufacture, don't
-> pray" ratio, so they will move. The living-Essence formulas are undecided. Guardrails proposed
-> for `ig-m6o.4`:
+> pray" ratio, so they will move. The living-Essence formulas are undecided. Guardrails for
+> `ig-m6o.4` (Direction v2 § 4 made the first two final):
 > - Living Essence never makes Summon Stones.
 > - Per hour of play, sacrifice stays the fastest route to SSS.
-> - A deed rank-up (the Risen path) is a milestone, never a farm.
+> - Each deed milestone pays once, never a farm. Retelling a deed never mints Essence again, and a
+>   deed nobody witnessed still counts.
+> - **Risen** (§ 4): born F, reached SSS, with a personal ascent deed before every promotion.
+>   Either Essence source can pay the rank-up cost. Sacrifice cannot supply the deed.
+> - **Concordance** (§ 4, `ig-m6o.3`) moves the ×3 below off `def_id`, onto a technique the two
+>   heroes have practised together (§ Dupes and resonance).
 >
 > · **Settled by:** `ig-m6o.4`. game-designer restates this section with both sources before any
 > formula ships, and the owner signs off on the restated spine.
@@ -720,6 +725,11 @@ pool** at **1, 3, and 6** — see § Traits, below, for the pool, the numbers, a
 
 This is why a duplicate is never dead weight, and it gives chasing a specific unit a payoff
 ladder beyond raw stats.
+
+**Amended 2026-09-24 (`GAME_SPEC.md` § Direction § 4).** **Concordance** replaces this bonus. The
+×3 stays, but it needs a technique the two heroes have practised together, not the same `def_id`.
+Kin or not, rivals too. Whether resonance keeps its `def_id` trigger is open (`ig-m6o.4`). Until
+`ig-m6o.3` lands, the rule above holds.
 
 > ⚠️ **PROVISIONAL** — resonance unlocking at 1, 3, and 6 dupes is an untested curve; nobody has
 > checked it against how often a player actually accumulates duplicates of one `def_id` at the

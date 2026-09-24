@@ -9,25 +9,425 @@ document, the document wins or the document gets amended — not silently reinte
 
 ## Direction (owner, 2026-09-24)
 
-**Approved by the owner on 2026-09-24,** after an eight-round debate (director vs GPT-6 Astra).
-This is where the game is going, and it outranks older direction text in this file. It is a
-target, not a build list:
+**This is Direction v2, the debate's final text.** The owner approved v1 on 2026-09-24, then asked
+the same day for more ideas and sharper versions of v1's. v2 is the answer; the owner has it for
+review, and § 13 is open. It replaces v1, which came from an eight-round debate (director vs GPT-6
+Astra). v2 came from a second debate the same day: ten rounds at max reasoning. It outranks older
+direction text in this file.
+- Both debates' raw rounds are archived in `docs/archive/direction/`. They are history, not spec:
+  grep them for the detail behind a `[rN]` tag.
+- Sections 1–14 are Astra's final text. Only headings, line wrapping and quote marks changed, and
+  the owner's rulings in § 11 are numbered so older references stay stable.
+- The final is compressed. **§ Kept in full**, below § 14, lists what it compressed, and all of it
+  stays in force. A short line never means an idea was cut. Only § 12 cuts anything.
+- Every new number belongs to game-designer. The text says "number: game designer" wherever one is
+  needed.
+- The director's architecture notes (what needs an ADR before it is built) live on the step beads
+  under `ig-m6o`. Steps that cannot start until an ADR lands carry the `needs-adr` label.
+
+It is a target, not a build list:
 - Each step arrives as a ticket under the `ig-m6o` epic, in order.
 - Nothing is built toward a later step ahead of time.
 - Until a step lands, the rules in the rest of this document hold.
 - Lines this direction contradicts are marked **Amended 2026-09-24**, not deleted.
 
-### The pitch
+### 1. Pitch and spine
 
 *Infinite Gacha is a living-world squad RPG where every summon brings someone worth knowing,
 every battle changes their relationships, and the town you build can rise to rescue them.*
 
-**Spine:** summon a person → give them a home → discover whom they love and what they want →
+**Spine:** Summon a person → give them a home → discover whom they love and what they want →
 fight together → let their choices, achievements and losses change the world.
 
-### The six pillars
+This is a single-player, offline Godot game with no real-money economy. Preserve the established
+baseline: 100 Stones per pull, fixed ordinary rank weights, squads of 5 through 50-unit regions,
+the hex town and its existing resources. The Ledger and expanded skill system are foundations
+under construction.
 
-**1. The Door Opens Onto Lives.** Every summon changes two worlds.
+**New thresholds, rates, durations, capacities, costs and rewards: number: game designer.**
+
+### 2. The machine in one page
+
+The **Ledger records settled facts permanently**: identities, actions, locations, outcomes,
+causes and witnessed details. Testimony records what someone said, including falsehoods. Each
+person's knowledge, belief and recall develop separately.
+
+Mira rescues someone while Oren holds a bridge. A runner sees only Mira returning and credits her
+with the entire defense. Gossip travels through meals, work and returning squads; motives change
+its telling. Details fade unless meaningfully retold, while emotional associations can endure.
+
+Mira and Oren earn living Essence for their actual contributions, even without witnesses.
+Meanwhile, distinct believers elevate the inaccurate account through **whisper → legend →
+miracle**. Mira gains a real bridge-related skill. Affection can make it protective; enemy fear
+can make it terrifying. Confession changes audiences and can create another manifestation without
+rewriting history.
+
+The town founds a school around the story. That real undertaking creates further achievements and
+obligations. Its conversation influences who answers the Door. The Guest notices conflicting
+ambitions and arranges an encounter with someone who knows what happened.
+
+Every consequence becomes another event. The player can inspect the truth, but heroes act on what
+they know. Teaching, exposing, forgiving and deceiving are therefore gameplay.
+
+### 3. The six pillars
+
+**The Door Opens Onto Lives**
+- When the town's chorus favors a homeland or ambition, it influences **who** answers within the
+  rolled rank. Beyond the rift, glimpse a person already doing something; choose which connection
+  to pursue next.
+- Summoning removes someone from an existing world, whose dependents, rivals and pursuers can
+  follow. Confront those claims, while reciprocal promises can physically bring separated worlds
+  closer.
+
+**A Home Worth Returning To**
+- Homes, shared walls and commuting routes create encounters; residents build desire paths,
+  petition to move and repurpose spaces. Preview their likely routes, then decide which
+  relationships your layout makes possible.
+- Fulfilled dreams found institutions that teach others; storied buildings preserve evidence and
+  practices. Restore the guardian's doorway, train living custodians, connect staffed districts and
+  construct articulated supports until **The Town Gets Up**—whose crews may choose evacuation over
+  your siege.
+
+**People Inside the Fight**
+- Bonds, knowledge and commitments change eligible actions and skill preferences. Read the
+  battlefield through the piloted hero's understanding, then coordinate counters, rescues and
+  combinations between particular people.
+- Enemies retain identities, relationships and memories of your tactics. A returning nemesis
+  changes their openings; a defector may confront you using preferences you once programmed.
+
+**Power Has Witnesses**
+- Living achievements earn Essence; sacrifice converts a person's potential faster and leaves a
+  soul with remembered purposes. Develop partnerships, then face what consuming one means to its
+  survivor, pupils and friends.
+- Heroes can protest, conceal victims, volunteer, defect, found rival towns or overthrow the Door.
+  Your Herald can grant sanctuary to the nemesis you intended to kill; decide what your own
+  representative's promise means.
+
+**Fate Has a Face**
+- **Mother Briar** collides loved ones' dreams; **the Gilded Jackal** stakes boons against declared
+  outcomes; **Sister Cinder** brings unfinished obligations to living witnesses. Their omens reveal
+  opportunities to outwit them.
+- A living Risen can contest the chair by resolving a scheme through their own counter-plan and
+  gaining affected people's support. Take its physical seat during the public reckoning; the former
+  hero becomes a Guest with personal reasons to help or torment you.
+
+**Nothing Ends Without Leaving Something**
+- Graves, Winter visits, hollows, inherited techniques and household rituals make absence
+  tangible. Recover a stolen name through surviving habits and evidence; recognition can reveal
+  that the monster guarding a doorway was someone loved.
+- Departed towns become persistent homelands. Return to institutions, champions and Guests whose
+  histories you helped create, then negotiate a congress of worlds that have grown beyond your
+  ownership.
+
+### 4. The Door and the economy
+
+Expeditions earn Stones and produce deeds. Stones summon people whose arrival changes the chorus.
+Deeds, fulfilled dreams and Founding earn Essence; sacrifice supplies faster advancement with
+social consequences. Rank-ups spend Essence. Learned **Concordance** replaces the same-definition
+sacrifice bonus: consuming a partner in a jointly mastered technique yields the existing ×3
+multiplier. Belief shapes special powers and future arrivals. A false legend can inspire a real
+undertaking that produces Essence—and, after exposure, a **Trial of the Boast** demanding the
+champion perform the feat they claimed.
+
+Guardrails:
+
+- Living Essence never produces Stones; sacrifice remains the faster ascent from comparable
+  resources.
+- Unwitnessed achievements count. Retelling alone does not repeatedly mint Essence.
+- Ordinary rank weights remain fixed; chorus influence is bounded per resident.
+- Pity identifies a particular approaching recruit and guarantees their arrival. Topic changes
+  cannot erase that commitment.
+- **Risen:** born F, reached SSS, with a personal ascent deed before every promotion. Either
+  Essence source can fund the cost; sacrifice cannot supply the deed.
+- "Climbed alone" and "climbed on the dead" are competing legends, not automatic morality flags.
+  Believers' feelings and the sacrificed souls' testimony shape their powers and eventual Guest
+  personality.
+
+### 5. People
+
+Relationships are directed and layered: familiarity, affection, situational trust, respect,
+grievances, commitments and shared techniques. Friends, rivals, partners, mentors, debtors and
+enemies can occupy overlapping roles. Concordance measures practiced coordination, including
+between rivals.
+
+A **dream** names its owner, formative events, desired change, beneficiaries, acceptable methods
+and observable milestones. New knowledge can revise it. A woodcutter's crossing becomes a school;
+a smith's broken shield becomes a taught counter; a rites practitioner restores a disputed name.
+
+While the game remains open, moods influence routines, private goals produce actions and repeated
+choices become habits. Diaries describe only what their writers know and infer—including mistaken
+beliefs about the Door. Returning reveals an extra chair, a changed route or an unfinished letter.
+
+Joy uses that same machinery:
+
+- **Unkillable Chicken:** an embarrassing survival nickname becomes a defensive legend that
+  prevents a downing before it occurs.
+- **Pets as witnesses:** sensory associations produce warnings and rescues; interpreting them
+  requires evidence.
+- **Door's Terrible Impersonator:** satire spreads, affects reputation and alters the summoning
+  chorus.
+- **Masquerade doctrine:** practiced costumes exploit enemies' learned recognition without
+  transferring skills.
+- **Wrong Person's Invention:** an awkward object finds someone whose habits make its effect
+  useful.
+
+Bell Run develops coordination through actual skill timing. Rift potlucks spread recipes,
+testimony and relationships; learned dishes become food and expedition provisions.
+
+Present the growing cast through households, squads, schools and institutions. Everyone remains
+individually reachable, followable and able to initiate a story.
+
+### 6. Combat
+
+The picker answers telegraphs in order: **stun → interrupt → shield → dodge → walk out**. There is
+no mana; skills retain cooldowns and the **1.0-second ability lock**. Weaponskills replace basic
+swings. Chains are preferences, never queues; the player pilots one hero.
+
+The six personal rules:
+
+- **Trust:** a trusted partner's ready, valid protection makes a frightening opening acceptable.
+- **Missing beat:** an apprentice's learned technique can satisfy the old partner condition for a
+  survivor's follow-up.
+- **Recognition:** nemeses predict familiar openings from experience, then use actual available
+  counters.
+- **Commitment:** a hero can reject an action before spending its cooldown and pursue a stated
+  alternative.
+- **Parliament:** cooperating souls supply a preferred repertoire executed through the champion's
+  ordinary actions.
+- **Legend:** a manifested skill becomes eligible when its role condition occurs; belief shapes it
+  and personal stance governs willingness.
+
+A private technique can emerge autonomously when a deepest commitment is threatened—including
+protecting someone you ordered attacked. Witnessing it grants knowledge; teaching requires its
+owner's agreement.
+
+Rescue continually reevaluates pursuit-breaking, approach, lifting and extraction. Carrying
+restricts available actions; casting cannot bypass the lift interaction.
+
+**The Founder Walks Again** is a living retiree's once-per-life muster of actual pupils. Their
+institutions form a coordinated army, with every participant retaining ordinary timing. Taught
+musical call-and-response can likewise make a specific counter applicable.
+
+Enemies promote through meaningful recorded events, learn, inherit, retire and found schools.
+Their authored chronicles can be mistaken—and exploited.
+
+### 7. Souls and the Old World
+
+| Soul state | Residence and transition |
+|---|---|
+| Unmoored | Actual remains or released anchor; recover, bury or bind. |
+| Resting | A burial residence; visit, address obligations or arrange departure. |
+| Parliament | A particular champion's vessel; promises govern cooperation. |
+| Guardian | A particular place; protective purpose binds its intervention. |
+| Hollow | A hostile remnant; break its confinement to release the soul. |
+| Winter visitor | A temporary household visit that vacates the previous active role. |
+| In transit | A single carried anchor moving between residences or worlds. |
+| Released | Terminal departure; deeds and living traditions remain. |
+
+Graves can remain empty memorials. Dream testimony communicates without relocating its source.
+Stolen names disrupt recognition, not identity.
+
+**Hollows** require an actual available soul and vessel. They use the dead hero's kit and
+preferences, with only equipment they actually hold. A remembering friend can exploit the
+missing-partner fallback; victory frees the soul, never recruits the dead.
+
+**Winter of Names** brings eligible visitors to particular households with unfinished purposes.
+Host witnesses, teach successors or fulfill a promise before farewell.
+
+**The Last Watch:** a guardian announces its final season. Train a living custodian or face the
+loss of protection. Forced binding is imprisonment: the guardian may shelter residents from your
+enforcers before becoming the hollow you created. Released souls cannot be recalled.
+
+A chapter ends when the Door departs: through fall, expulsion, fulfilled ambitions, chair
+succession or player choice. People and possessions migrate physically; other institutions and
+souls remain. Debts and established identities persist.
+
+Compatible exported worlds can become imported rifts. Conflicting continuations cannot resurrect or
+duplicate anyone.
+
+By the long campaign's later generations, former Risen occupy the important chairs. Their
+jurisdictions, memories and relationships create a succession of personal rivalries rather than
+repeated anonymous resets.
+
+### 8. The player's screen
+
+Cue budgets allocate a single emphasis to each named slot; they never remove actual hazards or
+usable skills.
+
+| Screen | Always available | Emphasis slots | Decision |
+|---|---|---|---|
+| Town | Map, resource flows, calendar, expeditions | Selection; urgent need; changed scene | Where to intervene |
+| Battle | Positions, health, telegraphs, objective, skill bar | Piloted lens; immediate threat; chosen action | What command matters now |
+| Door | Stones, chances, pity traveler | Current arrival; unresolved connection | Whose connection to pursue |
+| Hero | Home, work, dream, known skills | Concern; intervention; consequence | How to support this person |
+| Chronicle | Actual events and chapters | Selected event; selected consequence | Which history to act upon |
+
+The piloted lens reveals belief and memory without changing physical targeting geometry. Cause →
+ribbon → action connects meaningful decisions.
+
+Notifications have three forms: **Act here**, **See what changed**, **Something is approaching**.
+Waiting stories remain with their people; urgent incidents retain markers.
+
+Explicit world pause stops simulation; tactical pause stops only the watched battle. Closing
+freezes everything. Chapter handoff pauses for the next-world decision. Ordinary alerts and screen
+changes never automatically pause.
+
+Reveal through eligible lived events: minute 0, arrival and history; 5, home encounters; 15,
+personal combat; 30, connected summons; 60, an emerging institution. Later introduce death and
+power, Guest collisions, spectacle and succession. These are pacing targets, never scripted
+casualties.
+
+### 9. The addiction stack
+
+- **30 seconds:** a personal reveal, readable threat or satisfying combination.
+- **5 minutes:** return to one changed household, intention or relationship.
+- **Session:** pursue a promise and bring home its consequences.
+- **At work:** anticipate someone's arrival or difficult reunion; nothing progresses offline.
+- **Hour 5:** learn who lives behind competent automation through sports, humor and personal
+  stakes.
+- **Hour 20:** visit an independent settlement or counter a Guest's collision.
+- **Hour 100:** confront a former nemesis's school or your own earlier legacy.
+- **Hour 500:** negotiate among worlds and Guests inhabited by people you remember raising.
+
+### 10. The build order (`ig-m6o`)
+
+1. **Ledger** (`ig-m6o.1`, done; save shape `ig-m6o.9`): stable identities, settled events, causal
+   links, witnessed details, provenance and live-time clocks.
+2. **People at home** (`ig-m6o.2`): spatial routines, directed relationships, knowledge, gossip,
+   recall, moods, dreams and place imprints.
+3. **People in combat** (`ig-m6o.3`): skill eligibility, commitments, reservations, shared
+   technique triggers, Concordance, carrying, recognition and the piloted lens.
+4. **Summoning with consequences** (`ig-m6o.4`): rank/identity selection, chorus, pity identity,
+   crossings, deed rewards, Essence provenance and belief manifestations.
+5. **Institutions** (`ig-m6o.5`): teaching, recipes, ownership, jobs, seasonal production, living
+   roster exits, settlements, covenants, Herald mandates and collective projects.
+6. **Death and power** (`ig-m6o.6`): the soul registry, bindings, sacrifice consequences, item
+   custody, graves, hollows, Winter, Parliament and Last Watch.
+7. **Fate** (`ig-m6o.7`): feasible encounter generation, dream collisions, Guest priorities,
+   wagers, nemesis careers, stolen names and chair succession.
+8. **Spectacle and Old World** (`ig-m6o.8`): formations of actual participants, mobile districts,
+   chapter transitions, compatible world files and cross-world politics.
+
+Authored accounts and embodied readouts develop alongside their producers. The Ledger records
+results; it does not create a competing simulation authority.
+
+The skills lane (`ig-gy0`) and the town lane (`ig-6m2`) keep going. They are foundations steps 2
+and 3 build on, not rivals.
+
+> ⚠️ **PROVISIONAL** — step 1's list is wider than what `ig-m6o.1` built (settled events, a live
+> `time`, and the died → battle link). Reading: each missing piece lands with its first reader,
+> never ahead of it. Witnessed details come with step 2's knowledge, Essence provenance with
+> step 4, item identities with step 5's ownership, and enemy identities with step 7's nemeses
+> (architecture note 1, on `ig-m6o.7`). · **Settled by:** the director, when `ig-m6o.2` is scoped
+
+### 11. The standing rulings
+
+Numbered so the older **Amended 2026-09-24** references in this file stay stable. Rulings 1–5 keep
+their v1 numbers.
+
+1. **Old World yes:** succession preserves independent worlds beyond player ownership. (Amends the
+   one-roster-forever premise, § Win and loss.)
+2. **Power from both paths:** deeds and sacrifice both fund advancement; their histories produce
+   different testimony. (Amends sacrifice as the only Essence source: § Core loop, § Win and loss,
+   § The town builder. The formulas wait for a restated spine: `SYSTEMS.md` § Sacrifice → rank
+   up, spine flag.)
+3. **Defiance yes:** reasoned refusals, living departures and earned overthrow change the
+   campaign. (Amends "preferences remain authoritative", § Combat model.)
+4. **Dead never playable:** no soul state returns to Alive; spectral effects act through current
+   vessels. (`kill_hero()` stays the only way a hero dies, and nothing comes back through it.
+   Living departures need their own audited path, and that needs an ADR first: `ig-m6o.5`.)
+5. **Only Risen take the chair:** eligibility requires F origin, SSS and personal deeds before
+   every promotion. (A director call on 2026-09-24, standing since.)
+6. **One soul, one presence:** visits and transfers vacate prior active roles; dream projections
+   are views of the same living actor.
+7. **Live-time only:** hunger, memory, travel, seasons and old worlds freeze when closed, without
+   catch-up.
+
+> ⚠️ **PROVISIONAL — flagged conflict, not reconciled.** Ruling 7 and § 9 ("nothing progresses
+> offline") meet § Hard constraints' timed sent expeditions, which finish while the game is closed
+> and resolve once on reopening (owner-approved 2026-09-22, `ig-6l4`). Game-designer reading:
+> expeditions stay the one owner-approved exception, and everything else in ruling 7 freezes. ·
+> **Settled by:** the owner
+
+> ⚠️ **PROVISIONAL** — game-designer readings of ruling 1 and § 7, not owner rulings:
+> - The old town's living people stay in the old world, unless they physically travel with the
+>   Door. They can arrive again through its rift, carrying their history. The dead never do
+>   (ruling 4).
+> - § 7 lists fall and expulsion as separate ways a chapter ends. Reading: "fall" means the roster
+>   is lost beyond recovery. Expulsion is the overthrow (§ Kept in full: the Door has a body).
+>
+> · **Settled by:** the owner, when `ig-m6o.8` is scoped
+
+### Design principles
+
+- **Personhood persists:** the Door carries accountability to sacrificed souls, not automatic
+  custody of them. Astra wrote this into § 11. It is a design principle, not an owner ruling
+  (director, 2026-09-24).
+- The **spine test** in § 12 is the other one.
+
+### 12. Cut, merged and restored
+
+**Cut:** duplicate souls and alternate selves; replace them with distinct associates and worlds
+changed by someone's absence. Permanent F-rank invisibility becomes earned recognition. Universal
+ascension and compulsory retirement death become Founding and living aftermath.
+
+**Merged:** diaries, enemy chronicles and performances share authored-account machinery.
+Chorus-driven arrivals provide material for Guest collisions. Stolen recognition and hollow
+confinement can combine in one encounter while remaining distinct conditions.
+
+**Restored:** promises physically reshape geography; musical motifs enable real counters; shared
+dream-spaces are explorable interpretations. These retain identifiable participants and
+consequences.
+
+Spine test: every activity must change a particular person, relationship, institution or
+inherited obligation.
+
+### 13. Decisions for the owner — OPEN
+
+**Open as of 2026-09-24.** The director is asking the owner. Nothing gets built on either option
+until the owner rules. Each is recorded on the bead where it lands.
+
+The agreed core reopens no standing rulings. The following additions are proposals:
+
+- **Miracle-born person:** genuinely new mortal person or embodied construct? **Recommend the
+  person**, with a new identity and no invented past. (`ig-m6o.5`)
+- **A former town summons the Door:** binding covenant arrival or ordinary invitation? **Recommend
+  covenant arrival**, placing you under the society your heroes built. (`ig-m6o.8`)
+- **Concordance between worlds:** one coupled formation or separate allied walking cities?
+  **Recommend the coupled formation**, with every community retaining agency. (`ig-m6o.8`)
+
+### 14. Three last twists
+
+Each gets a scoped bead only when its step is next. Until then, it is a note on that step's bead.
+
+**The Person Nobody Summoned** (`ig-m6o.5`). A recurring fictional character gains sincere belief
+until a miracle gives them a genuinely new life; the Ledger records their birth now, not the
+stories' imaginary past. They persist as a mortal person with their own dream. **Do:** help them
+choose which expectations to accept. **Feel:** wonder and responsibility. **Loop:** witness their
+first deed that actually belongs to them. **Links:** authored accounts, belief, Founding, dreams.
+
+**You Become Someone Else's Summon** (`ig-m6o.8`). A former apprentice's fulfilled covenant names
+the Door as its promised arrival. Your actual anchor crosses into their settlement under its
+charter; ordinary hero-pull weights remain unchanged. **Do:** negotiate with people who once
+followed you and seek a willing representative. **Feel:** vulnerable belonging. **Loop:** earn or
+challenge your place in their society. **Links:** Heralds, covenants, Old World, defiance.
+
+**The Multiverse Answers the Counter** (`ig-m6o.8`). Schools in different worlds master
+complementary motifs; reciprocal promises pull their actual regions into a shared formation. Their
+ordinary casts combine into a counter against a world-scale enemy miracle—and one estranged
+conductor can refuse the crucial answer. **Do:** pilot a participant, coordinate the sequence and
+reconcile the missing voice. **Feel:** cosmic spectacle depending on someone you know. **Loop:**
+teach or reunite the next school. **Links:** Concordance, music, reunion geography, belief,
+independent settlements.
+
+### Kept in full: what the final compressed
+
+All of this is still the direction. Sections 1–14 sharpen it into mechanics; they do not replace
+it.
+
+#### The signature moments (debate 1's six pillars, verbatim)
+
+**The Door Opens Onto Lives.** Every summon changes two worlds.
 - Open a homeland rift and glimpse someone mid-adventure, before rank, name, passion and dream
   appear.
 - Summon extraordinary power, and the pursuer who knows how to defeat it.
@@ -36,7 +436,7 @@ fight together → let their choices, achievements and losses change the world.
 - Face an entire homeland demanding its missing person back.
 - **Joy:** rift potlucks bring singing bread, impossible recipes and embarrassing reunions.
 
-**2. A Home Worth Returning To.** Build streets full of people who have reasons to stay.
+**A Home Worth Returning To.** Build streets full of people who have reasons to stay.
 - Neighbours become friends, rivals and collaborators. Adjoining workshops invent techniques.
 - Fulfil a dream by founding a tavern, school or forge that seeds other people's dreams.
 - Feed households through winter. Design evacuation routes around actual rescue promises.
@@ -46,7 +446,7 @@ fight together → let their choices, achievements and losses change the world.
 - **Joy:** soup factions, petty hobbies, monster pets, nickname traditions and festivals arise
   from residents' histories.
 
-**3. People Inside the Fight.** Their relationships change what your squad can do.
+**People Inside the Fight.** Their relationships change what your squad can do.
 - Program skills across bonded heroes: one commits, another counters the retaliation.
 - Pilot a frightened veteran through the killing pattern they finally recognise.
 - Turn a dream into a rescue chain: break pursuit, lift a friend, cast while carrying.
@@ -56,7 +456,7 @@ fight together → let their choices, achievements and losses change the world.
 - **Joy:** squads invent sports and ridiculous skill exhibitions. Apprentices parody a nemesis's
   famous pose.
 
-**4. Power Has Witnesses.** Everyone remembers how you became extraordinary.
+**Power Has Witnesses.** Everyone remembers how you became extraordinary.
 - Raise an overlooked F-rank through deeds into a **Risen** SSS whom fate can no longer ignore.
 - Earn Essence through living achievements, or sacrifice someone for irreversible power.
 - Face protests, hidden victims, purposeful volunteers, and desertions that found rival towns.
@@ -67,7 +467,7 @@ fight together → let their choices, achievements and losses change the world.
 - **Joy:** the terrifying champion still has a ridiculous nickname, and a pet that steals their
   chair.
 
-**5. Fate Has a Face.** Outwit a Guest who engineers collisions from your actual history.
+**Fate Has a Face.** Outwit a Guest who engineers collisions from your actual history.
 - Choose Mother Briar's tangled affections, the Gilded Jackal's outrageous wagers or Sister
   Cinder's unfinished promises.
 - Read omens, bargain over opportunities, and discover the causal chain behind an encounter.
@@ -78,7 +478,7 @@ fight together → let their choices, achievements and losses change the world.
 - **Joy:** the Guest can arrange a disastrous reunion banquet as readily as a siege, and
   residents create the punchline.
 
-**6. Nothing Ends Without Leaving Something.** Every life changes the world's possibilities.
+**Nothing Ends Without Leaving Something.** Every life changes the world's possibilities.
 - Visit graves with friends. Face hollow bosses carrying the dead hero's real kit and gear.
 - Welcome the Winter of Names, when unfinished dreams return to familiar homes.
 - Discover a dead defender's protection in their doorway. Eventually pilot **The Town Gets Up**
@@ -89,98 +489,58 @@ fight together → let their choices, achievements and losses change the world.
 - **Joy:** recipes, jokes and festivals outlive their founders. One soul remains one person
   throughout the afterlife.
 
-### The addiction stack
+#### Debate 2 mechanics the final shortened
 
-- **30 seconds:** reveal a person through a rift, recognise a telegraph, land a personal combo.
-- **5 minutes:** check a household, discover a dream complication, pick the next squad or summon.
-- **Session:** pursue a promise, come back with changed relationships, build or celebrate the
-  consequence.
-- **"At work":** "Her brother arrives tomorrow. Will she still volunteer?" Anticipation lasts
-  without punishing you for closing the game.
-- **Hour 5:** squad sports reveal personality once basic automation is familiar.
-- **Hour 20:** former apprentices build an independent town you want to visit.
-- **Hour 100:** a retired nemesis's school teaches your enemies, and your pupils.
-- **Hour 500:** a congress of homeland societies and former worlds contests the Door's future.
+Each item names its debate round and the step bead that carries its detail.
 
-### The first hour
-
-- **Minute 0:** summon someone with a passion, a dream and a homeland connection.
-- **Minute 5:** place their home and workplace, and witness a specific interaction with another
-  resident.
-- **Minute 15:** deploy, read a telegraph, pilot a hero and program a short learned-skill chain.
-- **Minute 30:** choose how to tackle an exposed rescue or a dangerous objective. Actual play
-  produces protection, a near-loss or a loss. No death is scripted.
-- **Minute 60:** come back to a relationship change, a dream milestone and a Chronicle entry. An
-  omen connects tomorrow's expedition to what actually happened.
-
-### Owner rulings, 2026-09-24
-
-1. **The Old World: yes, runs stack up.** A fallen or retired town becomes a homeland rift for the
-   next town. This amends the one-roster-forever premise (§ Win and loss).
-2. **Power source: both.** Living deeds, finished dreams and Founding earn Essence and rank-ups.
-   Sacrifice stays as the fast, dark path, with social fallout: protests, hidden victims,
-   volunteers and desertions. This amends sacrifice as the only Essence source (§ Core loop,
-   § Win and loss, § The town builder). The formulas touch the spine, so they wait for a restated
-   spine (`SYSTEMS.md` § Sacrifice → rank up, spine flag).
-3. **Defiance: yes, both.** A mid-fight refusal always shows its reason, and it can be right or
-   wrong. It is never unexplained noise. Overthrowing the player, the Door, is rare and earned.
-   This amends "preferences remain authoritative" (§ Combat model).
-4. **Afterlife: a dead hero is never playable again.** There is no revive and no re-summon, in the
-   Old World too. Ghost visits, hollows and the Parliament are fine: the dead act, but never
-   rejoin the roster. `kill_hero()` stays the only roster exit, and nothing comes back through it.
-5. **Director call: only Risen heroes can steal the Guest's chair.** A Risen hero is one that
-   climbed F→SSS by deeds. A hero born above F cannot take the chair, by design. The underdog is
-   the culmination.
-
-> ⚠️ **PROVISIONAL** — game-designer readings of ruling 1, not owner rulings:
-> - The old town's living people become its rift's population, and can arrive again carrying
->   their history. The dead never do (ruling 4).
-> - A town "falls" when its Door is overthrown or its roster is lost beyond recovery. "Retired"
->   is the player's own choice.
->
-> · **Settled by:** the owner, when `ig-m6o.8` is scoped
-
-### The build order (`ig-m6o`)
-
-Each step lands one new feeling. Each is wired after the one before it.
-
-1. **The Ledger** (`ig-m6o.1`). Record settled events: who did what to whom, when and where.
-   History readers derive from it, and combat still resolves combat. *"The game remembers what we
-   did."* ADR: `DECISIONS.md` 2026-09-24.
-2. **People at home** (`ig-m6o.2`). Quirks, dreams, meals, neighbourhood encounters and Bonds.
-   *Affection and everyday amusement.*
-3. **People in combat** (`ig-m6o.3`). The skill foundation finished, personal chains, informed
-   refusals, rescue motives and recognition. *Trust in a particular squad.*
-4. **Summoning with consequences** (`ig-m6o.4`). Homeland populations, anchors, beacon pity,
-   entourage arrivals and pursuers; deeds and living achievements connect to promotion.
-   *Anticipation about who arrives next.*
-5. **Ambitions become institutions** (`ig-m6o.5`). Founding, apprentices, schools, food pressure,
-   seasons, raids and independent settlements. *Pride in a society with its own future.*
-6. **Death and power remain personal** (`ig-m6o.6`). Graves, sacrifice reactions, the Parliament,
-   hollows, Winter visitors and inherited techniques. *Grief, responsibility and discovery.*
-7. **Fate becomes an opponent** (`ig-m6o.7`). The selectable Guests, causal schemes, evolving
-   nemeses, stolen names, Door overthrow and the chair challenge. *Rivalry with a world that knows
-   you.*
-8. **History becomes spectacle** (`ig-m6o.8`). The Founder's formation, the walking town, the
-   homeland congress and Old World succession. *Astonishment at what these lives built.*
-
-The skills lane (`ig-gy0`) and the town lane (`ig-6m2`) keep going. They are foundations steps 2
-and 3 build on, not rivals.
-
-### Cut
-
-- **Alternate selves.** They undermine irreplaceability. Replaced by worlds transformed by one
-  person's absence.
-- **Anonymous duplicate fodder.** It contradicts personhood. Replaced by distinct entourage
-  members.
-- **Permanent F-rank invisibility.** It contradicts remembered deeds. Replaced by recognition
-  earned through audacity.
-- **Universal ascension, or compulsory death after retirement's final fight.** It treats
-  fulfilment as disposal. Replaced by Founding and the living legendary formation.
-- **Generic banners, and seasons with no people behind them.** Merged into homeland arrivals and
-  the shared winter of hunger, visitors and promises.
-- **A separate joy pillar.** It would isolate happiness from ordinary life. Joy is woven through
-  all six.
+- **The Door has a body** [r3] (`ig-m6o.7`).
+  - **Loved:** residents who see you keep promises that matter to them build a public house around
+    your threshold, with a place for every household.
+  - **Hunted:** enemies follow evidence to your physical anchor and fasten siege gear to it. A
+    captured anchor limits where you open and whom they let through.
+  - **Rescued:** if the anchor is captured, people you once saved mount a liberation expedition
+    from their own allies. Someone you rescued breaks in carrying your old household banner.
+  - **Overthrown:** a coalition with backing across institutions seizes the anchor. It imposes a
+    covenant, confinement or expulsion into the next chapter, and your own streets become its
+    approach routes.
+- **Killing their leader changes people** [r2] (`ig-m6o.7`).
+  - Witnesses react first, and runners carry the news. Loyalists, rivals and conscripts each act on
+    their own relationships, so find who really holds the formation together.
+  - The surviving apprentice rebuilds around the lesson of your victory.
+  - Two enemy survivors can complete their dead leader's famous formation with a new partner: the
+    enemy's missing beat.
+- **Held the Bridge** [r2] (`ig-m6o.4`), the worked legend skill: a spectral crossing whose
+  defender intercepts attacks on those behind them. It keeps a cooldown and the ability lock.
+  Residents reenact the story with lanterns, and a confession changes the performance: some
+  lanterns go out, others form a new emblem.
+- **Memory-forged items** [r1] (`ig-m6o.5`): an object keeps the event it took part in, and
+  witnesses disagree about what it means. Forge a response to a failure you admit.
+- **Plants** [r4] (`ig-m6o.4`): captors route a real spy through a summon. The spy reports only
+  what they learn, and needs a messenger, a meeting or a rift to send it. Friendship can make them
+  hold back, or turn them.
+- **How gossip works** [r1] (`ig-m6o.2`):
+  - Gossip needs contact: meals, work, travel, bedside visits. Each exchange carries a few topics.
+  - Couriers and taverns spread it faster. The screen shows who knows which claim, and through
+    whom.
+  - Tellers bend a story to their motives. Ten people repeating one source are still one source.
+  - Memory keeps the gist and the feeling longer than the wording.
+- **Offers and responses** [r8] (`ig-m6o.3`):
+  - Before a relevant command, a hero states their condition ("I'll cross if Mira covers me").
+  - Another hero can contest the piloted hero's reading of the field. Switching lens shows the
+    difference.
+- **Pressures are approaching choices** [r4] (`ig-m6o.5`): hunger, raids and winter build toward
+  decisions, in live time only.
+- **Profession dreams** [r4] (`ig-m6o.2`; their schools are `ig-m6o.5`):
+  - Woodcutting: "Give us a road home."
+  - Smithing: "This shield brings you back."
+  - Rites: "Let them remember whom they buried."
+- **Restored in round 9, kept at full force:**
+  - **Reunion geography** (`ig-m6o.8`): kept reciprocal promises pull worlds together, and
+    betrayal breaks the link.
+  - **The battlefield band** (`ig-m6o.5`): a taught call-and-response makes a specific counter
+    usable. It still needs its ordinary cast and timing.
+  - **Explorable dream-space** (`ig-m6o.6`): its rooms are built from sleepers' conflicting
+    beliefs, and its conclusions are tested awake. It never rewrites what happened.
 
 ---
 
@@ -224,9 +584,11 @@ Inspired by the manhwa *Pick Me Up, Infinite Gacha*.
 6. **Push** a harder zone, or issue finite repeat orders to established teams. Unlimited farming
    requires a conservative safety forecast for the current team and zone.
 
-> **Amended 2026-09-24 (§ Direction, ruling 2).** Step 5's sacrifice is no longer the only way
-> up. Living deeds, finished dreams and Founding will also earn Essence and rank-ups (`ig-m6o.4`,
-> `ig-m6o.5`). Until those steps land, sacrifice is the only source.
+> **Amended 2026-09-24 (§ Direction, ruling 2 and § 4).** Step 5's sacrifice is no longer the
+> only way up. Living deeds, finished dreams and Founding will also earn Essence (`ig-m6o.4`,
+> `ig-m6o.5`), and rank-ups keep spending Essence. **Concordance** (a technique two heroes have
+> practised together, `ig-m6o.3`) replaces the same-`def_id` ×3 bonus (`SYSTEMS.md` § Dupes and
+> resonance). Until those steps land, sacrifice is the only source and the `def_id` rule holds.
 
 Strength reduces expedition duration with diminishing returns and a nonzero floor. Small
 parties take longer to cover the same workload, so splitting one team into solo parties does
@@ -244,10 +606,11 @@ until the player reviews them; parallel returns and time with the game closed do
 **There is no run structure and no meta-loss state.** This is a persistent roster game, not
 a roguelite.
 
-> **Amended 2026-09-24 (§ Direction, ruling 1: the Old World).** Runs stack up. A town can fall,
-> or you can retire it, and it becomes a homeland rift for your next town. Its champion can
-> return as a nemesis, and a chair-thief becomes the next town's Guest. So "one roster forever"
-> no longer holds. Each town is still persistent, with no roguelite resets inside it. The dead
+> **Amended 2026-09-24 (§ Direction, ruling 1 and § 7: the Old World).** Runs stack up. A
+> chapter ends when the Door departs: through fall, expulsion, fulfilled ambitions, chair
+> succession or your own choice. The old town persists as a homeland rift for your next town. Its
+> champion can return as a nemesis, and a chair-thief becomes the next town's Guest. So "one
+> roster forever" no longer holds. Each town is still persistent, with no roguelite resets inside it. The dead
 > never return (ruling 4). Until `ig-m6o.8` lands, there is one town and the text below holds.
 
 - An **expedition** succeeds, retreats, or wipes. That's the only win/loss the player meets.
@@ -271,8 +634,9 @@ changes when you can finish, not what it costs.
 
 > **Amended 2026-09-24 (§ Direction, rulings 2 and 5).** Manufacturing an SSS will have two roads.
 > Sacrifice is the fast, dark one. Living deeds, finished dreams and Founding are the slow, clean
-> one, and their high point is the **Risen**: an F-rank raised to SSS by deeds, the only kind of
-> hero that can steal the Guest's chair. The ~327-pull and ~15× figures below assume sacrifice
+> one, and their high point is the **Risen**: born F, reached SSS, with a personal ascent deed
+> before every promotion (§ Direction § 4). Either Essence source can pay for a Risen's rank-ups,
+> but sacrifice cannot supply the deed. Only a Risen can steal the Guest's chair. The ~327-pull and ~15× figures below assume sacrifice
 > alone, so they move once living Essence has formulas (`SYSTEMS.md` § Sacrifice → rank up, spine
 > flag).
 
@@ -308,7 +672,8 @@ These are non-negotiable and shape architecture. Changing one requires a `DECISI
   the game is closed. Repeats launch only while the game is running: reopening resolves each
   already-dispatched run once, then starts its next run at full duration if its order continues.
   There is no chain of offline farming. This supersedes the original no-clock rule by owner
-  approval on 2026-09-22 (`DECISIONS.md`, `ig-6l4`).
+  approval on 2026-09-22 (`DECISIONS.md`, `ig-6l4`). **Flagged 2026-09-24:** § Direction ruling 7
+  says nothing progresses offline. The conflict is open (§ Direction § 11, PROVISIONAL).
 - **The town never kills while the game is closed.** Hunger runs only on the live clock, and its
   death clock waits for you to look (§ Heroes eat, and can starve to death). A sent expedition's
   own risk is the only death that can resolve on reopen, and you chose it when you sent the run.
@@ -931,16 +1296,19 @@ no recipes and unlock nothing. They only scale bonuses the buildings already giv
 "Day/night" and "weather" still hold, so the town builder has no seasons and nobody freezes.
 Turning wood and stone into buildings is not a crafting tree.
 
-**Amended 2026-09-24 (§ Direction).** The direction schedules several items on this list. Each
+**Amended 2026-09-24 (§ Direction, v2).** The direction schedules several items on this list. Each
 leaves the list only when its step's ticket is written, and not before:
 - the pity system: beacon pity (`ig-m6o.4`)
 - achievements: living deeds (`ig-m6o.4`)
-- pets: monster pets
+- pets: monster pets, and pets as witnesses (§ Direction § 5; no step named yet)
 - seasons: the Winter of Names, and winter food pressure (`ig-m6o.5`, seasons only; day/night and
   weather stay out)
-- morale: fear and informed refusals (`ig-m6o.3`)
+- morale: moods (`ig-m6o.2`), fear and informed refusals (`ig-m6o.3`)
+- dialogue: heroes' stated conditions, reasons, requests and diaries (`ig-m6o.2`, `ig-m6o.3`)
 - story/campaign: the Chronicle and the Guest's schemes (`ig-m6o.7`)
-- non-roster people: homeland populations (`ig-m6o.4`)
+- non-roster people: homeland populations (`ig-m6o.4`), and enemies with lasting identities
+  (`ig-m6o.7`)
+- crafting trees: forging memory-forged items (`ig-m6o.5`), only if that ticket rules it is one
 
 Until then, the list binds implementers exactly as before.
 
