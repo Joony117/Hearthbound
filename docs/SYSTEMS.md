@@ -64,6 +64,7 @@ before changing these values based on measurements.
 | Attack windup | 0.3 seconds |
 | Movement | `clamp(SPD * 0.04, 1.5, 5.0)` units/second |
 | Basic melee / ranged range | 1.6 / 8.0 units |
+| Ally ranged range (ranger, mage) | 12.0 units (owner ruling 2026-09-24: "our ranged heroes" stood too close; enemies keep 8.0; `basic_range` still multiplies it) |
 | Separation / formation spacing | 0.65 / 1.8 units |
 | Guard distance | 4 units |
 | Enemy HP / ATK / DEF from per-enemy wave budget | budget × 1 / × 0.04 / × 0.10 |
@@ -2788,7 +2789,7 @@ without anyone maintaining that ordering twice:
 
 | Tunable | Value | Meaning |
 |---|---:|---|
-| `arena_screen_shake_magnitude_scale` | `1.6` | Metres of camera-pivot offset per second of hit-stop. A parry (`0.08 s`) shakes `0.128 m`, a flinch (`0.05 s`) shakes `0.080 m`. |
+| `arena_screen_shake_magnitude_scale` | `0.4` | Metres of camera-pivot offset per second of hit-stop. A parry (`0.08 s`) shakes `0.032 m`, a flinch (`0.05 s`) shakes `0.020 m`. Was `1.6`; cut by 75% on the owner's 2026-09-24 play-test ("too intense"). |
 | `arena_screen_shake_duration_scale` | `3.0` | Seconds of shake per second of hit-stop — a parry shakes for `0.24 s`, roughly three times its own freeze. |
 
 Amplitude falls off linearly with the remaining time, so the shake settles rather than cutting out,
@@ -2819,10 +2820,10 @@ opens cancels wider than the reference does), and the white flash on contact (th
 (`0.03–0.05 s`) is the one usable number inside that group, and it matches the light hit-stop band
 the arena already uses to time those tints.
 
-> ⚠️ **PROVISIONAL** — the two shake scale factors are arithmetic against the existing hit-stop
-> bands, not felt values; nobody has seen the camera move. `1.6` in particular is a guess at how
-> much offset reads as impact rather than as a bug. · **Settled by:** playing the arena with the
-> toggle on and off, which is also the pass that settles the `0.12 s` vs `0.10 s` anticipation
+> ⚠️ **PROVISIONAL** — the owner felt the shake on 2026-09-24 and found it too intense, so the
+> magnitude went from `1.6` to `0.4` (75% less; the battle view's `SHAKE_MAX_OFFSET_FRACTION`
+> went from `0.03` to `0.0075` with it). The duration scale is unchanged. · **Settled by:** the
+> next play-test, which is also the pass that settles the `0.12 s` vs `0.10 s` anticipation
 > question above.
 
 ### Smash, super armor and the parry cue

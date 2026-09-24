@@ -63,7 +63,7 @@ extends Resource
 ## from its own per-outcome table: hit-stop length is the project's existing encoding of hit weight
 ## (0.04 light, 0.05 flinch, 0.06 enemy hit, 0.08 parry), so scaling off it keeps the two channels
 ## from drifting apart. Metres of camera offset, and seconds of shake, per second of hit-stop.
-@export var arena_screen_shake_magnitude_scale: float = 1.6
+@export var arena_screen_shake_magnitude_scale: float = 0.4
 @export var arena_screen_shake_duration_scale: float = 3.0
 @export var arena_enemy_attack_startup: float = 0.55
 ## The played-build P2b-12 ruling locks enemy facing partway through attack startup so a lateral dodge can escape.
@@ -131,6 +131,8 @@ extends Resource
 @export var battle_move_speed_max: float = 5.0
 @export var battle_melee_range: float = 1.6
 @export var battle_ranged_range: float = 8.0
+## Owner ruling 2026-09-24: our ranged heroes stand farther back than enemy ones.
+@export var battle_ally_ranged_range: float = 12.0
 @export var battle_attack_windup_seconds: float = 0.3
 @export var battle_formation_spacing: float = 1.8
 @export var battle_separation_radius: float = 0.65

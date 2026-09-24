@@ -535,3 +535,22 @@ func _dead_elite_exists(state: BattleState) -> bool:
 		if actor.faction == "enemy" and bool(actor.effect_state.get("elite", false)) and actor.life == BattleActor.LIFE_DEAD:
 			return true
 	return false
+
+
+func test_ally_ranged_heroes_reach_farther_than_enemy_ones() -> void:
+	for archetype: String in ["ranger", "mage"]:
+		assert_eq(BattleSimulation._attack_range(_ranged(archetype, "ally")), 12.0, "ally %s" % archetype)
+		assert_eq(BattleSimulation._attack_range(_ranged(archetype, "enemy")), 8.0, "enemy %s" % archetype)
+	var long_sight: BattleActor = _ranged("ranger", "ally")
+	long_sight.add_skill(BattleSimulation.ABILITIES["ranger_long_sight"])
+	assert_almost_eq(BattleSimulation._attack_range(long_sight), 12.0 * 1.2, 0.0001, "basic_range stretches the ally value")
+	var state: BattleState = BattleSimulation.create_run("order:reach", [_hero("hero:a", "ranger"), _hero("hero:b", "mage")], _zone(20), _squads(["hero:a", "hero:b"]), {}, {"healing": 0, "revival": 0}, 5)
+	assert_almost_eq(state.actors[0].attack_range, 12.0 * 1.2, 0.0001, "a real run seeds the ally ranger with Long Sight")
+	assert_eq(state.actors[1].attack_range, 12.0, "a real run seeds the ally mage")
+
+
+func _ranged(archetype: String, faction: String) -> BattleActor:
+	var actor := BattleActor.new()
+	actor.archetype = archetype
+	actor.faction = faction
+	return actor

@@ -24,10 +24,11 @@ const STANDARD_CAMERA_SIZE: float = 36.0
 # Wave-clear slow-mo is view-only: unit lerps, tweens and particles slow; the sim never does.
 const SLOW_MO_SCALE: float = 0.25
 const SLOW_MO_SECONDS: float = 0.8
-# PROVISIONAL (ig-iml): camera shake feel, unfelt. Settled by: a played build.
+# PROVISIONAL (ig-iml): camera shake feel. The owner felt it on 2026-09-24: too intense, so the
+# offset was cut by 75% (0.03 to 0.0075). Settled by: the next play-test.
 # Trauma per event is BattleVfx.shake_for; it decays in view time and squares into an offset.
 const SHAKE_DECAY_PER_SECOND: float = 2.2
-const SHAKE_MAX_OFFSET_FRACTION: float = 0.03
+const SHAKE_MAX_OFFSET_FRACTION: float = 0.0075
 const SHAKE_FREQUENCY: float = 24.0
 
 @onready var _camera_rig: Node3D = %CameraRig

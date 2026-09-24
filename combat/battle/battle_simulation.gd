@@ -2192,9 +2192,12 @@ static func _living_enemy_with_objective(state: BattleState, objective_id: Strin
 	return false
 
 
-## The archetype sets ranged or melee; a basic_range passive stretches it.
+## The archetype sets ranged or melee; a basic_range passive stretches it. Ally ranged heroes
+## reach farther than enemy ones (owner ruling 2026-09-24).
 static func _attack_range(actor: BattleActor) -> float:
-	var base: float = BALANCE.battle_ranged_range if actor.archetype in ["ranger", "mage"] else BALANCE.battle_melee_range
+	var base: float = BALANCE.battle_melee_range
+	if actor.archetype in ["ranger", "mage"]:
+		base = BALANCE.battle_ally_ranged_range if actor.faction == "ally" else BALANCE.battle_ranged_range
 	return base * (1.0 + _passive(actor, "basic_range"))
 
 
