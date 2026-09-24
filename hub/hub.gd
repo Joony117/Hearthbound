@@ -110,6 +110,8 @@ var _selected_hero_ids: Array[String] = []
 var _selected_item_ids: Array[String] = []
 var _editing_preset_id: String = ""
 var _open_building: StringName = NO_BUILDING
+## The building being moved while %Town.placing is set, or NO_BUILDING when placing builds.
+var _moving: StringName = NO_BUILDING
 ## The walking hero's bonded partner and greeting from the last roster refresh ("" for none).
 ## View state, not a tally: _refresh_partner rebuilds it from the Ledger on every roster change.
 var _partner_id: String = ""
@@ -187,6 +189,7 @@ func _connect_ui_signals() -> void:
 	for building_id: StringName in BUILDING_PANELS:
 		_building_button(building_id).pressed.connect(_open.bind(building_id))
 	_close_panel.pressed.connect(_open.bind(NO_BUILDING))
+	%MoveBuilding.pressed.connect(_on_move_pressed)
 	_pause_menu.visibility_changed.connect(_on_pause_menu_visibility_changed)
 	_roster_list.multi_selected.connect(_on_roster_list_multi_selected)
 	_roster_rank_filter.item_selected.connect(_on_roster_rank_filter_item_selected)
@@ -276,10 +279,11 @@ func _connect_ui_signals() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		# Esc stops placing, then closes the open building; only an empty town opens the pause menu.
+		# Esc stops placing or moving, then closes the open building; only an empty town opens the pause menu.
 		if %Town.placing != &"" and not _pause_menu.visible:
 			%Town.placing = &""
-			_status.text = "Stopped building."
+			_status.text = "Stopped moving." if _moving != NO_BUILDING else "Stopped building."
+			_moving = NO_BUILDING
 		elif _open_building != NO_BUILDING and not _pause_menu.visible:
 			_open(NO_BUILDING)
 		else:
@@ -825,6 +829,7 @@ func _populate_protection_filter() -> void:
 func _open(building_id: StringName) -> void:
 	var closing: StringName = _open_building
 	%Town.placing = &""
+	_moving = NO_BUILDING
 	_open_building = building_id if BUILDING_PANELS.has(building_id) or _is_placed(building_id) else NO_BUILDING
 	var shown: Array = BUILDING_PANELS.get(_open_building, [PLACED_PANEL] if _is_placed(_open_building) else [])
 	for panels: Array in BUILDING_PANELS.values():
@@ -835,6 +840,7 @@ func _open(building_id: StringName) -> void:
 	for other: StringName in BUILDING_PANELS:
 		_building_button(other).theme_type_variation = &"ActiveNavButton" if other == _open_building else &""
 	_close_panel.visible = _open_building != NO_BUILDING
+	%MoveBuilding.visible = _open_building != NO_BUILDING
 	# An open building owns the whole screen: a click in a gap between its panels must not pick
 	# the building behind it. Children still get their clicks first.
 	($UI/Root as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE if _open_building == NO_BUILDING else Control.MOUSE_FILTER_STOP
@@ -888,7 +894,24 @@ func _on_build_picked(index: int) -> void:
 	_status.text = "Click a free hex for the %s (%d wood). Esc cancels." % [type, TownRules.wood_cost(type, GameSession.town_buildings, BALANCE)]
 
 
+## Moving starts from the open building's Move button; the next hex click moves it or says why not.
+func _on_move_pressed() -> void:
+	var id: StringName = _open_building
+	_open(NO_BUILDING)
+	_moving = id
+	%Town.placing = StringName(GameSession.town_building(id).get("type", String(id)))
+	_status.text = "Click a free hex for the %s. Esc cancels." % String(id).capitalize()
+
+
 func _on_hex_selected(hex: Vector2i) -> void:
+	if _moving != NO_BUILDING:
+		if GameSession.move_building(_moving, hex):
+			%Town.placing = &""
+			_status.text = "Moved the %s." % String(_moving).capitalize()
+			_moving = NO_BUILDING
+		else:
+			_status.text = "%s Esc cancels." % GameSession.last_action_error
+		return
 	var type: StringName = %Town.placing
 	var plan: Dictionary = GameSession.preview_place_building(type, hex)
 	if GameSession.place_building(type, hex):

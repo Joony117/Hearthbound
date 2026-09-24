@@ -102,6 +102,7 @@ static func _build_nav(root: Control) -> void:
 	for type: StringName in TownRules.TYPES:
 		build.get_popup().add_item(String(type))
 		build.get_popup().set_item_metadata(build.get_popup().item_count - 1, type)
+	_button(nav, "Move", "MoveBuilding", true).visible = false
 	_button(nav, "Close · Esc", "ClosePanel", true).visible = false
 
 

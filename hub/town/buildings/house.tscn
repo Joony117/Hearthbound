@@ -1,0 +1,27 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://hub/town/models/hexagon/building_home_A_blue.gltf" id="1_model"]
+
+[sub_resource type="BoxShape3D" id="BoxShape_1"]
+size = Vector3(4.5, 3, 4.5)
+
+[node name="House" type="Node3D"]
+
+[node name="Model" parent="." instance=ExtResource("1_model")]
+transform = Transform3D(3, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0)
+
+[node name="Label" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.4, 0)
+pixel_size = 0.014
+billboard = 1
+text = "House"
+
+[node name="Pick" type="StaticBody3D" parent="."]
+collision_layer = 2
+
+[node name="Shape" type="CollisionShape3D" parent="Pick"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("BoxShape_1")
+
+[node name="WorkSpot" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.8)

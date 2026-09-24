@@ -1,7 +1,8 @@
 extends GutTest
 
 # ig-6m2.1: place a House and a Lumbermill on hexes, house a hero, put it to work, wood goes up
-# (DECISIONS.md 2026-09-23, the town builder).
+# (DECISIONS.md 2026-09-23, the town builder). ig-6m2.2: the seven halls are placed buildings too,
+# unique, and any building moves.
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const LOADOUT: Dictionary = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
@@ -36,15 +37,136 @@ func test_the_hex_size_matches_the_staged_tile_and_the_math_round_trips() -> voi
 	assert_almost_eq(TownRules.hex_to_world(Vector2i(1, 0)).distance_to(TownRules.hex_to_world(Vector2i.ZERO)), 6.0, 0.01)
 
 
-func test_the_halls_stand_on_their_hexes_and_the_hexes_are_taken() -> void:
-	var town: Node = (load("res://hub/town/town.tscn") as PackedScene).instantiate()
+func test_a_new_profile_has_the_halls_on_their_hexes_and_the_view_spawns_them() -> void:
+	assert_eq(GameSession.town_buildings, TownRules.default_halls())
+	var town: TownView = (load("res://hub/town/town.tscn") as PackedScene).instantiate() as TownView
+	assert_false(town.get_children().any(func(node: Node) -> bool: return node.has_node("Pick")), "town.tscn authors no building")
+	add_child_autofree(town)
+	town.show_buildings(GameSession.town_buildings)
 	for hall: StringName in TownRules.HALL_HEXES:
-		var at: Vector3 = (town.get_node(NodePath(hall)) as Node3D).position
-		var centre: Vector3 = TownRules.hex_to_world(TownRules.HALL_HEXES[hall])
-		assert_almost_eq(Vector2(at.x, at.z), Vector2(centre.x, centre.z), Vector2(0.01, 0.01), str(hall))
-		assert_ne(TownRules.hex_refusal(TownRules.HALL_HEXES[hall], [], BALANCE), "", str(hall))
+		var node: Node3D = town.get_node(NodePath(hall)) as Node3D
+		assert_eq(node.position, TownRules.hex_to_world(TownRules.HALL_HEXES[hall]), str(hall))
+		assert_ne(TownRules.hex_refusal(TownRules.HALL_HEXES[hall], GameSession.town_buildings, BALANCE), "", str(hall))
+	for type: StringName in TownView.SCENES:
+		var building: Node = TownView.SCENES[type].instantiate()
+		for part: String in ["Model", "Label", "Pick", "WorkSpot"]:
+			assert_true(building.has_node(part), "%s has a %s" % [type, part])
+		assert_eq((building.get_node("Pick") as StaticBody3D).collision_layer, TownView.PICK_LAYER, str(type))
+		building.free()
 	assert_eq(TownRules.HALL_HEXES.size(), HubUiBuilder.BUILDINGS.size(), "every hall has a hex")
-	town.free()
+
+
+func test_a_second_hall_is_refused() -> void:
+	var before: Dictionary = GameSession.to_dict()
+	for hall: StringName in TownRules.HALL_HEXES:
+		var reason: String = "The town has its %s already." % String(hall).capitalize()
+		assert_eq(GameSession.preview_place_building(hall, FREE_HEX)["reason"], reason)
+		assert_false(GameSession.place_building(hall, FREE_HEX))
+		assert_eq(GameSession.last_action_error, reason)
+	assert_eq(GameSession.to_dict(), before)
+
+
+func test_every_move_refusal_changes_nothing_and_says_why() -> void:
+	_place(TownRules.HOUSE, FREE_HEX)
+	var before: Dictionary = GameSession.to_dict()
+	for case: Array in [
+		[&"Forge", TownRules.HALL_HEXES[&"Sanctum"], "The Sanctum stands there."],
+		[&"Forge", TownRules.HALL_HEXES[&"Forge"], "The Forge stands there."],
+		[&"Forge", FREE_HEX, "House 1 stands there."],
+		[&"House_1", TownRules.HALL_HEXES[&"TownGate"], "The Town Gate stands there."],
+		[&"Forge", Vector2i(9, 0), "That hex is off the map."],
+		[&"Castle", NEXT_HEX, "There is no Castle to move."],
+	]:
+		assert_false(GameSession.move_building(case[0], case[1]), str(case))
+		assert_eq(GameSession.last_action_error, case[2])
+		assert_eq(GameSession.to_dict(), before, str(case))
+	SaveService.load_blocked = true
+	SaveService.load_block_reason = "blocked"
+	assert_false(GameSession.move_building(&"Forge", NEXT_HEX))
+	assert_eq(GameSession.last_action_error, "blocked")
+	assert_eq(GameSession.to_dict(), before)
+
+
+func test_a_failed_save_takes_the_move_back() -> void:
+	assert_true(SaveService.save())
+	var before: Dictionary = GameSession.to_dict().duplicate(true)
+	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
+	assert_false(GameSession.move_building(&"Forge", FREE_HEX))
+	assert_push_error("Save failed")
+	assert_ne(GameSession.last_action_error, "")
+	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
+	assert_eq(GameSession.town_building(&"Forge"), {"id": "Forge", "type": "Forge", "q": -1, "r": 0})
+	assert_eq(GameSession.to_dict()["town_buildings"], before["town_buildings"])
+
+
+# Boundary #1: move the Forge and a lived-in House, then save and reload through the disk.
+func test_a_moved_building_keeps_its_id_level_and_people_through_a_disk_round_trip() -> void:
+	var mira: Hero = _add_hero("Mira")
+	var bo: Hero = _add_hero("Bo")
+	assert_true(GameSession.station_hero(mira, &"Forge"), GameSession.last_action_error)
+	var house: StringName = _place(TownRules.HOUSE, FREE_HEX)
+	assert_true(GameSession.assign_home(bo, house), GameSession.last_action_error)
+	GameSession.building_levels[1] = 3
+	assert_true(GameSession.move_building(&"Forge", Vector2i(3, 3)), GameSession.last_action_error)
+	assert_true(GameSession.move_building(house, Vector2i(-1, 0)), "onto the Forge's old hex")
+	assert_eq(GameSession.town_building(&"Forge"), {"id": "Forge", "type": "Forge", "q": 3, "r": 3})
+	assert_eq(GameSession.keeper_for(&"Forge"), mira)
+	assert_eq(GameSession.residents_of(house), [bo] as Array[Hero])
+	assert_true(SaveService.save())
+	var bytes: PackedByteArray = FileAccess.get_file_as_bytes(SaveService.SAVE_PATH)
+	GameSession.from_dict({"roster": []})
+	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	file.store_buffer(bytes)
+	file.close()
+	assert_true(SaveService.load_game())
+	assert_eq(GameSession.town_building(&"Forge"), {"id": "Forge", "type": "Forge", "q": 3, "r": 3})
+	assert_eq(GameSession.town_building(house), {"id": "House_1", "type": "House", "q": -1, "r": 0})
+	assert_eq(GameSession.building_levels[1], 3)
+	assert_eq(GameSession.keeper_for(&"Forge").instance_id, mira.instance_id)
+	assert_eq(GameSession.hero_by_id(bo.instance_id).home, house)
+	assert_eq(GameSession.town_buildings.size(), 8)
+	assert_push_warning_count(0)
+
+
+# Boundary #1: an ig-6m2.1 save names no hall; it loads with the default layout and nothing else moves.
+func test_a_save_from_before_the_halls_gets_the_default_layout_and_keeps_its_town() -> void:
+	var workers: Array[Hero] = _staffed_lumbermill()
+	var keeper: Hero = _add_hero("Keeper")
+	assert_true(GameSession.station_hero(keeper, &"Sanctum"))
+	assert_true(SaveService.save())
+	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SaveService.SAVE_PATH)) as Dictionary
+	var placed: Array = (saved["town_buildings"] as Array).filter(func(building: Dictionary) -> bool: return not TownRules.is_hall(building["id"]))
+	saved["town_buildings"] = placed
+	GameSession.from_dict({"roster": []})
+	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(saved, "	"))
+	file.close()
+	assert_true(SaveService.load_game())
+	assert_eq(GameSession.town_buildings.slice(0, 7), TownRules.default_halls())
+	assert_eq(_placed(), [
+		{"id": "Lumbermill_1", "type": "Lumbermill", "q": 0, "r": 1},
+		{"id": "House_2", "type": "House", "q": 0, "r": 2},
+		{"id": "House_3", "type": "House", "q": 1, "r": 2},
+	] as Array[Dictionary])
+	for worker: Hero in workers:
+		var reloaded: Hero = GameSession.hero_by_id(worker.instance_id)
+		assert_eq([reloaded.home, reloaded.station], [worker.home, &"Lumbermill_1"])
+	assert_eq(GameSession.keeper_for(&"Sanctum").instance_id, keeper.instance_id)
+	assert_eq(GameSession.town_next_id, 4)
+	assert_push_warning_count(0)
+
+
+func test_a_hall_the_save_names_but_drops_stands_on_the_nearest_free_hex() -> void:
+	var state: Dictionary = GameSession.to_dict()
+	var buildings: Array = state["town_buildings"]
+	buildings.push_front({"id": "House_1", "type": "House", "q": -1, "r": 0})
+	state["town_buildings"] = buildings
+	GameSession.from_dict(state)
+	assert_push_warning("Invalid town building")
+	assert_push_warning("The Forge was dropped; it stands at")
+	assert_eq(GameSession.town_building(&"House_1")["q"], -1, "the House keeps the hex it was read on")
+	var forge: Dictionary = GameSession.town_building(&"Forge")
+	assert_eq(TownRules.ring_distance(Vector2i(forge["q"], forge["r"]) - TownRules.HALL_HEXES[&"Forge"]), 1, "next door")
 
 
 func test_placing_spends_the_cost_exactly_and_takes_the_next_id() -> void:
@@ -52,7 +174,7 @@ func test_placing_spends_the_cost_exactly_and_takes_the_next_id() -> void:
 	assert_true(GameSession.place_building(TownRules.HOUSE, FREE_HEX), GameSession.last_action_error)
 	assert_true(GameSession.place_building(TownRules.LUMBERMILL, NEXT_HEX), GameSession.last_action_error)
 	assert_eq(GameSession.town_resources["wood"], BALANCE.town_start_wood - BALANCE.house_wood_cost, "the first Lumbermill is free")
-	assert_eq(GameSession.town_buildings, [
+	assert_eq(_placed(), [
 		{"id": "House_1", "type": "House", "q": 0, "r": 2},
 		{"id": "Lumbermill_2", "type": "Lumbermill", "q": 1, "r": 2},
 	] as Array[Dictionary])
@@ -105,7 +227,7 @@ func test_the_preview_equals_the_result() -> void:
 	SaveService.load_block_reason = "blocked"
 	assert_eq(GameSession.preview_place_building(TownRules.HOUSE, FREE_HEX)["reason"], "blocked")
 	assert_false(GameSession.place_building(TownRules.HOUSE, FREE_HEX))
-	assert_eq(GameSession.town_buildings.size(), 1)
+	assert_eq(_placed().size(), 1)
 
 
 func test_a_failed_save_takes_the_building_back() -> void:
@@ -114,7 +236,7 @@ func test_a_failed_save_takes_the_building_back() -> void:
 	var before: Dictionary = GameSession.to_dict().duplicate(true)
 	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
 	assert_false(GameSession.place_building(TownRules.LUMBERMILL, NEXT_HEX))
-	assert_eq(GameSession.town_buildings.size(), 1, "the Lumbermill is gone again")
+	assert_eq(_placed().size(), 1, "the Lumbermill is gone again")
 	assert_push_error("Save failed")
 	assert_ne(GameSession.last_action_error, "")
 	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
@@ -254,7 +376,8 @@ func test_bad_buildings_are_dropped_and_ids_are_never_reused() -> void:
 	state["town_next_id"] = 2
 	GameSession.from_dict(state)
 	assert_push_warning_count(10)
-	assert_eq(GameSession.town_buildings, [{"id": "House_5", "type": "House", "q": 0, "r": 2}] as Array[Dictionary])
+	assert_eq(_placed(), [{"id": "House_5", "type": "House", "q": 0, "r": 2}] as Array[Dictionary])
+	assert_eq(GameSession.town_buildings.slice(0, 7), TownRules.default_halls(), "a save that names no hall")
 	assert_eq(GameSession.town_next_id, 6, "past every id still standing")
 
 
@@ -264,7 +387,7 @@ func test_a_save_from_before_the_town_gets_the_start_wood_once() -> void:
 		state.erase(key)
 	GameSession.from_dict(state)
 	assert_eq(GameSession.town_resources, {"wood": BALANCE.town_start_wood})
-	assert_true(GameSession.town_buildings.is_empty())
+	assert_eq(GameSession.town_buildings, TownRules.default_halls())
 	assert_eq(GameSession.town_next_id, 1)
 	GameSession.town_resources["wood"] = 3.0
 	GameSession.from_dict(GameSession.to_dict())
@@ -288,7 +411,7 @@ func test_the_town_survives_a_disk_round_trip() -> void:
 	assert_true(SaveService.load_game())
 	assert_eq(GameSession.town_resources["wood"], wood)
 	assert_eq(GameSession.town_next_id, 4)
-	assert_eq(GameSession.town_buildings.size(), 3)
+	assert_eq(_placed().size(), 3)
 	for worker: Hero in workers:
 		var reloaded: Hero = GameSession.hero_by_id(worker.instance_id)
 		assert_eq(reloaded.home, worker.home)
@@ -340,12 +463,12 @@ func test_real_clicks_place_refuse_and_open_a_building() -> void:
 	assert_ne(hall, Vector2(-1, -1), "a reachable point over the Training Hall's hex")
 	_click(hub, hall)
 	assert_eq(status.text, "The Training Hall stands there. Esc cancels.")
-	assert_true(GameSession.town_buildings.is_empty())
-	var free: Vector2 = _point_over(hub, func(hex: Vector2i) -> bool: return TownRules.hex_refusal(hex, [], BALANCE) == "")
+	assert_true(_placed().is_empty())
+	var free: Vector2 = _point_over(hub, func(hex: Vector2i) -> bool: return TownRules.hex_refusal(hex, GameSession.town_buildings, BALANCE) == "")
 	assert_ne(free, Vector2(-1, -1), "a reachable point over a free hex")
 	var hex: Vector2i = TownRules.world_to_hex(town.ground_point(free) as Vector3)
 	_click(hub, free)
-	assert_eq(GameSession.town_buildings, [{"id": "House_1", "type": "House", "q": hex.x, "r": hex.y}] as Array[Dictionary], status.text)
+	assert_eq(_placed(), [{"id": "House_1", "type": "House", "q": hex.x, "r": hex.y}] as Array[Dictionary], status.text)
 	assert_eq(town.placing, &"")
 	var size: Vector2 = hub.get_viewport().get_visible_rect().size
 	var on_house := Vector2(-1, -1)
@@ -357,6 +480,71 @@ func test_real_clicks_place_refuse_and_open_a_building() -> void:
 	_click(hub, on_house)
 	assert_true((hub.get_node("%PlacedBuildingPanel") as Control).visible, "a click on a placed building opens its panel")
 	assert_eq((hub.get_node("%PlacedTitle") as Label).text, "HOUSE 1")
+
+
+## A hand-edited save: a malformed Forge on a map every other hex fills. The Forge still stands,
+## and its keeper keeps it.
+func test_a_dropped_hall_on_a_full_map_takes_the_last_placed_buildings_hex() -> void:
+	var mira: Hero = _add_hero("Mira")
+	assert_true(GameSession.station_hero(mira, &"Forge"))
+	var state: Dictionary = GameSession.to_dict()
+	var buildings: Array = [{"id": "Forge", "type": "House", "q": 5, "r": 0}]
+	for hall: Dictionary in TownRules.default_halls():
+		if hall["id"] != "Forge":
+			buildings.append(hall)
+	var number: int = 0
+	var last := Vector2i.ZERO
+	for hex: Vector2i in TownRules.map_hexes(BALANCE):
+		if hex == TownRules.HALL_HEXES[&"Forge"] or not TownRules.HALL_HEXES.values().has(hex):
+			number += 1
+			last = hex
+			buildings.append({"id": TownRules.new_id(TownRules.HOUSE, number), "type": "House", "q": hex.x, "r": hex.y})
+	state["town_buildings"] = buildings
+	GameSession.from_dict(state)
+	assert_push_warning("Invalid town building")
+	assert_push_warning("The map is full; House %d was dropped to make room for the Forge." % number)
+	assert_eq(GameSession.town_building(&"Forge"), {"id": "Forge", "type": "Forge", "q": last.x, "r": last.y})
+	assert_eq(GameSession.town_buildings.size(), TownRules.map_hexes(BALANCE).size())
+	assert_eq(GameSession.keeper_for(&"Forge").instance_id, mira.instance_id)
+
+
+## The hub's Move flow: open, Move, a refused hex, a free hex. The node moves with its id, still
+## opens the same panels by click and by key, and Esc stops a move.
+func test_the_hub_moves_an_open_building_and_it_still_opens_by_click_and_key() -> void:
+	var mira: Hero = _add_hero("Mira")
+	assert_true(GameSession.station_hero(mira, &"Forge"))
+	var hub: Node3D = _instantiate_hub()
+	var town: TownView = hub.get_node("%Town") as TownView
+	var status: Label = hub.get_node("%Status") as Label
+	var move: Button = hub.get_node("%MoveBuilding") as Button
+	assert_false(move.visible, "nothing to move in the bare town")
+	town.building_selected.emit(&"Forge")
+	assert_true(move.visible)
+	move.pressed.emit()
+	assert_eq(hub.get("_open_building"), &"", "moving shows the town")
+	assert_eq(town.placing, &"Forge")
+	_press_key(hub, KEY_ESCAPE)
+	assert_eq([town.placing, status.text], [&"", "Stopped moving."])
+	assert_false((hub.get_node("%PauseMenu") as CanvasLayer).visible)
+	town.building_selected.emit(&"Forge")
+	move.pressed.emit()
+	town.hex_selected.emit(TownRules.HALL_HEXES[&"Sanctum"])
+	assert_eq(status.text, "The Sanctum stands there. Esc cancels.")
+	town.hex_selected.emit(FREE_HEX)
+	assert_eq([town.placing, status.text], [&"", "Moved the Forge."])
+	var forge: Node3D = town.get_node("Forge") as Node3D
+	assert_eq(forge.position, TownRules.hex_to_world(FREE_HEX))
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var camera: Camera3D = hub.get_viewport().get_camera_3d()
+	assert_eq(town.building_at(camera.unproject_position(forge.global_position + Vector3(0.0, 1.5, 0.0))), &"Forge", "it is clickable where it stands")
+	town.building_selected.emit(&"Forge")
+	for panel: StringName in hub.BUILDING_PANELS[&"Forge"]:
+		assert_true((hub.get_node("%" + str(panel)) as Control).visible, str(panel))
+	assert_eq(GameSession.keeper_for(&"Forge"), mira)
+	(hub.get_node("%ClosePanel") as Button).pressed.emit()
+	_press_key(hub, KEY_2)
+	assert_eq(hub.get("_open_building"), &"Forge", "key 2 still opens the moved Forge")
 
 
 func test_the_lumbermill_panel_shows_away_and_the_dispatch_summary_names_it() -> void:
@@ -380,6 +568,20 @@ func _staffed_lumbermill() -> Array[Hero]:
 		assert_true(GameSession.assign_home(workers[index], _place(TownRules.HOUSE, Vector2i(index, 2))), GameSession.last_action_error)
 		assert_true(GameSession.station_hero(workers[index], mill), GameSession.last_action_error)
 	return workers
+
+
+## town_buildings without the halls: what the player placed.
+func _placed() -> Array[Dictionary]:
+	return GameSession.town_buildings.filter(func(building: Dictionary) -> bool: return not TownRules.is_hall(building["id"]))
+
+
+func _press_key(hub: Node3D, keycode: Key) -> void:
+	for pressed: bool in [true, false]:
+		var key := InputEventKey.new()
+		key.keycode = keycode
+		key.physical_keycode = keycode
+		key.pressed = pressed
+		hub.get_viewport().push_input(key)
 
 
 func _place(type: StringName, hex: Vector2i) -> StringName:

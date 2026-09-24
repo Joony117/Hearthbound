@@ -357,6 +357,7 @@ func _town_world() -> Array:
 	world.add_child(overview)
 	var town: TownView = (load("res://hub/town/town.tscn") as PackedScene).instantiate() as TownView
 	world.add_child(town)
+	town.show_buildings(GameSession.town_buildings)
 	add_child_autofree(world)
 	overview.make_current()
 	return [town, overview]

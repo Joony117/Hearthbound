@@ -45,9 +45,9 @@ var recovery_clock_paused: bool = false
 ## The roster hero the player walks the town as (ARCHITECTURE.md § The town is the interface). It
 ## can be geared and ranked up, but never sent out or sacrificed; NO_BODY when there is none.
 var embodied_hero_id: String = NO_BODY
-## Placed town buildings, {id: String, type: String, q: int, r: int}, in placing order. The halls are
-## not in it yet (DECISIONS.md 2026-09-23, the town builder, items 1-3).
-var town_buildings: Array[Dictionary] = []
+## Town buildings, {id: String, type: String, q: int, r: int}: the seven halls (id = type), then the
+## placed ones in placing order (DECISIONS.md 2026-09-23, the town builder, items 1-3).
+var town_buildings: Array[Dictionary] = TownRules.default_halls()
 ## The shared stockpile. Wood is a float so a partial unit from the live tick survives a save.
 var town_resources: Dictionary = {"wood": preload("res://balance.tres").town_start_wood}
 ## The n in the next placed id "<type>_<n>"; never reused.
@@ -614,6 +614,29 @@ func _place_building_in_memory(type: StringName, hex: Vector2i, cost: int) -> vo
 	town_buildings.append({"id": TownRules.new_id(type, town_next_id), "type": String(type), "q": hex.x, "r": hex.y})
 	town_next_id += 1
 	town_resources["wood"] = float(town_resources["wood"]) - cost
+	_notify_roster_changed()
+
+
+## Moves a hall or a placed building to a free hex. Its id stays, so its keeper, workers, residents
+## and level follow it and nothing is re-bound.
+## ponytail: free in this slice (PROVISIONAL, ig-6m2.2); a cost comes with its own ruling.
+func move_building(id: StringName, hex: Vector2i) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	var reason: String = TownRules.move_refusal(id, hex, town_buildings, preload("res://balance.tres"))
+	if not reason.is_empty():
+		last_action_error = reason
+		return false
+	return _commit_profile_mutation(_move_building_in_memory.bind(id, hex))
+
+
+## Checked path only (_commit_profile_mutation), after move_refusal found the hex free.
+func _move_building_in_memory(id: StringName, hex: Vector2i) -> void:
+	var building: Dictionary = town_building(id)
+	building["q"] = hex.x
+	building["r"] = hex.y
 	_notify_roster_changed()
 
 
@@ -2321,7 +2344,11 @@ func from_dict(data: Dictionary) -> void:
 
 
 ## Additive keys (no SAVE_VERSION bump). A save without town_resources gets town_start_wood once.
-## A building that is malformed, off the map, on a hall or on another building is dropped.
+## A building that is malformed, off the map or on another building is dropped. A hall the save
+## never names (every ig-6m2.1-era save names none) stands on its default hex before anything is
+## read, so a building there is dropped, as it was when the halls were authored. A hall the save
+## names but that is dropped goes on the nearest free hex to its default; on a full map the last
+## placed building is dropped to make room.
 func _read_town(data: Dictionary) -> void:
 	var balance: BalanceTable = preload("res://balance.tres")
 	town_buildings.clear()
@@ -2332,8 +2359,13 @@ func _read_town(data: Dictionary) -> void:
 	elif raw_resources != null:
 		push_error("Invalid town_resources: expected Dictionary, got %s." % type_string(typeof(raw_resources)))
 		town_resources["wood"] = 0.0
+	var entries: Array = _array_field(data, "town_buildings")
+	var named: Array = entries.map(func(entry: Variant) -> Variant: return (entry as Dictionary).get("id") if entry is Dictionary else null)
+	for hall: Dictionary in TownRules.default_halls():
+		if not named.has(hall["id"]):
+			town_buildings.append(hall)
 	var highest: int = 0
-	for entry: Variant in _array_field(data, "town_buildings"):
+	for entry: Variant in entries:
 		var building: Dictionary = _read_town_building(entry)
 		if building.is_empty():
 			push_warning("Invalid town building %s; dropped." % str(entry))
@@ -2341,6 +2373,23 @@ func _read_town(data: Dictionary) -> void:
 		town_buildings.append(building)
 		highest = maxi(highest, String(building["id"]).get_slice("_", 1).to_int())
 	town_next_id = maxi(Item.int_field(data, "town_next_id", 1, "game session"), highest + 1)
+	for hall: Dictionary in TownRules.default_halls():
+		if not town_building(StringName(hall["id"])).is_empty():
+			continue
+		var hex := Vector2i(hall["q"], hall["r"])
+		var free: Array[Vector2i] = TownRules.map_hexes(balance).filter(func(other: Vector2i) -> bool: return TownRules.hex_refusal(other, town_buildings, balance).is_empty())
+		free.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return TownRules.ring_distance(a - hex) < TownRules.ring_distance(b - hex))
+		if free.is_empty():
+			# A hall always stands: on a full map the last placed building makes room.
+			var last: int = town_buildings.rfind_custom(func(building: Dictionary) -> bool: return not TownRules.is_hall(building["id"]))
+			var evicted: Dictionary = town_buildings[last]
+			town_buildings.remove_at(last)
+			push_warning("The map is full; %s was dropped to make room for the %s." % [String(evicted["id"]).capitalize(), String(hall["id"]).capitalize()])
+			free = [Vector2i(evicted["q"], evicted["r"])]
+		push_warning("The %s was dropped; it stands at %s." % [String(hall["id"]).capitalize(), free[0]])
+		hall["q"] = free[0].x
+		hall["r"] = free[0].y
+		town_buildings.append(hall)
 
 
 ## Additive keys (ig-m6o.1). A save without them loads an empty ledger; nothing is backfilled. A
@@ -2397,7 +2446,10 @@ func _read_town_building(entry: Variant) -> Dictionary:
 	var raw: Dictionary = entry as Dictionary
 	var raw_id: Variant = raw.get("id")
 	var raw_type: Variant = raw.get("type")
-	if not raw_id is String or not raw_type is String or TownRules.type_of(StringName(raw_id as String)) != StringName(raw_type as String):
+	if not raw_id is String or not raw_type is String:
+		return {}
+	var id := StringName(raw_id as String)
+	if (TownRules.type_of(id) if not TownRules.is_hall(id) else id) != StringName(raw_type as String):
 		return {}
 	if not town_building(StringName(raw_id as String)).is_empty():
 		return {}

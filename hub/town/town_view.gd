@@ -11,15 +11,22 @@ signal hex_selected(hex: Vector2i)
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const HEX_TILE: PackedScene = preload("res://hub/town/models/hexagon/hex_grass.gltf")
-const MODELS: Dictionary[StringName, PackedScene] = {
-	TownRules.HOUSE: preload("res://hub/town/models/hexagon/building_home_A_blue.gltf"),
-	TownRules.LUMBERMILL: preload("res://hub/town/models/hexagon/building_lumbermill_blue.gltf"),
+## One scene per building type: Model, Label, Pick (a StaticBody3D on PICK_LAYER) and WorkSpot
+## (a Marker3D where a keeper or worker will stand, ig-wgj.7).
+const SCENES: Dictionary[StringName, PackedScene] = {
+	&"SummoningCircle": preload("res://hub/town/buildings/summoning_circle.tscn"),
+	&"Forge": preload("res://hub/town/buildings/forge.tscn"),
+	&"TrainingHall": preload("res://hub/town/buildings/training_hall.tscn"),
+	&"Sanctum": preload("res://hub/town/buildings/sanctum.tscn"),
+	&"Reliquary": preload("res://hub/town/buildings/reliquary.tscn"),
+	&"TownGate": preload("res://hub/town/buildings/town_gate.tscn"),
+	&"Apothecary": preload("res://hub/town/buildings/apothecary.tscn"),
+	TownRules.HOUSE: preload("res://hub/town/buildings/house.tscn"),
+	TownRules.LUMBERMILL: preload("res://hub/town/buildings/lumbermill.tscn"),
 }
-## A placed building's pick box: covers the Lumbermill (4.1 m at x3.0) and the House.
-const PLACED_PICK_SIZE: Vector3 = Vector3(4.5, 3.0, 4.5)
 
 const PICK_DISTANCE: float = 200.0
-## town.tscn puts every building's Pick body on this layer alone, so other bodies (the avatar) never block a pick.
+## Every building scene puts its Pick body on this layer alone, so other bodies (the avatar) never block a pick.
 const PICK_LAYER: int = 2
 ## Where a new body stands, in town space: the open ground in front of the Training Hall.
 const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
@@ -48,7 +55,7 @@ var input_enabled: bool = true:
 ## The building type being placed, or &"" when a click picks buildings.
 var placing: StringName = &""
 var _overview_camera: Camera3D
-## Placed building id -> its node, a direct child named by id so building_at and walk_to find it.
+## Building id (halls included) -> its node, a direct child named by id so building_at and walk_to find it.
 var _placed: Dictionary[String, Node3D] = {}
 
 
@@ -137,43 +144,30 @@ func show_partner(hero: Hero, line: String) -> void:
 	partner.position = house.position + PARTNER_DOOR_OFFSET if house != null else BODY_SPAWN + PARTNER_SPAWN_OFFSET
 
 
-## Spawns what is new in buildings (GameSession.town_buildings) and frees what is gone. It only draws.
+## Spawns what is new in buildings (GameSession.town_buildings), stands each on its hex (a move) and
+## frees what is gone. It only draws.
 func show_buildings(buildings: Array[Dictionary]) -> void:
 	var wanted: Dictionary[String, bool] = {}
 	for building: Dictionary in buildings:
 		var id: String = building["id"]
 		wanted[id] = true
+		var at: Vector3 = TownRules.hex_to_world(Vector2i(building["q"], building["r"]))
 		if not _placed.has(id):
-			_placed[id] = _spawn_building(id, StringName(building["type"]), Vector2i(building["q"], building["r"]))
+			_placed[id] = _spawn_building(id, StringName(building["type"]), at)
+		_placed[id].position = at
 	for id: String in _placed.keys():
 		if not wanted.has(id):
 			_placed[id].queue_free()
 			_placed.erase(id)
 
 
-func _spawn_building(id: String, type: StringName, hex: Vector2i) -> Node3D:
-	var node := Node3D.new()
+## Positioned before it enters the tree, so its pick body registers where it stands: a pick in the
+## same frame would miss a body moved after (its transform reaches physics only at the frame's end).
+func _spawn_building(id: String, type: StringName, at: Vector3) -> Node3D:
+	var node := SCENES[type].instantiate() as Node3D
 	node.name = id
-	node.position = TownRules.hex_to_world(hex)
-	var model := MODELS[type].instantiate() as Node3D
-	model.scale = Vector3.ONE * TownRules.MODEL_SCALE
-	node.add_child(model)
-	var label := Label3D.new()
-	label.text = id.capitalize()
-	# Smaller than a hall's 0.02: placed buildings stand nearer the overview camera and would cover the halls.
-	label.pixel_size = 0.014
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.position.y = 4.4
-	node.add_child(label)
-	var pick := StaticBody3D.new()
-	pick.name = "Pick"
-	pick.collision_layer = PICK_LAYER
-	var shape := CollisionShape3D.new()
-	shape.shape = BoxShape3D.new()
-	(shape.shape as BoxShape3D).size = PLACED_PICK_SIZE
-	shape.position.y = PLACED_PICK_SIZE.y / 2.0
-	pick.add_child(shape)
-	node.add_child(pick)
+	node.position = at
+	(node.get_node("Label") as Label3D).text = id.capitalize()
 	add_child(node)
 	return node
 

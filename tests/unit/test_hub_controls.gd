@@ -680,16 +680,16 @@ func test_while_paused_the_town_ignores_clicks_and_number_keys() -> void:
 
 
 func test_town_buildings_list_and_panels_name_the_same_ids() -> void:
-	var town: Node = (load("res://hub/town/town.tscn") as PackedScene).instantiate()
-	var in_town: Array = town.get_children().filter(func(node: Node) -> bool: return node.has_node("Pick")).map(func(node: Node) -> StringName: return node.name)
-	town.free()
+	var in_town: Array = TownRules.HALL_HEXES.keys()
+	for hall: StringName in in_town:
+		assert_true(TownView.SCENES.has(hall), "%s has a scene" % hall)
 	var in_list: Array = HubUiBuilder.BUILDINGS.map(func(entry: Array) -> StringName: return entry[0])
 	var in_panels: Array = (load("res://hub/hub.gd") as GDScript).get_script_constant_map()["BUILDING_PANELS"].keys()
 	for ids: Array in [in_town, in_list, in_panels]:
 		ids.sort_custom(func(a: StringName, b: StringName) -> bool: return str(a) < str(b))
 	assert_eq(in_town.size(), 7)
-	assert_eq(in_list, in_town, "the building list matches town.tscn")
-	assert_eq(in_panels, in_town, "BUILDING_PANELS matches town.tscn")
+	assert_eq(in_list, in_town, "the building list matches the halls")
+	assert_eq(in_panels, in_town, "BUILDING_PANELS matches the halls")
 
 
 func test_only_the_towns_own_bodies_can_name_a_building() -> void:

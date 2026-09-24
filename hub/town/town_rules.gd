@@ -18,8 +18,9 @@ const LUMBERMILL: StringName = &"Lumbermill"
 const TYPES: Array[StringName] = [HOUSE, LUMBERMILL]
 ## Types that make a resource. The Mine and the Farm join when their slices add them.
 const PRODUCERS: Array[StringName] = [LUMBERMILL]
-## The seven authored halls in hub/town/town.tscn stand on these hexes, which are never free.
-## Slice 2 (ig-6m2.2) moves them into the placed list.
+## The seven halls: placed buildings whose id is their type (DECISIONS.md 2026-09-23, the town
+## builder, item 3), one of each, never built or demolished. These are their default hexes, where the
+## authored halls stood before ig-6m2.2; a new profile, or a save without them, gets them here.
 const HALL_HEXES: Dictionary[StringName, Vector2i] = {
 	&"SummoningCircle": Vector2i(-2, 0),
 	&"Forge": Vector2i(-1, 0),
@@ -96,6 +97,18 @@ static func type_of(id: StringName) -> StringName:
 	return type
 
 
+static func is_hall(id: StringName) -> bool:
+	return HALL_HEXES.has(id)
+
+
+## The default layout: every hall on its default hex, in HALL_HEXES order.
+static func default_halls() -> Array[Dictionary]:
+	var halls: Array[Dictionary] = []
+	for hall: StringName in HALL_HEXES:
+		halls.append({"id": String(hall), "type": String(hall), "q": HALL_HEXES[hall].x, "r": HALL_HEXES[hall].y})
+	return halls
+
+
 static func is_workplace_id(id: StringName) -> bool:
 	return worker_slots(type_of(id), preload("res://balance.tres")) > 0
 
@@ -104,19 +117,26 @@ static func is_workplace_id(id: StringName) -> bool:
 static func hex_refusal(hex: Vector2i, buildings: Array[Dictionary], balance: BalanceTable) -> String:
 	if ring_distance(hex) > balance.town_map_radius:
 		return "That hex is off the map."
-	for hall: StringName in HALL_HEXES:
-		if HALL_HEXES[hall] == hex:
-			return "The %s stands there." % String(hall).capitalize()
 	for building: Dictionary in buildings:
 		if Vector2i(building["q"], building["r"]) == hex:
-			return "%s stands there." % String(building["id"]).capitalize()
+			return ("The %s stands there." if is_hall(building["id"]) else "%s stands there.") % String(building["id"]).capitalize()
 	return ""
+
+
+## Why the building id cannot move to hex; "" when it can. Its own hex counts as taken.
+static func move_refusal(id: StringName, hex: Vector2i, buildings: Array[Dictionary], balance: BalanceTable) -> String:
+	if not buildings.any(func(building: Dictionary) -> bool: return building["id"] == String(id)):
+		return "There is no %s to move." % String(id).capitalize()
+	return hex_refusal(hex, buildings, balance)
 
 
 ## The exact plan place_building applies: {valid, reason, cost, id}.
 static func place_plan(type: StringName, hex: Vector2i, buildings: Array[Dictionary], wood: float, next_id: int, balance: BalanceTable) -> Dictionary:
 	var cost: int = wood_cost(type, buildings, balance)
 	var plan: Dictionary = {"valid": false, "reason": "", "cost": maxi(cost, 0), "id": new_id(type, next_id)}
+	if is_hall(type):
+		plan["reason"] = "The town has its %s already." % String(type).capitalize()
+		return plan
 	if cost < 0:
 		plan["reason"] = "Nothing called '%s' can be built." % type
 		return plan
