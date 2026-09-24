@@ -52,7 +52,7 @@ func test_housed_heroes_at_home_eat_and_nobody_else_does() -> void:
 
 
 func test_a_farm_worker_makes_food_and_food_never_goes_below_zero() -> void:
-	assert_almost_eq(TownRules.food_step(0.0, 1, 0, 60.0, BALANCE), BALANCE.food_per_worker_minute, 0.0001, "one worker, one minute")
+	assert_almost_eq(float(TownRules.starve_step(0.0, 0.0, false, 1, 0, 60.0, BALANCE)["food"]), BALANCE.food_per_worker_minute, 0.0001, "one worker, one minute")
 	var stray: Hero = _add_hero("Stray")
 	var farm: StringName = _place(TownRules.FARM, FARM_HEX)
 	assert_false(GameSession.station_hero(stray, farm))

@@ -52,6 +52,11 @@ var town_buildings: Array[Dictionary] = TownRules.default_halls()
 var town_resources: Dictionary = {"wood": preload("res://balance.tres").town_start_wood, "stone": 0.0, "food": preload("res://balance.tres").town_start_food}
 ## The n in the next placed id "<type>_<n>"; never reused.
 var town_next_id: int = 1
+## Seconds the town has starved (ig-6m2.5.2); 0 is fed. It stops at each last warning until
+## acknowledge_starvation(), and moves on the live tick only.
+var town_starving_seconds: float = 0.0
+## The last warning at the current stop point was seen, so the clock may run on to the death.
+var town_starve_acked: bool = false
 ## The Ledger (DECISIONS.md 2026-09-24): settled events, appended by this script's mutators through
 ## Ledger.append. The records live in SaveService's side file, not in to_dict(); the main save keeps
 ## only ledger_next_seq, the high-water mark. seq is never reused.
@@ -751,6 +756,36 @@ func _workers_home(type: StringName) -> int:
 		if TownRules.type_of(hero.station) == type and not is_hero_busy(hero):
 			working += 1
 	return working
+
+
+## The clock sits at a stop point, unacknowledged: the last warning is up and nobody can die yet.
+func is_starvation_stopped() -> bool:
+	return town_starving_seconds > 0.0 and not town_starve_acked and town_starving_seconds >= TownRules.starve_stop_seconds(town_starving_seconds, preload("res://balance.tres"))
+
+
+## The player saw the last warning, so the clock runs on to the death. A no-op (false) unless stopped.
+func acknowledge_starvation() -> bool:
+	last_action_error = ""
+	if not is_starvation_stopped():
+		return false
+	return _commit_profile_mutation(_acknowledge_starvation_in_memory)
+
+
+## Checked path only (_commit_profile_mutation).
+func _acknowledge_starvation_in_memory() -> void:
+	town_starve_acked = true
+	_notify_expeditions_changed()
+
+
+## The death the live tick brings when the clock reaches a due point (never offline, one per tick).
+## Gear goes to inventory first, so kill_hero leaves no Lost Cache; kill_hero is still the only removal.
+func _starve_in_memory(eaters: Array[Hero], balance: BalanceTable) -> void:
+	var victim: Hero = hero_by_id(TownRules.starvation_victim(eaters))
+	if victim == null:
+		return
+	for slot: int in victim.equipped.keys():
+		unequip_item(victim, slot)
+	kill_hero(victim, &"", balance, "starvation")
 
 
 ## The heroes who eat: housed and home. Away or in a battle, they don't; unhoused, they never do.
@@ -1660,7 +1695,9 @@ func tick_expeditions(delta_seconds: float) -> void:
 		if not active_rescue or not bool(incident.get("expiry_pending", false)):
 			has_expiring_incident = true
 			break
-	if has_due_order or has_expiring_cache or has_expiring_incident:
+	var farm: int = _workers_home(TownRules.FARM)
+	var starve_death: bool = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, farm, food_eaters().size(), delta_seconds, preload("res://balance.tres"))["death"]
+	if has_due_order or has_expiring_cache or has_expiring_incident or starve_death:
 		_commit_profile_mutation(_advance_time_in_memory.bind(delta_seconds))
 	else:
 		_advance_clocks_in_memory(delta_seconds)
@@ -1753,9 +1790,17 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	if not recovery_clock_paused and not lost_caches.is_empty():
 		recovery_clock_seconds += delta_seconds
 	# Live tick only: _advance_orders_in_memory (the offline catch-up) makes nothing (GAME_SPEC.md § Hard constraints).
-	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_workers_home(TownRules.LUMBERMILL), delta_seconds, preload("res://balance.tres"))
-	town_resources["stone"] = float(town_resources["stone"]) + TownRules.stone_made(_workers_home(TownRules.MINE), delta_seconds, preload("res://balance.tres"))
-	town_resources["food"] = TownRules.food_step(float(town_resources["food"]), _workers_home(TownRules.FARM), food_eaters().size(), delta_seconds, preload("res://balance.tres"))
+	var balance: BalanceTable = preload("res://balance.tres")
+	var work: float = TownRules.work_multiplier(town_starving_seconds, balance)
+	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_workers_home(TownRules.LUMBERMILL), delta_seconds, balance) * work
+	town_resources["stone"] = float(town_resources["stone"]) + TownRules.stone_made(_workers_home(TownRules.MINE), delta_seconds, balance) * work
+	var eaters: Array[Hero] = food_eaters()
+	var step: Dictionary = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, _workers_home(TownRules.FARM), eaters.size(), delta_seconds, balance)
+	town_resources["food"] = step["food"]
+	town_starving_seconds = step["clock"]
+	town_starve_acked = step["acked"]
+	if step["death"]:
+		_starve_in_memory(eaters, balance)
 	for incident: Dictionary in stranded_incidents:
 		if not bool(incident.get("paused", true)):
 			rescue_clock_seconds += delta_seconds
@@ -2350,6 +2395,8 @@ func to_dict() -> Dictionary:
 		"town_buildings": town_buildings.duplicate(true),
 		"town_resources": town_resources.duplicate(),
 		"town_next_id": town_next_id,
+		"town_starving_seconds": town_starving_seconds,
+		"town_starve_acked": town_starve_acked,
 		"ledger_next_seq": ledger_next_seq,
 	}
 
@@ -2466,6 +2513,26 @@ func from_dict(data: Dictionary) -> void:
 	_notify_expeditions_changed()
 
 
+## Additive keys (ig-6m2.5.2). Repairs, never refusals, so a save never skips a warning: a clock that
+## is missing or null reads 0; not finite or below 0 reads 0 with a warning; past its stop point
+## unacknowledged it reads the stop point. acked that is missing or not a bool reads false, and so
+## does acked true with the clock below its stop point (it only ever means "this warning was seen").
+func _read_starvation(data: Dictionary, balance: BalanceTable) -> void:
+	town_starving_seconds = 0.0
+	var raw_clock: Variant = data.get("town_starving_seconds")
+	if (raw_clock is int or raw_clock is float) and is_finite(float(raw_clock)) and float(raw_clock) >= 0.0:
+		town_starving_seconds = float(raw_clock)
+	elif raw_clock != null:
+		push_warning("Invalid town_starving_seconds '%s': the town reads as fed." % raw_clock)
+	var raw_acked: Variant = data.get("town_starve_acked")
+	town_starve_acked = raw_acked is bool and raw_acked as bool
+	var stop: float = TownRules.starve_stop_seconds(town_starving_seconds, balance)
+	if not town_starve_acked:
+		town_starving_seconds = minf(town_starving_seconds, stop)
+	elif town_starving_seconds < stop:
+		town_starve_acked = false
+
+
 ## Additive keys (no SAVE_VERSION bump). A save without town_resources gets town_start_wood once;
 ## stone has no start stock, so a save without it (every save before ig-6m2.3.1) reads 0. Food is
 ## different: a save without the food key gets town_start_food once, even inside an existing (or
@@ -2487,6 +2554,7 @@ func _read_town(data: Dictionary) -> void:
 	elif raw_resources != null:
 		push_error("Invalid town_resources: expected Dictionary, got %s." % type_string(typeof(raw_resources)))
 		town_resources["wood"] = 0.0
+	_read_starvation(data, balance)
 	var entries: Array = _array_field(data, "town_buildings")
 	var named: Array = entries.map(func(entry: Variant) -> Variant: return (entry as Dictionary).get("id") if entry is Dictionary else null)
 	for hall: Dictionary in TownRules.default_halls():

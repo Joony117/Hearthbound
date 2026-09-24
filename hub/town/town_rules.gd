@@ -179,7 +179,56 @@ static func food_made(workers_home: int, delta_seconds: float, balance: BalanceT
 	return balance.food_per_worker_minute * workers_home * delta_seconds / 60.0
 
 
-## Food after delta_seconds: what the Farms make less what the eaters eat, never below 0.
-static func food_step(food: float, workers_home: int, eaters: int, delta_seconds: float, balance: BalanceTable) -> float:
-	var eaten: float = balance.food_per_housed_hero_minute * eaters * delta_seconds / 60.0
-	return maxf(food + food_made(workers_home, delta_seconds, balance) - eaten, 0.0)
+## Every workplace's rate while the town starves (the clock is above 0), else 1.
+static func work_multiplier(starving_seconds: float, balance: BalanceTable) -> float:
+	return balance.starving_work_multiplier if starving_seconds > 0.0 else 1.0
+
+
+## "Food low" below this: food_low_warning_minutes of what the eaters eat now.
+static func food_low_line(eaters: int, balance: BalanceTable) -> float:
+	return balance.food_low_warning_minutes * eaters * balance.food_per_housed_hero_minute
+
+
+## When the next starvation death is due, in starving seconds: 20, 30, 40 minutes. Which death is
+## next is derived from the clock (every due point it has reached has had its death), never saved.
+static func starve_due_seconds(starving_seconds: float, balance: BalanceTable) -> float:
+	var first: float = balance.starve_first_death_minutes * 60.0
+	var next: float = balance.starve_next_death_minutes * 60.0
+	var passed: int = 0 if starving_seconds < first else floori((starving_seconds - first) / next) + 1
+	return first + passed * next
+
+
+## Where the clock stops, unacknowledged, before the next death: 15, 25, 35 minutes.
+static func starve_stop_seconds(starving_seconds: float, balance: BalanceTable) -> float:
+	return starve_due_seconds(starving_seconds, balance) - balance.starve_last_warning_minutes * 60.0
+
+
+## One live tick of food and the starvation clock (SYSTEMS.md § Food and starvation). Demand not met:
+## food 0 and the clock runs, capped at the stop point (at the death once acked), so no delta skips a
+## warning and a tick brings at most one death. Food at or over the low line: fed, the clock resets.
+## In between it holds. Returns {food, clock, acked, death}.
+static func starve_step(food: float, clock: float, acked: bool, farm_workers: int, eaters: int, delta_seconds: float, balance: BalanceTable) -> Dictionary:
+	var made: float = food_made(farm_workers, delta_seconds, balance) * work_multiplier(clock, balance)
+	var left: float = food + made - balance.food_per_housed_hero_minute * eaters * delta_seconds / 60.0
+	var step: Dictionary = {"food": maxf(left, 0.0), "clock": clock, "acked": acked, "death": false}
+	if left < 0.0:
+		var due: float = starve_due_seconds(clock, balance)
+		var limit: float = due if acked else due - balance.starve_last_warning_minutes * 60.0
+		step["clock"] = minf(clock + delta_seconds, maxf(limit, clock))
+		if step["clock"] >= due:
+			step["death"] = true
+			step["acked"] = false
+	elif left >= food_low_line(eaters, balance):
+		step["clock"] = 0.0
+		step["acked"] = false
+	return step
+
+
+## Who starves next: the lowest rank, then the lowest level, then the newest (the last in roster
+## order, which eaters keep). An instance_id, or "" for no eaters.
+static func starvation_victim(eaters: Array[Hero]) -> String:
+	var victim: Hero = null
+	for hero: Hero in eaters:
+		if victim == null or hero.rank < victim.rank or (hero.rank == victim.rank and hero.level <= victim.level):
+			victim = hero
+	return "" if victim == null else victim.instance_id

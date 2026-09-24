@@ -180,6 +180,12 @@ extends Resource
 @export var farm_wood_cost: int = 20
 @export var farm_worker_slots: int = 2
 @export var food_per_worker_minute: float = 1.0
+# Starvation (SYSTEMS.md § Food and starvation; every row PROVISIONAL).
+@export var food_low_warning_minutes: float = 10.0
+@export var starving_work_multiplier: float = 0.5
+@export var starve_first_death_minutes: float = 20.0
+@export var starve_next_death_minutes: float = 10.0
+@export var starve_last_warning_minutes: float = 5.0
 # The Ledger (SYSTEMS.md § The Ledger; both caps PROVISIONAL).
 @export var ledger_max_records: int = 10000
 @export var battle_max_moments: int = 64

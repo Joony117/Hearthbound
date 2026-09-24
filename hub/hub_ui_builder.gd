@@ -36,6 +36,7 @@ static func build(root: Control, confirm_dialog: ConfirmationDialog, enhance_dia
 	_build_keeper(content)
 	_build_placed(content)
 	_build_footer(root)
+	_build_starve_warning(root)
 	_build_confirm_dialog(confirm_dialog)
 	_build_enhance_dialog(enhance_dialog)
 
@@ -483,6 +484,27 @@ static func _build_footer(root: Control) -> void:
 	step_out.visible = false
 	var hint := _label(footer, "1–7 · Buildings   Esc · Close / Pause", "Hint", true)
 	hint.theme_type_variation = &"MutedLabel"
+
+
+## The starvation ladder (ig-6m2.5.2): food low, starving, last warning. hub.gd fills it on the tick.
+static func _build_starve_warning(root: Control) -> void:
+	var warning := HBoxContainer.new()
+	_add(root, warning, "StarveWarning", true)
+	warning.visible = false
+	warning.anchor_top = 1.0
+	warning.anchor_right = 1.0
+	warning.anchor_bottom = 1.0
+	warning.offset_left = 20.0
+	warning.offset_top = -98.0
+	warning.offset_right = -20.0
+	warning.offset_bottom = -62.0
+	# Only the button takes clicks; the town under the rest of the row stays clickable.
+	warning.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var text := _label(warning, "", "StarveText", true)
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_theme_color_override("font_color", Color("E8AAA0"))
+	_button(warning, "Understood", "StarveAck", true).visible = false
 
 
 static func _build_enhance_dialog(dialog: ConfirmationDialog) -> void:

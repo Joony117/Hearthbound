@@ -119,6 +119,8 @@ var _partner_line: String = ""
 var _order_structure_key: String = ""
 # True while the placed-building picker lists who to take out, false while it lists who to put in.
 var _placed_picker_clears: bool = false
+## The last Ledger seq the starvation status line has looked at, so each death is said once.
+var _starved_seen: int = 0
 
 
 func _enter_tree() -> void:
@@ -146,6 +148,8 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_town)
 	GameSession.roster_changed.connect(_refresh_walkers)
 	GameSession.expeditions_changed.connect(_refresh_wood)
+	GameSession.roster_changed.connect(_refresh_starvation)
+	GameSession.expeditions_changed.connect(_refresh_starvation)
 	GameSession.expeditions_changed.connect(_refresh_placed_panel)
 	GameSession.expeditions_changed.connect(_on_expeditions_changed)
 	GameSession.roster_changed.connect(_refresh_partner)
@@ -180,6 +184,8 @@ func _ready() -> void:
 	_refresh_partner()
 	_open(NO_BUILDING)
 	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
+	_starved_seen = GameSession.ledger_next_seq - 1
+	_refresh_starvation()
 	_show_pending_arena_result()
 
 
@@ -194,6 +200,7 @@ func _connect_ui_signals() -> void:
 		_building_button(building_id).pressed.connect(_open.bind(building_id))
 	_close_panel.pressed.connect(_open.bind(NO_BUILDING))
 	%MoveBuilding.pressed.connect(_on_move_pressed)
+	%StarveAck.pressed.connect(_on_starve_ack_pressed)
 	_pause_menu.visibility_changed.connect(_on_pause_menu_visibility_changed)
 	_roster_list.multi_selected.connect(_on_roster_list_multi_selected)
 	_roster_rank_filter.item_selected.connect(_on_roster_rank_filter_item_selected)
@@ -911,6 +918,41 @@ func _refresh_town() -> void:
 func _refresh_wood() -> void:
 	var resources: Dictionary = GameSession.town_resources
 	_wood.text = "Wood: %d   Stone: %d   Food: %d" % [floori(float(resources["wood"])), floori(float(resources["stone"])), floori(float(resources["food"]))]
+
+
+## The starvation ladder (ig-6m2.5.2), and "<name> starved." once per death, read off the Ledger.
+func _refresh_starvation() -> void:
+	var ledger: Array[Dictionary] = GameSession.ledger
+	for index: int in range(ledger.size() - 1, -1, -1):
+		var record: Dictionary = ledger[index]
+		if int(record["seq"]) <= _starved_seen:
+			break
+		if record["kind"] == "died" and record.get("cause") == "starvation":
+			_status.text = "%s starved." % record["name"]
+			break
+	_starved_seen = GameSession.ledger_next_seq - 1
+	var eaters: Array[Hero] = GameSession.food_eaters()
+	var clock: float = GameSession.town_starving_seconds
+	var food: float = GameSession.town_resources["food"]
+	var victim: Hero = GameSession.hero_by_id(TownRules.starvation_victim(eaters))
+	var text: String = ""
+	if clock > 0.0 and victim != null:
+		var when: String = _format_duration(TownRules.starve_due_seconds(clock, BALANCE) - clock)
+		if GameSession.is_starvation_stopped():
+			text = "Last warning: %s starves in %s unless the town is fed. The clock waits for you." % [victim.hero_name, when]
+		else:
+			text = "Starving: work runs at %d%% speed. %s starves in %s unless the town is fed." % [roundi(BALANCE.starving_work_multiplier * 100.0), victim.hero_name, when]
+	elif not eaters.is_empty() and food < TownRules.food_low_line(eaters.size(), BALANCE):
+		text = "Food low: %d left, and the town eats %.1f a minute." % [floori(food), eaters.size() * BALANCE.food_per_housed_hero_minute]
+	%StarveText.text = text
+	%StarveWarning.visible = not text.is_empty()
+	%StarveAck.visible = GameSession.is_starvation_stopped()
+
+
+func _on_starve_ack_pressed() -> void:
+	if not GameSession.acknowledge_starvation() and not GameSession.last_action_error.is_empty():
+		_status.text = GameSession.last_action_error
+	_refresh_starvation()
 
 
 ## Placing starts from the bare town; the next hex click places or says why not.
