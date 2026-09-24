@@ -4,6 +4,10 @@ extends RefCounted
 const SIMULATION_VERSION: int = 1
 const VALID_KINDS: Array[String] = ["normal", "rescue", "practice"]
 const VALID_STATUSES: Array[String] = ["active", "victory", "retreated", "stranded", "timeout"]
+## Every supply kind, and the only list of them: stocks, loadouts, escrow and battles all read it
+## (DECISIONS.md 2026-09-23, masterwork draughts). A masterwork kind is its regular kind + MASTERWORK_SUFFIX.
+const SUPPLY_KINDS: Array[String] = ["healing", "revival", "healing_masterwork", "revival_masterwork"]
+const MASTERWORK_SUFFIX: String = "_masterwork"
 
 var simulation_version: int = SIMULATION_VERSION
 var order_id: String = ""
@@ -18,7 +22,7 @@ var max_seconds: float = 180.0
 var actors: Array[BattleActor] = []
 var squads: Array[Dictionary] = []
 var objective_state: Dictionary = {}
-var supplies_remaining: Dictionary = {"healing": 0, "revival": 0}
+var supplies_remaining: Dictionary = supplies_from({})
 var policies: Dictionary = {}
 var completed_waves: int = 0
 var downed_ever_ids: Array[String] = []
@@ -111,3 +115,25 @@ static func from_dict(data: Dictionary) -> BattleState:
 			if hero_id is String:
 				state.kills[hero_id] = int((raw_kills as Dictionary)[hero_id])
 	return state
+
+
+## Every kind, read from data; a missing kind (a save from before it) is 0.
+static func supplies_from(data: Dictionary) -> Dictionary:
+	var supplies: Dictionary = {}
+	for supply_kind: String in SUPPLY_KINDS:
+		supplies[supply_kind] = maxi(int(data.get(supply_kind, 0)), 0)
+	return supplies
+
+
+## "Healing", "Masterwork revival".
+static func supply_name(supply_kind: String) -> String:
+	var regular: String = supply_kind.trim_suffix(MASTERWORK_SUFFIX)
+	return ("Masterwork " + regular) if regular != supply_kind else regular.capitalize()
+
+
+## "Healing 3 · Revival 1 · Masterwork healing 0 · Masterwork revival 0".
+static func supplies_text(supplies: Dictionary) -> String:
+	var parts: PackedStringArray = []
+	for supply_kind: String in SUPPLY_KINDS:
+		parts.append("%s %d" % [supply_name(supply_kind), int(supplies.get(supply_kind, 0))])
+	return " · ".join(parts)

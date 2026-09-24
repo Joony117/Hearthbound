@@ -154,14 +154,10 @@ static func _build_expeditions(content: Control) -> void:
 	_button(settings_box, "Retreat if empty", "RetreatIfEmpty", true, true)
 	var threshold := _add_spin(settings_box, "HealThreshold", 0, 100, 50)
 	threshold.prefix = "Heal below % "
-	var healing := _add_spin(settings_box, "HealingAllocation", 0, 100, 0)
-	healing.prefix = "Healing allocation % "
-	var healing_floor := _add_spin(settings_box, "HealingFloor", 0, 9999, 0)
-	healing_floor.prefix = "Keep healing "
-	var revival := _add_spin(settings_box, "RevivalAllocation", 0, 100, 0)
-	revival.prefix = "Revival allocation % "
-	var revival_floor := _add_spin(settings_box, "RevivalFloor", 0, 9999, 0)
-	revival_floor.prefix = "Keep revival "
+	for kind: String in BattleState.SUPPLY_KINDS:
+		var supply_name: String = BattleState.supply_name(kind)
+		_add_spin(settings_box, kind.to_pascal_case() + "Allocation", 0, 100, 0).prefix = supply_name + " allocation % "
+		_add_spin(settings_box, kind.to_pascal_case() + "Floor", 0, 9999, 0).prefix = "Keep " + supply_name.to_lower() + " "
 	_button(settings_box, "Fill suggested allocations", "SuggestedAllocations", true)
 	var summary := RichTextLabel.new()
 	_add(left, summary, "DispatchSummary", true)
@@ -392,7 +388,7 @@ static func _build_hall(content: Control) -> void:
 	_upgrade_row(reliquary, "ReliquaryLevel", "Reliquary", "UpgradeReliquary")
 	var supply := _vbox(column, "SupplySection", true)
 	_heading(supply, "SUPPLY STOCK")
-	var stock := _label(supply, "Healing 0 · Revival 0", "SupplyStock", true)
+	var stock := _label(supply, BattleState.supplies_text({}), "SupplyStock", true)
 	stock.theme_type_variation = &"MutedLabel"
 	_add_option(supply, "SupplyKind")
 	var supply_quantity := _add_spin(supply, "SupplyQuantity", 0, 9999, 0)

@@ -419,7 +419,7 @@ func test_snapshot_validation_rejects_corrupt_persistent_shapes() -> void:
 	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle actor positions must remain inside the authored bounds.")
 	corrupt = valid.duplicate(true)
 	(corrupt["supplies_remaining"] as Dictionary)["gold"] = 1
-	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle supplies must contain only healing and revival.")
+	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle supplies: an unknown supply kind.")
 	corrupt = valid.duplicate(true)
 	((corrupt["actors"] as Array)[0] as Dictionary)["squad_id"] = "wrong"
 	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle hero squad_id must match squad membership.")

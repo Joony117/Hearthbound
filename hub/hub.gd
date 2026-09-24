@@ -230,7 +230,10 @@ func _connect_ui_signals() -> void:
 	for setting_name: String in ["AutoBattle", "AutoHeal", "AutoRevive", "ReserveLastRevival", "RetreatIfEmpty"]:
 		var check: CheckBox = get_node("%%%s" % setting_name) as CheckBox
 		check.toggled.connect(_on_battle_policy_changed)
-	for setting_name: String in ["HealThreshold", "HealingAllocation", "HealingFloor", "RevivalAllocation", "RevivalFloor"]:
+	var spin_names: Array[String] = ["HealThreshold"]
+	for kind: String in BattleState.SUPPLY_KINDS:
+		spin_names.append_array([kind.to_pascal_case() + "Allocation", kind.to_pascal_case() + "Floor"])
+	for setting_name: String in spin_names:
 		var spin: SpinBox = get_node("%%%s" % setting_name) as SpinBox
 		spin.value_changed.connect(_on_battle_policy_value_changed)
 	var stance: OptionButton = %BattleStance
@@ -257,10 +260,9 @@ func _connect_ui_signals() -> void:
 	%UnassignKeeper.pressed.connect(_on_unassign_keeper_pressed)
 	%KeeperPicker.index_pressed.connect(_on_keeper_picked)
 	%StartRecoveryWindow.pressed.connect(_on_start_recovery_window_pressed)
-	_supply_kind.add_item("Healing", 0)
-	_supply_kind.set_item_metadata(0, "healing")
-	_supply_kind.add_item("Revival", 1)
-	_supply_kind.set_item_metadata(1, "revival")
+	for index: int in BattleState.SUPPLY_KINDS.size():
+		_supply_kind.add_item(BattleState.supply_name(BattleState.SUPPLY_KINDS[index]), index)
+		_supply_kind.set_item_metadata(index, BattleState.SUPPLY_KINDS[index])
 	for data: Array in [["Stay together", "stay_together"], ["Advance", "advance"], ["Defend", "defend"], ["Protect", "protect"]]:
 		stance.add_item(str(data[0]))
 		stance.set_item_metadata(stance.item_count - 1, str(data[1]))
@@ -1066,7 +1068,10 @@ func _keeper_bonus_text(building_id: StringName, skill: int) -> String:
 		&"Reliquary":
 			return "cache and rescue time +%s" % _format_duration(BALANCE.recovery_duration_seconds_per_level * levels)
 		&"Apothecary":
-			return "draughts %d/%d F parts" % [BulkOperations.supply_parts_cost("healing", skill, BALANCE), BulkOperations.supply_parts_cost("revival", skill, BALANCE)]
+			var costs: PackedStringArray = []
+			for kind: String in BattleState.SUPPLY_KINDS:
+				costs.append(str(BulkOperations.supply_parts_cost(kind, skill, BALANCE)))
+			return "draughts %s F parts" % "/".join(costs)
 	return ""
 
 
@@ -1928,12 +1933,11 @@ func _battle_policies() -> Dictionary:
 
 
 func _battle_loadout() -> Dictionary:
-	return {
-		"healing": int(%HealingAllocation.value),
-		"revival": int(%RevivalAllocation.value),
-		"keep_healing": int(%HealingFloor.value),
-		"keep_revival": int(%RevivalFloor.value),
-	}
+	var loadout: Dictionary = {}
+	for kind: String in BattleState.SUPPLY_KINDS:
+		loadout[kind] = int((get_node("%" + kind.to_pascal_case() + "Allocation") as SpinBox).value)
+		loadout["keep_" + kind] = int((get_node("%" + kind.to_pascal_case() + "Floor") as SpinBox).value)
+	return loadout
 
 
 func _on_suggested_allocations_pressed() -> void:
@@ -2033,7 +2037,7 @@ func _on_battle_changed(_order_id: String) -> void:
 
 func _refresh_supply_stock() -> void:
 	var stock: Dictionary = GameSession.supplies
-	_supply_stock.text = "Healing %d · Revival %d" % [int(stock.get("healing", 0)), int(stock.get("revival", 0))]
+	_supply_stock.text = BattleState.supplies_text(stock)
 
 
 func _refresh_incident_cards() -> void:
@@ -2202,7 +2206,7 @@ func _on_watch_battle_pressed(order_id: String) -> void:
 
 
 func _on_preview_supply_pressed() -> void:
-	var kind: String = str(_supply_kind.get_selected_metadata()) if _supply_kind.selected >= 0 else "healing"
+	var kind: String = str(_supply_kind.get_selected_metadata()) if _supply_kind.selected >= 0 else BattleState.SUPPLY_KINDS[0]
 	_pending_bulk_plan = GameSession.preview_bulk_supplies(kind, int(_supply_quantity.value), int(_supply_reserve.value))
 	_supply_preview.text = _format_bulk_plan(_pending_bulk_plan)
 	%ConfirmSupply.disabled = not bool(_pending_bulk_plan.get("valid", false))

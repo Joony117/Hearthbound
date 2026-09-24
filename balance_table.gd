@@ -149,6 +149,9 @@ extends Resource
 @export var battle_item_cooldown_seconds: float = 15.0
 @export var battle_healing_fraction: float = 0.4
 @export var battle_revival_fraction: float = 0.35
+# Masterwork draughts: only a master alchemist brews them (SYSTEMS.md § Keepers and professions, unplayed).
+@export var battle_healing_masterwork_fraction: float = 0.6
+@export var battle_revival_masterwork_fraction: float = 0.5
 @export var battle_revival_range: float = 3.0
 @export var battle_carry_range: float = 1.5
 @export var battle_carry_seconds: float = 1.0
@@ -157,6 +160,8 @@ extends Resource
 @export var battle_supply_allocation_cap: int = 100
 @export var healing_supply_parts_cost: int = 5
 @export var revival_supply_parts_cost: int = 15
+@export var healing_masterwork_supply_parts_cost: int = 15
+@export var revival_masterwork_supply_parts_cost: int = 45
 # Town builder, first slice (SYSTEMS.md § Town builder; every row there is PROVISIONAL, unplayed).
 @export var town_map_radius: int = 8
 @export var town_start_wood: float = 40.0

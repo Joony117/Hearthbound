@@ -61,13 +61,14 @@ var _selected_ids: Array[String] = []
 var _practice_names: Dictionary[String, String] = {}
 var _squad_structure_key: String = ""
 var _selected_ability_button: Button
-var _selected_heal_button: Button
-var _selected_revive_button: Button
+## One draught button per supply kind (BattleState.SUPPLY_KINDS).
+var _item_buttons: Dictionary[String, Button] = {}
 var _selected_ability_auto: CheckButton
 var _selected_auto_heal: CheckButton
 var _selected_auto_revive: CheckButton
 var _command_mode: String = ""
 var _targeting_kind: String = ""
+var _targeting_masterwork: bool = false
 var _dragging: bool = false
 var _drag_start: Vector2 = Vector2.ZERO
 var _drag_current: Vector2 = Vector2.ZERO
@@ -155,7 +156,7 @@ func configure_practice(team: Array[Hero], zone: ZoneDefinition) -> void:
 		zone,
 		squads,
 		{"auto_battle": true, "default_stance": "stay_together", "auto_heal": true, "auto_revive": true, "heal_below": 0.35, "reserve_last_revival": false, "retreat_when_supplies_empty": false},
-		{"healing": 0, "revival": 0},
+		{},
 		randi(),
 		"practice",
 	)
@@ -310,6 +311,8 @@ func _issue_context_command(screen_point: Vector2) -> void:
 	var clicked: BattleUnitView = _unit_at_screen(screen_point, 30.0)
 	if not _targeting_kind.is_empty():
 		var targeted: Dictionary = {"kind": _targeting_kind, "actor_ids": [_selected_ids[0]]}
+		if _targeting_masterwork:
+			targeted["masterwork"] = true
 		if clicked != null:
 			targeted["target_id"] = clicked.actor_id
 		else:
@@ -459,7 +462,7 @@ func _render_snapshot(snapshot: Dictionary) -> void:
 		_command_status.text = _practice_command_error
 	elif _command_mode.is_empty() and _targeting_kind.is_empty():
 		_command_status.text = ""
-	_supply_label.text = "Heal %d     Revival %d" % [int(_snapshot.get("supplies_remaining", {}).get("healing", 0)), int(_snapshot.get("supplies_remaining", {}).get("revival", 0))]
+	_supply_label.text = BattleState.supplies_text(_snapshot.get("supplies_remaining", {}) as Dictionary)
 	_pause_requested = bool(_snapshot.get("paused", _pause_requested))
 	_pause_button.text = "Resume" if _is_paused() else "Pause"
 	_auto_battle.set_pressed_no_signal(bool((_snapshot.get("policies", {}) as Dictionary).get("auto_battle", true)))
@@ -775,8 +778,8 @@ func _update_selected_panel() -> void:
 	if selected_actor.is_empty():
 		_selected_label.text = "Selected hero unavailable"
 		_selected_ability_button.disabled = true
-		_selected_heal_button.disabled = true
-		_selected_revive_button.disabled = true
+		for button: Button in _item_buttons.values():
+			button.disabled = true
 		return
 	var archetype: String = str(selected_actor.get("archetype", "Hero"))
 	var hero_id: String = str(selected_actor.get("hero_id", ""))
@@ -807,27 +810,28 @@ func _update_selected_panel() -> void:
 	_selected_ability_button.disabled = not available or ability_cooldown > 0.0
 	_selected_ability_button.tooltip_text = "Use %s" % ability_name if ability_cooldown <= 0.0 else "%s available in %.1f seconds" % [ability_name, ability_cooldown]
 	var supplies: Dictionary = _snapshot.get("supplies_remaining", {}) as Dictionary
-	_selected_heal_button.disabled = not available or item_cooldown > 0.0 or int(supplies.get("healing", 0)) <= 0
-	_selected_heal_button.tooltip_text = "Item cooldown %.1f seconds" % item_cooldown if item_cooldown > 0.0 else "Use a healing draught"
-	_selected_revive_button.disabled = not available or item_cooldown > 0.0 or int(supplies.get("revival", 0)) <= 0
-	_selected_revive_button.tooltip_text = "Item cooldown %.1f seconds" % item_cooldown if item_cooldown > 0.0 else "Use a revival draught"
+	for supply_kind: String in _item_buttons:
+		var button: Button = _item_buttons[supply_kind]
+		button.disabled = not available or item_cooldown > 0.0 or int(supplies.get(supply_kind, 0)) <= 0
+		button.tooltip_text = "Item cooldown %.1f seconds" % item_cooldown if item_cooldown > 0.0 else "Use a %s draught" % BattleState.supply_name(supply_kind).to_lower()
 	_selected_ability_auto.set_pressed_no_signal(ability_auto)
 	var policies: Dictionary = _snapshot.get("policies", {}) as Dictionary
 	_selected_auto_heal.set_pressed_no_signal(bool(policies.get("auto_heal", true)))
 	_selected_auto_revive.set_pressed_no_signal(bool(policies.get("auto_revive", true)))
 
 
-func _command_button(parent: Control, label: String, kind: String) -> Button:
+func _command_button(parent: Control, label: String, kind: String, masterwork: bool = false) -> Button:
 	var button := Button.new()
 	button.text = label
-	button.pressed.connect(_on_selected_command_pressed.bind(kind))
+	button.pressed.connect(_on_selected_command_pressed.bind(kind, masterwork))
 	parent.add_child(button)
 	return button
 
 
-func _on_selected_command_pressed(kind: String) -> void:
+func _on_selected_command_pressed(kind: String, masterwork: bool = false) -> void:
 	if kind == "ability" or kind == "item_healing" or kind == "item_revival":
 		_targeting_kind = kind
+		_targeting_masterwork = masterwork
 		_command_status.text = "Right-click a valid target or position"
 		return
 	_send_command({"kind": kind, "actor_ids": [_selected_ids[0]]})
@@ -1139,10 +1143,14 @@ func _build_selected_controls() -> void:
 	actions.add_theme_constant_override("separation", 4)
 	_skills_row.add_child(actions)
 	_selected_ability_button = _command_button(actions, "Skill", "ability")
-	_selected_heal_button = _command_button(actions, "Heal", "item_healing")
-	_selected_revive_button = _command_button(actions, "Revive", "item_revival")
-	for button: Button in [_selected_ability_button, _selected_heal_button, _selected_revive_button]:
+	_selected_ability_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for supply_kind: String in BattleState.SUPPLY_KINDS:
+		var regular: String = supply_kind.trim_suffix(BattleState.MASTERWORK_SUFFIX)
+		var masterwork: bool = regular != supply_kind
+		var label: String = ("Heal" if regular == "healing" else "Revive") + ("+" if masterwork else "")
+		var button: Button = _command_button(actions, label, "item_" + regular, masterwork)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_item_buttons[supply_kind] = button
 	var policies := HBoxContainer.new()
 	policies.add_theme_constant_override("separation", 2)
 	_skills_row.add_child(policies)

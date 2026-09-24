@@ -214,7 +214,7 @@ static func preview_conversion(
 
 ## F parts one draught costs: the base, cut by the Apothecary keeper's Alchemy, never below 1.
 static func supply_parts_cost(supply_kind: String, alchemy_skill: int, balance: BalanceTable) -> int:
-	var base: int = balance.healing_supply_parts_cost if supply_kind == "healing" else balance.revival_supply_parts_cost
+	var base: int = int(balance.get(supply_kind + "_supply_parts_cost"))
 	return maxi(1, roundi(base * (1.0 - balance.alchemy_cost_cut_per_skill * alchemy_skill)))
 
 
@@ -225,6 +225,7 @@ static func preview_supplies(
 	parts: Array[int],
 	supplies: Dictionary,
 	alchemy_skill: int,
+	master_alchemist_home: bool,
 	balance: BalanceTable,
 ) -> Dictionary:
 	var plan: Dictionary = _empty_plan("supplies", {
@@ -232,11 +233,14 @@ static func preview_supplies(
 		"quantity": quantity,
 		"reserve": reserve,
 		"alchemy_skill": alchemy_skill,
+		"master_alchemist_home": master_alchemist_home,
 		"parts_snapshot": parts.duplicate(),
 		"supplies_snapshot": supplies.duplicate(true),
 	})
-	if not supply_kind in ["healing", "revival"]:
-		return _invalid(plan, "Choose healing or revival supplies.")
+	if not supply_kind in BattleState.SUPPLY_KINDS:
+		return _invalid(plan, "Choose a supply kind.")
+	if supply_kind.ends_with(BattleState.MASTERWORK_SUFFIX) and not master_alchemist_home:
+		return _invalid(plan, "Only a master alchemist at home brews masterwork draughts.")
 	if quantity < 0 or reserve < 0:
 		return _invalid(plan, "Quantity and reserve cannot be negative.")
 	var cost: int = supply_parts_cost(supply_kind, alchemy_skill, balance)
@@ -248,7 +252,7 @@ static func preview_supplies(
 	var spend: int = units * cost
 	plan["entries"].append({
 		"id": "supply_" + supply_kind,
-		"name": "Healing draught" if supply_kind == "healing" else "Revival draught",
+		"name": BattleState.supply_name(supply_kind) + " draught",
 		"units": units,
 		"spend": spend,
 		"gain": units,

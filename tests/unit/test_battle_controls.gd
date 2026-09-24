@@ -201,6 +201,28 @@ func test_inspector_controls_persist_and_show_signature_cooldown_and_item_polici
 	assert_eq(controller.commands.back()["value"], {"auto_heal": true, "auto_revive": false})
 
 
+# ig-wgj.11: one draught button per tier; the masterwork one sends its tier with the target.
+func test_the_inspector_shows_and_sends_both_draught_tiers() -> void:
+	var controller := _make_controller()
+	controller.snapshots["battle-1"]["supplies_remaining"] = {"healing": 0, "revival": 1, "healing_masterwork": 2, "revival_masterwork": 0}
+	var view := _make_live_view(controller)
+	var camera: Camera3D = view.get_node("CameraRig/Camera3D") as Camera3D
+	var ally: BattleUnitView = view.get_node("Units/Unit_hero-1") as BattleUnitView
+	view._selected_ids = ["hero-1"]
+	view._render_snapshot(controller.snapshots["battle-1"])
+	assert_eq(view._supply_label.text, "Healing 0 · Revival 1 · Masterwork healing 2 · Masterwork revival 0")
+	assert_eq(view._item_buttons.keys(), BattleState.SUPPLY_KINDS)
+	for supply_kind: String in view._item_buttons:
+		var stocked: bool = int(controller.snapshots["battle-1"]["supplies_remaining"][supply_kind]) > 0
+		assert_eq(view._item_buttons[supply_kind].disabled, not stocked, supply_kind)
+	view._item_buttons["healing_masterwork"].pressed.emit()
+	view._issue_context_command(camera.unproject_position(ally.global_position))
+	assert_eq(controller.commands.back(), {"kind": "item_healing", "actor_ids": ["hero-1"], "target_id": "hero-1", "masterwork": true})
+	view._item_buttons["revival"].pressed.emit()
+	view._issue_context_command(camera.unproject_position(ally.global_position))
+	assert_eq(controller.commands.back(), {"kind": "item_revival", "actor_ids": ["hero-1"], "target_id": "hero-1"}, "a regular draught names no tier")
+
+
 func test_practice_view_uses_local_state_and_does_not_attach_live_controller() -> void:
 	var hero := Hero.new("Practice Knight", 0)
 	hero.def_id = &"knight"

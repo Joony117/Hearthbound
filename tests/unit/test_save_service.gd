@@ -501,7 +501,7 @@ func test_failed_force_dispatch_and_manual_command_preserve_canonical_bytes_and_
 	assert_push_error("Save failed")
 	assert_eq(refused_order, "")
 	assert_true(GameSession.expedition_orders.is_empty())
-	assert_eq(GameSession.supplies, {"healing": 3, "revival": 1})
+	assert_eq(GameSession.supplies, {"healing": 3, "revival": 1, "healing_masterwork": 0, "revival_masterwork": 0})
 	assert_eq(_read_file_bytes(SaveService.SAVE_PATH), before_dispatch)
 	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
 	var order_id: String = GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0})

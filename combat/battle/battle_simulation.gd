@@ -195,6 +195,8 @@ static func issue_command(state: BattleState, command: Dictionary) -> Dictionary
 			return _command_result(false, "Guard needs a living ally or finite ground point.", state)
 		if target != null and (target.faction != "ally" or target.life != BattleActor.LIFE_ALIVE):
 			return _command_result(false, "That guard target is unavailable.", state)
+	if command_kind in [COMMAND_ITEM_HEALING, COMMAND_ITEM_REVIVAL] and command.has("masterwork") and not command.get("masterwork") is bool:
+		return _command_result(false, "The draught tier needs a bool masterwork value.", state)
 	if command_kind == COMMAND_CARRY:
 		if actors.size() != 1 or target == null or target.faction != "ally" or target.life != BattleActor.LIFE_DOWNED:
 			return _command_result(false, "Carry needs one living carrier and one downed ally.", state)
@@ -228,10 +230,10 @@ static func issue_command(state: BattleState, command: Dictionary) -> Dictionary
 			if actors.size() != 1 or not _manual_abilities(state, actors, target, point):
 				return _command_result(false, "No selected ability can resolve against that target now.", state)
 		COMMAND_ITEM_HEALING:
-			if actors.size() != 1 or target == null or not _use_healing(state, actors[0], target):
+			if actors.size() != 1 or target == null or not _use_healing(state, actors[0], target, bool(command.get("masterwork", false))):
 				return _command_result(false, "Healing cannot resolve against that target now.", state)
 		COMMAND_ITEM_REVIVAL:
-			if actors.size() != 1 or target == null or not _use_revival(state, actors[0], target, true):
+			if actors.size() != 1 or target == null or not _use_revival(state, actors[0], target, true, bool(command.get("masterwork", false))):
 				return _command_result(false, "Revival cannot resolve against that target now.", state)
 		_:
 			return _command_result(false, "That command is not implemented.", state)
@@ -365,12 +367,9 @@ static func validate_snapshot(data: Dictionary) -> String:
 			var referenced_id: String = str(actor_data.get(reference_key, ""))
 			if not referenced_id.is_empty() and not actor_ids.has(referenced_id):
 				return "Battle actor references must target existing actors."
-	var supplies: Dictionary = data.get("supplies_remaining") as Dictionary
-	if supplies.size() != 2 or not supplies.has("healing") or not supplies.has("revival"):
-		return "Battle supplies must contain only healing and revival."
-	for supply_key: String in ["healing", "revival"]:
-		if not _nonnegative_integer(supplies.get(supply_key)) or int(supplies.get(supply_key)) > BALANCE.battle_supply_allocation_cap:
-			return "Battle supply quantities must be non-negative integers."
+	var supplies_error: String = supplies_shape_error(data.get("supplies_remaining") as Dictionary, BALANCE.battle_supply_allocation_cap)
+	if not supplies_error.is_empty():
+		return "Battle supplies: %s" % supplies_error
 	var policy_error: String = _validate_policies(data.get("policies") as Dictionary)
 	if not policy_error.is_empty():
 		return policy_error
@@ -443,7 +442,7 @@ static func _expire_effects_and_cooldowns(state: BattleState) -> void:
 
 
 static func _choose_intentions(state: BattleState) -> void:
-	if bool(state.policies.get("retreat_when_supplies_empty", false)) and int(state.supplies_remaining.get("healing", 0)) == 0 and int(state.supplies_remaining.get("revival", 0)) == 0:
+	if bool(state.policies.get("retreat_when_supplies_empty", false)) and _supply_count(state, BattleState.SUPPLY_KINDS) == 0:
 		for retreating_actor: BattleActor in state.actors:
 			if retreating_actor.faction == "ally" and retreating_actor.life == BattleActor.LIFE_ALIVE and not bool(retreating_actor.effect_state.get("direct_order", false)):
 				retreating_actor.order_kind = COMMAND_RETREAT
@@ -1608,31 +1607,60 @@ static func _manual_abilities(state: BattleState, actors: Array[BattleActor], ta
 	return used
 
 
-static func _use_healing(state: BattleState, user: BattleActor, target: BattleActor) -> bool:
+## masterwork: the tier a manual use picked; null for auto-use (DECISIONS.md 2026-09-23, masterwork draughts).
+static func _use_healing(state: BattleState, user: BattleActor, target: BattleActor, masterwork: Variant = null) -> bool:
 	if user.life != BattleActor.LIFE_ALIVE or user.item_cooldown > 0.0 or target == null or target.life != BattleActor.LIFE_ALIVE or target.faction != user.faction:
 		return false
 	if user.position.distance_to(target.position) > BALANCE.battle_revival_range or target.hp >= target.max_hp:
 		return false
-	if int(state.supplies_remaining.get("healing", 0)) <= 0:
+	var supply_kind: String = _draught_kind(state, "healing", masterwork)
+	if supply_kind.is_empty():
 		return false
-	state.supplies_remaining["healing"] = int(state.supplies_remaining.get("healing", 0)) - 1
-	target.hp = minf(target.hp + target.max_hp * BALANCE.battle_healing_fraction, target.max_hp)
+	state.supplies_remaining[supply_kind] = int(state.supplies_remaining.get(supply_kind, 0)) - 1
+	target.hp = minf(target.hp + target.max_hp * _draught_fraction(supply_kind), target.max_hp)
 	user.item_cooldown = BALANCE.battle_item_cooldown_seconds
 	return true
 
 
-static func _use_revival(state: BattleState, user: BattleActor, target: BattleActor, manual: bool) -> bool:
+static func _use_revival(state: BattleState, user: BattleActor, target: BattleActor, manual: bool, masterwork: Variant = null) -> bool:
 	if user.life != BattleActor.LIFE_ALIVE or user.item_cooldown > 0.0 or target == null or target == user:
 		return false
 	if target.faction != user.faction or target.life != BattleActor.LIFE_DOWNED or user.position.distance_to(target.position) > BALANCE.battle_revival_range:
 		return false
-	var remaining: int = int(state.supplies_remaining.get("revival", 0))
-	if remaining <= 0 or (not manual and bool(state.policies.get("reserve_last_revival", false)) and remaining == 1):
+	# Reserve last revival holds back the last draught of either tier.
+	if not manual and bool(state.policies.get("reserve_last_revival", false)) and int(state.supplies_remaining.get("revival", 0)) + int(state.supplies_remaining.get("revival" + BattleState.MASTERWORK_SUFFIX, 0)) == 1:
 		return false
-	state.supplies_remaining["revival"] = remaining - 1
-	_revive_actor(state, target, BALANCE.battle_revival_fraction, user)
+	var supply_kind: String = _draught_kind(state, "revival", masterwork if manual else null)
+	if supply_kind.is_empty():
+		return false
+	state.supplies_remaining[supply_kind] = int(state.supplies_remaining.get(supply_kind, 0)) - 1
+	_revive_actor(state, target, _draught_fraction(supply_kind), user)
 	user.item_cooldown = BALANCE.battle_item_cooldown_seconds
 	return true
+
+
+## The stock one draught comes from, or "" when it is empty. A manual use names its tier (masterwork is
+## a bool); auto-use (null) spends the regular one first and masterwork only once regular is gone.
+static func _draught_kind(state: BattleState, regular_kind: String, masterwork: Variant) -> String:
+	var masterwork_kind: String = regular_kind + BattleState.MASTERWORK_SUFFIX
+	for supply_kind: String in [regular_kind, masterwork_kind]:
+		if masterwork is bool and (masterwork as bool) != (supply_kind == masterwork_kind):
+			continue
+		if int(state.supplies_remaining.get(supply_kind, 0)) > 0:
+			return supply_kind
+	return ""
+
+
+## The share of max HP one draught restores: the balance row battle_<kind>_fraction.
+static func _draught_fraction(supply_kind: String) -> float:
+	return float(BALANCE.get("battle_%s_fraction" % supply_kind))
+
+
+static func _supply_count(state: BattleState, supply_kinds: Array[String]) -> int:
+	var total: int = 0
+	for supply_kind: String in supply_kinds:
+		total += int(state.supplies_remaining.get(supply_kind, 0))
+	return total
 
 
 static func _revive_actor(state: BattleState, target: BattleActor, fraction: float, by: BattleActor) -> void:
@@ -1855,7 +1883,24 @@ static func _default_effect_state(elite: bool = false) -> Dictionary:
 
 
 static func _normalized_supplies(supplies: Dictionary) -> Dictionary:
-	return {"healing": maxi(int(supplies.get("healing", 0)), 0), "revival": maxi(int(supplies.get("revival", 0)), 0)}
+	return BattleState.supplies_from(supplies)
+
+
+## Why a saved supplies dictionary (a stock, an escrow, a battle's remainder) is malformed, or "".
+## The regular kinds are required; a masterwork kind may be missing, as in every save from before it.
+## cap < 0 means no cap.
+static func supplies_shape_error(supplies: Dictionary, cap: int = -1) -> String:
+	for raw_key: Variant in supplies.keys():
+		if not raw_key is String or not (raw_key as String) in BattleState.SUPPLY_KINDS:
+			return "an unknown supply kind."
+	for supply_kind: String in BattleState.SUPPLY_KINDS:
+		if not supplies.has(supply_kind):
+			if supply_kind.ends_with(BattleState.MASTERWORK_SUFFIX):
+				continue
+			return "%s is missing." % supply_kind
+		if not _nonnegative_integer(supplies.get(supply_kind)) or (cap >= 0 and float(supplies.get(supply_kind)) > cap):
+			return "%s must be a non-negative integer%s." % [supply_kind, "" if cap < 0 else " up to %d" % cap]
+	return ""
 
 
 static func _command_actors(state: BattleState, command: Dictionary) -> Variant:

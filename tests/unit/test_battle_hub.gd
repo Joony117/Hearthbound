@@ -21,6 +21,10 @@ func test_battle_settings_start_with_contract_defaults() -> void:
 		"revival": 0,
 		"keep_healing": 0,
 		"keep_revival": 0,
+		"healing_masterwork": 0,
+		"keep_healing_masterwork": 0,
+		"revival_masterwork": 0,
+		"keep_revival_masterwork": 0,
 	})
 
 

@@ -24,7 +24,7 @@ func test_v3_profile_round_trip_preserves_battle_rng_and_supplies() -> void:
 	assert_eq(GameSession.validate_saved_state(saved, 3), "")
 	GameSession.from_dict(saved)
 	assert_eq(str((GameSession.get_battle_snapshot(order_id))["rng_state"]), rng_before)
-	assert_eq(GameSession.supplies, {"healing": 2, "revival": 1})
+	assert_eq(GameSession.supplies, {"healing": 2, "revival": 1, "healing_masterwork": 0, "revival_masterwork": 0})
 
 
 func test_v3_validation_rejects_non_string_rng_without_mutating_profile() -> void:

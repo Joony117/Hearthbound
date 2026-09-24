@@ -37,7 +37,7 @@ var cleared_zone_ids: Dictionary[StringName, bool] = {}
 var team_presets: Array[Dictionary] = []
 var expedition_orders: Array[Dictionary] = []
 var expedition_reports: Array[Dictionary] = []
-var supplies: Dictionary = {"healing": 3, "revival": 1}
+var supplies: Dictionary = BattleState.supplies_from({"healing": 3, "revival": 1})
 var stranded_incidents: Array[Dictionary] = []
 var rescue_clock_seconds: float = 0.0
 var recovery_clock_seconds: float = 0.0
@@ -921,7 +921,7 @@ func dispatch_expedition(
 	preset_id: String = "",
 ) -> String:
 	var squad: Dictionary = {"id": preset_id if not preset_id.is_empty() else "legacy", "name": team_name, "hero_ids": hero_ids.duplicate(), "stance": "stay_together", "guard_target_id": ""}
-	return _dispatch_force_data([squad], zone_id, total_runs, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0})
+	return _dispatch_force_data([squad], zone_id, total_runs, {}, _empty_loadout())
 
 
 func preview_force(preset_ids: Array[String], zone_id: String, total_runs: int, policies: Dictionary, loadout: Dictionary) -> Dictionary:
@@ -1023,16 +1023,14 @@ func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs:
 	var loadout_error: String = _validate_loadout(loadout)
 	if not loadout_error.is_empty():
 		return _force_preview_error(loadout_error, team.size(), zone.hero_cap, squads.size())
-	for kind: String in ["healing", "revival"]:
-		var allocation: int = Item.int_field(loadout, kind, 0, "battle loadout")
-		var keep: int = Item.int_field(loadout, "keep_" + kind, 0, "battle loadout")
-		if allocation > int(supplies.get(kind, 0)) - keep:
-			return _force_preview_error("The %s allocation would spend the stockpile reserve." % kind, team.size(), zone.hero_cap, squads.size())
+	var reserve_kind: String = _loadout_spends_reserve(loadout)
+	if not reserve_kind.is_empty():
+		return _force_preview_error("The %s allocation would spend the stockpile reserve." % reserve_kind, team.size(), zone.hero_cap, squads.size())
 	var route_seconds: float = ExpeditionOrders.force_duration_seconds(team, zone, preload("res://balance.tres"))
 	if route_seconds <= 0.0:
 		return _force_preview_error("The selected force cannot make progress in that zone.", team.size(), zone.hero_cap, squads.size())
 	var seed: int = _new_run_seed()
-	var forecast: Dictionary = BattleSimulation.forecast("forecast", _team_snapshots(team, squads), zone, squads, policies, {"healing": Item.int_field(loadout, "healing", 0, "battle loadout"), "revival": Item.int_field(loadout, "revival", 0, "battle loadout")}, seed)
+	var forecast: Dictionary = BattleSimulation.forecast("forecast", _team_snapshots(team, squads), zone, squads, policies, _loadout_escrow(loadout), seed)
 	var safe: bool = bool(forecast.get("safe", false))
 	var valid: bool = total_runs != 0 or safe
 	return {"valid": valid, "error": "" if valid else "Until-stopped dispatch requires a Safe forecast.", "safe": safe, "reason": str(forecast.get("reason", "")), "hero_count": team.size(), "capacity": zone.hero_cap, "squad_count": squads.size(), "route_seconds": route_seconds}
@@ -1056,7 +1054,7 @@ func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(zone_id))
 	var order_id: String = Item.new_instance_id()
 	var seed: int = _new_run_seed()
-	var escrow: Dictionary = {"healing": Item.int_field(loadout, "healing", 0, "battle loadout"), "revival": Item.int_field(loadout, "revival", 0, "battle loadout")}
+	var escrow: Dictionary = _loadout_escrow(loadout)
 	if total_runs == 0:
 		var actual_forecast: Dictionary = BattleSimulation.forecast(order_id + ":forecast", _team_snapshots(team, squads), zone, squads, policies, escrow, seed)
 		if not bool(actual_forecast.get("safe", false)):
@@ -1081,7 +1079,7 @@ func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs
 
 func _append_battle_order_in_memory(order: Dictionary) -> bool:
 	var escrow: Dictionary = order.get("escrow") as Dictionary
-	for kind: String in ["healing", "revival"]:
+	for kind: String in BattleState.SUPPLY_KINDS:
 		var amount: int = Item.int_field(escrow, kind, 0, "battle escrow")
 		if amount > int(supplies.get(kind, 0)):
 			last_action_error = "Battle supplies changed before dispatch."
@@ -1114,20 +1112,49 @@ static func _force_preview_error(error: String, heroes: int = 0, capacity: int =
 	return {"valid": false, "error": error, "safe": false, "reason": error, "hero_count": heroes, "capacity": capacity, "squad_count": squads, "route_seconds": 0.0}
 
 
+## An allocation and a reserve ("keep_" + kind) per supply kind. The masterwork pairs are optional, so a
+## loadout saved before them still loads; a missing field reads as 0 (DECISIONS.md 2026-09-23).
 static func _validate_loadout(loadout: Dictionary) -> String:
-	var allowed: Array[String] = ["healing", "revival", "keep_healing", "keep_revival"]
-	if loadout.size() != allowed.size():
-		return "Battle loadout must contain healing, revival and both reserve fields."
 	for raw_key: Variant in loadout.keys():
-		if not raw_key is String or not (raw_key as String) in allowed:
+		if not raw_key is String or not (raw_key as String).trim_prefix("keep_") in BattleState.SUPPLY_KINDS:
 			return "Battle loadout contains an unknown field."
-	for key: String in ["healing", "revival", "keep_healing", "keep_revival"]:
-		if not _is_nonnegative_integer(loadout.get(key, 0)):
-			return "Battle loadout quantities must be non-negative integers."
-	if float(loadout.get("healing", 0)) > 100.0 or float(loadout.get("revival", 0)) > 100.0:
-		return "Battle allocations are capped at 100 per supply."
-	if float(loadout.get("keep_healing", 0)) > 2147483647.0 or float(loadout.get("keep_revival", 0)) > 2147483647.0:
-		return "Battle supply reserves cannot exceed 2147483647."
+	for kind: String in BattleState.SUPPLY_KINDS:
+		for key: String in [kind, "keep_" + kind]:
+			if not loadout.has(key):
+				if kind.ends_with(BattleState.MASTERWORK_SUFFIX):
+					continue
+				return "Battle loadout must contain healing, revival and both reserve fields."
+			if not _is_nonnegative_integer(loadout.get(key)):
+				return "Battle loadout quantities must be non-negative integers."
+		if float(loadout.get(kind, 0)) > 100.0:
+			return "Battle allocations are capped at 100 per supply."
+		if float(loadout.get("keep_" + kind, 0)) > 2147483647.0:
+			return "Battle supply reserves cannot exceed 2147483647."
+	return ""
+
+
+## Every supply kind's allocation and reserve at 0.
+static func _empty_loadout() -> Dictionary:
+	var loadout: Dictionary = {}
+	for kind: String in BattleState.SUPPLY_KINDS:
+		loadout[kind] = 0
+		loadout["keep_" + kind] = 0
+	return loadout
+
+
+## The stock a loadout takes into battle, every kind present.
+static func _loadout_escrow(loadout: Dictionary) -> Dictionary:
+	var escrow: Dictionary = {}
+	for kind: String in BattleState.SUPPLY_KINDS:
+		escrow[kind] = Item.int_field(loadout, kind, 0, "battle loadout")
+	return escrow
+
+
+## The first supply kind whose allocation would dip into its stockpile reserve, or "".
+func _loadout_spends_reserve(loadout: Dictionary) -> String:
+	for kind: String in BattleState.SUPPLY_KINDS:
+		if Item.int_field(loadout, kind, 0, "battle loadout") > int(supplies.get(kind, 0)) - Item.int_field(loadout, "keep_" + kind, 0, "battle loadout"):
+			return kind
 	return ""
 
 
@@ -1253,10 +1280,9 @@ func dispatch_rescue(incident_id: String, preset_id: String, loadout: Dictionary
 	if not loadout_error.is_empty():
 		last_action_error = loadout_error
 		return ""
-	for kind: String in ["healing", "revival"]:
-		if Item.int_field(loadout, kind, 0, "rescue loadout") > int(supplies.get(kind, 0)) - Item.int_field(loadout, "keep_" + kind, 0, "rescue loadout"):
-			last_action_error = "The rescue allocation would spend the stockpile reserve."
-			return ""
+	if not _loadout_spends_reserve(loadout).is_empty():
+		last_action_error = "The rescue allocation would spend the stockpile reserve."
+		return ""
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(incident.get("zone_id", ""))))
 	if zone == null:
 		last_action_error = "The incident destination is missing."
@@ -1272,7 +1298,7 @@ func dispatch_rescue(incident_id: String, preset_id: String, loadout: Dictionary
 	for rescuer: Dictionary in _team_snapshots(team, [squad]):
 		rescuer["squad_id"] = preset_id
 		snapshots.append(rescuer)
-	var escrow: Dictionary = {"healing": Item.int_field(loadout, "healing", 0, "rescue loadout"), "revival": Item.int_field(loadout, "revival", 0, "rescue loadout")}
+	var escrow: Dictionary = _loadout_escrow(loadout)
 	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, [squad], {}, escrow, seed, "rescue")
 	var order: Dictionary = {"id": order_id, "backend": "battle_v1", "team_name": str(preset.get("name", "Rescue")), "preset_id": preset_id, "preset_ids": [preset_id], "hero_ids": hero_ids, "squads": [squad], "zone_id": str(zone.zone_id), "total_runs": 1, "runs_completed": 0, "stop_requested": false, "run_seed": seed, "initial_duration_seconds": 0.0, "remaining_seconds": 0.0, "cumulative_stones": 0, "cumulative_xp": 0, "cumulative_items": 0, "battle": state.to_dict(), "phase": "rescuing", "loadout": loadout.duplicate(true), "policies": state.policies.duplicate(true), "escrow": escrow, "last_command_error": "", "checkpoint_error": "", "incident_id": incident_id}
 	if not _commit_profile_mutation(_append_rescue_order_in_memory.bind(order, incident_index)):
@@ -1411,7 +1437,7 @@ func preview_bulk_conversion(rank: int, quantity: int, reserve: int) -> Dictiona
 
 
 func preview_bulk_supplies(kind: String, quantity: int, reserve: int) -> Dictionary:
-	return BulkOperations.preview_supplies(kind, quantity, reserve, parts, supplies, keeper_skill(&"Apothecary"), preload("res://balance.tres"))
+	return BulkOperations.preview_supplies(kind, quantity, reserve, parts, supplies, keeper_skill(&"Apothecary"), keeper_is_master(&"Apothecary"), preload("res://balance.tres"))
 
 
 func commit_bulk_plan(plan: Dictionary) -> bool:
@@ -1505,6 +1531,9 @@ func _apply_bulk_plan_in_memory(plan: Dictionary) -> bool:
 		"supplies":
 			var entry: Dictionary = entries[0] as Dictionary
 			var supply_kind: String = str(entry.get("supply_kind", ""))
+			if supply_kind.ends_with(BattleState.MASTERWORK_SUFFIX) and not keeper_is_master(&"Apothecary"):
+				last_action_error = "Only a master alchemist at home brews masterwork draughts."
+				return false
 			parts[0] -= Item.int_field(entry, "spend", 0, "bulk entry")
 			supplies[supply_kind] = int(supplies.get(supply_kind, 0)) + Item.int_field(entry, "gain", 0, "bulk entry")
 	_notify_roster_changed()
@@ -1657,15 +1686,15 @@ func migrate_v2_orders(now_unix: float) -> bool:
 				squad_id = "legacy"
 			var squad: Dictionary = {"id": squad_id, "name": str(order.get("team_name", "Team")), "hero_ids": _string_array(order.get("hero_ids")), "stance": "stay_together", "guard_target_id": ""}
 			var seed: int = Item.int_field(order, "run_seed", _new_run_seed(), "legacy order")
-			var state: BattleState = BattleSimulation.create_run(str(order.get("id")), _team_snapshots(team, [squad]), zone, [squad], {}, {"healing": 0, "revival": 0}, seed)
+			var state: BattleState = BattleSimulation.create_run(str(order.get("id")), _team_snapshots(team, [squad]), zone, [squad], {}, {}, seed)
 			order["backend"] = "battle_v1"
 			order["preset_ids"] = [squad_id]
 			order["squads"] = [squad]
 			order["battle"] = state.to_dict()
 			order["phase"] = "fighting"
-			order["loadout"] = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
+			order["loadout"] = _empty_loadout()
 			order["policies"] = state.policies.duplicate(true)
-			order["escrow"] = {"healing": 0, "revival": 0}
+			order["escrow"] = _loadout_escrow({})
 			order["last_command_error"] = ""
 			order["checkpoint_error"] = ""
 			order["incident_id"] = ""
@@ -1931,14 +1960,11 @@ func _start_battle_repeat(order: Dictionary, zone: ZoneDefinition) -> bool:
 			return false
 		team.append(hero)
 	var loadout: Dictionary = order.get("loadout") as Dictionary
-	for kind: String in ["healing", "revival"]:
-		var amount: int = Item.int_field(loadout, kind, 0, "battle loadout")
-		var keep: int = Item.int_field(loadout, "keep_" + kind, 0, "battle loadout")
-		if amount > int(supplies.get(kind, 0)) - keep:
-			last_action_error = "insufficient_refill"
-			return false
+	if not _loadout_spends_reserve(loadout).is_empty():
+		last_action_error = "insufficient_refill"
+		return false
 	var seed: int = _new_run_seed()
-	var escrow: Dictionary = {"healing": Item.int_field(loadout, "healing", 0, "battle loadout"), "revival": Item.int_field(loadout, "revival", 0, "battle loadout")}
+	var escrow: Dictionary = _loadout_escrow(loadout)
 	var squads: Array[Dictionary] = []
 	for raw_squad: Variant in order.get("squads") as Array:
 		if raw_squad is Dictionary:
@@ -1947,7 +1973,7 @@ func _start_battle_repeat(order: Dictionary, zone: ZoneDefinition) -> bool:
 	if not bool(forecast.get("safe", false)):
 		last_action_error = "unsafe_repeat"
 		return false
-	for kind: String in ["healing", "revival"]:
+	for kind: String in BattleState.SUPPLY_KINDS:
 		supplies[kind] = int(supplies.get(kind, 0)) - int(escrow.get(kind, 0))
 	var state: BattleState = BattleSimulation.create_run(str(order.get("id")), _team_snapshots(team, squads), zone, squads, order.get("policies") as Dictionary, escrow, seed)
 	var duration: float = ExpeditionOrders.force_duration_seconds(team, zone, preload("res://balance.tres"))
@@ -2030,7 +2056,7 @@ func _incident_snapshot(state: BattleState, stranded_ids: Array[String]) -> Dict
 
 
 func _refund_battle_supplies(remainder: Dictionary) -> void:
-	for kind: String in ["healing", "revival"]:
+	for kind: String in BattleState.SUPPLY_KINDS:
 		supplies[kind] = int(supplies.get(kind, 0)) + Item.int_field(remainder, kind, 0, "battle remainder")
 
 
@@ -2330,7 +2356,7 @@ func from_dict(data: Dictionary) -> void:
 	team_presets.clear()
 	expedition_orders.clear()
 	expedition_reports.clear()
-	supplies = {"healing": 3, "revival": 1}
+	supplies = BattleState.supplies_from({"healing": 3, "revival": 1})
 	stranded_incidents.clear()
 	rescue_clock_seconds = 0.0
 	_paused_battle_orders.clear()
@@ -2416,7 +2442,7 @@ func from_dict(data: Dictionary) -> void:
 	if save_version >= 3:
 		var saved_supplies: Variant = data.get("supplies")
 		if saved_supplies is Dictionary:
-			supplies = {"healing": Item.int_field(saved_supplies as Dictionary, "healing", 0, "profile supplies"), "revival": Item.int_field(saved_supplies as Dictionary, "revival", 0, "profile supplies")}
+			supplies = BattleState.supplies_from(saved_supplies as Dictionary)
 		for entry: Variant in _array_field(data, "stranded_incidents"):
 			if entry is Dictionary:
 				stranded_incidents.append((entry as Dictionary).duplicate(true))
@@ -2638,8 +2664,9 @@ static func validate_saved_state(data: Dictionary, version: int) -> String:
 		if not _is_nonnegative_number(data.get("rescue_clock_seconds")):
 			return "rescue_clock_seconds must be finite and non-negative."
 		var saved_supplies: Dictionary = data.get("supplies") as Dictionary
-		if saved_supplies.size() != 2 or not _is_nonnegative_integer(saved_supplies.get("healing")) or not _is_nonnegative_integer(saved_supplies.get("revival")):
-			return "Profile supplies must contain exactly non-negative healing and revival integers."
+		var supplies_error: String = BattleSimulation.supplies_shape_error(saved_supplies)
+		if not supplies_error.is_empty():
+			return "Profile supplies: %s" % supplies_error
 	for key: String in ["roster", "inventory", "lost_caches", "cleared_zone_ids", "team_presets", "expedition_orders", "expedition_reports"]:
 		if not data.get(key) is Array:
 			return "%s must be an Array." % key
@@ -2910,15 +2937,16 @@ static func _validate_saved_battle_order(order: Dictionary, order_id: String, zo
 	for hero_id: String in hero_ids:
 		deployed[hero_id] = true
 	var escrow: Dictionary = order.get("escrow") as Dictionary
-	if escrow.size() != 2 or not _is_nonnegative_integer(escrow.get("healing")) or not _is_nonnegative_integer(escrow.get("revival")):
-		return "Battle escrow must contain exactly non-negative healing and revival integers."
+	var escrow_error: String = BattleSimulation.supplies_shape_error(escrow)
+	if not escrow_error.is_empty():
+		return "Battle escrow: %s" % escrow_error
 	var battle: Dictionary = order.get("battle") as Dictionary
 	if str(battle.get("order_id", "")) != order_id or str(battle.get("zone_id", "")) != zone_id:
 		return "Battle order and checkpoint identities do not match."
 	if (battle.get("policies") as Dictionary) != (order.get("policies") as Dictionary):
 		return "Battle order and checkpoint policies do not match."
 	var remaining_supplies: Dictionary = battle.get("supplies_remaining") as Dictionary
-	for kind: String in ["healing", "revival"]:
+	for kind: String in BattleState.SUPPLY_KINDS:
 		if int(remaining_supplies.get(kind, 0)) > int(escrow.get(kind, 0)):
 			return "Battle checkpoint supplies cannot exceed escrow."
 	var preset_ids_error: String = _validate_saved_squad_id_array(order.get("preset_ids"))

@@ -20,7 +20,7 @@ func test_force_dispatch_escrows_supplies_and_returns_detached_snapshot() -> voi
 	var preset_id: String = GameSession.save_team_preset("", "Alpha", [hero.instance_id], "verdant_outskirts")
 	var order_id: String = GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, {"healing": 1, "revival": 1, "keep_healing": 0, "keep_revival": 0})
 	assert_ne(order_id, "")
-	assert_eq(GameSession.supplies, {"healing": 2, "revival": 0})
+	assert_eq(GameSession.supplies, {"healing": 2, "revival": 0, "healing_masterwork": 0, "revival_masterwork": 0})
 	var snapshot: Dictionary = GameSession.get_battle_snapshot(order_id)
 	assert_eq(snapshot["phase"], "fighting")
 	assert_false(bool(snapshot["paused"]))
