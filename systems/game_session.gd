@@ -52,6 +52,10 @@ var town_buildings: Array[Dictionary] = []
 var town_resources: Dictionary = {"wood": preload("res://balance.tres").town_start_wood}
 ## The n in the next placed id "<type>_<n>"; never reused.
 var town_next_id: int = 1
+## The Ledger (DECISIONS.md 2026-09-24): settled events, appended by this script's mutators through
+## Ledger.append. Additive save keys; seq is never reused.
+var ledger: Array[Dictionary] = []
+var ledger_next_seq: int = 1
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
@@ -164,6 +168,7 @@ func summon_hero(hero: Hero, balance: BalanceTable) -> bool:
 		return false
 	stones -= balance.summon_pull_cost
 	roster.append(hero)
+	_record("summoned", {"hero": hero.instance_id, "name": hero.hero_name, "rank": hero.rank, "archetype": str(hero.def_id)})
 	_notify_roster_changed()
 	return true
 
@@ -396,7 +401,7 @@ func sacrifice_hero(fodder: Hero, target: Hero, balance: BalanceTable) -> bool:
 	essence += Hero.compute_essence_yield(fodder, target, balance, sanctum_level)
 	if fodder.def_id == target.def_id and fodder.def_id != Hero.NO_ARCHETYPE_DEF_ID:
 		target.resonance += 1
-	kill_hero(fodder, &"", balance)
+	kill_hero(fodder, &"", balance, "sacrifice", target.instance_id)
 	return true
 
 
@@ -408,13 +413,22 @@ func rank_up_hero(hero: Hero, balance: BalanceTable) -> bool:
 		return false
 	essence -= cost
 	hero.rank += 1
+	_record("ranked_up", {"hero": hero.instance_id, "from": hero.rank - 1, "to": hero.rank, "via": "essence"})
 	_notify_roster_changed()
 	return true
 
 
 ## The single place a hero leaves the roster. See docs/ARCHITECTURE.md rule 8 - permadeath
-## reachable from more than one call site is how this game rots.
-func kill_hero(hero: Hero, zone_id: StringName, balance: BalanceTable) -> void:
+## reachable from more than one call site is how this game rots. It is also the only writer of the
+## Ledger's died record: cause is expedition, sacrifice or starvation; by is the keeper of a
+## sacrifice; battle_order is the order whose battle stranded an expedition death.
+func kill_hero(hero: Hero, zone_id: StringName, balance: BalanceTable, cause: String = "expedition", by: String = "", battle_order: String = "") -> void:
+	var died: Dictionary = {"hero": hero.instance_id, "name": hero.hero_name, "rank": hero.rank, "cause": cause}
+	for key: String in ["zone", "by", "battle_order"]:
+		var value: String = {"zone": str(zone_id), "by": by, "battle_order": battle_order}[key]
+		if not value.is_empty():
+			died[key] = value
+	_record("died", died)
 	if not hero.equipped.is_empty():
 		var cache := LostCache.new(hero.hero_name, zone_id, turns, recovery_clock_seconds)
 		for item: Item in hero.equipped.values():
@@ -1160,7 +1174,7 @@ func _append_rescue_order_in_memory(order: Dictionary, incident_index: int) -> b
 
 func _abandon_incident_in_memory(index: int) -> void:
 	var incident: Dictionary = stranded_incidents[index]
-	Expedition.finalize_permanent_losses(_string_array(incident.get("hero_ids")), StringName(str(incident.get("zone_id", ""))))
+	Expedition.finalize_permanent_losses(incident, _string_array(incident.get("hero_ids")))
 	stranded_incidents.remove_at(index)
 	_notify_expeditions_changed()
 
@@ -1693,6 +1707,8 @@ func _settle_battle_order(order_index: int) -> void:
 	var outcome: BattleOutcome = BattleSimulation.snapshot_outcome(state)
 	_capture_stranded_incident(order, state)
 	_refund_battle_supplies(state.supplies_remaining)
+	if state.kind != "rescue":
+		_record_battle(order, state, outcome, {})
 	if state.kind == "rescue":
 		_settle_rescue_order(order, state, outcome)
 		expedition_orders.remove_at(order_index)
@@ -1784,22 +1800,39 @@ func _start_battle_repeat(order: Dictionary, zone: ZoneDefinition) -> bool:
 
 func _settle_rescue_order(order: Dictionary, state: BattleState, outcome: BattleOutcome) -> void:
 	var incident_index: int = _incident_index(str(order.get("incident_id", "")))
+	var rescued: Array[String] = []
+	if incident_index >= 0:
+		for hero_id: String in _string_array(stranded_incidents[incident_index].get("hero_ids")):
+			if hero_id in outcome.secured_hero_ids:
+				rescued.append(hero_id)
+	_record_battle(order, state, outcome, {"rescued": rescued, "rescuers": _string_array(order.get("hero_ids"))})
 	if incident_index < 0:
 		return
 	var incident: Dictionary = stranded_incidents[incident_index]
 	var remaining: Array[String] = _string_array(incident.get("hero_ids"))
 	for secured_id: String in outcome.secured_hero_ids:
 		remaining.erase(secured_id)
+	# battle_orders holds only the exceptions to source_order_id: a rescuer this rescue stranded
+	# links to the rescue (DECISIONS.md 2026-09-24 item 5). Heroes who left the incident drop out.
+	var battle_orders: Dictionary = {}
+	var saved_links: Variant = incident.get("battle_orders")
+	if saved_links is Dictionary:
+		battle_orders = (saved_links as Dictionary).duplicate()
 	for stranded_id: String in outcome.stranded_hero_ids:
 		if hero_by_id(stranded_id) != null and not remaining.has(stranded_id):
 			remaining.append(stranded_id)
+			battle_orders[stranded_id] = str(order.get("id", ""))
+	for hero_id: Variant in battle_orders.keys():
+		if not remaining.has(str(hero_id)):
+			battle_orders.erase(hero_id)
 	incident["hero_ids"] = remaining
+	incident["battle_orders"] = battle_orders
 	incident["active_rescue_order_id"] = ""
 	incident["battle_snapshot"] = _incident_snapshot(state, remaining)
 	if remaining.is_empty():
 		stranded_incidents.remove_at(incident_index)
 	elif bool(incident.get("expiry_pending", false)) or _incident_remaining_seconds(incident) <= 0.0:
-		Expedition.finalize_permanent_losses(remaining, StringName(str(incident.get("zone_id", ""))))
+		Expedition.finalize_permanent_losses(incident, remaining)
 		stranded_incidents.remove_at(incident_index)
 	_notify_expeditions_changed()
 
@@ -1827,6 +1860,9 @@ func _incident_snapshot(state: BattleState, stranded_ids: Array[String]) -> Dict
 	snapshot["status"] = "stranded"
 	snapshot["downed_ever_ids"] = stranded_ids.duplicate()
 	snapshot["extracted_ids"] = []
+	snapshot["moments"] = []
+	snapshot["moments_truncated"] = false
+	snapshot["kills"] = {}
 	return snapshot
 
 
@@ -1907,7 +1943,7 @@ func _expire_stranded_incidents_in_memory() -> void:
 		if not str(incident.get("active_rescue_order_id", "")).is_empty():
 			incident["expiry_pending"] = true
 			continue
-		Expedition.finalize_permanent_losses(_string_array(incident.get("hero_ids")), StringName(str(incident.get("zone_id", ""))))
+		Expedition.finalize_permanent_losses(incident, _string_array(incident.get("hero_ids")))
 		stranded_incidents.remove_at(index)
 
 
@@ -2098,6 +2134,8 @@ func to_dict() -> Dictionary:
 		"town_buildings": town_buildings.duplicate(true),
 		"town_resources": town_resources.duplicate(),
 		"town_next_id": town_next_id,
+		"ledger": ledger.duplicate(true),
+		"ledger_next_seq": ledger_next_seq,
 	}
 
 
@@ -2129,6 +2167,7 @@ func from_dict(data: Dictionary) -> void:
 			roster.append(Hero.from_dict(entry))
 	_read_town(data)
 	_clear_bad_town_claims()
+	_read_ledger(data)
 	for entry: Variant in _array_field(data, "inventory"):
 		if entry is Dictionary:
 			inventory.append(Item.from_dict(entry))
@@ -2233,6 +2272,38 @@ func _read_town(data: Dictionary) -> void:
 		town_buildings.append(building)
 		highest = maxi(highest, String(building["id"]).get_slice("_", 1).to_int())
 	town_next_id = maxi(Item.int_field(data, "town_next_id", 1, "game session"), highest + 1)
+
+
+## Additive keys (ig-m6o.1). A save without them loads an empty ledger; nothing is backfilled. A
+## record without a String kind or an increasing int seq is dropped.
+func _read_ledger(data: Dictionary) -> void:
+	ledger.clear()
+	var last_seq: int = 0
+	for entry: Variant in _array_field(data, "ledger"):
+		var record: Variant = Ledger.normalized(entry)
+		if not record is Dictionary or not (record as Dictionary).get("seq") is int or int((record as Dictionary)["seq"]) <= last_seq or not (record as Dictionary).get("kind") is String:
+			push_warning("Invalid ledger record %s; dropped." % str(entry))
+			continue
+		ledger.append(record as Dictionary)
+		last_seq = int((record as Dictionary)["seq"])
+	ledger_next_seq = maxi(Item.int_field(data, "ledger_next_seq", 1, "game session"), last_seq + 1)
+
+
+## Appends one Ledger record, stamped now.
+func _record(kind: String, fields: Dictionary) -> void:
+	ledger_next_seq = Ledger.append(ledger, ledger_next_seq, int(Time.get_unix_time_from_system()), kind, fields, preload("res://balance.tres").ledger_max_records)
+
+
+## One battle record per settled battle; team is every allied actor in the fight, downed or not
+## (a rescue's stranded heroes included).
+func _record_battle(order: Dictionary, state: BattleState, outcome: BattleOutcome, extra: Dictionary) -> void:
+	var team: Array[String] = []
+	team.assign(_battle_ally_hero_ids(order.get("battle") as Dictionary).keys())
+	var record: Dictionary = {"order": str(order.get("id", "")), "zone": state.zone_id, "battle_kind": state.kind, "result": outcome.status, "team": team, "kills": outcome.kills.duplicate(), "moments": outcome.moments.duplicate(true)}
+	if outcome.moments_truncated:
+		record["moments_truncated"] = true
+	record.merge(extra)
+	_record("battle", record)
 
 
 ## {} unless entry is a well-formed building on a free hex with an unused id.
@@ -2517,6 +2588,14 @@ static func validate_saved_state(data: Dictionary, version: int) -> String:
 				return "Stranded incident age cannot begin ahead of the rescue clock."
 			if not str(incident.get("zone_id")) in KNOWN_ZONE_IDS:
 				return "A stranded incident references an unknown zone."
+			# Additive (ig-m6o.1): absent on legacy incidents.
+			if incident.has("battle_orders"):
+				if not incident.get("battle_orders") is Dictionary:
+					return "Stranded incident battle_orders must be a Dictionary."
+				for link_hero: Variant in incident.get("battle_orders") as Dictionary:
+					var link: Variant = (incident.get("battle_orders") as Dictionary)[link_hero]
+					if not link_hero is String or not link is String or (link as String).is_empty():
+						return "Stranded incident battle_orders must map hero IDs to order IDs."
 			var incident_hero_error: String = _validate_saved_incident_id_array(incident.get("hero_ids"))
 			if not incident_hero_error.is_empty():
 				return "Invalid stranded hero_ids: %s" % incident_hero_error

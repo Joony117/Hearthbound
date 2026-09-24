@@ -1,0 +1,530 @@
+extends GutTest
+
+## ig-m6o.1: the Ledger (DECISIONS.md 2026-09-24 "The Ledger"; SYSTEMS.md § The Ledger).
+
+const BALANCE: BalanceTable = preload("res://balance.tres")
+
+var _original_save_existed: bool = false
+var _original_save_bytes: PackedByteArray
+
+
+func before_all() -> void:
+	_original_save_existed = FileAccess.file_exists(SaveService.SAVE_PATH)
+	if _original_save_existed:
+		_original_save_bytes = FileAccess.get_file_as_bytes(SaveService.SAVE_PATH)
+
+
+func after_all() -> void:
+	SaveService.load_blocked = false
+	GameSession.set("_save_deferred_depth", 0)
+	if _original_save_existed:
+		FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE).store_buffer(_original_save_bytes)
+	elif FileAccess.file_exists(SaveService.SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveService.SAVE_PATH))
+
+
+func before_each() -> void:
+	GameSession.set("_save_deferred_depth", 1)
+	SaveService.load_blocked = false
+	GameSession.from_dict({"roster": []})
+
+
+func after_each() -> void:
+	GameSession.set("_save_deferred_depth", 0)
+
+
+func test_each_writer_records_one_event_and_the_ledger_survives_a_disk_reload_byte_identical() -> void:
+	GameSession.stones = 1000
+	GameSession.essence = 100000
+	var keeper := _hero("Keeper", "knight")
+	var fodder := _hero("Fodder", "knight")
+	assert_true(GameSession.summon_hero(keeper, BALANCE))
+	assert_true(GameSession.summon_hero(fodder, BALANCE))
+	assert_true(GameSession.rank_up_hero(keeper, BALANCE))
+	assert_true(GameSession.sacrifice_hero(fodder, keeper, BALANCE))
+
+	assert_eq(_kinds(), ["summoned", "summoned", "ranked_up", "died"])
+	assert_eq(GameSession.ledger.map(func(record: Dictionary) -> int: return record["seq"]), [1, 2, 3, 4])
+	assert_eq(GameSession.ledger_next_seq, 5)
+	assert_eq(_without_time(GameSession.ledger[0]), {"seq": 1, "kind": "summoned", "hero": keeper.instance_id, "name": "Keeper", "rank": 0, "archetype": "knight"})
+	assert_eq(_without_time(GameSession.ledger[2]), {"seq": 3, "kind": "ranked_up", "hero": keeper.instance_id, "from": 0, "to": 1, "via": "essence"})
+	assert_eq(_without_time(GameSession.ledger[3]), {"seq": 4, "kind": "died", "hero": fodder.instance_id, "name": "Fodder", "rank": 0, "cause": "sacrifice", "by": keeper.instance_id}, "one died record, by = the keeper")
+
+	var before: String = JSON.stringify(GameSession.ledger)
+	var first_text: String = _disk_save()
+	assert_true(_disk_load())
+	assert_eq(JSON.stringify(GameSession.ledger), before, "ints stay ints after the reload")
+	assert_eq(GameSession.ledger_next_seq, 5)
+	var second_text: String = _disk_save()
+	assert_eq(_ledger_section(second_text), _ledger_section(first_text), "the next save writes the same ledger bytes")
+	assert_string_contains(_ledger_section(first_text), "\"seq\": 4,")
+
+	assert_true(GameSession.summon_hero(_hero("Later", "mage"), BALANCE))
+	assert_eq(int(GameSession.ledger.back()["seq"]), 5, "seq is never reused")
+
+
+func test_a_legacy_save_without_ledger_keys_loads_empty_and_reads_arrived_before_the_records() -> void:
+	var old := _hero("Old Timer", "rogue")
+	GameSession.roster.append(old)
+	var payload: Dictionary = GameSession.to_dict()
+	payload.erase("ledger")
+	payload.erase("ledger_next_seq")
+	payload["saved_at_unix"] = Time.get_unix_time_from_system() + 3600.0
+	_write_save(payload)
+	assert_true(_disk_load(), SaveService.load_block_reason)
+	assert_eq(GameSession.ledger, [] as Array[Dictionary])
+	assert_eq(GameSession.ledger_next_seq, 1)
+	assert_not_null(GameSession.hero_by_id(old.instance_id))
+	assert_eq(Ledger.history_lines(GameSession.ledger, old.instance_id, {}, BALANCE.rank_names, 10), ["Arrived before the records begin."] as Array[String])
+
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	roster_list.select(0)
+	roster_list.multi_selected.emit(0, true)
+	assert_string_ends_with((hub.get_node("%HeroDetail") as Label).text, "History:\nArrived before the records begin.")
+
+
+## A real fight from the ig-gy0.1 checkpoint: saved and reloaded through disk mid-fight, after its
+## first moments. The settle writes one battle record whose moments and kills match an
+## uninterrupted run of the same state, and whose team names the downed heroes too.
+func test_a_mid_fight_disk_reload_keeps_moments_and_the_settle_writes_one_battle_record() -> void:
+	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/battle_checkpoint_pre_skills.json")) as Dictionary
+	fixture["saved_at_unix"] = Time.get_unix_time_from_system() + 3600.0
+	_write_save(fixture)
+	assert_true(_disk_load(), SaveService.load_block_reason)
+	var order_id: String = str(GameSession.expedition_orders[0]["id"])
+	var hero_ids: Array = GameSession.expedition_orders[0]["hero_ids"]
+	var uninterrupted := BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
+	var expected: BattleOutcome = BattleSimulation.advance(uninterrupted, uninterrupted.max_seconds)
+	assert_false(expected.moments.is_empty())
+
+	var moments: Array = []
+	for step: int in 100:
+		GameSession.tick_expeditions(1.0)
+		moments = GameSession.get_battle_snapshot(order_id).get("moments", [])
+		if not moments.is_empty():
+			break
+	assert_false(moments.is_empty(), "the fight reached its first moment")
+	assert_eq(str(GameSession.get_battle_snapshot(order_id)["status"]), "active", "and is still going")
+	var saved_moments: String = JSON.stringify(moments)
+	assert_true(_disk_load_after_save())
+	assert_eq(JSON.stringify(GameSession.get_battle_snapshot(order_id)["moments"]), saved_moments, "moments survive the mid-fight reload")
+	assert_eq(GameSession.ledger, [] as Array[Dictionary], "nothing is written before the settle")
+
+	for step: int in 400:
+		if GameSession.expedition_orders.is_empty():
+			break
+		GameSession.tick_expeditions(1.0)
+	assert_true(GameSession.expedition_orders.is_empty(), "the order settled")
+	assert_eq(_kinds(), ["battle"], "exactly one battle record")
+	var record: Dictionary = GameSession.ledger[0]
+	assert_eq(record["order"], order_id)
+	assert_eq(record["battle_kind"], "normal")
+	assert_eq(record["result"], expected.status)
+	assert_eq(record["team"], hero_ids, "everyone who fought")
+	for moment: Dictionary in expected.moments:
+		if moment["what"] == "downed":
+			assert_true(str(moment["by"]).begins_with("enemy:"), "a downed hero names the enemy")
+			assert_true(str(moment["hero"]) in record["team"], "a downed hero is still in the team")
+	assert_eq(JSON.stringify(record["moments"]), JSON.stringify(expected.moments), "the killer and rescuer ids of the uninterrupted run")
+	assert_eq(record["kills"], expected.kills)
+
+
+func test_forecasts_write_nothing() -> void:
+	var team: Array[Hero] = [_hero("Scout", "knight")]
+	team[0].rank = 7
+	team[0].level = 80
+	GameSession.roster.append(team[0])
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
+	var squads: Array[Dictionary] = [{"id": "s", "name": "S", "hero_ids": [team[0].instance_id], "stance": "stay_together", "guard_target_id": ""}]
+	var snapshots: Array[Dictionary] = GameSession._team_snapshots(team, squads)
+	BattleSimulation.forecast("forecast", snapshots, zone, squads, {}, {"healing": 0, "revival": 0}, 7)
+	ExpeditionOrders.safety_forecast(team, zone, BALANCE)
+	assert_eq(GameSession.ledger, [] as Array[Dictionary])
+	assert_eq(GameSession.ledger_next_seq, 1)
+
+
+func test_eviction_is_tiered_oldest_first_and_seq_is_never_reused() -> void:
+	var ledger: Array[Dictionary] = []
+	var next_seq: int = 1
+	var routine: Dictionary = {"result": "victory", "moments": [], "team": ["h"]}
+	var eventful: Dictionary = {"result": "victory", "moments": [{"tick": 1, "what": "downed", "hero": "h", "by": "enemy:rogue"}], "team": ["h"]}
+	for entry: Array in [["died", {}], ["summoned", {}], ["ranked_up", {}], ["battle", eventful], ["battle", routine], ["battle", routine]]:
+		next_seq = Ledger.append(ledger, next_seq, 0, entry[0], entry[1], 6)
+	var evicted: Array[String] = []
+	for pass_index: int in 6:
+		var before: Array = ledger.map(func(record: Dictionary) -> int: return record["seq"])
+		next_seq = Ledger.append(ledger, next_seq, 0, "died", {}, 6)
+		var gone: Array = before.filter(func(seq: int) -> bool: return not ledger.any(func(record: Dictionary) -> bool: return record["seq"] == seq))
+		assert_eq(gone.size(), 1)
+		evicted.append("%s#%d" % [["", "died", "summoned", "ranked_up", "battle", "battle", "battle"][gone[0]], gone[0]])
+	assert_eq(evicted, ["battle#5", "battle#6", "battle#4", "ranked_up#3", "summoned#2", "died#1"] as Array[String], "routine battles, other battles, ranked_up, summoned, died last")
+	assert_eq(ledger.map(func(record: Dictionary) -> int: return record["seq"]), [7, 8, 9, 10, 11, 12])
+	assert_eq(next_seq, 13)
+
+
+func test_history_lines_collapse_routine_wins_and_name_killers_and_rescuers() -> void:
+	var ledger: Array[Dictionary] = []
+	var next_seq: int = Ledger.append(ledger, 1, 0, "summoned", {"hero": "h:a", "name": "Aldric", "rank": 0, "archetype": "knight"}, 100)
+	for index: int in 3:
+		next_seq = Ledger.append(ledger, next_seq, 0, "battle", {"order": "o%d" % index, "zone": "verdant_outskirts", "battle_kind": "normal", "result": "victory", "team": ["h:a", "h:b"], "kills": {}, "moments": []}, 100)
+	next_seq = Ledger.append(ledger, next_seq, 0, "battle", {"order": "o9", "zone": "verdant_outskirts", "battle_kind": "normal", "result": "victory", "team": ["h:a", "h:b"], "kills": {"h:a": 2}, "moments": [
+		{"tick": 5, "what": "downed", "hero": "h:b", "by": "enemy:rogue"},
+		{"tick": 9, "what": "revived", "hero": "h:b", "by": "h:a"},
+	]}, 100)
+	next_seq = Ledger.append(ledger, next_seq, 0, "ranked_up", {"hero": "h:a", "from": 0, "to": 1, "via": "essence"}, 100)
+	var zone_name: String = ZoneDefinition.definition_for(&"verdant_outskirts").display_name
+	var names: Dictionary = {"h:b": "Bo"}
+	assert_eq(Ledger.history_lines(ledger, "h:a", names, BALANCE.rank_names, 10), [
+		"Ranked up from F to D.",
+		"Won a battle at %s; revived Bo." % zone_name,
+		"Won 3 battles at %s." % zone_name,
+		"Summoned at F rank.",
+	] as Array[String])
+	assert_eq(Ledger.history_lines(ledger, "h:b", {"h:a": "Aldric"}, BALANCE.rank_names, 2), [
+		"Won a battle at %s; downed by an enemy Rogue; revived by Aldric." % zone_name,
+		"Won 3 battles at %s." % zone_name,
+	] as Array[String], "at most max_lines, and no arrival line past it")
+
+
+## Deaths after the stranding battle carry its order id: by abandon, by expiry and by a partly
+## failed rescue, each across a real disk save and reload.
+func test_abandon_carries_battle_order_across_a_disk_reload() -> void:
+	var source: Dictionary = _stranded_incident("abandon")
+	assert_true(_disk_load_after_save())
+	assert_true(GameSession.abandon_stranded(str(GameSession.stranded_incidents[0]["id"])), GameSession.last_action_error)
+	_assert_expedition_death(source["hero_id"], source["order_id"])
+	assert_eq(_battle_records(source["order_id"]).size(), 1, "the stranding battle's record exists")
+	assert_true(_disk_load_after_save())
+	_assert_expedition_death(source["hero_id"], source["order_id"])
+
+
+func test_expiry_carries_battle_order_across_a_disk_reload() -> void:
+	var source: Dictionary = _stranded_incident("expiry")
+	assert_true(_disk_load_after_save())
+	var incident: Dictionary = GameSession.stranded_incidents[0]
+	incident["paused"] = false
+	incident["created_recovery_seconds"] = 0.0
+	GameSession.rescue_clock_seconds = BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0 + 1.0
+	GameSession.tick_expeditions(0.1)
+	assert_true(GameSession.stranded_incidents.is_empty())
+	_assert_expedition_death(source["hero_id"], source["order_id"])
+	assert_true(_disk_load_after_save())
+	_assert_expedition_death(source["hero_id"], source["order_id"])
+
+
+func test_a_partly_failed_rescue_carries_the_original_battle_order_and_records_its_rescue() -> void:
+	var first: Dictionary = _add_one("first")
+	var second: Dictionary = _add_one("second")
+	var pair_preset: String = GameSession.save_team_preset("", "pair", [first["hero_id"], second["hero_id"]], "verdant_outskirts")
+	var order_id: String = GameSession.dispatch_force([pair_preset], "verdant_outskirts", 1, {}, _zero_loadout())
+	assert_ne(order_id, "", GameSession.last_action_error)
+	_fail_all_allies(order_id)
+	GameSession.tick_expeditions(0.1)
+	var incident_id: String = str(GameSession.stranded_incidents[0]["id"])
+	var rescuer: Dictionary = _add_one("rescuer")
+	var rescue_order_id: String = GameSession.dispatch_rescue(incident_id, rescuer["preset_id"], _zero_loadout())
+	assert_ne(rescue_order_id, "", GameSession.last_action_error)
+	assert_true(_disk_load_after_save())
+	GameSession.stranded_incidents[0]["expiry_pending"] = true
+	var rescue_order: Dictionary = GameSession.expedition_orders[0]
+	var battle: Dictionary = rescue_order["battle"] as Dictionary
+	for actor: Dictionary in battle["actors"] as Array[Dictionary]:
+		if str(actor["hero_id"]) == first["hero_id"]:
+			actor["life"] = BattleActor.LIFE_EXTRACTED
+			actor["hp"] = maxf(float(actor["hp"]), 1.0)
+	battle["status"] = "timeout"
+	battle["extracted_ids"] = [first["hero_id"]]
+	battle["downed_ever_ids"] = [first["hero_id"], second["hero_id"]]
+	rescue_order["phase"] = "returning"
+	rescue_order["remaining_seconds"] = 0.0
+	GameSession.tick_expeditions(0.1)
+
+	assert_not_null(GameSession.hero_by_id(first["hero_id"]), "carried home")
+	_assert_expedition_death(second["hero_id"], order_id)
+	var rescue: Array[Dictionary] = _battle_records(rescue_order_id)
+	assert_eq(rescue.size(), 1)
+	assert_eq(rescue[0]["battle_kind"], "rescue")
+	assert_eq(rescue[0]["rescued"], [first["hero_id"]])
+	assert_eq(_sorted(rescue[0]["team"]), _sorted([first["hero_id"], second["hero_id"], rescuer["hero_id"]]), "every ally in the fight, the stranded heroes included")
+	assert_eq(rescue[0]["rescuers"], [rescuer["hero_id"]], "only the rescue order's heroes")
+	assert_true(_disk_load_after_save())
+	_assert_expedition_death(second["hero_id"], order_id)
+	assert_eq(_battle_records(rescue_order_id)[0]["rescued"], [first["hero_id"]])
+	assert_eq(_battle_records(rescue_order_id)[0]["rescuers"], [rescuer["hero_id"]])
+	var zone_name: String = ZoneDefinition.definition_for(&"verdant_outskirts").display_name
+	var names: Dictionary = {first["hero_id"]: "First", second["hero_id"]: "Second", rescuer["hero_id"]: "Rescuer"}
+	var first_line: String = Ledger.history_lines(GameSession.ledger, first["hero_id"], names, BALANCE.rank_names, 10)[0]
+	assert_eq(first_line, "Rescued from %s by Rescuer." % zone_name, "the rescued hero names only the rescuer")
+	assert_true(Ledger.history_lines(GameSession.ledger, second["hero_id"], names, BALANCE.rank_names, 10)[1].begins_with("Was there when First was rescued at %s" % zone_name), "the stranded witness")
+	assert_true(Ledger.history_lines(GameSession.ledger, rescuer["hero_id"], names, BALANCE.rank_names, 10)[0].begins_with("Rescued First at %s" % zone_name), "the rescuer")
+
+
+func test_a_rescue_record_without_rescuers_reads_neutral() -> void:
+	var ledger: Array[Dictionary] = []
+	Ledger.append(ledger, 1, 0, "battle", {"order": "o1", "zone": "verdant_outskirts", "battle_kind": "rescue", "result": "timeout", "team": ["h:a", "h:b", "h:c"], "kills": {}, "moments": [], "rescued": ["h:a"]}, 100)
+	var zone_name: String = ZoneDefinition.definition_for(&"verdant_outskirts").display_name
+	var names: Dictionary = {"h:a": "Ann", "h:b": "Bo", "h:c": "Cy"}
+	assert_eq(Ledger.history_lines(ledger, "h:a", names, BALANCE.rank_names, 1), ["Rescued from %s." % zone_name] as Array[String])
+	assert_eq(Ledger.history_lines(ledger, "h:c", names, BALANCE.rank_names, 1), ["Was there when Ann was rescued at %s." % zone_name] as Array[String], "no one is named a rescuer")
+
+
+## A failed rescue strands its rescuer into the same incident. That rescuer's later death names
+## the RESCUE order, whose record lists them; the original hero still names the source order.
+## Checked for abandon and for expiry, across disk reloads.
+func test_a_rescuer_stranded_by_a_failed_rescue_links_to_the_rescue_when_abandoned() -> void:
+	var links: Dictionary = _strand_a_rescuer("abandon")
+	assert_true(GameSession.abandon_stranded(str(GameSession.stranded_incidents[0]["id"])), GameSession.last_action_error)
+	_assert_rescuer_links(links)
+	assert_true(_disk_load_after_save())
+	_assert_rescuer_links(links)
+
+
+func test_a_rescuer_stranded_by_a_failed_rescue_links_to_the_rescue_when_the_window_expires() -> void:
+	var links: Dictionary = _strand_a_rescuer("expire")
+	var incident: Dictionary = GameSession.stranded_incidents[0]
+	incident["paused"] = false
+	incident["created_recovery_seconds"] = 0.0
+	GameSession.rescue_clock_seconds = BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0 + 1.0
+	GameSession.tick_expeditions(0.1)
+	assert_true(GameSession.stranded_incidents.is_empty())
+	_assert_rescuer_links(links)
+	assert_true(_disk_load_after_save())
+	_assert_rescuer_links(links)
+
+
+func test_incident_battle_orders_is_validated_when_present() -> void:
+	_strand_a_rescuer("validate")
+	var saved: Dictionary = _json(GameSession.to_dict())
+	assert_eq(GameSession.validate_saved_state(saved, 3), "")
+	for bad: Variant in [[], {"hero:x": 5}, {"hero:x": ""}]:
+		var broken: Dictionary = saved.duplicate(true)
+		(broken["stranded_incidents"] as Array)[0]["battle_orders"] = bad
+		assert_string_contains(GameSession.validate_saved_state(broken, 3), "battle_orders", str(bad))
+	(saved["stranded_incidents"] as Array)[0].erase("battle_orders")
+	assert_eq(GameSession.validate_saved_state(saved, 3), "", "a legacy incident has no key")
+
+
+## A total wipe captures its incident when the fight ends, before the order settles. Live code runs
+## the capture and the settle inside one commit (_advance_time_in_memory), and a save holding the
+## window is refused (a normal order with an incident_id), so the window is forced here in memory.
+## An abandon inside it still names the order, and the settle that follows writes the record it
+## points at, with the dead hero in its team. Both survive a disk reload.
+func test_abandoning_a_total_wipe_before_its_order_settles_still_carries_battle_order() -> void:
+	var hero: Dictionary = _add_one("wipe")
+	var order_id: String = GameSession.dispatch_force([hero["preset_id"]], "verdant_outskirts", 1, {}, _zero_loadout())
+	_fail_all_allies(order_id)
+	var order: Dictionary = GameSession.expedition_orders[0]
+	GameSession._capture_stranded_incident(order, BattleState.from_dict(order["battle"] as Dictionary))
+	assert_eq(GameSession.expedition_orders.size(), 1, "not settled yet")
+	assert_string_contains(GameSession.validate_saved_state(_json(GameSession.to_dict()), 3), "incident reference", "the window is never saved")
+	assert_true(GameSession.abandon_stranded(str(GameSession.stranded_incidents[0]["id"])), GameSession.last_action_error)
+	assert_eq(_battle_records(order_id).size(), 0, "the stranding battle has no record yet")
+	_assert_expedition_death(hero["hero_id"], order_id)
+	GameSession.tick_expeditions(0.1)
+	assert_true(GameSession.expedition_orders.is_empty())
+	var records: Array[Dictionary] = _battle_records(order_id)
+	assert_eq(records.size(), 1)
+	assert_eq(records[0]["team"], [hero["hero_id"]], "the dead hero fought in it")
+	assert_lt(int(_died(hero["hero_id"])["seq"]), int(records[0]["seq"]), "the death settled first")
+	assert_true(_disk_load_after_save())
+	_assert_expedition_death(hero["hero_id"], order_id)
+	assert_eq(_battle_records(order_id).size(), 1)
+
+
+## Rule 8 and item 5: kill_hero is the only died writer and GameSession the only Ledger writer;
+## combat/ never touches the Ledger.
+func test_kill_hero_is_the_only_died_writer_and_combat_never_touches_the_ledger() -> void:
+	var writers: Dictionary = {}
+	for path: String in _scripts("res://"):
+		var text: String = FileAccess.get_file_as_string(path)
+		if path.begins_with("res://combat/"):
+			assert_false(text.contains("Ledger.") or text.contains(".ledger"), "%s stays out of the Ledger" % path)
+		for needle: String in ["Ledger.append(", "_record(\"died\""]:
+			if text.contains(needle) and not path.begins_with("res://tests/"):
+				writers[needle] = writers.get(needle, []) + [path]
+	assert_eq(writers.get("Ledger.append("), ["res://systems/game_session.gd"])
+	assert_eq(writers.get("_record(\"died\""), ["res://systems/game_session.gd"])
+	var session: String = FileAccess.get_file_as_string("res://systems/game_session.gd")
+	assert_eq(session.count("_record(\"died\""), 1)
+	var kill_start: int = session.find("func kill_hero(")
+	assert_true(session.find("_record(\"died\"") > kill_start and session.find("_record(\"died\"") < session.find("\nfunc ", kill_start + 1), "inside kill_hero")
+
+
+## SYSTEMS.md § The Ledger (PROVISIONAL): a full ledger of five-hero battle records, saved for
+## real. The time and size are printed for the bead; the bound is loose on purpose.
+func test_a_full_ledger_saves_in_reasonable_time() -> void:
+	var team: Array = ["hero:a", "hero:b", "hero:c", "hero:d", "hero:e"]
+	for index: int in BALANCE.ledger_max_records + 1:
+		GameSession._record("battle", {"order": "order:%d" % index, "zone": "verdant_outskirts", "battle_kind": "normal", "result": "victory", "team": team, "kills": {"hero:a": 3, "hero:b": 2}, "moments": [] if index % 4 != 0 else [{"tick": 120, "what": "downed", "hero": "hero:c", "by": "enemy:rogue"}, {"tick": 180, "what": "revived", "hero": "hero:c", "by": "hero:a"}]})
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	assert_eq(int(GameSession.ledger.back()["seq"]), BALANCE.ledger_max_records + 1)
+	var started: int = Time.get_ticks_msec()
+	var text: String = _disk_save()
+	var save_msec: int = Time.get_ticks_msec() - started
+	started = Time.get_ticks_msec()
+	assert_true(_disk_load())
+	var load_msec: int = Time.get_ticks_msec() - started
+	gut.p("LEDGER CAP: %d records, save %d ms, load %d ms, file %d bytes" % [GameSession.ledger.size(), save_msec, load_msec, text.length()])
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	assert_lt(save_msec, 5000)
+
+
+## Source hero stranded, then a rescue that strands its rescuer too; saved and reloaded twice.
+func _strand_a_rescuer(prefix: String) -> Dictionary:
+	var source: Dictionary = _stranded_incident(prefix + "_source")
+	var rescuer: Dictionary = _add_one(prefix + "_rescuer")
+	var rescue_order_id: String = GameSession.dispatch_rescue(str(GameSession.stranded_incidents[0]["id"]), rescuer["preset_id"], _zero_loadout())
+	assert_ne(rescue_order_id, "", GameSession.last_action_error)
+	assert_true(_disk_load_after_save())
+	_fail_all_allies(rescue_order_id)
+	GameSession.tick_expeditions(0.1)
+	assert_eq(GameSession.stranded_incidents.size(), 1)
+	assert_eq(_sorted(GameSession.stranded_incidents[0]["hero_ids"]), _sorted([source["hero_id"], rescuer["hero_id"]]))
+	assert_eq(GameSession.stranded_incidents[0]["battle_orders"], {rescuer["hero_id"]: rescue_order_id}, "only the exception")
+	var rescue: Array[Dictionary] = _battle_records(rescue_order_id)
+	assert_eq(rescue.size(), 1)
+	assert_eq(_sorted(rescue[0]["team"]), _sorted([source["hero_id"], rescuer["hero_id"]]), "the stranded hero witnessed the rescue")
+	assert_eq(rescue[0]["rescued"], [])
+	var stranded_line: String = "Stranded at %s" % ZoneDefinition.definition_for(StringName(str(rescue[0]["zone"]))).display_name
+	assert_true(Ledger.history_lines(GameSession.ledger, rescuer["hero_id"], {}, BALANCE.rank_names, 1)[0].begins_with(stranded_line), "a total failure reads as its result, not as a rescue")
+	assert_true(_disk_load_after_save())
+	assert_eq(GameSession.stranded_incidents[0]["battle_orders"], {rescuer["hero_id"]: rescue_order_id}, "survives the reload")
+	return {"source_hero": source["hero_id"], "source_order": source["order_id"], "rescuer": rescuer["hero_id"], "rescue_order": rescue_order_id}
+
+
+func _assert_rescuer_links(links: Dictionary) -> void:
+	_assert_expedition_death(links["source_hero"], links["source_order"])
+	_assert_expedition_death(links["rescuer"], links["rescue_order"])
+	assert_true(links["rescuer"] in _battle_records(links["rescue_order"])[0]["team"], "the linked record lists the rescuer")
+	assert_true(links["source_hero"] in _battle_records(links["source_order"])[0]["team"])
+
+
+func _sorted(values: Array) -> Array:
+	var copy: Array = values.duplicate()
+	copy.sort()
+	return copy
+
+
+func _stranded_incident(prefix: String) -> Dictionary:
+	var hero: Dictionary = _add_one(prefix)
+	var order_id: String = GameSession.dispatch_force([hero["preset_id"]], "verdant_outskirts", 1, {}, _zero_loadout())
+	_fail_all_allies(order_id)
+	GameSession.tick_expeditions(0.1)
+	assert_eq(GameSession.stranded_incidents.size(), 1)
+	assert_eq(str(GameSession.stranded_incidents[0]["source_order_id"]), order_id)
+	return {"hero_id": hero["hero_id"], "order_id": order_id}
+
+
+func _assert_expedition_death(hero_id: String, order_id: String) -> void:
+	assert_null(GameSession.hero_by_id(hero_id))
+	var died: Dictionary = _died(hero_id)
+	assert_eq(died.get("cause"), "expedition")
+	assert_eq(died.get("zone"), "verdant_outskirts")
+	assert_eq(died.get("battle_order"), order_id)
+	assert_eq(GameSession.ledger.filter(func(record: Dictionary) -> bool: return record["kind"] == "died" and record["hero"] == hero_id).size(), 1, "one died record")
+
+
+func _died(hero_id: String) -> Dictionary:
+	for record: Dictionary in GameSession.ledger:
+		if record["kind"] == "died" and record["hero"] == hero_id:
+			return record
+	return {}
+
+
+func _battle_records(order_id: String) -> Array[Dictionary]:
+	return GameSession.ledger.filter(func(record: Dictionary) -> bool: return record["kind"] == "battle" and record["order"] == order_id)
+
+
+func _add_one(prefix: String) -> Dictionary:
+	var hero := _hero(prefix.capitalize(), "knight")
+	hero.rank = 7
+	hero.level = 80
+	GameSession.roster.append(hero)
+	return {"hero_id": hero.instance_id, "preset_id": GameSession.save_team_preset("", prefix, [hero.instance_id], "verdant_outskirts")}
+
+
+func _hero(hero_name: String, archetype: String) -> Hero:
+	var hero := Hero.new(hero_name, 0)
+	hero.def_id = StringName(archetype)
+	hero.instance_id = "hero:%s" % hero_name.to_lower()
+	return hero
+
+
+func _fail_all_allies(order_id: String) -> void:
+	for order: Dictionary in GameSession.expedition_orders:
+		if str(order["id"]) != order_id:
+			continue
+		var battle: Dictionary = order["battle"] as Dictionary
+		var downed_ids: Array[String] = []
+		for actor: Dictionary in battle["actors"] as Array[Dictionary]:
+			if str(actor["faction"]) == "ally":
+				actor["life"] = BattleActor.LIFE_DOWNED
+				actor["hp"] = 0.0
+				downed_ids.append(str(actor["hero_id"]))
+		battle["status"] = "stranded"
+		battle["downed_ever_ids"] = downed_ids
+		battle["extracted_ids"] = []
+		order["phase"] = "returning"
+
+
+func _disk_save() -> String:
+	GameSession.set("_save_deferred_depth", 0)
+	var saved: bool = SaveService.save()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_true(saved, SaveService.last_write_error)
+	return FileAccess.get_file_as_string(SaveService.SAVE_PATH)
+
+
+func _disk_load() -> bool:
+	var loaded: bool = SaveService.load_game()
+	assert_false(SaveService.load_blocked, SaveService.load_block_reason)
+	return loaded
+
+
+func _disk_load_after_save() -> bool:
+	_disk_save()
+	return _disk_load()
+
+
+func _write_save(payload: Dictionary) -> void:
+	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(payload, "\t"))
+	file.close()
+
+
+## From "ledger" up to the next key: both Ledger keys, as written.
+func _ledger_section(text: String) -> String:
+	var start: int = text.find("\t\"ledger\": ")
+	return text.substr(start, text.find("\t\"lost_caches\"", start) - start)
+
+
+func _json(value: Dictionary) -> Dictionary:
+	return JSON.parse_string(JSON.stringify(value)) as Dictionary
+
+
+func _kinds() -> Array:
+	return GameSession.ledger.map(func(record: Dictionary) -> String: return record["kind"])
+
+
+func _without_time(record: Dictionary) -> Dictionary:
+	var copy: Dictionary = record.duplicate(true)
+	assert_true(copy.get("time") is int and int(copy["time"]) > 0)
+	copy.erase("time")
+	return copy
+
+
+func _scripts(dir_path: String) -> Array[String]:
+	var found: Array[String] = []
+	for sub: String in DirAccess.get_directories_at(dir_path):
+		if not sub.begins_with(".") and sub not in ["addons", "tools", "export"]:
+			found.append_array(_scripts(dir_path.path_join(sub)))
+	for file: String in DirAccess.get_files_at(dir_path):
+		if file.ends_with(".gd"):
+			found.append(dir_path.path_join(file))
+	return found
+
+
+func _zero_loadout() -> Dictionary:
+	return {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}

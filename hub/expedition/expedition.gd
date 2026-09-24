@@ -136,11 +136,18 @@ static func roll_loot(zone: ZoneDefinition, balance: BalanceTable, loot_seed: in
 	return Item.new(def_id, rank)
 
 
-static func finalize_permanent_losses(hero_ids: Array[String], zone_id: StringName) -> void:
+## Each died record names the order whose battle stranded that hero: the incident's
+## source_order_id, unless battle_orders holds an exception (a rescuer a failed rescue stranded).
+static func finalize_permanent_losses(incident: Dictionary, hero_ids: Array[String]) -> void:
+	var zone_id := StringName(str(incident.get("zone_id", "")))
+	var links: Variant = incident.get("battle_orders")
 	for hero_id: String in hero_ids:
 		var hero: Hero = GameSession.hero_by_id(hero_id)
 		if hero != null:
-			GameSession.kill_hero(hero, zone_id, BALANCE)
+			var battle_order: String = str((links as Dictionary).get(hero_id, "")) if links is Dictionary else ""
+			if battle_order.is_empty():
+				battle_order = str(incident.get("source_order_id", ""))
+			GameSession.kill_hero(hero, zone_id, BALANCE, "expedition", "", battle_order)
 
 
 func _party_hp_fraction(team: Array[Hero]) -> float:

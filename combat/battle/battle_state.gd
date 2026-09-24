@@ -24,6 +24,12 @@ var completed_waves: int = 0
 var downed_ever_ids: Array[String] = []
 var extracted_ids: Array[String] = []
 var command_sequence: int = 0
+## The Ledger's moments (DECISIONS.md 2026-09-24 item 7): {tick, what, hero, by}, capped at
+## battle_max_moments. Bookkeeping only: nothing in the fight reads them.
+var moments: Array[Dictionary] = []
+var moments_truncated: bool = false
+## {hero_id: enemies that hero finished}.
+var kills: Dictionary = {}
 
 
 func to_dict() -> Dictionary:
@@ -50,6 +56,9 @@ func to_dict() -> Dictionary:
 		"downed_ever_ids": downed_ever_ids.duplicate(),
 		"extracted_ids": extracted_ids.duplicate(),
 		"command_sequence": command_sequence,
+		"moments": moments.duplicate(true),
+		"moments_truncated": moments_truncated,
+		"kills": kills.duplicate(),
 	}
 
 
@@ -87,4 +96,18 @@ static func from_dict(data: Dictionary) -> BattleState:
 			state.set(key, (raw_dictionary as Dictionary).duplicate(true))
 	state.completed_waves = int(data.get("completed_waves", 0))
 	state.command_sequence = int(data.get("command_sequence", 0))
+	# Additive keys (ig-m6o.1): a checkpoint without them has no moments and no kills yet.
+	var raw_moments: Variant = data.get("moments")
+	if raw_moments is Array:
+		for raw_moment: Variant in raw_moments as Array:
+			if raw_moment is Dictionary:
+				var moment: Dictionary = raw_moment as Dictionary
+				state.moments.append({"tick": int(moment.get("tick", 0)), "what": str(moment.get("what", "")), "hero": str(moment.get("hero", "")), "by": str(moment.get("by", ""))})
+	var raw_truncated: Variant = data.get("moments_truncated")
+	state.moments_truncated = raw_truncated is bool and raw_truncated as bool
+	var raw_kills: Variant = data.get("kills")
+	if raw_kills is Dictionary:
+		for hero_id: Variant in raw_kills as Dictionary:
+			if hero_id is String:
+				state.kills[hero_id] = int((raw_kills as Dictionary)[hero_id])
 	return state

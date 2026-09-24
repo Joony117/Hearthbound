@@ -148,3 +148,5 @@ house_capacity = 1
 lumbermill_wood_cost = 20
 lumbermill_worker_slots = 2
 wood_per_worker_minute = 1.0
+ledger_max_records = 10000
+battle_max_moments = 64

@@ -364,6 +364,9 @@ static func snapshot_outcome(state: BattleState) -> BattleOutcome:
 	outcome.supplies_remaining = state.supplies_remaining.duplicate(true)
 	outcome.completed_waves = state.completed_waves
 	outcome.elapsed_seconds = state.elapsed_seconds
+	outcome.moments = state.moments.duplicate(true)
+	outcome.moments_truncated = state.moments_truncated
+	outcome.kills = state.kills.duplicate()
 	for actor: BattleActor in state.actors:
 		if actor.faction == "enemy" and actor.life == BattleActor.LIFE_DEAD:
 			outcome.enemy_dead_ids.append(actor.id)
@@ -855,7 +858,7 @@ static func _use_skill(
 		match str(effect["type"]):
 			"revive":
 				if target != null and target.faction == actor.faction and target.life == BattleActor.LIFE_DOWNED:
-					_revive_actor(state, target, float(effect["fraction"]))
+					_revive_actor(state, target, float(effect["fraction"]), actor)
 					if bool(effect.get("stop", false)):
 						break
 			"status":
@@ -1150,12 +1153,13 @@ static func _use_revival(state: BattleState, user: BattleActor, target: BattleAc
 	if remaining <= 0 or (not manual and bool(state.policies.get("reserve_last_revival", false)) and remaining == 1):
 		return false
 	state.supplies_remaining["revival"] = remaining - 1
-	_revive_actor(state, target, BALANCE.battle_revival_fraction)
+	_revive_actor(state, target, BALANCE.battle_revival_fraction, user)
 	user.item_cooldown = BALANCE.battle_item_cooldown_seconds
 	return true
 
 
-static func _revive_actor(state: BattleState, target: BattleActor, fraction: float) -> void:
+static func _revive_actor(state: BattleState, target: BattleActor, fraction: float, by: BattleActor) -> void:
+	_add_moment(state, "revived", target, by)
 	_drop_from_carrier(state, target)
 	target.life = BattleActor.LIFE_ALIVE
 	target.hp = maxf(target.max_hp * fraction, 1.0)
@@ -1207,10 +1211,25 @@ static func _damage(
 		target.life = BattleActor.LIFE_DOWNED
 		if not target.hero_id in state.downed_ever_ids:
 			state.downed_ever_ids.append(target.hero_id)
+		_add_moment(state, "downed", target, attacker)
 		_drop_carried(state, target)
 		_drop_from_carrier(state, target)
 	else:
 		target.life = BattleActor.LIFE_DEAD
+		if not attacker.hero_id.is_empty():
+			state.kills[attacker.hero_id] = int(state.kills.get(attacker.hero_id, 0)) + 1
+
+
+## A Ledger moment (DECISIONS.md 2026-09-24 item 7). Bookkeeping only: no RNG, and nothing in the
+## fight reads it. `by` is a hero id, or enemy:<archetype> for an enemy.
+static func _add_moment(state: BattleState, what: String, hero: BattleActor, by: BattleActor) -> void:
+	if hero.hero_id.is_empty():
+		return
+	if state.moments.size() >= BALANCE.battle_max_moments:
+		state.moments_truncated = true
+		return
+	var by_id: String = by.hero_id if not by.hero_id.is_empty() else "%s:%s" % [by.faction, by.archetype]
+	state.moments.append({"tick": state.tick, "what": what, "hero": hero.hero_id, "by": by_id})
 
 
 static func _update_carry(state: BattleState, carrier: BattleActor) -> void:
@@ -1243,6 +1262,7 @@ static func _extract_actor(state: BattleState, actor: BattleActor) -> void:
 	if not actor.carrying_id.is_empty():
 		var carried: BattleActor = _actor_by_id(state, actor.carrying_id)
 		if carried != null:
+			_add_moment(state, "carried", carried, actor)
 			carried.life = BattleActor.LIFE_EXTRACTED
 			carried.carried_by_id = ""
 			if not carried.hero_id.is_empty() and not carried.hero_id in state.extracted_ids:

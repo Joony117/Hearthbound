@@ -132,7 +132,9 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 	assert_eq(BattleSimulation.validate_snapshot(resaved), "", "the migrated battle saves in the new shape")
 	state = BattleState.from_dict(resaved)
 	var outcome: BattleOutcome = BattleSimulation.advance(state, state.max_seconds)
-	assert_eq(_exact_json(outcome.to_dict()), _exact_json(expected["outcome"]))
+	# The fixture predates the Ledger (ig-m6o.1): its bookkeeping keys are the only difference.
+	assert_false(outcome.moments.is_empty(), "the fight reports moments")
+	assert_eq(_exact_json(_without_ledger_keys(outcome.to_dict())), _exact_json(expected["outcome"]))
 	assert_eq(_exact_json(_pre_skills_shape(state)), _exact_json(expected["final"]), "final state matches the pre-change finish")
 
 	GameSession.tick_expeditions(0.1)
@@ -143,7 +145,7 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 
 ## The battle as the pre-skills build recorded it: one signature cooldown and one auto flag per actor.
 func _pre_skills_shape(state: BattleState) -> Dictionary:
-	var data: Dictionary = state.to_dict()
+	var data: Dictionary = _without_ledger_keys(state.to_dict())
 	for index: int in state.actors.size():
 		var actor: BattleActor = state.actors[index]
 		var actor_data: Dictionary = (data["actors"] as Array)[index]
@@ -154,6 +156,12 @@ func _pre_skills_shape(state: BattleState) -> Dictionary:
 			cooldown += value
 		actor_data["signature_cooldown"] = cooldown
 		actor_data["signature_auto"] = not actor.skills.any(func(entry: Dictionary) -> bool: return entry["mode"] == "manual")
+	return data
+
+
+func _without_ledger_keys(data: Dictionary) -> Dictionary:
+	for key: String in ["moments", "moments_truncated", "kills"]:
+		data.erase(key)
 	return data
 
 

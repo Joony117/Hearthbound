@@ -8,6 +8,9 @@ var enemy_dead_ids: Array[String] = []
 var supplies_remaining: Dictionary = {"healing": 0, "revival": 0}
 var completed_waves: int = 0
 var elapsed_seconds: float = 0.0
+var moments: Array[Dictionary] = []
+var moments_truncated: bool = false
+var kills: Dictionary = {}
 
 
 func to_dict() -> Dictionary:
@@ -19,5 +22,8 @@ func to_dict() -> Dictionary:
 		"supplies_remaining": supplies_remaining.duplicate(true),
 		"completed_waves": completed_waves,
 		"elapsed_seconds": elapsed_seconds,
+		"moments": moments.duplicate(true),
+		"moments_truncated": moments_truncated,
+		"kills": kills.duplicate(),
 	}
 

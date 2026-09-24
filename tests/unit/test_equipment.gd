@@ -135,7 +135,8 @@ func test_hub_inventory_rank_and_slot_filters_compose() -> void:
 
 ## Nothing in this suite drives a real mouse hover, so the tooltip is pinned by its text rather than
 ## by showing. The roster half asserts equality with the detail panel instead of a second format
-## string - that equality is the whole reason _hero_detail_text() was extracted.
+## string - that shared head is the whole reason _hero_detail_text() was extracted. The detail adds
+## the Ledger's History below it (ig-m6o.1); the tooltip stays short.
 func test_hub_rows_carry_hover_detail() -> void:
 	var hero := Hero.new("Hover Hero", 1)
 	hero.def_id = &"knight"
@@ -151,7 +152,7 @@ func test_hub_rows_carry_hover_detail() -> void:
 
 	roster_list.select(0)
 	roster_list.multi_selected.emit(0, true)
-	assert_eq(roster_list.get_item_tooltip(0), hero_detail.text)
+	assert_eq(hero_detail.text, roster_list.get_item_tooltip(0) + "\n\nHistory:\nArrived before the records begin.")
 	assert_string_contains(roster_list.get_item_tooltip(0), "Resonance:")
 
 	var tooltip: String = inventory_list.get_item_tooltip(0)

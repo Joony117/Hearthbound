@@ -583,7 +583,7 @@ func _refresh_equipped() -> void:
 
 func _refresh_hero_detail() -> void:
 	var hero: Hero = _selected_hero()
-	_hero_detail.text = "" if hero == null else _hero_detail_text(hero)
+	_hero_detail.text = "" if hero == null else "%s\n\nHistory:\n%s" % [_hero_detail_text(hero), "\n".join(_history_lines(hero))]
 	_hero_availability.text = "Select exactly one hero." if hero == null else _hero_state_text(hero)
 	_favorite_hero.disabled = hero == null
 	_favorite_hero.set_pressed_no_signal(hero.favorite if hero != null else false)
@@ -611,7 +611,15 @@ func _hero_state_text(hero: Hero) -> String:
 	return "Ready"
 
 
-## The selected-hero detail and the roster tooltip, which must stay the same string.
+## The Ledger's reader (SYSTEMS.md § The Ledger): newest first, at most 10 lines.
+func _history_lines(hero: Hero) -> Array[String]:
+	var names: Dictionary = {}
+	for member: Hero in GameSession.roster:
+		names[member.instance_id] = member.hero_name
+	return Ledger.history_lines(GameSession.ledger, hero.instance_id, names, BALANCE.rank_names, 10)
+
+
+## The roster tooltip, and the head of the selected-hero detail (which adds the History below it).
 func _hero_detail_text(hero: Hero) -> String:
 	return "%s\n%s" % [_hero_stats_text(hero), _profession_text(hero)]
 
