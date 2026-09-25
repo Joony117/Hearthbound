@@ -134,8 +134,11 @@ the single-thread run.
 8. `ig-7sn.12` (load catch-up): `apply_offline_expedition_progress` does no sim work; it sets an
    additive order key `catch_up_seconds` (missing = 0, bad value → 0 with `push_warning`,
    `SAVE_VERSION` unchanged, the `P2-23` precedent). The first pulse sends one job per owed order;
-   the order sits in the existing paused-skip set (`_paused_battle_orders`) until its job lands. A
-   round commits only once every job in it has landed, through today's
+   the order's battle clock stops until its job lands. Amended by the director on 2026-09-25, with
+   high1: `catch_up_seconds > 0` stops the clock at the paused-skip sites, instead of an entry in
+   `_paused_battle_orders`. That set is the player's pause, and leaving the battle view clears it
+   (`battle_view.gd` `_release_live_binding` → `set_battle_paused(false)`), which would free a
+   catching-up order mid-job. A round commits only once every job in it has landed, through today's
    `_resolve_due_orders_in_memory` order — never completion order. An interrupted catch-up resumes
    from the same saved state, so it ends at the same `to_dict()` as an uninterrupted one.
 9. `ig-7sn.6` (settle forecast): confirmed against `systems/game_session.gd:2143-2177` —
