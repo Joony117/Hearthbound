@@ -589,9 +589,10 @@ func _squads(snapshots: Array[Dictionary], stance: String = "stay_together") -> 
 	return [{"id": "s", "name": "S", "hero_ids": hero_ids, "stance": stance, "guard_target_id": ""}]
 
 
-## No zone spawns (the enemies come in the list), Auto Battle off, no crits, empty kits.
+## No zone spawns (the enemies come in the list), Auto Battle off, no crits, empty kits. Pace 1: the
+## authored numbers (test_battle_pace covers xP).
 func _battle(snapshots: Array[Dictionary]) -> BattleState:
-	var state: BattleState = SIM.create_run("kits:1", snapshots, ZoneDefinition.definition_for(&"verdant_outskirts"), _squads(snapshots), {"auto_battle": false, "suppress_ally_crit": true}, {"healing": 0, "revival": 0}, 7, "rescue")
+	var state: BattleState = SIM.create_run("kits:1", snapshots, ZoneDefinition.definition_for(&"verdant_outskirts"), _squads(snapshots), {"auto_battle": false, "suppress_ally_crit": true}, {"healing": 0, "revival": 0}, 7, "rescue", 1)
 	for actor: BattleActor in state.actors:
 		_give(actor, [])
 	return state

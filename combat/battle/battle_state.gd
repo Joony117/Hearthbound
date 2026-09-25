@@ -22,6 +22,8 @@ var tick_remainder: float = 0.0
 var rng_state: String = "0"
 var elapsed_seconds: float = 0.0
 var max_seconds: float = 180.0
+## ig-1jw: the battle_pace this battle spawned with. A checkpoint without it is pace 1.
+var pace: int = 1
 var actors: Array[BattleActor] = []
 var squads: Array[Dictionary] = []
 var objective_state: Dictionary = {}
@@ -54,6 +56,7 @@ func to_dict() -> Dictionary:
 		"rng_state": rng_state,
 		"elapsed_seconds": elapsed_seconds,
 		"max_seconds": max_seconds,
+		"pace": pace,
 		"actors": actor_entries,
 		"squads": squads.duplicate(true),
 		"objective_state": objective_state.duplicate(true),
@@ -83,6 +86,8 @@ static func from_dict(data: Dictionary) -> BattleState:
 	state.rng_state = str(data.get("rng_state", "0"))
 	state.elapsed_seconds = float(data.get("elapsed_seconds", 0.0))
 	state.max_seconds = float(data.get("max_seconds", 180.0))
+	# Additive (ig-1jw): a battle in flight across the update ends as it began, at pace 1.
+	state.pace = int(data.get("pace", 1))
 	var raw_actors: Variant = data.get("actors")
 	if raw_actors is Array:
 		for raw_actor: Variant in raw_actors as Array:

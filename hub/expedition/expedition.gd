@@ -81,7 +81,7 @@ func _resolve(
 				GameSession.kill_hero(hero, zone.zone_id, BALANCE)
 			GameSession.credit_team_xp(
 				team,
-				roundi(float(BALANCE.xp_per_wave * waves_resolved) * xp_multiplier),
+				roundi(float(BALANCE.xp_per_wave * waves_resolved * BALANCE.battle_pace) * xp_multiplier),
 				BALANCE,
 				true,
 			)
@@ -90,19 +90,22 @@ func _resolve(
 		if next_wave_index < zone.trash_wave_count and _party_hp_fraction(team) <= RETREAT_THRESHOLD:
 			GameSession.credit_team_xp(
 				team,
-				roundi(float(BALANCE.xp_per_wave * waves_resolved) * xp_multiplier),
+				roundi(float(BALANCE.xp_per_wave * waves_resolved * BALANCE.battle_pace) * xp_multiplier),
 				BALANCE,
 				true,
 			)
 			return OUTCOME_RETREATED
 
 	GameSession.mark_zone_cleared(zone.zone_id)
+	# ig-1jw: a legacy order reads the live battle_pace: stones and XP xP, P loot rolls.
 	loot = roll_loot(zone, BALANCE, boss_loot_seed)
 	GameSession.add_item(loot)
-	GameSession.credit_stones(zone.stone_reward)
+	for roll: int in range(1, BALANCE.battle_pace):
+		GameSession.add_item(roll_loot(zone, BALANCE, boss_loot_seed + roll))
+	GameSession.credit_stones(zone.stone_reward * BALANCE.battle_pace)
 	GameSession.credit_team_xp(
 		team,
-		roundi(float(BALANCE.xp_per_wave * waves_resolved + zone.xp_reward) * xp_multiplier),
+		roundi(float((BALANCE.xp_per_wave * waves_resolved + zone.xp_reward) * BALANCE.battle_pace) * xp_multiplier),
 		BALANCE,
 		true,
 	)

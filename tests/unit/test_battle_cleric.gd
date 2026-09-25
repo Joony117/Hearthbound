@@ -97,7 +97,8 @@ func test_cleric_kit_survives_a_profile_save_and_reload() -> void:
 
 
 ## A Cleric and a Knight (max HP 100, so 30 is below heal_below 0.35) standing 2 apart, nothing
-## else acting: no enemies, no supplies, Auto Battle off.
+## else acting: no enemies, no supplies, Auto Battle off. Pace 1: the authored numbers (test_battle_pace
+## covers xP).
 func _run(cleric_atk: float, knight_hp: float) -> BattleState:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
 	var snapshots: Array[Dictionary] = [
@@ -105,6 +106,6 @@ func _run(cleric_atk: float, knight_hp: float) -> BattleState:
 		{"hero_id": "hero:knight", "archetype": "knight", "hp": 100.0, "current_hp": knight_hp, "life": "alive" if knight_hp > 0.0 else "downed", "atk": 10.0, "defense": 20.0, "speed": 100.0, "crit_rate": 0.0, "crit_damage": 1.5, "squad_id": "s", "position": [2.0, -16.0]},
 	]
 	var squads: Array[Dictionary] = [{"id": "s", "name": "S", "hero_ids": ["hero:cleric", "hero:knight"], "stance": "stay_together", "guard_target_id": ""}]
-	var state: BattleState = BattleSimulation.create_run("cleric:1", snapshots, zone, squads, {"auto_battle": false}, {"healing": 0, "revival": 0}, 5, "rescue")
+	var state: BattleState = BattleSimulation.create_run("cleric:1", snapshots, zone, squads, {"auto_battle": false}, {"healing": 0, "revival": 0}, 5, "rescue", 1)
 	state.actors[1].set_abilities_auto(false)
 	return state

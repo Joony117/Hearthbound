@@ -215,7 +215,7 @@ func test_expiry_carries_battle_order_across_a_disk_reload() -> void:
 	var incident: Dictionary = GameSession.stranded_incidents[0]
 	incident["paused"] = false
 	incident["created_recovery_seconds"] = 0.0
-	GameSession.rescue_clock_seconds = BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0 + 1.0
+	GameSession.rescue_clock_seconds = (BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0) * BALANCE.battle_pace + 1.0
 	GameSession.tick_expeditions(0.1)
 	assert_true(GameSession.stranded_incidents.is_empty())
 	_assert_expedition_death(source["hero_id"], source["order_id"])
@@ -295,7 +295,7 @@ func test_a_rescuer_stranded_by_a_failed_rescue_links_to_the_rescue_when_the_win
 	var incident: Dictionary = GameSession.stranded_incidents[0]
 	incident["paused"] = false
 	incident["created_recovery_seconds"] = 0.0
-	GameSession.rescue_clock_seconds = BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0 + 1.0
+	GameSession.rescue_clock_seconds = (BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0) * BALANCE.battle_pace + 1.0
 	GameSession.tick_expeditions(0.1)
 	assert_true(GameSession.stranded_incidents.is_empty())
 	_assert_rescuer_links(links)
@@ -545,7 +545,7 @@ func _assert_alive(hero_id: String) -> void:
 func _expire(incident: Dictionary) -> void:
 	incident["paused"] = false
 	incident["created_recovery_seconds"] = 0.0
-	GameSession.rescue_clock_seconds = BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0 + 1.0
+	GameSession.rescue_clock_seconds = (BALANCE.recovery_base_duration_seconds + BALANCE.recovery_duration_seconds_per_level * 10.0) * BALANCE.battle_pace + 1.0
 
 
 ## A stranded hero and a rescue in flight, saved to disk like that. Then, in memory only, the

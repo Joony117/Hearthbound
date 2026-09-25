@@ -124,6 +124,10 @@ extends Resource
 @export var alchemy_cost_cut_per_skill: float = 0.10
 
 @export var battle_tick_seconds: float = 0.1
+## ig-1jw (SYSTEMS.md § Battle pace): P. HP, ability cooldowns and amounts, ability statuses, holds, the
+## combat bound, the route, rewards and the recovery lifetime are xP. A battle keeps the pace it spawned
+## with (BattleState.pace).
+@export var battle_pace: int = 6
 @export var battle_damage_defense_scale: float = 100.0
 @export var battle_basic_interval_numerator: float = 100.0
 @export var battle_basic_interval_min: float = 0.3

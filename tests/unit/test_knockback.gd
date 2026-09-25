@@ -337,11 +337,12 @@ func _unit(id: String, archetype: String, faction: String, position: Vector2, ex
 	return snapshot
 
 
-## No zone spawns (the enemies come in the list), Auto Battle off, empty kits.
+## No zone spawns (the enemies come in the list), Auto Battle off, empty kits. Pace 1: the authored
+## numbers (test_battle_pace covers xP).
 func _battle(snapshots: Array[Dictionary]) -> BattleState:
 	var hero_ids: Array = snapshots.filter(func(snapshot: Dictionary) -> bool: return snapshot["faction"] == "ally").map(func(snapshot: Dictionary) -> String: return snapshot["hero_id"])
 	var squads: Array[Dictionary] = [{"id": "s", "name": "S", "hero_ids": hero_ids, "stance": "stay_together", "guard_target_id": ""}]
-	var state: BattleState = SIM.create_run("kits:1", snapshots, ZoneDefinition.definition_for(&"verdant_outskirts"), squads, {"auto_battle": false}, {"healing": 0, "revival": 0}, 7, "rescue")
+	var state: BattleState = SIM.create_run("kits:1", snapshots, ZoneDefinition.definition_for(&"verdant_outskirts"), squads, {"auto_battle": false}, {"healing": 0, "revival": 0}, 7, "rescue", 1)
 	for actor: BattleActor in state.actors:
 		_give(actor, [])
 	return state

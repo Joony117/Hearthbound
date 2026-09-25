@@ -189,7 +189,7 @@ func test_auto_battle_off_keeps_an_idle_ally_in_place() -> void:
 
 
 func test_manual_ability_uses_and_persists_saved_rng_atomically() -> void:
-	var state: BattleState = BattleSimulation.create_run("order:manual-rng", [_hero("hero:ranger", "ranger")], _zone(20), _squads(["hero:ranger"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 2468)
+	var state: BattleState = BattleSimulation.create_run("order:manual-rng", [_hero("hero:ranger", "ranger")], _zone(20), _squads(["hero:ranger"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 2468, "normal", 1)
 	var ranger: BattleActor = state.actors[0]
 	var target: BattleActor = state.actors[1]
 	ranger.position = Vector2.ZERO
@@ -206,7 +206,7 @@ func test_manual_ability_uses_and_persists_saved_rng_atomically() -> void:
 	assert_almost_eq(target.hp, 865.0, 0.0001)
 	assert_gt(ranger.skill_cooldowns["ranger_piercing_shot"], 0.0)
 
-	var invalid: BattleState = BattleSimulation.create_run("order:manual-invalid", [_hero("hero:ranger", "ranger")], _zone(20), _squads(["hero:ranger"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 2468)
+	var invalid: BattleState = BattleSimulation.create_run("order:manual-invalid", [_hero("hero:ranger", "ranger")], _zone(20), _squads(["hero:ranger"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 2468, "normal", 1)
 	var invalid_before: Dictionary = invalid.to_dict()
 	var rejected: Dictionary = BattleSimulation.issue_command(invalid, {"kind": BattleSimulation.COMMAND_ABILITY, "actor_ids": [invalid.actors[0].id], "target_id": invalid.actors[1].id, "point": [20.0, 20.0]})
 	assert_false(bool(rejected["accepted"]))
@@ -214,7 +214,7 @@ func test_manual_ability_uses_and_persists_saved_rng_atomically() -> void:
 
 
 func test_rogue_rear_passive_applies_to_basic_hit_but_not_signature() -> void:
-	var signature_state: BattleState = BattleSimulation.create_run("order:rogue-skill", [_hero("hero:rogue", "rogue")], _zone(20), _squads(["hero:rogue"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5)
+	var signature_state: BattleState = BattleSimulation.create_run("order:rogue-skill", [_hero("hero:rogue", "rogue")], _zone(20), _squads(["hero:rogue"]), {"auto_battle": false}, {"healing": 0, "revival": 0}, 5, "normal", 1)
 	var rogue: BattleActor = signature_state.actors[0]
 	var signature_target: BattleActor = signature_state.actors[1]
 	rogue.position = Vector2.ZERO
@@ -389,15 +389,16 @@ func test_enemy_budget_uses_actual_authored_resource_values() -> void:
 		five.append(_hero(five_ids[index], ["knight", "ranger", "mage", "rogue", "knight"][index]))
 	var full_state: BattleState = BattleSimulation.create_run("order:budget-five", five, zone, _squads(five_ids), {}, {"healing": 0, "revival": 0}, 1)
 	var full_enemy: BattleActor = full_state.actors[5]
-	# A budget of 90: HP x 1.15, ATK x 0.03 (ig-el4).
-	assert_almost_eq(full_enemy.max_hp, 103.5, 0.0001)
+	# A budget of 90: HP x 1.15 x battle_pace (ig-1jw), ATK x 0.03 (ig-el4).
+	assert_eq(full_state.pace, 6)
+	assert_almost_eq(full_enemy.max_hp, 103.5 * 6.0, 0.0001)
 	assert_almost_eq(full_enemy.atk, 2.7, 0.0001)
 
 	var three_ids: Array[String] = ["hero:a", "hero:b", "hero:c"]
 	var three: Array[Dictionary] = [_hero("hero:a", "knight"), _hero("hero:b", "ranger"), _hero("hero:c", "mage")]
 	var small_state: BattleState = BattleSimulation.create_run("order:budget-three", three, zone, _squads(three_ids), {}, {"healing": 0, "revival": 0}, 1)
 	var small_enemy: BattleActor = small_state.actors[3]
-	assert_almost_eq(small_enemy.max_hp, 62.1, 0.0001)
+	assert_almost_eq(small_enemy.max_hp, 62.1 * 6.0, 0.0001)
 	assert_almost_eq(small_enemy.atk, 1.62, 0.0001)
 
 
@@ -410,8 +411,22 @@ func test_snapshot_validation_rejects_corrupt_persistent_shapes() -> void:
 	corrupt["zone_id"] = "missing_zone"
 	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle zone_id is unknown.")
 	corrupt = valid.duplicate(true)
-	corrupt["max_seconds"] = 181.0
+	corrupt["max_seconds"] = 180.0 * 6.0 + 1.0
 	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle max_seconds exceeds the authored zone bound.")
+	# ig-1jw: the bound is x the battle's pace, and a checkpoint without one is pace 1.
+	corrupt = valid.duplicate(true)
+	corrupt.erase("pace")
+	corrupt["max_seconds"] = 180.0 * 6.0
+	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle max_seconds exceeds the authored zone bound.")
+	corrupt["max_seconds"] = 180.0
+	assert_eq(BattleSimulation.validate_snapshot(corrupt), "")
+	for bad_pace: Variant in [0, -1, 1.5, "6", null, BattleSimulation.MAX_PACE + 1, 1000000000]:
+		corrupt = valid.duplicate(true)
+		corrupt["pace"] = bad_pace
+		assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle pace must be an integer from 1 to %d." % BattleSimulation.MAX_PACE, str(bad_pace))
+	corrupt = valid.duplicate(true)
+	corrupt["pace"] = 6.0
+	assert_eq(BattleSimulation.validate_snapshot(corrupt), "", "a JSON-loaded pace is a whole float")
 	corrupt = valid.duplicate(true)
 	corrupt["elapsed_seconds"] = 0.1
 	assert_eq(BattleSimulation.validate_snapshot(corrupt), "Battle tick and elapsed_seconds are inconsistent.")

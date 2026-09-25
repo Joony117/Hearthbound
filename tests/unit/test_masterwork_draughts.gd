@@ -178,7 +178,8 @@ func test_the_forecast_agrees_with_the_unattended_run() -> void:
 	var escrow: Dictionary = {"healing": 0, "revival": 0, MW_HEAL: 5, MW_REVIVE: 1}
 	var forecast: Dictionary = BattleSimulation.forecast("mw:forecast", snapshots, zone, squads, policies, escrow, 7)
 	var state: BattleState = BattleSimulation.create_run("mw:forecast", snapshots, zone, squads, policies, escrow, 7)
-	var outcome: BattleOutcome = BattleSimulation.advance(state, zone.max_battle_seconds)
+	# The battle's own bound: the zone's x its pace (ig-1jw).
+	var outcome: BattleOutcome = BattleSimulation.advance(state, state.max_seconds)
 	assert_eq(forecast["normal"], outcome.to_dict())
 	assert_lt(int((forecast["normal"]["supplies_remaining"] as Dictionary)[MW_HEAL]), 5, "the forecast spent masterwork draughts")
 
@@ -341,7 +342,7 @@ func test_the_hub_loadout_form_and_stock_show_both_tiers() -> void:
 
 
 ## One ranger (no rally) and a patient mage on the same spot, off the exit; a harmless enemy far off. The patient is
-## alive at 10 of 100 HP, or downed.
+## alive at 10 of 100 HP, or downed. Pace 1: the authored HP (test_battle_pace covers xP).
 func _pair(supplies: Dictionary, policies: Dictionary, downed: bool) -> BattleState:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
 	var patient: Dictionary = {"hero_id": "hero:patient", "archetype": "mage", "hp": 100.0, "current_hp": 10.0, "atk": 0.0, "defense": 10.0, "speed": 95.0, "crit_rate": 0.0, "crit_damage": 1.5, "squad_id": "rescue", "position": [0.0, 0.0]}
@@ -356,7 +357,7 @@ func _pair(supplies: Dictionary, policies: Dictionary, downed: bool) -> BattleSt
 	var squads: Array[Dictionary] = [{"id": "rescue", "name": "Rescue", "hero_ids": members, "stance": "stay_together", "guard_target_id": ""}]
 	var all_policies: Dictionary = {"auto_battle": true}
 	all_policies.merge(policies, true)
-	return BattleSimulation.create_run("mw:pair", snapshots, zone, squads, all_policies, supplies, 12, "rescue")
+	return BattleSimulation.create_run("mw:pair", snapshots, zone, squads, all_policies, supplies, 12, "rescue", 1)
 
 
 func _alchemist() -> Hero:

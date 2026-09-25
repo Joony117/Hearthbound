@@ -150,6 +150,8 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 			for status: Dictionary in actor.statuses:
 				if status["id"] == "knight_rally":
 					rallied[actor.id] = maxf(float(rallied.get(actor.id, 0.0)), float(status["magnitude"]))
+	# ig-1jw: a checkpoint without pace is pace 1, so it finishes at the pace-1 numbers below.
+	assert_eq(state.pace, 1, "a legacy checkpoint loads as pace 1")
 	# The fixture predates the Ledger (ig-m6o.1): its bookkeeping keys are the only difference.
 	assert_false(outcome.moments.is_empty(), "the fight reports moments")
 	assert_eq(_exact_json(_without_ledger_keys(outcome.to_dict())), _exact_json(expected["outcome"]))
@@ -164,6 +166,8 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 ## The battle as the pre-skills build recorded it: one signature cooldown and one auto flag per actor.
 func _pre_skills_shape(state: BattleState, rallied: Dictionary = {}) -> Dictionary:
 	var data: Dictionary = _without_ledger_keys(state.to_dict())
+	# ig-1jw: the old build had no pace key; the test asserts the checkpoint loaded as pace 1.
+	data.erase("pace")
 	for index: int in state.actors.size():
 		var actor: BattleActor = state.actors[index]
 		var actor_data: Dictionary = (data["actors"] as Array)[index]
@@ -280,6 +284,57 @@ func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_read
 		var broken: Dictionary = _json_round_trip(profile)
 		_knight_effects(broken)["cover_order"] = bad_value
 		assert_string_contains(GameSession.validate_saved_state(broken, 3), "cover_order", "cover_order %s is rejected" % str(bad_value))
+
+
+## ig-1jw (boundary #1): a mid-battle checkpoint keeps its pace through a real save and reload. One from
+## before the key loads as pace 1 and settles at pace-1 rewards.
+func test_a_battle_keeps_its_pace_through_a_real_save_and_a_legacy_one_is_pace_1() -> void:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
+	var knight: Hero = _cover_hero("hero:k", &"knight")
+	var preset_id: String = GameSession.save_team_preset("", "Pace", [knight.instance_id], "verdant_outskirts")
+	var order_id: String = GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, _zero_loadout())
+	assert_ne(order_id, "", GameSession.last_action_error)
+	GameSession.tick_expeditions(1.0)
+	var battle: Dictionary = GameSession.get_battle_snapshot(order_id)
+	assert_eq(str(battle["status"]), "active", "mid-battle")
+	assert_eq(int(battle["pace"]), balance.battle_pace)
+	# Through disk: SaveService writes the file and a fresh session reads it back.
+	GameSession.set("_save_deferred_depth", 0)
+	var saved: bool = SaveService.save()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_true(saved, SaveService.last_write_error)
+	GameSession.from_dict({"roster": []})
+	assert_true(GameSession.get_battle_snapshot(order_id).is_empty())
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	_land_catch_ups()
+	var reloaded := BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
+	assert_eq(reloaded.pace, balance.battle_pace, "equal after the reload")
+	assert_eq(reloaded.max_seconds, zone.max_battle_seconds * balance.battle_pace)
+	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
+	assert_eq(_settle_as_victory(), [zone.stone_reward * balance.battle_pace, balance.battle_pace], "stones and loot rolls xP")
+	# A battle from before the key (and inside the pace-1 bound): pace 1, pace-1 rewards.
+	var legacy: Dictionary = _json_round_trip(profile)
+	var legacy_battle: Dictionary = (legacy["expedition_orders"] as Array)[0]["battle"] as Dictionary
+	legacy_battle.erase("pace")
+	legacy_battle["max_seconds"] = zone.max_battle_seconds
+	assert_eq(GameSession.validate_saved_state(legacy, 3), "")
+	GameSession.from_dict(legacy)
+	assert_eq(BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary).pace, 1, "a legacy battle reads as pace 1")
+	GameSession.tick_expeditions(1.0)
+	assert_eq(int(GameSession.get_battle_snapshot(order_id)["pace"]), 1, "and keeps it as it advances")
+	assert_eq(_settle_as_victory(), [zone.stone_reward, 1], "stones and one loot roll")
+
+
+## Lands the first order as a victory; returns [stones earned, items earned].
+func _settle_as_victory() -> Array:
+	var order: Dictionary = GameSession.expedition_orders[0]
+	(order["battle"] as Dictionary)["status"] = "victory"
+	order["remaining_seconds"] = 0.0
+	GameSession.expedition_reports.clear()
+	GameSession.tick_expeditions(0.1)
+	assert_eq(GameSession.expedition_reports.size(), 1, "settled: " + GameSession.last_action_error)
+	return [GameSession.expedition_reports[0]["stones_earned"], GameSession.expedition_reports[0]["items_earned"]]
 
 
 func _cover_hero(id: String, def_id: StringName) -> Hero:
@@ -428,7 +483,7 @@ func test_incident_expiry_defers_permanent_loss_while_rescue_attempt_is_active()
 	var rescue_order_id: String = GameSession.dispatch_rescue(incident_id, rescue_preset, _zero_loadout())
 	assert_ne(rescue_order_id, "")
 	var balance: BalanceTable = preload("res://balance.tres")
-	GameSession.rescue_clock_seconds = float(GameSession.stranded_incidents[0]["created_recovery_seconds"]) + balance.recovery_base_duration_seconds + 1.0
+	GameSession.rescue_clock_seconds = float(GameSession.stranded_incidents[0]["created_recovery_seconds"]) + balance.recovery_base_duration_seconds * balance.battle_pace + 1.0
 	GameSession.tick_expeditions(0.1)
 	assert_eq(GameSession.stranded_incidents.size(), 1)
 	assert_true(bool(GameSession.stranded_incidents[0]["expiry_pending"]))

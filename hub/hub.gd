@@ -451,7 +451,7 @@ func _refresh_lost_caches() -> void:
 		BALANCE.summoning_circle_level_cap,
 	)
 	# The live bonus from the level and the Tracking keeper; a running cache keeps its longest lifetime.
-	var reliquary_bonus: float = GameSession.recovery_lifetime_seconds() - BALANCE.recovery_base_duration_seconds
+	var reliquary_bonus: float = GameSession.recovery_lifetime_seconds() - BALANCE.recovery_base_duration_seconds * BALANCE.battle_pace
 	if GameSession.lost_caches.is_empty():
 		_recovery_clock_status.text = "No lost gear is waiting."
 	elif GameSession.recovery_clock_paused:
@@ -1282,7 +1282,7 @@ func _keeper_bonus_text(building_id: StringName, skill: int) -> String:
 		&"TrainingHall":
 			return "expedition XP +%s%%" % String.num(BALANCE.training_hall_xp_bonus * levels * 100.0, 1).trim_suffix(".0")
 		&"Reliquary":
-			return "cache and rescue time +%s" % _format_duration(BALANCE.recovery_duration_seconds_per_level * levels)
+			return "cache and rescue time +%s" % _format_duration(BALANCE.recovery_duration_seconds_per_level * BALANCE.battle_pace * levels)
 		&"Apothecary":
 			var costs: PackedStringArray = []
 			for kind: String in BattleState.SUPPLY_KINDS:

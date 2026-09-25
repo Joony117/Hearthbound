@@ -230,7 +230,8 @@ func _park(state: BattleState) -> void:
 
 
 ## heroes: [archetype, position] pairs in one Advance squad, at speed 100 (4 u/s, a real hero's pace;
-## the design's hop math assumes 3.8 or more). Four enemies (two of them melee), parked.
+## the design's hop math assumes 3.8 or more). Four enemies (two of them melee), parked. Pace 1: at
+## P = 6 an enemy Rogue's Turncoat Cut stuns for 1.8 s, which outlasts a slow hop's cap (ig-1jw).
 func _run(heroes: Array, level: int) -> BattleState:
 	var snapshots: Array[Dictionary] = []
 	var ids: Array[String] = []
@@ -241,7 +242,7 @@ func _run(heroes: Array, level: int) -> BattleState:
 		snapshots.append({"hero_id": id, "archetype": heroes[index][0], "level": level, "hp": 4000.0, "atk": 50.0, "defense": 20.0, "speed": 100.0,
 			"crit_rate": 0.0, "crit_damage": 1.5, "squad_id": "squad:0", "position": [point.x, point.y]})
 	var squads: Array[Dictionary] = [{"id": "squad:0", "name": "Alpha", "hero_ids": ids, "stance": "advance", "guard_target_id": ""}]
-	var state: BattleState = BattleSimulation.create_run("order:uu73", snapshots, _zone(), squads, {}, {"healing": 0, "revival": 0}, 13)
+	var state: BattleState = BattleSimulation.create_run("order:uu73", snapshots, _zone(), squads, {}, {"healing": 0, "revival": 0}, 13, "normal", 1)
 	_park(state)
 	return state
 

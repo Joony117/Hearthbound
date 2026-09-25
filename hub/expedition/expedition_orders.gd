@@ -23,9 +23,10 @@ static func duration_seconds(
 	if team_power <= 0.0 or scaled_zone_power <= 0.0:
 		return 0.0
 	var combat_ratio: float = team_power / scaled_zone_power
+	# ig-1jw: a legacy order reads the live battle_pace.
 	var full_team_seconds: float = maxf(
-		zone.minimum_duration_seconds,
-		zone.base_duration_seconds / sqrt(combat_ratio),
+		zone.minimum_duration_seconds * balance.battle_pace,
+		zone.base_duration_seconds * balance.battle_pace / sqrt(combat_ratio),
 	)
 	return ceilf(full_team_seconds * 5.0 / float(team.size()))
 
@@ -45,7 +46,8 @@ static func force_duration_seconds(team: Array[Hero], zone: ZoneDefinition, bala
 	var scaled_zone_power: float = float(zone.recommended_power) * float(team.size()) / float(zone.reference_force_size)
 	if team_power <= 0.0 or scaled_zone_power <= 0.0:
 		return 0.0
-	var full_force_seconds: float = maxf(zone.minimum_duration_seconds, zone.base_duration_seconds / sqrt(team_power / scaled_zone_power))
+	# ig-1jw: the route is x battle_pace; the battle spawns with the same live pace.
+	var full_force_seconds: float = maxf(zone.minimum_duration_seconds * balance.battle_pace, zone.base_duration_seconds * balance.battle_pace / sqrt(team_power / scaled_zone_power))
 	return ceilf(full_force_seconds * float(zone.reference_force_size) / float(team.size()))
 
 

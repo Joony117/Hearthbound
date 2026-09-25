@@ -110,6 +110,7 @@ passion_xp_multiplier = 4.0
 keeper_skill_bonus_levels = 0.5
 alchemy_cost_cut_per_skill = 0.1
 battle_tick_seconds = 0.1
+battle_pace = 6
 battle_damage_defense_scale = 100.0
 battle_basic_interval_numerator = 100.0
 battle_basic_interval_min = 0.3

@@ -7,8 +7,9 @@ extends GutTest
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const SKILL_XP: Dictionary[int, float] = {0: 0.0, 3: 120.0 * 60.0, 5: 300.0 * 60.0}
 const LOADOUT: Dictionary = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
-const BASE_LIFETIME: float = 900.0
-const TRACKER_LIFETIME: float = 900.0 + 300.0 * 2.5
+## x battle_pace 6 (ig-1jw): a rescue is a battle.
+const BASE_LIFETIME: float = 900.0 * 6.0
+const TRACKER_LIFETIME: float = (900.0 + 300.0 * 2.5) * 6.0
 
 
 func before_each() -> void:
@@ -117,7 +118,7 @@ func test_training_hall_xp_multiplier_at_skill_0_3_5() -> void:
 
 func test_reliquary_lifetime_at_skill_0_3_5() -> void:
 	var tracker: Hero = _keeper("Tam", &"Reliquary", &"tracking")
-	for case: Array in [[0, 900.0], [3, 1350.0], [5, 1650.0]]:
+	for case: Array in [[0, 900.0 * 6.0], [3, 1350.0 * 6.0], [5, 1650.0 * 6.0]]:
 		_set_skill(tracker, &"tracking", case[0])
 		assert_almost_eq(GameSession.recovery_lifetime_seconds(), case[1], 0.001, "skill %d" % case[0])
 

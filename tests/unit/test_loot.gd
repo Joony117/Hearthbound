@@ -46,18 +46,19 @@ func test_each_zone_rolls_only_its_band() -> void:
 		assert_eq(ranks.size(), zone.loot_rank_max - zone.loot_rank_min + 1)
 
 
-func test_only_completed_expeditions_add_one_item_and_round_trip_it() -> void:
+func test_only_completed_expeditions_add_pace_items_and_round_trip_them() -> void:
 	var hero: Hero = _add_knight()
 	var completed := Expedition.new()
 	var team: Array[Hero] = [hero]
 	var outcome: StringName = completed.resolve(team, _make_zone(0, 1))
 
 	assert_eq(outcome, Expedition.OUTCOME_COMPLETED)
-	assert_eq(GameSession.inventory.size(), 1)
+	# ig-1jw: a completed run rolls battle_pace items; the first is the boss_loot_seed roll.
+	assert_eq(GameSession.inventory.size(), BALANCE.battle_pace)
 	var saved: Dictionary = GameSession.to_dict()
 	GameSession.from_dict({"roster": []})
 	GameSession.from_dict(saved)
-	assert_eq(GameSession.inventory.size(), 1)
+	assert_eq(GameSession.inventory.size(), BALANCE.battle_pace)
 	assert_eq(GameSession.inventory[0].to_dict(), completed.loot.to_dict())
 
 	GameSession.from_dict({"roster": []})

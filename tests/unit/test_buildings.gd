@@ -246,13 +246,13 @@ func test_reliquary_upgrade_reaches_both_consumers_from_the_hub() -> void:
 	var damage_before: float = LostCache.compute_damage_chance(
 		cache, 900, 9000.0, GameSession.recovery_clock_seconds, GameSession.building_levels[4], balance
 	)
-	assert_eq(lost_cache_list.get_item_text(0), "Doomed — Verdant Outskirts — 15:00 active remaining")
+	assert_eq(lost_cache_list.get_item_text(0), "Doomed — Verdant Outskirts — 90:00 active remaining")
 
 	upgrade_button.pressed.emit()
 
 	assert_eq(
 		lost_cache_list.get_item_text(0),
-		"Doomed — Verdant Outskirts — 20:00 active remaining"
+		"Doomed — Verdant Outskirts — 120:00 active remaining"
 	)
 	var damage_after: float = LostCache.compute_damage_chance(
 		cache, 900, 9000.0, GameSession.recovery_clock_seconds, GameSession.building_levels[4], balance

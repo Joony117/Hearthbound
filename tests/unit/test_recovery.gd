@@ -65,13 +65,13 @@ func test_active_clock_keeps_cache_at_deadline_and_drops_it_afterwards() -> void
 	GameSession.recovery_clock_paused = false
 	GameSession.set("_save_deferred_depth", 1)
 
-	GameSession.tick_expeditions(BALANCE.recovery_base_duration_seconds)
-	assert_eq(GameSession.recovery_clock_seconds, BALANCE.recovery_base_duration_seconds)
+	GameSession.tick_expeditions(BALANCE.recovery_base_duration_seconds * BALANCE.battle_pace)
+	assert_eq(GameSession.recovery_clock_seconds, BALANCE.recovery_base_duration_seconds * BALANCE.battle_pace)
 	assert_true(GameSession.lost_caches.has(cache))
 
 	GameSession.tick_expeditions(0.01)
 	GameSession.set("_save_deferred_depth", 0)
-	assert_gt(GameSession.recovery_clock_seconds, BALANCE.recovery_base_duration_seconds)
+	assert_gt(GameSession.recovery_clock_seconds, BALANCE.recovery_base_duration_seconds * BALANCE.battle_pace)
 	assert_true(GameSession.lost_caches.is_empty())
 
 
@@ -200,7 +200,7 @@ func test_hub_lists_active_cache_time_and_missing_zone_fallback() -> void:
 	assert_eq(cache_list.item_count, 1)
 	assert_string_contains(cache_list.get_item_text(0), "Aster")
 	assert_string_contains(cache_list.get_item_text(0), "[Missing definition: not_a_zone]")
-	assert_string_contains(cache_list.get_item_text(0), "13:00 active remaining")
+	assert_string_contains(cache_list.get_item_text(0), "88:00 active remaining")
 	assert_string_contains(cache_list.get_item_tooltip(0), "2 lost item(s)")
 
 

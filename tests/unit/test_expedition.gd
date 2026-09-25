@@ -36,7 +36,7 @@ func test_completed_expedition_credits_zone_stone_reward() -> void:
 	var outcome: StringName = Expedition.new().resolve(team, zone)
 
 	assert_eq(outcome, Expedition.OUTCOME_COMPLETED)
-	assert_eq(GameSession.stones, stones_before + zone.stone_reward)
+	assert_eq(GameSession.stones, stones_before + zone.stone_reward * BALANCE.battle_pace)
 
 
 func test_retreated_expedition_credits_no_stones() -> void:
@@ -58,7 +58,7 @@ func test_retreated_expedition_credits_no_stones() -> void:
 
 	assert_eq(outcome, Expedition.OUTCOME_RETREATED)
 	assert_eq(GameSession.stones, stones_before)
-	assert_eq(hero.xp, 12)
+	assert_eq(hero.xp, 12 * BALANCE.battle_pace)
 	# A retreat is still a resolved expedition, so it costs a turn (docs/SYSTEMS.md, Turns).
 	assert_eq(GameSession.turns, 1)
 
@@ -202,12 +202,14 @@ func test_training_hall_level_five_rounds_exact_xp_rewards() -> void:
 	)
 
 	assert_eq(outcome, Expedition.OUTCOME_DEFEATED)
-	assert_eq(_earned_xp(defeated_hero), 7)
+	# ig-1jw: rewards are xP (the legacy order reads the live battle_pace).
+	var pace: int = BALANCE.battle_pace
+	assert_eq(_earned_xp(defeated_hero), 7 * pace)
 	var completion_waves_xp: int = _completed_xp_with_reward(0)
-	assert_eq(completion_waves_xp, 14)
-	assert_eq(_completed_xp_with_reward(24) - completion_waves_xp, 42)
-	assert_eq(_completed_xp_with_reward(72) - completion_waves_xp, 126)
-	assert_eq(_completed_xp_with_reward(192) - completion_waves_xp, 336)
+	assert_eq(completion_waves_xp, 14 * pace)
+	assert_eq(_completed_xp_with_reward(24) - completion_waves_xp, 42 * pace)
+	assert_eq(_completed_xp_with_reward(72) - completion_waves_xp, 126 * pace)
+	assert_eq(_completed_xp_with_reward(192) - completion_waves_xp, 336 * pace)
 	GameSession.from_dict({"roster": []})
 
 

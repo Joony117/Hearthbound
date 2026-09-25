@@ -59,6 +59,9 @@ const STANCES: Array[String] = ["advance", "stay_together", "defend", "protect"]
 const FRONT_ROW: Array[String] = ["knight", "rogue"]
 const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 const TICK_EPSILON: float = 0.000001
+## ig-1jw: the largest pace a checkpoint may carry. Settlement rolls loot `pace` times, so a corrupt save
+## must not name a huge one. Not a balance number: raise it if battle_pace ever goes past it.
+const MAX_PACE: int = 20
 ## ig-9gf: positions are float32, so an approach aimed exactly at a reach can park one ulp outside it
 ## (1.6000000238 from 1.6) and never close. _move_actors aims this far inside a reach instead, and
 ## counts a point as reached within it, so every reach check compares bare.
@@ -95,6 +98,7 @@ static func create_run(
 	supply_escrow: Dictionary,
 	seed: int,
 	kind: String = "normal",
+	pace: int = 0,
 ) -> BattleState:
 	assert(not order_id.is_empty())
 	assert(zone != null)
@@ -105,7 +109,9 @@ static func create_run(
 	state.zone_id = str(zone.zone_id)
 	state.zone = zone
 	state.kind = kind
-	state.max_seconds = zone.max_battle_seconds
+	# pace 0: the live battle_pace. A rescue passes its incident's.
+	state.pace = pace if pace > 0 else BALANCE.battle_pace
+	state.max_seconds = zone.max_battle_seconds * state.pace
 	state.rng_state = str(seed)
 	state.squads = squads.duplicate(true)
 	state.policies = _normalized_policies(policies)
@@ -115,7 +121,7 @@ static func create_run(
 	# Heroes placed fresh (no saved facing) turn to the enemy once it has spawned.
 	var fresh: Array[BattleActor] = []
 	for snapshot: Dictionary in team_snapshots:
-		var actor: BattleActor = _actor_from_team_snapshot(snapshot, state.actors.size(), zone)
+		var actor: BattleActor = _actor_from_team_snapshot(snapshot, state.actors.size(), zone, state.pace)
 		if not snapshot.has("facing") and not (snapshot.has("max_hp") and snapshot.has("effect_state")):
 			fresh.append(actor)
 		# Timestamps are relative to this battle's tick, which starts at 0; carried ones would sit ahead of it.
@@ -288,7 +294,7 @@ static func forecast_leg(
 		leg_policies["force_enemy_crit"] = true
 		leg_policies["suppress_ally_crit"] = true
 	var state := create_run(leg_id, team_snapshots, zone, squads, leg_policies, supply_escrow, seed)
-	if not BattleJob.advance(state, zone.max_battle_seconds, job):
+	if not BattleJob.advance(state, state.max_seconds, job):
 		return {}
 	return {"outcome": snapshot_outcome(state).to_dict(), "clean": state.status == "victory" and state.downed_ever_ids.is_empty()}
 
@@ -332,7 +338,10 @@ static func validate_snapshot(data: Dictionary) -> String:
 		return "Battle tick_remainder is outside the logical tick."
 	if float(data.get("elapsed_seconds")) < 0.0 or float(data.get("max_seconds")) <= 0.0 or float(data.get("elapsed_seconds")) > float(data.get("max_seconds")):
 		return "Battle elapsed/max time is invalid."
-	if float(data.get("max_seconds")) > zone.max_battle_seconds + TICK_EPSILON:
+	if data.has("pace") and (not _nonnegative_integer(data.get("pace")) or int(data.get("pace")) < 1 or int(data.get("pace")) > MAX_PACE):
+		return "Battle pace must be an integer from 1 to %d." % MAX_PACE
+	var pace: int = int(data.get("pace", 1))
+	if float(data.get("max_seconds")) > zone.max_battle_seconds * pace + TICK_EPSILON:
 		return "Battle max_seconds exceeds the authored zone bound."
 	var maximum_encounters: int = zone.trash_wave_count + 1
 	if zone.battle_kind == "raid":
@@ -424,7 +433,7 @@ static func validate_snapshot(data: Dictionary) -> String:
 			for hero_id: String in hero_actors:
 				if str(hero_actors[hero_id].get("life")) == BattleActor.LIFE_EXTRACTED and not seen.has(hero_id):
 					return "Battle extracted hero actors must appear in extracted_ids."
-	return _validate_objective_state(data.get("objective_state") as Dictionary, zone)
+	return _validate_objective_state(data.get("objective_state") as Dictionary, zone, pace)
 
 
 static func snapshot_outcome(state: BattleState) -> BattleOutcome:
@@ -789,15 +798,16 @@ static func _update_raid(state: BattleState, zone: ZoneDefinition) -> void:
 			var occupied: bool = _actor_in_radius(state, "ally", point, float(marker.get("radius", 3.0)))
 			var contested: bool = _actor_in_radius(state, "enemy", point, float(marker.get("radius", 3.0)))
 			all_held = all_held and occupied and not contested
+		var hold_limit: float = zone.objective_hold_seconds * state.pace
 		var hold_seconds: float = float(state.objective_state.get("simultaneous_hold_seconds", 0.0))
-		hold_seconds = minf(hold_seconds + BALANCE.battle_tick_seconds, zone.objective_hold_seconds) if all_held else 0.0
+		hold_seconds = minf(hold_seconds + BALANCE.battle_tick_seconds, hold_limit) if all_held else 0.0
 		state.objective_state["simultaneous_hold_seconds"] = hold_seconds
 		for raw_marker: Variant in markers:
 			if raw_marker is Dictionary and str((raw_marker as Dictionary).get("kind", "")) == "capture":
 				var marker: Dictionary = raw_marker as Dictionary
-				marker["progress"] = hold_seconds / zone.objective_hold_seconds
-				marker["complete"] = hold_seconds + TICK_EPSILON >= zone.objective_hold_seconds
-		if hold_seconds + TICK_EPSILON >= zone.objective_hold_seconds:
+				marker["progress"] = hold_seconds / hold_limit
+				marker["complete"] = hold_seconds + TICK_EPSILON >= hold_limit
+		if hold_seconds + TICK_EPSILON >= hold_limit:
 			boss_spawned = true
 			state.completed_waves = 1
 			state.objective_state["boss_spawned"] = true
@@ -920,7 +930,7 @@ static func _spawn_group(
 		actor.squad_id = "enemy"
 		actor.position = center + _grid_offset(index, count, BALANCE.battle_formation_spacing)
 		actor.facing = facing
-		actor.max_hp = budget * BALANCE.battle_enemy_hp_budget_multiplier
+		actor.max_hp = budget * BALANCE.battle_enemy_hp_budget_multiplier * state.pace
 		actor.hp = actor.max_hp
 		actor.atk = budget * BALANCE.battle_enemy_atk_budget_multiplier
 		actor.defense = budget * BALANCE.battle_enemy_def_budget_multiplier
@@ -953,7 +963,8 @@ static func _facing_toward_opponents(state: BattleState, faction: String, from: 
 	return fallback if toward.is_zero_approx() else toward.normalized()
 
 
-static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zone: ZoneDefinition) -> BattleActor:
+## pace multiplies a fresh snapshot's HP; a checkpointed actor (max_hp and effect_state) already has it.
+static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zone: ZoneDefinition, pace: int = 1) -> BattleActor:
 	if snapshot.has("max_hp") and snapshot.has("effect_state"):
 		return BattleActor.from_dict(snapshot)
 	var actor := BattleActor.new()
@@ -965,8 +976,9 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 	actor.squad_id = str(snapshot.get("squad_id", "squad:0"))
 	actor.position = _array_vector(snapshot.get("position"), zone.exit_position + _grid_offset(spawn_index, maxi(spawn_index + 1, 5), BALANCE.battle_formation_spacing))
 	actor.facing = _array_vector(snapshot.get("facing"), Vector2.UP)
-	actor.max_hp = maxf(float(snapshot.get("max_hp", snapshot.get("hp", 1.0))), 1.0)
-	actor.hp = clampf(float(snapshot.get("current_hp", snapshot.get("hp", actor.max_hp))), 0.0, actor.max_hp)
+	var base_max_hp: float = maxf(float(snapshot.get("max_hp", snapshot.get("hp", 1.0))), 1.0)
+	actor.max_hp = base_max_hp * pace
+	actor.hp = clampf(float(snapshot.get("current_hp", snapshot.get("hp", base_max_hp))) * pace, 0.0, actor.max_hp)
 	actor.atk = maxf(float(snapshot.get("atk", 1.0)), 0.0)
 	actor.defense = maxf(float(snapshot.get("defense", 0.0)), 0.0)
 	actor.speed = maxf(float(snapshot.get("speed", 1.0)), 0.001)
@@ -1062,9 +1074,9 @@ static func _use_weaponskill(state: BattleState, actor: BattleActor, skill: Abil
 	actor.combo_tick = state.tick
 
 
-## The cooldown, the ability lock and the tick the views read.
+## The cooldown (x the battle's pace, ig-1jw), the ability lock and the tick the views read.
 static func _spend_ability(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> void:
-	actor.skill_cooldowns[str(skill.skill_id)] = _skill_cooldown(actor, skill)
+	actor.skill_cooldowns[str(skill.skill_id)] = _skill_cooldown(actor, skill) * state.pace
 	actor.ability_lock = BALANCE.skill_ability_lock_seconds
 	actor.effect_state["last_skill_tick"] = state.tick
 	actor.effect_state["last_skill_id"] = str(skill.skill_id)
@@ -1083,6 +1095,9 @@ static func _apply_effects(
 	weaponskill: bool,
 ) -> bool:
 	var heal_scale: float = 1.0 + _passive(actor, "heal_bonus")
+	# ig-1jw: an ability's ATK amounts and status or control seconds are x the battle's pace. A
+	# weaponskill, a dodge window, a delay and max-HP fractions stay as authored.
+	var pace: float = 1.0 if weaponskill else float(state.pace)
 	for effect: Dictionary in skill.effects:
 		match str(effect["type"]):
 			"revive":
@@ -1100,7 +1115,7 @@ static func _apply_effects(
 				elif kind == "heal_over_time":
 					magnitude *= _stat(actor, "atk") * heal_scale
 				for receiver: BattleActor in _status_receivers(state, actor, skill, effect, target):
-					_add_status(receiver, str(skill.skill_id), kind, actor.id, float(effect["seconds"]), magnitude)
+					_add_status(receiver, str(skill.skill_id), kind, actor.id, float(effect["seconds"]) * (1.0 if kind == "dodge" else pace), magnitude)
 			"move":
 				var destination: Variant = _rogue_flank_position(state, actor, target) if str(effect["to"]) == "behind_target" else _away_point(state, actor, target, float(effect.get("distance", 0.0)))
 				if not destination is Vector2:
@@ -1117,19 +1132,19 @@ static func _apply_effects(
 						healed = _living_in_radius(state, actor.faction, actor.position, skill.radius_units)
 				for ally: BattleActor in healed:
 					if ally != null and ally.life == BattleActor.LIFE_ALIVE:
-						var amount: float = _stat(actor, "atk") * float(effect["multiplier"]) if effect.has("multiplier") else ally.max_hp * float(effect["max_hp_fraction"])
+						var amount: float = _stat(actor, "atk") * float(effect["multiplier"]) * pace if effect.has("multiplier") else ally.max_hp * float(effect["max_hp_fraction"])
 						ally.hp = minf(ally.hp + amount * heal_scale, ally.max_hp)
 			"shield":
-				_add_status(target, str(skill.skill_id), "shield", actor.id, float(effect["seconds"]), _stat(actor, "atk") * float(effect["multiplier"]) * heal_scale)
+				_add_status(target, str(skill.skill_id), "shield", actor.id, float(effect["seconds"]) * pace, _stat(actor, "atk") * float(effect["multiplier"]) * heal_scale * pace)
 			"interrupt":
 				if target != null and target.life == BattleActor.LIFE_ALIVE:
-					target.effect_state["stun_remaining"] = maxf(float(target.effect_state.get("stun_remaining", 0.0)), float(effect["stun_seconds"]))
+					target.effect_state["stun_remaining"] = maxf(float(target.effect_state.get("stun_remaining", 0.0)), float(effect["stun_seconds"]) * pace)
 					_cancel_pending_action(target)
 			"taunt":
 				if target != null and target.life == BattleActor.LIFE_ALIVE:
-					_add_status(target, str(skill.skill_id), "taunt", actor.id, float(effect["seconds"]), 0.0)
+					_add_status(target, str(skill.skill_id), "taunt", actor.id, float(effect["seconds"]) * pace, 0.0)
 			"damage":
-				var multiplier: float = float(effect["combo_multiplier"]) if combo and effect.has("combo_multiplier") else float(effect["multiplier"])
+				var multiplier: float = (float(effect["combo_multiplier"]) if combo and effect.has("combo_multiplier") else float(effect["multiplier"])) * pace
 				if effect.has("delay_seconds"):
 					# A delayed area is marked now and lands later, like an enemy's telegraph.
 					_start_telegraph(state, actor, skill, point, float(effect["delay_seconds"]))
@@ -1618,7 +1633,8 @@ static func _resolve_telegraph(state: BattleState, actor: BattleActor, rng: Rand
 			if _telegraph_kind(ability) == kind:
 				skill = ability
 				break
-	var multiplier: float = float(_effect_of(skill, "damage").get("multiplier", 0.0)) if skill != null else 0.0
+	# Only an ability starts a telegraph, so its hit is x the battle's pace (ig-1jw).
+	var multiplier: float = float(_effect_of(skill, "damage").get("multiplier", 0.0)) * state.pace if skill != null else 0.0
 	var push: float = float(_effect_of(skill, "damage").get("push", 0.0)) if skill != null else 0.0
 	var point: Vector2 = _array_vector(actor.effect_state.get("telegraph_point"))
 	var line: Vector2 = point - _array_vector(actor.effect_state.get("telegraph_origin"))
@@ -2813,7 +2829,7 @@ static func _validate_squads(
 	return ""
 
 
-static func _validate_objective_state(objective_state: Dictionary, zone: ZoneDefinition) -> String:
+static func _validate_objective_state(objective_state: Dictionary, zone: ZoneDefinition, pace: int) -> String:
 	if not objective_state.get("battle_kind") is String or str(objective_state.get("battle_kind")) != zone.battle_kind:
 		return "Battle objective kind must match the authored zone."
 	if not _valid_number(objective_state.get("bounds")) or absf(float(objective_state.get("bounds")) - zone.battle_bounds) > TICK_EPSILON:
@@ -2832,11 +2848,11 @@ static func _validate_objective_state(objective_state: Dictionary, zone: ZoneDef
 	if not _valid_number(objective_state.get("simultaneous_hold_seconds")):
 		return "Battle objective hold time must be finite."
 	var hold_seconds: float = float(objective_state.get("simultaneous_hold_seconds"))
-	if hold_seconds < 0.0 or hold_seconds > zone.objective_hold_seconds + TICK_EPSILON:
+	if hold_seconds < 0.0 or hold_seconds > zone.objective_hold_seconds * pace + TICK_EPSILON:
 		return "Battle objective hold time is outside its authored range."
 	if bool(objective_state.get("boss_spawned", false)) and zone.battle_kind != "raid":
 		return "Only a raid objective can have a spawned boss."
-	if bool(objective_state.get("boss_spawned", false)) and hold_seconds + TICK_EPSILON < zone.objective_hold_seconds:
+	if bool(objective_state.get("boss_spawned", false)) and hold_seconds + TICK_EPSILON < zone.objective_hold_seconds * pace:
 		return "A raid boss requires completed simultaneous capture."
 	var marker_error: String = _validate_markers(objective_state, zone)
 	if not marker_error.is_empty():

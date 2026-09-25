@@ -206,7 +206,8 @@ func test_a_pulse_advances_each_battle_once_and_as_a_fresh_advance_would() -> vo
 	var active_pulses: int = 0
 	var advances: int = GameSession.pulse_battle_advances
 	var mismatched: Array[int] = []
-	for pulse: int in 4000:
+	# ig-1jw: a pace-6 battle runs about 6x longer; the loop ends when the battle does.
+	for pulse: int in 4000 * preload("res://balance.tres").battle_pace:
 		var before: Dictionary = (GameSession.expedition_orders[0]["battle"] as Dictionary).duplicate(true)
 		if str(before["status"]) != "active":
 			break
@@ -219,9 +220,12 @@ func test_a_pulse_advances_each_battle_once_and_as_a_fresh_advance_would() -> vo
 		if GameSession.expedition_orders[0]["battle"] != fresh.to_dict():
 			mismatched.append(pulse)
 	assert_gt(active_pulses, 10, "the battle ran")
-	assert_eq(GameSession.expedition_reports.size(), 1, "the run settled")
 	assert_eq(mismatched, [] as Array[int], "every pulse leaves what a fresh advance would")
 	assert_eq(GameSession.pulse_battle_advances - advances, active_pulses, "one advance per active pulse (was two)")
+	# ig-1jw: at pace 6 the route (xP) can outlast the battle; walk the rest of it home.
+	if not GameSession.expedition_orders.is_empty():
+		GameSession.tick_expeditions(float(GameSession.expedition_orders[0]["remaining_seconds"]) + 0.25)
+	assert_eq(GameSession.expedition_reports.size(), 1, "the run settled")
 
 
 func _dispatch_one() -> String:

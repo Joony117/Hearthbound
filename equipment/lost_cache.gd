@@ -36,7 +36,8 @@ func _init(
 ## (GameSession.keeper_skill); it stacks past the level cap.
 static func lifetime_for(reliquary_level: int, keeper_skill: int, balance: BalanceTable) -> float:
 	var level: int = clampi(reliquary_level, 0, balance.summoning_circle_level_cap)
-	return balance.recovery_base_duration_seconds + balance.recovery_duration_seconds_per_level * (level + balance.keeper_skill_bonus_levels * keeper_skill)
+	# ig-1jw: a rescue is a battle, so the window is x the live battle_pace.
+	return (balance.recovery_base_duration_seconds + balance.recovery_duration_seconds_per_level * (level + balance.keeper_skill_bonus_levels * keeper_skill)) * balance.battle_pace
 
 
 ## Uses the longest of the cache's own lifetime and the live one, so it never shrinks.

@@ -1718,7 +1718,8 @@ func dispatch_rescue(incident_id: String, preset_id: String, loadout: Dictionary
 		rescuer["squad_id"] = preset_id
 		snapshots.append(rescuer)
 	var escrow: Dictionary = _loadout_escrow(loadout)
-	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, [squad], {}, escrow, seed, "rescue")
+	# ig-1jw: the rescue fights at its incident's pace; a snapshot without one is pace 1.
+	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, [squad], {}, escrow, seed, "rescue", int(preserved.get("pace", 1)))
 	var order: Dictionary = {"id": order_id, "backend": "battle_v1", "team_name": str(preset.get("name", "Rescue")), "preset_id": preset_id, "preset_ids": [preset_id], "hero_ids": hero_ids, "squads": [squad], "zone_id": str(zone.zone_id), "total_runs": 1, "runs_completed": 0, "stop_requested": false, "run_seed": seed, "initial_duration_seconds": 0.0, "remaining_seconds": 0.0, "cumulative_stones": 0, "cumulative_xp": 0, "cumulative_items": 0, "battle": state.to_dict(), "phase": "rescuing", "loadout": loadout.duplicate(true), "policies": state.policies.duplicate(true), "escrow": escrow, "last_command_error": "", "checkpoint_error": "", "incident_id": incident_id}
 	if not _commit_profile_mutation(_append_rescue_order_in_memory.bind(order, incident_index)):
 		return ""
@@ -2390,15 +2391,18 @@ func _settle_battle_order(order_index: int) -> void:
 			secured.append(hero)
 	var balance: BalanceTable = preload("res://balance.tres")
 	var xp_multiplier: float = training_xp_multiplier()
-	var xp_amount: int = roundi(float(balance.xp_per_wave * outcome.completed_waves) * xp_multiplier)
+	# ig-1jw: rewards read the battle's own pace: XP and stones xP, P loot rolls.
+	var xp_amount: int = roundi(float(balance.xp_per_wave * outcome.completed_waves * state.pace) * xp_multiplier)
 	var stones_earned: int = 0
 	var items_earned: int = 0
 	if outcome.status == "victory" and zone != null:
-		xp_amount = roundi(float(balance.xp_per_wave * outcome.completed_waves + zone.xp_reward) * xp_multiplier)
-		stones_earned = zone.stone_reward
+		xp_amount = roundi(float((balance.xp_per_wave * outcome.completed_waves + zone.xp_reward) * state.pace) * xp_multiplier)
+		stones_earned = zone.stone_reward * state.pace
 		stones += stones_earned
-		inventory.append(Expedition.roll_loot(zone, balance, Item.int_field(order, "run_seed", 0, "battle order")))
-		items_earned = 1
+		var run_seed: int = Item.int_field(order, "run_seed", 0, "battle order")
+		for roll: int in state.pace:
+			inventory.append(Expedition.roll_loot(zone, balance, run_seed + roll))
+		items_earned = state.pace
 		cleared_zone_ids[zone.zone_id] = true
 	if not secured.is_empty() and xp_amount > 0:
 		credit_team_xp(secured, xp_amount, balance, true)
