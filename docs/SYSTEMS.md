@@ -310,7 +310,7 @@ walking and every reaction window keep their real seconds. One `balance.tres` ro
 
 | Row | Value | Why |
 |---|---|---|
-| `battle_pace` | 6 | An integer, so a victory can pay whole loot rolls. The walk-in, windups and telegraphs don't scale, so a clear lands near 5.5x, inside the owner's 5–6x |
+| `battle_pace` | 6 | An integer, so a victory can pay whole loot rolls. The walk-in, windups and telegraphs don't scale, so a clear lands at about 5x, measured (4.7–5.1x, below), at the low end of the owner's 5–6x |
 
 **What `battle_pace` (P) multiplies.** Everything below is ×P. Relative to HP, a battle then runs
 the same fight, P times longer. So win rates, downings and the forecast's `safe` should hold.
@@ -356,7 +356,14 @@ combat numbers):
 - If the mixed band falls under 315 s, the unscaled share is bigger than guessed: try P = 7 and
   report back. Don't tune other numbers to reach it.
 
-> ⚠️ **PROVISIONAL** — 6 and every row above are arithmetic, not played. The two feel risks: a 9 s
+**Measured at P = 6** (`ig-1jw`, 65f2956; `.agent-results/ig-1jw/balance_final.log`, the balance
+baseline from here). Every case wins. Clears are 4.7–5.1x of pace 1: mixed 316–356 s, Knights
+555–602 s. The director waived two misses. `starter_knights_suggested:1` cleared at 555.2 s, 1%
+under 561 s. `mixed:1` had two more downings (3 → 5), which is seed noise: `mixed:2` went 3 → 1,
+and no supplied case got a downing. P = 7 was worse (`balance_p7.log`: a 504 s mixed case, a 704 s
+Knights case and a new supplied downing), so P stays 6.
+
+> ⚠️ **PROVISIONAL** — 6 and every row above are measured on the balance gate, not played. The two feel risks: a 9 s
 > stun may read as dead time, and six times as many small swing numbers may read as busy
 > · **Settled by:** the owner playing P = 6. If stuns feel dead, control goes back to real seconds
 > and the gate re-runs. If swings feel busy, a later row can lengthen the swing interval and raise
@@ -364,7 +371,7 @@ combat numbers):
 
 **What changes elsewhere.** These follow from the rule and need no owner call:
 - Earnings per hour hold: an order takes about P times as long and pays P times as much. Where the
-  walk-in keeps a clear under 6x, earnings per hour rise a little (up to about 6 / 5.5).
+  walk-in keeps a clear under 6x, earnings per hour rise a little (up to about 6 / 5, with the measured clears).
 - The Ledger gets about a sixth as many records an hour: about 10, not the guessed 60. Bonds and
   dreams count battles, so they form about 6x slower per hour. Their numbers are already
   PROVISIONAL desk guesses, settled by a calibration run in battles, not hours.
@@ -1036,6 +1043,83 @@ two counts include routine victories, which the Ledger evicts first at the cap, 
 there. At the cap, a `died` record can also outlive the battle that proves the owner was there.
 The section's PROVISIONAL covers all three numbers.
 
+### Encounters and shared meals — *ig-m6o.2.2.4, ig-m6o.2.2.5, design 2026-09-25, not built yet*
+
+Two more ways to grow close. Both come from saved state on the live tick only: never in the
+offline catch-up, and never from where walkers stand (`DECISIONS.md` 2026-09-24 "Bonds stay
+derived", item 7).
+- **Meetings.** Two heroes who are both in town and not busy may meet if they're neighbours (Houses
+  close together) or coworkers (stations close together). Each meeting is one `encounter` record.
+- **Shared meals.** At each meal time, housed heroes who are home eat at small tables of
+  neighbours. Each table of two or more is one `meal` record. A meal eats no extra food, and there
+  is no meal while the food store is empty.
+- Both add bond points to every pair in the record, and the bond line counts them ("3 chats,
+  5 meals"). A battle fact still beats either one as the pair's fact. The Knight cover order
+  (`ig-uu7.4`) reads the same points.
+
+| Row | Value | Why |
+|---|---|---|
+| `encounter_chance_per_minute` | 0.2 | One roll per live minute for the whole town, so at most 12 meetings an hour at any roster size. A chance per pair would grow with the square of the town |
+| `encounter_pair_cooldown_minutes` | 60 | A pair meets at most once an hour. The cooldown is unsaved, so a reload resets it |
+| `encounter_neighbour_hexes` | 2 | Houses this close are neighbours. The same House counts |
+| `encounter_coworker_hexes` | 1 | Stations this close are coworkers: the same building, or adjoining ones. The halls stand in a row, so keepers of neighbouring halls are coworkers |
+| `bond_points_encounter` | 1 | Small: eight meetings make a bond (`bond_threshold` 8) |
+| `meal_interval_minutes` | 60 | One meal time per live hour. The clock is unsaved, so a reload restarts it, and the first meal comes an hour into each session |
+| `meal_house_hexes` | 2 | The same reach as neighbours |
+| `meal_table_size` | 4 | Small, fixed tables. A 30-hero town at one table would make 435 pairs a meal, and everyone would bond with everyone. The same neighbours sit together until someone moves, leaves or comes home |
+| `bond_points_meal` | 1 | The same as a meeting |
+
+The pace this gives:
+- Meetings alone: a 30-hero town has about 45 eligible pairs at a time, so a given pair meets about
+  0.27 times an hour, and a bond takes about 30 live hours. A two-hero town meets once an hour:
+  about 8 hours.
+- Meals alone: tablemates who stay home bond in 8 live hours, or nearer 7 with their meetings.
+  Hard fights make a bond in fewer hours for a pair on one team, though how many battles are hard
+  is still uncounted (this section's first PROVISIONAL). So a shared table is the slow, steady way
+  to a friend.
+- Three tablemates tie on meals. Their meetings and fights break the tie, then the partner tie rule
+  does.
+- Volume, for § The Ledger when the code lands: a 30-hero town adds up to 12 meetings and about
+  8 meals an hour, beside about 10 battles at `battle_pace` 6. Both go first at the cap.
+
+> ⚠️ **PROVISIONAL** — every row is a desk pick. How many pairs are eligible depends on how a
+> player lays out the town, which is unmeasured · **Settled by:** the `ig-eek` stage saves' bond
+> counts, then the owner watching a town for an evening
+
+---
+
+## Quirks — *ig-m6o.2.2.3, design 2026-09-25, not built yet*
+
+Every hero has one quirk: a small habit they're known for. It's rolled from the hero's id when the
+hero is made, like passions, and saved on the hero. It shows on the detail panel under the
+passions. When the hero is the body's partner, it adds 3 lines to what they say, beside the bond's
+lines. No number moves: no stat, XP, production or combat rule reads it. The list and the lines
+are constants in code, not `balance.tres` rows.
+
+| Id | Label |
+|---|---|
+| `hums` | Hums while working |
+| `counts_steps` | Counts every step |
+| `collects_pebbles` | Pockets pretty pebbles |
+| `names_weapon` | Names their weapon |
+| `early_riser` | Up before dawn |
+| `whittles` | Whittles little figures |
+| `bad_puns` | Makes terrible puns |
+| `sweet_tooth` | Has a sweet tooth |
+| `lucky_charm` | Carries a lucky charm |
+| `hates_wet_boots` | Hates wet boots |
+| `sketches` | Sketches everyone |
+| `tidies` | Can't leave a mess |
+| `cloud_names` | Names the clouds |
+| `afraid_of_moths` | Afraid of moths |
+
+- One quirk per hero, not two. One habit is what a hero is known for. A partner's lines stay
+  5 from the bond and 3 from the quirk, so the bond is still the main voice.
+- The list is append-only. A quirk removed later re-rolls every hero who had it.
+
+> ⚠️ **PROVISIONAL** — the 14 quirks and one per hero are desk picks · **Settled by:** the owner
+> meeting them in town
+
 ---
 
 ## Stage saves — *ig-eek, scoped 2026-09-24*
@@ -1068,6 +1152,11 @@ a progression finding. It is never patched over.
 - The bot stops dispatching near the end and saves with no order in flight. A loaded save runs
   offline progress for the time since it was written.
 - The bot's records per hour are not the owner's. They don't settle the Ledger's PROVISIONAL.
+- The saves are kept as files, not remade to order. Remake them on purpose only: a save schema
+  change, a bot policy change, or a balance change the director calls big. Mid's and Late's Ledgers
+  bake in who wins at build time, so a big balance change makes them stale.
+- Two beads build them: `ig-eek` (the bot and Early) and `ig-eek.1` (Mid and Late, after `ig-vl1.3`,
+  once the director has seen the projected wall time).
 - The Ledger column is at pace 1. At `battle_pace` 6 (§ Battle pace) a battle takes about 6x as
   long, so Early and Mid hold about a sixth as many records (about 20 and 200), and Late, set by
   the cap, takes about 6x the game clock. Make the saves after `ig-1jw` lands.
