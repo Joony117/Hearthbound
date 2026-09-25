@@ -1240,13 +1240,13 @@ a progression finding. It is never patched over.
 | Stage | Game clock | Ledger | Checks the save must pass |
 |---|---|---|---|
 | Early | 2 h | about 30 records | Verdant cleared. 8–20 heroes. 1–2 teams. The free first producers placed; no hall above level 1 |
-| Mid | 20 h | about 1,000 | Ashfall cleared. 15–30 heroes; the best team mostly C–B. 2–4 teams. Halls at level 2–3. At least one death, one rescue and one bond in the Ledger |
+| Mid | 20 h | about 600 | Ashfall cleared. 25–34 heroes; the best team A or better. 2–4 teams. At least one bond in the Ledger |
 | Late | Until the Ledger is at its 10,000 cap and has evicted | 10,000 | Sundered Vault cleared; Fallen Citadel and Frontier March tried. 40+ heroes; the best team A–SS. Every built hall at level 5. Several bonds and dreams. 5+ deaths |
 
 - Late is set by the cap, not by hours, so bond tuning sees eviction happen (meetings and meals go
-  first, then routine victories: `ig-m6o.2.2.4`'s tiers). At Early's measured 40 records an hour
-  plus the town records (about 20 an hour in a 30-hero town), that's about 170 hours, or less as
-  income grows with the zone.
+  first, then routine victories: `ig-m6o.2.2.4`'s tiers). At Mid's measured 30 records an hour
+  (seed 1; Mid has no meetings or meals yet) plus the town records (about 20 an hour in a 30-hero
+  town), that's about 200 hours, or less as income grows with the zone.
 - Early's checks come from the first bot run (seed 1: 36 pulls, 23 fed, 13 kept, 2 teams; halls
   [1, 1, 0, 0, 0]). Early was remade under `ig-0og.1` (rate B, the route pay, beds and eating) on
   seeds 1-8: every seed kept 8 heroes from 8 pulls with none fed, in 1 team, with 8 Houses (the
@@ -1255,13 +1255,25 @@ a progression finding. It is never patched over.
   29 records, 78 stones. Every seed sits on the floor of 8. Early has no rank check. A third of pulls are C or better, so even the three
   starting pulls give one 70% of the time. A rank bound would test the seed, not the bot. The
   bot is not changed to meet a check: it pulls, feeds and fields teams the way a player does.
+- Mid's checks come from its first run (`ig-eek.1`, seed 1, re-set as Early's were): 194 pulls,
+  163 fed, 31 kept in 3 teams (22 added in hours 1-10, 9 in hours 11-20), 30 Houses (the next at
+  430 wood), no strike and no starvation, 5 bonds and 602 records. The best team is S, S, A, A, A.
+  Seeds 2-4 match: 31 heroes and 3 teams each, 191-197 pulls, 576-670 records, and 5, 0 and 5
+  bonds (seed 3 made none). Three desk checks missed on every seed. They are progression findings
+  for design, not bot bugs:
+  - Halls stay at [0, 0, 0, 0, 0]. Houses take the wood: at 20 h the next House costs 430 and 68
+    is left, while town stone sits at 552.
+  - No death and no rescue. No team reaches 90% of Sundered's power, so every team farms Ashfall.
+  - The best team is S and A, far above the desk's C–B.
 - The bot plays in fixed, greedy order. Summon when stones allow. Fill 5-hero teams by power.
   Send every idle team, with suggested supplies, to the hardest unlocked zone where its power is
-  at least 90% of recommended. Spare heroes are fodder for the best ones. Keep what you can house
+  at least 90% of recommended. Keep what you can house
   (`ig-0og.1`): place the workplaces the staff needs (ceil(heroes x 0.2) farmers, max(1, heroes / 5)
   woodcutters, the Mine's 1), then Houses while wood allows and beds are fewer than heroes. Free
   beds go to the workers first (a worker needs a home), then to the strongest. The homeless beyond
-  the grace, less the Houses going up, are spare. No hall upgrade while anyone is homeless. The bot
+  the grace, less the Houses going up, are spare, and are fodder for the best ones. Housed heroes
+  outside a full team are kept: they staff the workplaces first, and the rest wait for the next
+  team. No hall upgrade while anyone is homeless. The bot
   closes the last starvation warning on the first step it is up, as a player would. Equip the best gear on
   the strongest heroes, and enhance up to the Forge cap. Place the free producers first, then
   upgrade halls when affordable (Circle, Forge, Sanctum, Training Hall, Reliquary). Keep food
@@ -1281,14 +1293,11 @@ a progression finding. It is never patched over.
     sim cost, so Late takes about a third of the wall time. They are also what the cap evicts first.
 - The Ledger column is at `battle_pace` 6. Early's first run wrote 81 records in 2 h, and 59 were
   summons and sacrifices. The `ig-0og.1` remake wrote 29: 8 summons, no sacrifice. Those follow stone income, which `ig-1jw` kept per hour, so the pace
-  cuts only the battle records. Mid's figure scales Early's rate. The pull rate itself has no
-  target yet (`ig-0og`).
+  cuts only the battle records. Mid's comes from seed 1: 602 records in 20 h, from 194 pulls at
+  rate B (9.7 an hour, § Summon Stones item 6).
 
-> ⚠️ **PROVISIONAL** — Early's checks rest on one seed. Mid's and Late's are still desk guesses,
-> and Early's best heroes (A and B at level 30–33) already reach Mid's "mostly C–B" at 2 h, so
-> Mid's best team will likely be above it by 20 h. Ashfall's boss is already flagged unwinnable ungeared (§ The three
-> zones) · **Settled by:** Early remade on seeds 1–8 (about 5 s of wall time each), Mid's first
-> run, `ig-0og`'s pull-rate target, then the owner playing each save
+> ⚠️ **PROVISIONAL** — Early's checks rest on 8 seeds and Mid's on seed 1; Late's are still desk
+> guesses · **Settled by:** `ig-eek.2`'s Late run, then the owner playing each save
 
 ---
 
@@ -3903,8 +3912,8 @@ quick-resolve scaling only. **Never a hard gate** — let players throw units aw
 ### Timed dispatch and repeat orders (`ig-6l4`, 2026-09-22)
 
 A hero can belong to only one active order; equipped gear is committed with that hero. Distinct
-teams run concurrently without an energy system or dispatch-slot cap; a town in revolt sends
-nothing (§ Town mood and revolt). Presets store stable
+teams run concurrently without an energy system or dispatch-slot cap; a town in revolt sends no
+new order or repeat; rescues still go (GAME_SPEC § Town mood and revolt). Presets store stable
 hero IDs, a name, and a preferred zone. Missing members remain visible and require an explicit
 edit. Preset edits do not modify an already-dispatched team.
 
@@ -5327,8 +5336,9 @@ So an over-strong team in an easier zone never earns more an hour than a matched
 zone. What a stronger team still gets: harder zones pay more, fewer deaths, and more XP and loot
 an hour.
 
-> ⚠️ **PROVISIONAL** — the rule's figures assume route-bound cycles (Early's 64 s fights against
-> Verdant's 90 s floor) · **Settled by:** Mid's first run under the rule
+Measured (`ig-eek.1`, Mid seed 1, rate B): cycles are route-bound. Landed orders took 1.003 x
+their routes, and earned 490 stones per team out-hour against the table's 500. The bot pulled 194
+in 20 h, 9.7 an hour (seeds 2-4: 191-197).
 
 ---
 
@@ -5778,10 +5788,12 @@ Every row below is a `balance.tres` row.
 2 wood a minute, so a new House every 5 minutes while Houses cost 10. A second Lumbermill and its
 two Houses cost 40, which is 20 minutes. After that, 4 wood a minute. Past the tenth House the
 price climbs by 20 a House while wood climbs only with the woodcutters, so the roster a town can
-house grows about linearly: roughly 3 x the woodcutter share of the roster an hour (town_model.py,
-§ Town mood and revolt).
+house grows about linearly: about 1 House an hour at 20-30 heroes, falling toward 3 x the
+woodcutter share of the roster an hour as the roster grows (town_model.py, § Town mood and revolt).
 
-> ⚠️ **PROVISIONAL** — house_flat_count 10, house_wood_step 20 and the grace of 2 are desk numbers from town_model.py · **Settled by:** the Early remake and Mid's run (ig-eek.1).
+Measured (`ig-eek.1`, Mid seed 1): 31 heroes and 30 Houses at 20 h, 22 heroes added in hours 1-10
+and 9 in hours 11-20 (20 to 30 Houses from hour 10 to 20). Seeds 2-4 match. The grace of 2 held on
+every seed: no strike, and 16-21 minutes under mood 100 (low 90).
 
 ### The first of each producer is free
 

@@ -1,0 +1,73 @@
+Godot Engine v4.7.1.stable.official.a13da4feb - https://godotengine.org
+
+[godot_ai game_helper] registered mcp capture (debugger active=false, logger=true)
+BOT stage=mid seed=1 step=5.0 game_seconds=72000
+HOUR 1 wall_s=2.0 roster=5 teams=1 orders=1 pulls=5 stones_earned=265 houses=5 beds=3/5 homeless=2 mood=100.0 wood=0.0 stone=0.0 food=38.8 building_levels=[0, 0, 0, 0, 0] ledger=14 cleared={ &"verdant_outskirts": true }
+HOUR 2 wall_s=6.1 roster=9 teams=1 orders=1 pulls=9 stones_earned=678 houses=9 beds=8/9 homeless=1 mood=100.0 wood=0.6 stone=12.4 food=66.1 building_levels=[0, 0, 0, 0, 0] ledger=34 cleared={ &"verdant_outskirts": true }
+HOUR 3 wall_s=10.7 roster=13 teams=1 orders=1 pulls=14 stones_earned=1166 houses=11 beds=11/13 homeless=2 mood=100.0 wood=50.2 stone=42.4 food=74.2 building_levels=[0, 0, 0, 0, 0] ledger=50 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 4 wall_s=15.8 roster=15 teams=1 orders=1 pulls=19 stones_earned=1615 houses=13 beds=13/15 homeless=2 mood=100.0 wood=54.2 stone=72.4 food=94.7 building_levels=[0, 0, 0, 0, 0] ledger=61 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 5 wall_s=20.3 roster=16 teams=1 orders=1 pulls=23 stones_earned=2054 houses=15 beds=15/16 homeless=1 mood=100.0 wood=34.2 stone=102.4 food=148.5 building_levels=[0, 0, 0, 0, 0] ledger=72 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 6 wall_s=27.2 roster=18 teams=2 orders=2 pulls=30 stones_earned=2777 houses=16 beds=16/18 homeless=2 mood=100.0 wood=84.2 stone=132.4 food=180.9 building_levels=[0, 0, 0, 0, 0] ledger=92 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 7 wall_s=35.7 roster=19 teams=2 orders=2 pulls=39 stones_earned=3698 houses=17 beds=17/19 homeless=2 mood=100.0 wood=114.2 stone=162.4 food=198.6 building_levels=[0, 0, 0, 0, 0] ledger=132 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 8 wall_s=44.3 roster=20 teams=2 orders=2 pulls=50 stones_earned=4759 houses=18 beds=18/20 homeless=2 mood=100.0 wood=144.6 stone=192.4 food=202.5 building_levels=[0, 0, 0, 0, 0] ledger=182 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 9 wall_s=52.0 roster=21 teams=2 orders=2 pulls=60 stones_earned=5767 houses=19 beds=19/21 homeless=2 mood=100.0 wood=194.6 stone=222.4 food=195.0 building_levels=[0, 0, 0, 0, 0] ledger=213 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 10 wall_s=59.0 roster=22 teams=2 orders=2 pulls=69 stones_earned=6694 houses=20 beds=20/22 homeless=2 mood=100.0 wood=224.6 stone=252.4 food=227.9 building_levels=[0, 0, 0, 0, 0] ledger=237 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 11 wall_s=66.2 roster=23 teams=2 orders=2 pulls=80 stones_earned=7736 houses=21 beds=21/23 homeless=2 mood=100.0 wood=221.2 stone=282.4 food=253.4 building_levels=[0, 0, 0, 0, 0] ledger=267 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 12 wall_s=72.9 roster=24 teams=2 orders=2 pulls=89 stones_earned=8621 houses=23 beds=22/24 homeless=2 mood=100.0 wood=1.2 stone=312.4 food=303.8 building_levels=[0, 0, 0, 0, 0] ledger=292 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 13 wall_s=79.9 roster=25 teams=2 orders=2 pulls=99 stones_earned=9614 houses=24 beds=24/25 homeless=1 mood=100.0 wood=11.2 stone=342.4 food=363.8 building_levels=[0, 0, 0, 0, 0] ledger=320 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 14 wall_s=87.3 roster=26 teams=2 orders=2 pulls=109 stones_earned=10699 houses=25 beds=24/26 homeless=2 mood=100.0 wood=1.2 stone=372.4 food=412.3 building_levels=[0, 0, 0, 0, 0] ledger=349 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 15 wall_s=98.2 roster=27 teams=3 orders=3 pulls=123 stones_earned=12079 houses=25 beds=25/27 homeless=2 mood=100.0 wood=301.2 stone=402.4 food=449.5 building_levels=[0, 0, 0, 0, 0] ledger=393 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 16 wall_s=108.5 roster=28 teams=3 orders=3 pulls=138 stones_earned=13524 houses=26 beds=26/28 homeless=2 mood=100.0 wood=271.2 stone=432.4 food=475.2 building_levels=[0, 0, 0, 0, 0] ledger=435 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 17 wall_s=118.7 roster=29 teams=3 orders=3 pulls=153 stones_earned=15024 houses=27 beds=27/29 homeless=2 mood=100.0 wood=201.2 stone=462.4 food=491.1 building_levels=[0, 0, 0, 0, 0] ledger=479 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 18 wall_s=129.0 roster=30 teams=3 orders=3 pulls=169 stones_earned=16677 houses=28 beds=28/30 homeless=2 mood=100.0 wood=148.2 stone=492.4 food=499.7 building_levels=[0, 0, 0, 0, 0] ledger=528 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 19 wall_s=138.4 roster=31 teams=3 orders=3 pulls=183 stones_earned=18051 houses=29 beds=29/31 homeless=2 mood=100.0 wood=118.2 stone=522.4 food=511.3 building_levels=[0, 0, 0, 0, 0] ledger=568 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+HOUR 20 wall_s=146.6 roster=31 teams=3 orders=0 pulls=194 stones_earned=19195 houses=30 beds=30/31 homeless=1 mood=100.0 wood=68.2 stone=552.4 food=559.3 building_levels=[0, 0, 0, 0, 0] ledger=602 cleared={ &"verdant_outskirts": true, &"ashfall_reaches": true }
+CHECK ashfall_cleared value=true pass
+CHECK heroes 25-34 value=31 pass
+CHECK best team A or better (3+ of 5) value=["S", "S", "A", "A", "A"] pass
+CHECK teams 2-4 value=3 pass
+INFO halls=[0, 0, 0, 0, 0] deaths=0 rescues=0
+CHECK a bond value=5 pass
+CHECK growth linear (added h1-10, h11-20) value=[22, 9] pass
+INFO ledger_records=602 (SYSTEMS: about 600) ledger_next_seq=603
+CHECK strike minutes 0 value=0.0 pass
+CHECK starvation deaths 0 value=0 pass
+ECON pulls=194 pulls_per_h=9.7 stones_earned=19195 stones_per_h=959.8 route_s=140609 order_s=141055 stones_per_team_out_h=489.9 sacrificed=163 houses=30 next_house_wood=430 homeless_peak=3 mood_low=92.3 mood_under_100_min=16.0 strike_min=0.0 starvation_deaths=0 food_low=25.4 farmers=7 woodcutters=6 miners=1
+TOWN pulls=194 houses=30 next_house_wood=430 homeless_peak=3 homeless=1 mood=100.0 food=559.3
+INFO casters pulled=3 fed=3 kept=0
+DEATHS seen=194 missing=163 died_records=163 unexplained=[] pass
+COST wall_s=146.6 game_s=72000 wall_s_per_game_h=7.3 battle_s=17770 battle_s_per_wall_s=121.2
+RUN roster=31 building_levels=[0, 0, 0, 0, 0] ledger=602 orders=0 jobs=0 incidents=0 stones=95 essence=5 parts=[601, 450, 1620, 678, 57, 0, 0, 0] supplies={ "healing": 15, "revival": 3, "healing_masterwork": 0, "revival_masterwork": 0 } town={ "wood": 68.1666666666738, "stone": 552.375000000056, "food": 559.333333333388 } underpowered_sends=0 longest_order_s=1135 refusals={  }
+README seed=1 step=5.0 wall_s=146.6 game_clock_s=72000
+HERO 4dd91eb8bb42c7b7ec1b27696ec27b48 Nils Emberfell S lvl=50 power=2841 station=
+HERO 76bd646c845c04771a7448830b76c2f2 Nils Ravensworth A lvl=50 power=2071 station=
+HERO f9394c658ed3a5561496d2258f1a942f Brenna Westmarch F lvl=7 power=193 station=Farm_1
+HERO 26df06ae559efc001b1bb97253d0056d Vesna Valebrook F lvl=10 power=253 station=Mine_3
+HERO 1572ceec03bf2754bbd4da9320ce15ce Orla Valebrook A lvl=50 power=1921 station=
+HERO 47744752d13106d7f8b0561036ad59bb Fenna Hallowick F lvl=0 power=164 station=Farm_1
+HERO c077d478fb59d0768789ac87463892af Gorath Ravensworth F lvl=0 power=146 station=Lumbermill_2
+HERO 59f1414701958caed174ebe4015b50fe Ivo Fairwind A lvl=50 power=1906 station=
+HERO 5e1e57d85d4f8a503ad1818986b04ab1 Quill Pinecroft A lvl=50 power=2074 station=
+HERO e0de02f821fa9b56fc450c26a7d142c6 Lyra Fairwind F lvl=0 power=146 station=Lumbermill_2
+HERO 00b4b16803d87b93bc9d7ca6b4c85a8c Tamsin Coldmere F lvl=0 power=150 station=Farm_14
+HERO abfa144ff60d9bda45820c7608a18eac Rowan Stormhaven D lvl=0 power=221 station=Lumbermill_17
+HERO 4ee08a817a5b16ee2ccf9945711791e0 Yorick Brackwater B lvl=0 power=402 station=Farm_14
+HERO ef16c37bf75a623c2e34e2e73678883e Nils Coldmere A lvl=50 power=2105 station=
+HERO ed74c6ce157147453e8767b33cf81ff1 Hilde Jarlsbane A lvl=50 power=1895 station=
+HERO 1330aa0371d1897fa7f24e562463c680 Edric Thornbury A lvl=50 power=2074 station=
+HERO 406d0a1f0b192d665aadeb42941fea25 Lyra Northgate A lvl=50 power=2068 station=
+HERO 4d1af12d3759b4b56c07f9f371a388dc Brenna Coldmere A lvl=50 power=1934 station=
+HERO 97d53de914c94ec6c966c77e736809e2 Tamsin Thornbury D lvl=0 power=221 station=Lumbermill_17
+HERO 9bb199c0b7b48f7c16a99b9d3580354d Ivo Kestrelmark A lvl=0 power=485 station=Lumbermill_28
+HERO f5cd2151a43f1b4d324f40c22fa20f92 Sable Ashdown B lvl=0 power=369 station=Farm_24
+HERO 15cc1588b30ea1c9b0b81f1382b74971 Jorunn Underhill A lvl=0 power=485 station=Farm_24
+HERO 07132547bb1694ccf952d901e45d24b0 Sable Kestrelmark A lvl=50 power=1905 station=
+HERO c6efe35373214cbf97ed52cccf70115d Quill Marrowvale A lvl=50 power=1801 station=
+HERO dff6995154ee842b8e91ffac9133f117 Morgen Valebrook S lvl=53 power=2725 station=
+HERO 0d3b1a0d4581d2eb382e780085c4ebf9 Lyra Hallowick A lvl=50 power=2036 station=
+HERO 18b7012a588df2a1b7d4e54bfd7faef3 Quill Emberfell A lvl=50 power=1774 station=
+HERO ad17fabe26eb6ea61570e54bc0221dbb Tamsin Brackwater A lvl=0 power=543 station=Lumbermill_28
+HERO d7461b475c8c9d137271d717638e8c46 Gorath Kestrelmark A lvl=0 power=543 station=
+HERO 7d99ef4a3b145afdb45575f8b442ae6f Vesna Westmarch S lvl=0 power=672 station=Farm_35
+HERO 280990e1f6684ec331bf6375d79866d1 Orla Westmarch A lvl=0 power=543 station=
+OUT E:/Game/tests/fixtures/stages/mid/

@@ -11,6 +11,7 @@ extends RefCounted
 ## battle and the next pass re-forms it by power.
 ## ig-0og.1: it keeps what it can house. Workplaces for the staff, then Houses while wood allows, then
 ## the strongest homeless into beds; the homeless beyond the grace (less the Houses going up) are fed.
+## ig-eek.1: a HOUR line each game hour and an ECON line at the end, for the economy's settle table.
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const STEP: float = 5.0
@@ -38,6 +39,15 @@ var _casters_fed: int = 0
 var _pulls: int = 0
 var _strike_seconds: float = 0.0
 var _homeless_peak: int = 0
+## Each dispatched expedition's route (initial_duration_seconds) until it lands; rescues are not here.
+var _route_of: Dictionary[String, float] = {}
+var _route_seconds: float = 0.0
+var _order_seconds: float = 0.0
+var _mood_low: float = 100.0
+var _mood_low_seconds: float = 0.0
+var _food_low: float = INF
+## The roster size at each game hour; [0] is the empty start.
+var _hour_roster: Array[int] = [0]
 
 
 ## The exit code: 0 when the stage saved and its death check held, 2 when that check or an order in
@@ -73,7 +83,9 @@ func run(args: PackedStringArray) -> int:
 		if _failed:
 			return 1
 		if fmod(_clock, 3600.0) == 0.0:
-			print("HOUR %d wall_s=%.1f roster=%d orders=%d ledger=%d cleared=%s" % [roundi(_clock / 3600.0), (Time.get_ticks_msec() - started) / 1000.0, GameSession.roster.size(), GameSession.expedition_orders.size(), GameSession.ledger.size(), GameSession.cleared_zone_ids])
+			_hour_roster.append(GameSession.roster.size())
+			var homeless: int = GameSession.homeless_heroes().size()
+			print("HOUR %d wall_s=%.1f roster=%d teams=%d orders=%d pulls=%d stones_earned=%d houses=%d beds=%d/%d homeless=%d mood=%.1f wood=%.1f stone=%.1f food=%.1f building_levels=%s ledger=%d cleared=%s" % [roundi(_clock / 3600.0), (Time.get_ticks_msec() - started) / 1000.0, GameSession.roster.size(), GameSession.team_presets.size(), GameSession.expedition_orders.size(), _pulls, _stones_earned(), _count(TownRules.HOUSE), GameSession.roster.size() - homeless, GameSession.roster.size(), homeless, GameSession.town_mood, float(GameSession.town_resources["wood"]), float(GameSession.town_resources["stone"]), float(GameSession.town_resources["food"]), GameSession.building_levels, GameSession.ledger.size(), GameSession.cleared_zone_ids])
 	if not SaveService.save():
 		push_error("stage_bot: the final save failed: %s" % SaveService.last_write_error)
 		return 1
@@ -219,21 +231,20 @@ func _bedded_worker(spare: Array[Hero]) -> Hero:
 	return worker
 
 
-## Spare heroes are fodder for the strongest idle team hero; then every idle team hero ranks up while
-## the essence lasts, strongest first.
+## The homeless beyond the grace are fodder for the strongest idle team hero (else the strongest hero
+## at home); then every idle team hero ranks up while the essence lasts, strongest first.
 func _feed(spare: Array[Hero], teams: Array[Dictionary]) -> void:
-	var fodders: Array[Hero] = spare.duplicate()
+	# ig-eek.1 (ACC 8): only the homeless beyond the grace, less the Houses going up, are fodder, team
+	# home or not (SYSTEMS § Stage saves). Housed spare heroes wait for the next team.
+	var fodders: Array[Hero] = []
+	var excess: int = GameSession.homeless_heroes().size() - BALANCE.town_mood_homeless_grace - _houses_going_up()
+	for index: int in range(spare.size() - 1, -1, -1):
+		if fodders.size() < excess and spare[index].home == Hero.NO_HOME:
+			fodders.append(spare[index])
 	var target: Hero = null
 	if not teams.is_empty():
 		target = (teams[0]["heroes"] as Array[Hero])[0]
 	else:
-		# ig-0og.1: with every team out, only the homeless beyond the grace go, into the strongest hero
-		# at home; the rest wait for the team to come back, as before.
-		fodders.clear()
-		var excess: int = GameSession.homeless_heroes().size() - BALANCE.town_mood_homeless_grace - _houses_going_up()
-		for index: int in range(spare.size() - 1, -1, -1):
-			if fodders.size() < excess and spare[index].home == Hero.NO_HOME:
-				fodders.append(spare[index])
 		for hero: Hero in GameSession.roster:
 			if not fodders.has(hero) and not GameSession.is_hero_busy(hero) and (target == null or _power(hero) > _power(target)):
 				target = hero
@@ -341,6 +352,9 @@ func _dispatch(teams: Array[Dictionary]) -> void:
 		var order_id: String = GameSession.dispatch_force(preset_ids, zone_id, 1, {}, _loadout(heroes))
 		if _ok(not order_id.is_empty(), "dispatch_force"):
 			_sent_at[order_id] = _clock
+			for order: Dictionary in GameSession.expedition_orders:
+				if str(order.get("id", "")) == order_id:
+					_route_of[order_id] = float(order.get("initial_duration_seconds", 0.0))
 
 
 ## Free first producers, then one hall upgrade when affordable, the lowest level first in SYSTEMS'
@@ -376,12 +390,20 @@ func _step() -> void:
 		_strike_seconds += STEP
 	_homeless_peak = maxi(_homeless_peak, GameSession.homeless_heroes().size())
 	_wait_for_jobs()
+	_mood_low = minf(_mood_low, GameSession.town_mood)
+	if GameSession.town_mood < 100.0:
+		_mood_low_seconds += STEP
+	_food_low = minf(_food_low, float(GameSession.town_resources["food"]))
 	var live: Dictionary[String, bool] = {}
 	for order: Dictionary in GameSession.expedition_orders:
 		live[str(order.get("id", ""))] = true
 	for order_id: String in _sent_at.keys():
 		if not live.has(order_id):
 			_longest_order = maxf(_longest_order, _clock - _sent_at[order_id])
+			if _route_of.has(order_id):
+				_route_seconds += _route_of[order_id]
+				_order_seconds += _clock - _sent_at[order_id]
+				_route_of.erase(order_id)
 			_sent_at.erase(order_id)
 
 
@@ -427,23 +449,31 @@ func _report(seed_value: int, wall_seconds: float) -> bool:
 		print("INFO ledger_records=%d (SYSTEMS: about 30) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
 	else:
 		_check("ashfall_cleared", GameSession.cleared_zone_ids.has(&"ashfall_reaches"), GameSession.cleared_zone_ids.has(&"ashfall_reaches"))
-		_check("heroes 15-30", roster.size(), roster.size() >= 15 and roster.size() <= 30)
+		# ig-eek.1: the row re-set from seed 1 (director's ruling); halls, deaths and rescues are INFO.
+		_check("heroes 25-34", roster.size(), roster.size() >= 25 and roster.size() <= 34)
 		var best: Array[String] = _best_team_ranks()
-		var c_or_b: int = best.count("C") + best.count("B")
-		_check("best team mostly C-B (3+ of 5)", best, best.size() == TEAM_SIZE and c_or_b >= 3)
+		var a_or_better: int = best.filter(func(rank: String) -> bool: return BALANCE.rank_names.find(rank) >= BALANCE.rank_names.find("A")).size()
+		_check("best team A or better (3+ of 5)", best, best.size() == TEAM_SIZE and a_or_better >= 3)
 		_check("teams 2-4", teams, teams >= 2 and teams <= 4)
-		var halls_ok: bool = GameSession.building_levels.all(func(level: int) -> bool: return level >= 2 and level <= 3)
-		_check("halls at level 2-3", GameSession.building_levels, halls_ok)
-		var deaths: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and str(record.get("cause", "")) != "sacrifice").size()
+		var deaths: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and not str(record.get("cause", "")) in ["sacrifice", "starvation"]).size()
 		var rescues: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "battle" and str(record.get("battle_kind", "")) == "rescue").size()
-		_check("a death", deaths, deaths >= 1)
-		_check("a rescue", rescues, rescues >= 1)
+		print("INFO halls=%s deaths=%d rescues=%d" % [GameSession.building_levels, deaths, rescues])
 		_check("a bond", GameSession.bond_index().size(), GameSession.bond_index().size() >= 1)
-		print("INFO ledger_records=%d (SYSTEMS: about 1,000) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
+		# ig-eek.1: the roster grows no faster in game hours 11-20 than in hours 1-10.
+		if _hour_roster.size() > 20:
+			var first: int = _hour_roster[10] - _hour_roster[0]
+			var second: int = _hour_roster[20] - _hour_roster[10]
+			_check("growth linear (added h1-10, h11-20)", [first, second], second <= first)
+		else:
+			_check("growth linear (added h1-10, h11-20)", _hour_roster, false)
+		print("INFO ledger_records=%d (SYSTEMS: about 600) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
 	# ig-0og.1: a player who houses or feeds everyone beyond the grace never strikes, and never starves.
 	var starved: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and str(record.get("cause", "")) == "starvation").size()
 	_check("strike minutes 0", _strike_seconds / 60.0, _strike_seconds == 0.0)
 	_check("starvation deaths 0", starved, starved == 0)
+	var game_h: float = _stage_seconds / 3600.0
+	var sacrificed: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and str(record.get("cause", "")) == "sacrifice").size()
+	print("ECON pulls=%d pulls_per_h=%.1f stones_earned=%d stones_per_h=%.1f route_s=%.0f order_s=%.0f stones_per_team_out_h=%.1f sacrificed=%d houses=%d next_house_wood=%d homeless_peak=%d mood_low=%.1f mood_under_100_min=%.1f strike_min=%.1f starvation_deaths=%d food_low=%.1f farmers=%d woodcutters=%d miners=%d" % [_pulls, _pulls / game_h, _stones_earned(), _stones_earned() / game_h, _route_seconds, _order_seconds, _stones_earned() / maxf(_order_seconds / 3600.0, 0.001), sacrificed, _count(TownRules.HOUSE), TownRules.wood_cost(TownRules.HOUSE, GameSession.town_buildings, BALANCE), _homeless_peak, _mood_low, _mood_low_seconds / 60.0, _strike_seconds / 60.0, starved, _food_low, _workers(TownRules.FARM), _workers(TownRules.LUMBERMILL), _workers(TownRules.MINE)])
 	print("TOWN pulls=%d houses=%d next_house_wood=%d homeless_peak=%d homeless=%d mood=%.1f food=%.1f" % [_pulls, _count(TownRules.HOUSE), TownRules.wood_cost(TownRules.HOUSE, GameSession.town_buildings, BALANCE), _homeless_peak, GameSession.homeless_heroes().size(), GameSession.town_mood, float(GameSession.town_resources["food"])])
 	var casters_kept: int = roster.filter(func(hero: Hero) -> bool: return _casters.has(hero.instance_id)).size()
 	print("INFO casters pulled=%d fed=%d kept=%d" % [_casters.size(), _casters_fed, casters_kept])
@@ -469,6 +499,11 @@ func _report(seed_value: int, wall_seconds: float) -> bool:
 	for hero: Hero in roster:
 		print("HERO %s %s %s lvl=%d power=%.0f station=%s" % [hero.instance_id, hero.hero_name, BALANCE.rank_names[hero.rank], hero.level, _power(hero), hero.station])
 	return unexplained.is_empty() and GameSession.expedition_orders.is_empty()
+
+
+## ig-eek.1 (extra's definition): summons are the only spend; the empty-roster refill counts as earned.
+func _stones_earned() -> int:
+	return GameSession.stones + _pulls * BALANCE.summon_pull_cost - GameSession.STARTING_STONES
 
 
 ## The rank names of the strongest saved 5-hero team by _team_power; [] with none.
