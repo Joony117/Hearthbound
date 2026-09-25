@@ -31,8 +31,19 @@ keep fitting the battle-sim-threading entry directly below.
    checked today (`_valid_point`, `_point_within_bounds`, `_valid_number`) — **not** the marker
    validator's exact-match-to-the-authored-zone shape, since a field object has no authored
    counterpart to match; it is cast at runtime.
+   - *Amended 2026-09-25 (`ig-vl1.7`, godot-architect, to match what `ig-vl1.4` built):* there is
+     no stored pulse timer. A zone pulses each time its `remaining_seconds` crosses a multiple of
+     `skill_status_tick_seconds`, the crossing test `_tick_statuses` already uses
+     (`battle_simulation.gd` `_update_field_objects`), so the pulse times follow from the one saved
+     number. The object also stores the caster's `atk` and `heal_scale` from the cast, so a zone
+     keeps its amounts after its caster is downed or leaves. A zone is the 10 keys the validator
+     checks exactly: `id, kind, skill_id, owner_actor_id, faction, center, radius,
+     remaining_seconds, atk, heal_scale`. Walls (`ig-vl1.5`) add their own geometry keys then.
 2. The closed set of effect primitives (2026-09-23) grows by one: **zone**, an area over time that
    applies existing primitives (status, heal, damage, shield) to actors inside it, by faction.
+   - *Amended 2026-09-25 (`ig-vl1.7`, godot-architect):* a v1 zone pulse is damage, heal or
+     status. No shield: no zone uses one, and `_pulse_zone` has no shield branch. A zone that
+     needs one adds it with its own ADR line, not quietly.
    **Wall** is not a primitive the effect picker applies to a target; it is a shape the movement
    code consults. v1 walls block movement only — not attacks, not line of sight — for both
    factions.

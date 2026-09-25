@@ -616,6 +616,12 @@ CRIT_DMG.
 **Amended 2026-09-24 (director rulings).**
 - v1 has no HP stat status. No skill needs one, and validation rejects it.
 - An SPD change (Hunter's Focus) changes only the swing interval.
+  - *Amended 2026-09-25 (`ig-vl1.7`, proposed):* a slow (an SPD cut; only Rime Circle has one)
+    works after the clamps. It multiplies the finished swing interval by 1 / (1 − cut) and the walk
+    speed by (1 − cut). Every enemy swings at SPD 20 (100 / 20 = 5 s, clamped to 3.0) and walks at
+    the 1.5 floor (20 × 0.04 = 0.8), so a cut to SPD itself changed neither: before this, Rime
+    Circle's −30% did nothing to any enemy. A raise still acts on SPD before the clamp, so Hunter's
+    Focus is unchanged.
 - Taunt (Gauntlet Toss) changes only whom the enemy targets.
 
 **Counters.** A counter is an ability with one tag:
@@ -804,7 +810,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Chain Spark | Weaponskill | 15 | — | 1.0×, then jumps to 2 more enemies within 3 at 0.6× | 2+ enemies within 3 | — |
 | Warding Glyph | Ability | 25 | 25 s | Range 8: shield 2.0 ATK on an ally for 6 s | an ally inside a telegraph, else an ally below 50% | `shield` |
 | Hanging Star | Ability | book | 45 s | Range 8, radius 3: 2.5× after a 1.0 s delay | 3+ enemies or an elite | — |
-| Rime Circle | Ability | 1 | 20 s | Range 8: a zone of radius 3 for 6 s. Each second, enemies inside take 0.3× and SPD −30% for 1.5 s | its target has 3+ enemies within 3, or is elite | — |
+| Rime Circle | Ability | 1 | 20 s | Range 8: a zone of radius 3 for 6 s. Each second, enemies inside take 0.3× and are slowed 30% (swing and walk, § Statuses) for 1.5 s | its target has 3+ enemies within 3, or is elite | — |
 | Rime Wall | Ability | 1 | 30 s | Range 8: a wall 6 long and 1.2 thick for 8 s. Blocks walking for both sides, not attacks (`ig-vl1.5`) | an enemy melee actor 3.5–6 from a back-row ally | — |
 
 **Cleric** (healer)
@@ -819,7 +825,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Wellspring | Ability | 15 | 12 s | Range 6: heal 0.3 ATK a second for 10 s | an ally below 70% without it | — |
 | Prayer Circle | Ability | 25 | 30 s | Heal 1.5 ATK to every ally within 4 | 3+ allies below 70% | — |
 | Hearthcall | Ability | book | 60 s | Range 4: revive a downed ally to 30% HP | a downed ally | — |
-| Hearthward | Ability | 1 | 25 s | Range 6: a zone of radius 3.5 for 8 s. Each second, allies inside take 20% less damage for 1.5 s and heal 0.15 ATK | the lowest-HP ally in range with 3+ allies within 3.5 of it, one below 70% or inside a telegraph | — |
+| Hearthward | Ability | 1 | 25 s | Range 6: a zone of radius 3.5 for 8 s. Each second, allies inside get ATK +15% for 1.5 s and heal 0.1 ATK (`ig-vl1.7`; was 20% less damage and 0.15 ATK) | the lowest-HP ally in range with 3+ allies within 3.5 of it, one below 70%, inside a telegraph or targeted by an enemy (`ig-vl1.7`) | — |
 
 The Cleric has no combo, so its level-5 slot is a second counter. Mend's 3.0 ATK is 48 HP at the
 Cleric's base ATK of 16: about a third of a base Knight.
@@ -1299,7 +1305,7 @@ fifteen, so p99 includes it.
 |---|---|---|
 | Hub | 100 heroes, the Ledger at its 10,000-record cap, and a roster action with its save. The roster has no cap; 100 fills all five zones at their hero caps (95) | Baseline (`ig-7sn.2`, 0df0e29, owner PC, 1920x1080, vsync off): **miss.** A roster action takes 166 ms with no battle out and 195 ms with five: the 100-row list rebuild (`_refresh_roster`) is 122–130 ms of it. With one battle out, hub frames are p99 18.6 ms. The 15 s save is 3.9 ms with no battle out and 34–35 ms with five (a 486 KB save.json). The Ledger adds about 0.1 ms to a save that appends a record |
 | Town | Every figure out: 16 wanderers (`AMBIENT_HERO_CAP`), every keeper and worker, and the body. Plus the frame of one building change | Baseline (`ig-7sn.2`, 0df0e29, owner PC, 1920x1080, vsync off): **miss.** 98 figures and 121 buildings, no battle: p50 3.6, p99 14.3, worst 20.8 ms, none over 33 ms. One building change: 137 ms on its frame (the same roster refresh); the frame after it 3.9 ms |
-| Watched battle | fallen_citadel (30 heroes, 30-enemy waves, a boss with 10 adds) and frontier_march (50 heroes, 30 objective enemies). Gore adds on top of this (`ig-c9y`) | Baseline (`ig-7sn.2`, 0df0e29, owner PC, 1920x1080, vsync off): **miss.** fallen_citadel: p99 42.0, worst 61 ms, 67 frames over 33 ms; frontier_march: p99 65.1, worst 83 ms, 119 over. The pulse's sim is 33 ms (citadel) and 50 ms (frontier); render 4.9 / 6.5 ms. Effects reach the 40 cap; after the first 5 s, a frame that spawns one peaks at 15–19 ms. Since `ig-7sn.7` (on 07e8013, the sim's planning and support passes find once what they used to find per actor; every result identical): **met.** fallen_citadel: p99 18.6, worst 40 ms, 1 frame over 33 ms, the pulse 14.5 ms (sim 13.5, render 3.4); frontier_march: p99 24.4, worst 43 ms, 6 over, the pulse 19.5 ms (sim 14.0, render 5.0) |
+| Watched battle | fallen_citadel (30 heroes, 30-enemy waves, a boss with 10 adds) and frontier_march (50 heroes, 30 objective enemies). Gore adds on top of this (`ig-c9y`) | Baseline (`ig-7sn.2`, 0df0e29, owner PC, 1920x1080, vsync off): **miss.** fallen_citadel: p99 42.0, worst 61 ms, 67 frames over 33 ms; frontier_march: p99 65.1, worst 83 ms, 119 over. The pulse's sim is 33 ms (citadel) and 50 ms (frontier); render 4.9 / 6.5 ms. Effects reach the 40 cap; after the first 5 s, a frame that spawns one peaks at 15–19 ms. Since `ig-7sn.7` (on 07e8013, the sim's planning and support passes find once what they used to find per actor; every result identical): **still a miss** (`ig-7sn.18`): both p99s are over 8.3 ms, and both have frames over 33 ms. fallen_citadel: p99 18.6, worst 40 ms, 1 frame over 33 ms, the pulse 14.5 ms (sim 13.5, render 3.4); frontier_march: p99 24.4, worst 43 ms, 6 over, the pulse 19.5 ms (sim 14.0, render 5.0) |
 | Dispatched battles | All five zones dispatched at their hero caps while the hub or town is shown. Nothing caps how many run. Since `ig-7sn.15` (058fc74), each frame advances at most one battle, on the main thread: the live battle owed the most time, once it is owed a whole pulse (`_owe_battles`, `game_session.gd:2069`). The 0.25 s pulse's own frame advances none, unless that frame is itself a pulse long (under 4 fps) | Baseline (`ig-7sn.2`, 0df0e29, owner PC, 1920x1080, vsync off): **miss.** One battle: a pulse is 15.4 ms, and 13.5 ms while the order waits on its route. All five active: 100 ms (p99 116); its forecast re-runs the sim for 44 ms of that. With two to four still active, every pulse is a hitch (119 frames over 33 ms in 30 s). A pulse that settles a leg: 321–422 ms. Since `ig-7sn.5` (on 3b99fac), the pulse's look ahead advances each battle once and the pulse keeps that advance: **still a miss.** All five active: 53 ms (p99 64); two to four: 48–55 ms, and still 119 frames over 33 ms; one battle 14.3 ms, 13.6 ms waiting on its route. What is left at five is the sim itself, 34 ms (`ig-7sn.7`), plus 12 ms of rest. Since `ig-7sn.7` (on 07e8013): **still a miss.** The sim at five is 19.9 ms (was 33.9) and the pulse's tick 36.6 ms, plus 10 ms of rest; two to four active: 33–37 ms (p99 40–80), 95 frames over 33 ms. Since `ig-7sn.15` (058fc74, P = 6, five dispatched, 30 s of hub frames): **p99 met; the only frames over 33 ms are the periodic save's.** Frames p99 2.62 ms, worst 45.3 ms. The 2 frames over 33 ms are the 15 s periodic save's pulse (44.5 ms, `ig-7sn.10`). Every other pulse took at most 10.6 ms with four or five active. No leg settled in the window (that pulse is `ig-7sn.16`'s). Before it, on the same script: worst 71.9 ms, 104 frames over 33 ms (`.agent-results/ig-7sn.15/before/pulse5.log`; after: `fix3c/pulse5.log`). Earlier, one part, a launch's Knight cover orders (§ Hero AI on auto, Bonds) for a 50-hero team (25 Knights, 25 back row) at the 10,000-record cap with the index kept: 2.2–2.5 ms per team snapshot. The whole 50-hero team snapshot around it: 20–22 ms (`ig-uu7.4`). A launch or repeat run built it 2–3 times (about 60 ms on one frame); since `ig-7sn.4` it builds it once and the forecasts and the run share it, so a 50-hero launch spends 20.5–23.0 ms in team snapshots (best / worst of seven), under the 33 ms hitch line |
 | Load | Offline catch-up of every dispatched battle, after any time away. Target (`ig-7sn.12`, 2026-09-24): `load_game` costs no more than with no time away, at most 500 ms, and the hub takes input at once. The catch-up runs on worker threads after the hub opens and adds no frame over 33 ms; the settles it lands count in the Dispatched battles row (`DECISIONS.md` 2026-09-25 "Battle sim threading", proposed). At P = 6 (§ Battle pace) frontier_march's catch-up lands after about 40 s, the other zones after a few seconds. Threads cannot shorten one battle, because its ticks run in order; only a faster sim can | Baseline (`ig-7sn.2`, 0df0e29, owner PC, 1920x1080, vsync off): load_game with no time away 389 ms; after 8 h away 16.4 s, 12.1 s of it frontier_march's catch-up (the others 0.08–1.2 s). The first bond read after it 186–215 ms. Since `ig-7sn.7` (on 07e8013): with no time away 345 ms; after 8 h away 9.8 s, 6.3 s of it frontier_march's catch-up. Earlier, one part, the bond index rebuild at the 10,000-record cap: 117–119 ms with 5-hero teams, 4.1 s with 50-hero teams (`ig-m6o.2.2.9`) |
 
@@ -1497,7 +1503,7 @@ Cleric's **Hearthward** holds a line up.
 
 | Row | Value | Why |
 |---|---|---|
-| `battle_field_object_cap` | 8 | Live zones and walls in one battle, together. The oldest ends first when a ninth is cast. A caster's zone lasts less than its cooldown, so one caster has at most one up; 8 covers a frontier_march force with several casters. The cost per tick is at most 8 × the actors (80 on frontier_march) distance checks |
+| `battle_field_object_cap` | 8 | Live zones and walls in one battle, together. The oldest ends first when a ninth is cast. A caster's zone lasts less than its cooldown, so one caster has at most one up; 8 covers a frontier_march force with several casters. The cost per tick is at most 8 × the actors (80 on frontier_march) distance checks. Don't lower it before `ig-vl1.5` lands: there the cap is trimmed on load, but today a checkpoint over the cap is rejected, and that blocks the whole save's load (`game_session.gd:3462`) |
 
 - **A zone** is a circle on the field for its lifetime. Every 1 s from the cast it applies its
   effects to every living actor of one side whose center is inside. Rime Circle hits enemies,
@@ -1505,14 +1511,15 @@ Cleric's **Hearthward** holds a line up.
 - **Placement.** Rime Circle centers on the caster's current target, in range 8, when 3+ enemies
   are within 3 of it or it is elite: Hail of Arrows' rule (`enemies_near_target`). Hearthward
   centers on the lowest-HP ally in range 6 with 3+ allies (itself included) within 3.5 of it, one
-  of them below 70% or inside a telegraph. That is one new AI rule; it is data like the others
-  (`DECISIONS.md` 2026-09-23, item 7). The zone stays where it was cast.
+  of them below 70%, inside a telegraph, or targeted by a living enemy (`ig-vl1.7`: the last clause
+  is new, so it casts in any real fight, not only once someone is hurt). That is one new AI rule;
+  it is data like the others (`DECISIONS.md` 2026-09-23, item 7). The zone stays where it was cast.
 - **Amounts** use the caster's ATK the way bleed and burn do. A zone draws no RNG, so it never
   crits. Grace's +20% applies to Hearthward's heal.
 - **The status each pulse applies lasts 1.5 s,** so it drops soon after an actor walks out.
   Overlapping zones of the same skill count once per actor per pulse: the same effect refreshes,
-  never stacks. Damage reduction keeps its rule: the strongest applies, so Stand Fast's 30% beats
-  Hearthward's 20%.
+  never stacks. Stat raises keep their rule: the strongest applies, so Hearthward's ATK +15% and a
+  Rogue's Venom Edge (+15%) don't add up.
 - **It outlasts its caster.** A zone keeps going if its caster is downed or leaves, and through
   a wave change: new enemies spawn into it.
 - **Heroes only in v1.** No enemy kit gets a zone (director default, agreed: no enemy needs one
@@ -1534,17 +1541,48 @@ Cleric's **Hearthward** holds a line up.
   - A caster whose two points sit more than a rank apart can't be fit by the offset or by sizing
     its spell, because both move the two points together. That goes to design as a change to what
     the spell does. At offset 0 the Mage's points are 0.03 apart and the Cleric's 0.51.
-  - Hearthward still counts at a clock-bound point: a downed hero stops dealing damage, so keeping
-    the team up keeps its damage up (the Cleric's team had no wipes at B30, and its break beat the
-    A Knight's). It counts for less there than at point 1, so it widens the Cleric's spread. The
-    rule above watches that.
+  - A spell that only defends counts at a survival-bound point (F1) and hardly at a clock-bound one
+    (B30), so it pulls a caster's two points apart. The zones run below showed it: the first
+    Hearthward (20% less damage and 0.15 ATK of heal) added 0.87 of a rank at F1 and 0.06 at B30.
+    So Hearthward now adds damage (ATK +15%), which counts at both points (`ig-vl1.7`).
 - **Names.** Rime Circle and Hearthward passed the same web check as `ig-x8g` on 2026-09-25
   (`DECISIONS.md` 2026-09-23, item 10; evidence: `.agent-results/ig-vl1.4/name-check.log`).
   Hearthward's only hits are an FFXIV music track, which the bar doesn't count.
 
+**The zones run** (`ig-vl1.4`, offset 0, harness as the baseline's, log
+`.agent-results/ig-vl1.4/presence_offset0.log`). The Knight rows match the baseline exactly (no
+caster in them). Cells as the baseline's, with the baseline's equivalent in brackets.
+
+| Point | Mage at R | Cleric at R | Gap |
+|---|---|---|---|
+| F1 Verdant | F 1.509 (1.399–1.664), 21 / 6, **+0.63** [+0.38] | F 1.775 (1.628–1.854), 4 / 16, **+2.50** [+1.63] | 9.1% |
+| B30 Ashfall | B 3.068 (2.875–3.238), 17 / 20, **+1.47** [+0.41] | B 2.986 (2.938–3.002), 0 / 34, **+1.18** [+1.12] | 9.6% |
+
+- No offset was picked, by the rules above. The F1 Cleric is above R+2, and its two points sit
+  1.32 apart, over a rank. The F1 Mage is under R+1 (its points are 0.84 apart). So the offset
+  stays 0, and the fit went to `ig-vl1.7`.
+- Rime Circle added 0.25 at F1 and 1.06 at B30. Two reasons, both found in `ig-vl1.7`:
+  - Its slow did nothing. Every enemy already swings at the 3.0 s cap and walks at the 1.5 floor,
+    so an SPD cut changed neither (§ Statuses, amended). All it added was damage.
+  - Zone damage skips DEF, like bleed and burn. The measure scales enemy DEF with m, so damage that
+    skips DEF counts for more at B30's m ≈ 3 than at F1's m ≈ 1.5. That's real, not a flaw in the
+    measure: a harder fight has more DEF.
+- Team power against the RP is the baseline's (the zones add no stat).
+
+**The fit** (`ig-vl1.7`, design 2026-09-25, not yet run). Two changes to what the spells do:
+- **Rime Circle's slow works.** It stretches the swing and shortens the walk after the clamps
+  (§ Statuses, amended), so enemies inside swing about 30% less often (3.0 s → 4.3 s) and walk
+  1.05 instead of 1.5. That is defense, so it should lift the Mage most at F1, where its team loses
+  to wipes (21 of 27), and narrow its spread. Walls (`ig-vl1.5`) come after and lift it again.
+- **Hearthward adds damage instead of damage reduction**: ATK +15% and 0.1 ATK of heal a second
+  inside, and it now casts whenever an ally in the group is targeted. The run tries three versions
+  and keeps one (the engine bead's rule): ATK +15% with 0.1 heal, ATK +15% with no heal, and ATK
+  +20% with no heal. The kit row shows the first.
+
 > ⚠️ **PROVISIONAL** — every zone number is arithmetic, chosen next to Hail of Arrows, Hanging Star,
-> Prayer Circle and Wellspring; no presence measure has run with them · **Settled by:**
-> `ig-vl1.6`'s measure at P = 6 with zones in, before `caster_rank_offset` is set
+> Prayer Circle and Wellspring. The zones run measured the first versions (above); the fit's
+> numbers are desk choices the break hasn't run yet · **Settled by:** the fit's presence run
+> (`ig-vl1.7`'s engine bead), then walls' re-pick (`ig-vl1.5`)
 
 **Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
 any wall spell, so its tests place walls by hand.
@@ -1602,8 +1640,9 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
 > frontier_march fight
 
 > ⚠️ **PROVISIONAL** — 0 is the old presence test's only pass (the Cleric's), on a test `ig-vl1.3`
-> found unsound; no offset passed the Mage · **Settled by:** `ig-vl1.6`'s measure, run after zones
-> (`ig-vl1.4`) and walls (`ig-vl1.5`)
+> found unsound. The zones run (`ig-vl1.4`) picked no offset: both spells need a change first
+> (`ig-vl1.7`) · **Settled by:** `ig-vl1.6`'s measure, run after the fit (`ig-vl1.7`'s engine
+> bead) and again after walls (`ig-vl1.5`)
 
 ---
 
