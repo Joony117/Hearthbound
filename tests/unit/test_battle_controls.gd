@@ -9,6 +9,7 @@ class FakeBattleController extends Node:
 	var pause_values: Array[bool] = []
 	var heroes: Dictionary[String, Hero] = {}
 	var next_command_result: Dictionary = {"accepted": true, "error": "", "sequence": 1}
+	var expedition_reports: Array[Dictionary] = []
 
 
 	func get_battle_snapshot(order_id: String) -> Dictionary:
@@ -344,6 +345,141 @@ func test_paused_practice_selection_refreshes_inspector_without_advancing_battle
 	assert_true(view._selected_auto_heal.visible)
 	assert_true(view._selected_auto_revive.visible)
 	assert_almost_eq(camera.size, 36.0, 0.001)
+
+
+# ---- ig-rog: the victory banner
+
+func test_a_watched_early_win_shows_the_banner_with_a_live_countdown_then_the_done_line() -> void:
+	var controller := _make_controller()
+	controller.expedition_reports.append(_report("old-run", "battle-1", "victory"))
+	var view := _make_live_view(controller)
+	assert_false(view._victory_banner.visible, "an old run's victory report is not this view's win")
+	controller.snapshots["battle-1"]["status"] = "victory"
+	controller.snapshots["battle-1"]["route_remaining_seconds"] = 151.0
+	controller.battle_changed.emit("battle-1")
+	assert_true(view._victory_banner.visible)
+	assert_eq((view._victory_banner.find_child("VictoryTitle", true, false) as Label).text, "VICTORY")
+	assert_eq(view._victory_line.text, "Heading home · rewards in 02:31")
+	assert_eq(view._status_label.text, "Victory! Heading home · rewards in 02:31", "the small status line keeps its ig-1i2 text")
+	assert_true(view._victory_ok.has_focus(), "OK takes focus: Enter and Space work")
+	assert_true(view._victory_ok.pressed.is_connected(view._on_exit_button_pressed), "OK is the Exit path home")
+	assert_eq(view._victory_banner.mouse_filter, Control.MOUSE_FILTER_STOP)
+	controller.snapshots["battle-1"]["route_remaining_seconds"] = 150.0
+	controller.battle_changed.emit("battle-1")
+	assert_eq(view._victory_line.text, "Heading home · rewards in 02:30", "it ticks on the next battle_changed")
+	# The route clock runs out: the order completes, reports, and leaves.
+	controller.snapshots["battle-1"] = {}
+	controller.expedition_reports.append(_report("this-run", "battle-1", "victory"))
+	controller.battle_changed.emit("battle-1")
+	assert_true(view._victory_banner.visible, "it stays until OK")
+	assert_eq(view._victory_line.text, BattleView.VICTORY_DONE_LINE)
+	assert_false(view._victory_ok.disabled, "the ended battle disables every button but Exit and OK")
+	assert_eq(controller.commands, [], "the banner sends no command: the order runs on to its rewards")
+	assert_eq(controller.pause_values, [])
+
+
+func test_a_route_clock_already_out_shows_the_done_line() -> void:
+	var controller := _make_controller()
+	controller.snapshots["battle-1"]["status"] = "victory"
+	controller.snapshots["battle-1"]["route_remaining_seconds"] = 0.0
+	var view := _make_live_view(controller)
+	assert_true(view._victory_banner.visible, "opening the watch on a won battle shows it too")
+	assert_eq(view._victory_line.text, BattleView.VICTORY_DONE_LINE)
+
+
+func test_an_order_that_vanishes_without_a_win_shows_no_banner() -> void:
+	var controller := _make_controller()
+	controller.expedition_reports.append(_report("old-run", "battle-1", "victory"))
+	var view := _make_live_view(controller)
+	controller.snapshots["battle-1"] = {}
+	controller.expedition_reports.append(_report("this-run", "battle-1", "retreated"))
+	controller.expedition_reports.append(_report("other-order", "battle-2", "victory"))
+	controller.battle_changed.emit("battle-1")
+	assert_false(view._victory_banner.visible, "no Victory snapshot and no new victory report for this order")
+	assert_eq(view._status_label.text, "Battle ended · Return to hub for results")
+
+
+func test_a_win_that_completes_the_order_in_its_own_pulse_shows_the_banner_from_its_report() -> void:
+	var controller := _make_controller()
+	var view := _make_live_view(controller)
+	controller.snapshots["battle-1"] = {}
+	controller.expedition_reports.append(_report("this-run", "battle-1", "victory"))
+	controller.battle_changed.emit("battle-1")
+	assert_true(view._victory_banner.visible)
+	assert_eq(view._victory_line.text, BattleView.VICTORY_DONE_LINE)
+	assert_eq(view._status_label.text, "Battle ended · Return to hub for results")
+
+
+func test_rescue_and_practice_wins_keep_their_flow() -> void:
+	var controller := _make_controller()
+	controller.snapshots["battle-1"]["kind"] = "rescue"
+	controller.snapshots["battle-1"]["status"] = "victory"
+	var view := _make_live_view(controller)
+	controller.expedition_reports.append(_report("this-run", "battle-1", "victory"))
+	controller.battle_changed.emit("battle-1")
+	assert_false(view._victory_banner.visible, "rescue keeps its flow")
+	var hero := Hero.new("Practice Banner", 0)
+	hero.def_id = &"knight"
+	var practice: BattleView = (load("res://combat/battle/battle_view.tscn") as PackedScene).instantiate() as BattleView
+	practice.configure_practice([hero], load("res://zones/defs/verdant_outskirts.tres") as ZoneDefinition)
+	add_child_autofree(practice)
+	practice._practice_state.status = "victory"
+	practice._render_snapshot(practice._practice_state.to_dict())
+	assert_false(practice._victory_banner.visible, "practice keeps its flow")
+
+
+func test_the_banner_blocks_battle_input_under_it() -> void:
+	var controller := _make_controller()
+	controller.snapshots["battle-1"]["status"] = "victory"
+	var view := _make_live_view(controller)
+	view._selected_ids = ["hero-1"]
+	var hold := InputEventKey.new()
+	hold.keycode = KEY_H
+	hold.physical_keycode = KEY_H
+	hold.pressed = true
+	view._unhandled_input(hold)
+	assert_eq(controller.commands, [], "H under the banner holds no one")
+	assert_eq(view._victory_ok.find_next_valid_focus(), view._victory_ok, "Tab stays on OK")
+	assert_eq(view._victory_ok.find_prev_valid_focus(), view._victory_ok, "Shift+Tab stays on OK")
+	for side: Side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		assert_eq(view._victory_ok.find_valid_focus_neighbor(side), view._victory_ok, "the arrows stay on OK")
+	var rig_at: Vector3 = view._camera_rig.global_position
+	Input.action_press("rts_pan_right")
+	view._update_camera_pan(0.5)
+	Input.action_release("rts_pan_right")
+	assert_eq(view._camera_rig.global_position, rig_at, "WASD under the banner pans nothing")
+
+
+func test_a_real_watched_win_shows_the_banner_and_the_order_still_pays_out() -> void:
+	GameSession.set_process(false)
+	GameSession.from_dict({"roster": []})
+	var hero_ids: Array[String] = []
+	for index: int in 3:
+		var hero := Hero.new("Banner %d" % index, 7)
+		hero.def_id = &"knight"
+		hero.level = 80
+		GameSession.add_hero(hero)
+		hero_ids.append(hero.instance_id)
+	var order_id: String = GameSession.dispatch_expedition(hero_ids, "verdant_outskirts", 1, "Banner Team")
+	assert_ne(order_id, "", GameSession.last_action_error)
+	var view: BattleView = (load("res://combat/battle/battle_view.tscn") as PackedScene).instantiate() as BattleView
+	view.configure_live(order_id, GameSession)
+	add_child_autofree(view)
+	var stones: int = GameSession.stones
+	for _pulse: int in 2400:
+		GameSession.tick_expeditions(0.25)
+		if GameSession.get_battle_snapshot(order_id).is_empty():
+			break
+	assert_true(view._victory_banner.visible, "the real order's win reached the view")
+	assert_eq(view._victory_line.text, BattleView.VICTORY_DONE_LINE)
+	assert_eq(str(GameSession.expedition_reports.back().get("outcome", "")), "victory")
+	assert_gt(GameSession.stones, stones, "the order paid out")
+	GameSession.from_dict({"roster": []})
+	GameSession.set_process(true)
+
+
+func _report(report_id: String, order_id: String, outcome: String) -> Dictionary:
+	return {"id": report_id, "order_id": order_id, "outcome": outcome}
 
 
 func _make_controller() -> FakeBattleController:

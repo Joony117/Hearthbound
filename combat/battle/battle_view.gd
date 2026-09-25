@@ -30,6 +30,14 @@ const SLOW_MO_SECONDS: float = 0.8
 const SHAKE_DECAY_PER_SECOND: float = 2.2
 const SHAKE_MAX_OFFSET_FRACTION: float = 0.0075
 const SHAKE_FREQUENCY: float = 24.0
+# ig-rog: the victory banner's engraved plate.
+const VICTORY_BACKDROP: Color = Color(0.0, 0.0, 0.0, 0.6)
+const VICTORY_PLATE: Color = Color("2b1d10")
+const VICTORY_INNER: Color = Color("3a2716")
+const VICTORY_GOLD: Color = Color("d4a93c")
+const VICTORY_LETTERS: Color = Color("f5dc8e")
+const VICTORY_INK: Color = Color("1e1206")
+const VICTORY_DONE_LINE: String = "Rewards are in. See them in town."
 
 @onready var _camera_rig: Node3D = %CameraRig
 @onready var _camera: Camera3D = %Camera3D
@@ -96,6 +104,13 @@ var _owns_router_payload: bool = false
 var _router_payload_kind: String = ""
 var _router_payload_order_id: String = ""
 var _router_payload_zone_id: String = ""
+## ig-rog: the victory banner over the whole view, and its countdown line and OK. View state only.
+var _victory_banner: ColorRect
+var _victory_line: Label
+var _victory_ok: Button
+## The ids of this order's expedition reports when the view was bound: a report not in it is a run
+## that finished while the view watched. Repeat orders keep one order id, so the id tells runs apart.
+var _reports_at_open: Dictionary = {}
 
 
 func configure_live(order_id: String, controller: Node) -> void:
@@ -110,6 +125,11 @@ func configure_live(order_id: String, controller: Node) -> void:
 	_mode = "live"
 	_order_id = order_id
 	_controller = controller
+	_reports_at_open.clear()
+	for report: Dictionary in _order_reports():
+		_reports_at_open[str(report.get("id", ""))] = true
+	if _victory_banner != null:
+		_victory_banner.visible = false
 	if is_inside_tree():
 		_connect_live_signal()
 		_refresh_live_snapshot()
@@ -220,6 +240,9 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# The banner covers a won battle: OK is the only way on.
+	if _victory_banner.visible:
+		return
 	if event is InputEventKey:
 		var key_event: InputEventKey = event as InputEventKey
 		if key_event.pressed and not key_event.echo and not _has_editable_focus():
@@ -427,6 +450,43 @@ func _refresh_live_snapshot() -> void:
 		_render_snapshot(snapshot_value as Dictionary)
 	else:
 		_mark_battle_ended()
+	_update_victory_banner()
+
+
+## ig-rog: VICTORY over the whole view once this watched normal order shows a win: a Victory
+## snapshot, or a victory report new since the view was bound. A win with no route time left completes
+## the order in its own pulse, so the view sees only the aftermath and the report. No banner for a win
+## the view saw neither way; it stays until OK.
+func _update_victory_banner() -> void:
+	if _mode != "live" or _snapshot.is_empty() or str(_snapshot.get("kind", "normal")) != "normal":
+		return
+	var reported: bool = _has_new_victory_report()
+	var winning: bool = not _battle_ended and str(_snapshot.get("status", "")) == "victory"
+	if not (reported or winning or _victory_banner.visible):
+		return
+	var route_remaining: float = float(_snapshot.get("route_remaining_seconds", 0.0))
+	_victory_line.text = "Heading home · rewards in %s" % _format_time(route_remaining) if winning and not reported and route_remaining > 0.0 else VICTORY_DONE_LINE
+	if not _victory_banner.visible:
+		_victory_banner.visible = true
+		_victory_ok.grab_focus()
+
+
+func _has_new_victory_report() -> bool:
+	for report: Dictionary in _order_reports():
+		if str(report.get("outcome", "")) == "victory" and not _reports_at_open.has(str(report.get("id", ""))):
+			return true
+	return false
+
+
+## This order's expedition reports, oldest first; [] for a controller that keeps none.
+func _order_reports() -> Array[Dictionary]:
+	var reports: Array[Dictionary] = []
+	var all_reports: Variant = _controller.get("expedition_reports") if _controller != null else null
+	if all_reports is Array:
+		for report: Variant in all_reports as Array:
+			if report is Dictionary and str((report as Dictionary).get("order_id", "")) == _order_id:
+				reports.append(report as Dictionary)
+	return reports
 
 
 func _render_snapshot(snapshot: Dictionary) -> void:
@@ -482,7 +542,7 @@ func _mark_battle_ended() -> void:
 	_auto_battle.disabled = true
 	for control: Node in _hud.find_children("*", "BaseButton", true, false):
 		var button: BaseButton = control as BaseButton
-		button.disabled = button != _exit_button
+		button.disabled = button != _exit_button and button != _victory_ok
 	_exit_button.text = "Return to hub"
 
 
@@ -901,7 +961,7 @@ func _sync_selected_visuals() -> void:
 
 
 func _update_camera_pan(delta: float) -> void:
-	if _has_editable_focus():
+	if _has_editable_focus() or _victory_banner.visible:
 		return
 	var input: Vector2 = Input.get_vector("rts_pan_left", "rts_pan_right", "rts_pan_forward", "rts_pan_back")
 	if Input.is_action_pressed("rts_additive_select") and Input.is_action_pressed("rts_pan_left"):
@@ -1137,6 +1197,83 @@ func _build_hud() -> void:
 	%HelpButton.pressed.connect(func() -> void: _help_panel.visible = not _help_panel.visible)
 	%AutoBattle.toggled.connect(_on_auto_battle_toggled)
 	%AttackMoveButton.pressed.connect(_on_attack_move_button_pressed)
+	_build_victory_banner()
+
+
+## A dim backdrop that takes every click, and an engraved plate in the middle: a gold frame around an
+## inset frame, VICTORY in big raised letters, the countdown line and OK (the Exit path home).
+func _build_victory_banner() -> void:
+	_victory_banner = ColorRect.new()
+	_victory_banner.name = "VictoryBanner"
+	_victory_banner.color = VICTORY_BACKDROP
+	_victory_banner.mouse_filter = Control.MOUSE_FILTER_STOP
+	_victory_banner.visible = false
+	_hud.add_child(_victory_banner)
+	_victory_banner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var plate := PanelContainer.new()
+	plate.name = "Plate"
+	plate.anchor_left = 0.25
+	plate.anchor_right = 0.75
+	plate.anchor_top = 0.5
+	plate.anchor_bottom = 0.5
+	plate.grow_vertical = Control.GROW_DIRECTION_BOTH
+	var frame: StyleBoxFlat = _plate_style(VICTORY_PLATE, VICTORY_GOLD, 6, 14, 10.0)
+	frame.shadow_color = Color(0.0, 0.0, 0.0, 0.7)
+	frame.shadow_size = 18
+	frame.shadow_offset = Vector2(0.0, 6.0)
+	plate.add_theme_stylebox_override("panel", frame)
+	_victory_banner.add_child(plate)
+	var inset := PanelContainer.new()
+	inset.add_theme_stylebox_override("panel", _plate_style(VICTORY_INNER, VICTORY_GOLD.darkened(0.35), 2, 8, 24.0))
+	plate.add_child(inset)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 16)
+	inset.add_child(rows)
+	var title := Label.new()
+	title.name = "VictoryTitle"
+	title.text = "VICTORY"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 64)
+	title.add_theme_color_override("font_color", VICTORY_LETTERS)
+	title.add_theme_color_override("font_outline_color", VICTORY_INK)
+	title.add_theme_constant_override("outline_size", 10)
+	title.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.75))
+	title.add_theme_constant_override("shadow_offset_x", 3)
+	title.add_theme_constant_override("shadow_offset_y", 4)
+	rows.add_child(title)
+	_victory_line = Label.new()
+	_victory_line.name = "VictoryLine"
+	_victory_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_victory_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_victory_line.add_theme_font_size_override("font_size", 24)
+	_victory_line.add_theme_color_override("font_color", VICTORY_LETTERS.lightened(0.3))
+	_victory_line.add_theme_color_override("font_outline_color", VICTORY_INK)
+	_victory_line.add_theme_constant_override("outline_size", 4)
+	rows.add_child(_victory_line)
+	_victory_ok = Button.new()
+	_victory_ok.name = "VictoryOk"
+	_victory_ok.text = "OK"
+	_victory_ok.custom_minimum_size = Vector2(160.0, 52.0)
+	_victory_ok.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_victory_ok.add_theme_font_size_override("font_size", 24)
+	_victory_ok.add_theme_color_override("font_color", VICTORY_LETTERS)
+	_victory_ok.pressed.connect(_on_exit_button_pressed)
+	# Focus stays on OK: Tab and the arrows never reach the buttons under the backdrop.
+	for side: Side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		_victory_ok.set_focus_neighbor(side, ^".")
+	_victory_ok.focus_next = ^"."
+	_victory_ok.focus_previous = ^"."
+	rows.add_child(_victory_ok)
+
+
+func _plate_style(fill: Color, border: Color, border_width: int, radius: int, margin: float) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = border
+	style.set_border_width_all(border_width)
+	style.set_corner_radius_all(radius)
+	style.set_content_margin_all(margin)
+	return style
 
 
 func _build_selected_controls() -> void:
