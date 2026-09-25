@@ -1286,8 +1286,9 @@ Cleric's **Hearthward** holds a line up.
   change, so each zone's total grows ×6 with the fight.
 - **Then the stats step back.** Once zones land, re-run the presence test (above) and cut
   `caster_rank_offset` as far as the lower bound still holds. Re-run it again after walls.
-- **Names.** Rime Circle and Hearthward get the same web check as `ig-x8g` before they ship
-  (`DECISIONS.md` 2026-09-23, item 10).
+- **Names.** Rime Circle and Hearthward passed the same web check as `ig-x8g` on 2026-09-25
+  (`DECISIONS.md` 2026-09-23, item 10; evidence: `.agent-results/ig-vl1.4/name-check.log`).
+  Hearthward's only hits are an FFXIV music track, which the bar doesn't count.
 
 > ⚠️ **PROVISIONAL** — every zone number is arithmetic, chosen next to Hail of Arrows, Hanging Star,
 > Prayer Circle and Wellspring; the presence test has not run with them · **Settled by:** the
@@ -1335,7 +1336,7 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
 - **Cast on actors:** an actor whose center falls inside the new footprint is pushed out across
   the segment to the side it stood on. One exactly on the segment's line goes to the caster's
   side (director default, agreed).
-- **It deals no damage** and has no counter tag. Its name gets the `ig-x8g` web check too.
+- **It deals no damage** and has no counter tag. Its name passed the `ig-x8g` web check (2026-09-25, see Zones).
 - **Heroes only in v1,** like zones.
 
 > ⚠️ **PROVISIONAL** — every wall number is arithmetic, and the AI's placement is untested
