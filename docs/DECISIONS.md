@@ -142,6 +142,25 @@ the single-thread run.
    `_paused_battle_orders` (`systems/game_session.gd:92`). No fourth autoload.
 7. The live 0.25 s pulse stays on the main thread in this change. Moving it is a later bead under
    `ig-7sn`, measured first — not `ig-7sn.11`, which is the Town frames bead.
+   - *Amended 2026-09-25 (`ig-7sn.18`, godot-architect):* that bead is `ig-7sn.18`. A
+     live battle's advance becomes a job. The pulse itself (`_pulse`) stays on the main thread.
+     - `_owe_battles` keeps its owed-time rule. But instead of advancing one battle on the main
+       thread, it sends `BattleJob.run_battle` for every live battle owed a whole pulse that has no
+       job out, with the seconds `_advance_battle` would pass. The job takes the kept
+       `BattleState` itself, not a copy: the main thread drops its reference when it sends the
+       job and takes the state back only after the task is waited on. So there is one owner at a
+       time. Any main-thread read in between decodes the order's last landed Dictionary, as
+       `_battle_state` already does on a miss.
+     - A job lands on the first frame after it finishes, except the pulse's own frame (the
+       `ig-7sn.15` rule), in order-list order. It lands only while the order still holds the
+       battle Dictionary the job was sent from (a command replaces it), is live, and no load came
+       between (item 4's check, for live battles). A job for a paused order is dropped, as the
+       owed time is today. On any other mismatch, or during a save stall, the job is dropped and
+       its seconds are owed again. A command therefore never waits and never races: it applies
+       to the landed battle, as today, and the next job re-runs from there.
+     - This moves the ticks and the battle's `to_dict()` off the frame. The landing (one
+       Dictionary swap and `battle_changed`) and the view's render stay on it, since UI stays
+       off threads (the owner's ruling). `tick_expeditions` keeps the synchronous path for tests.
 8. `ig-7sn.12` (load catch-up): `apply_offline_expedition_progress` does no sim work; it sets an
    additive order key `catch_up_seconds` (missing = 0, bad value → 0 with `push_warning`,
    `SAVE_VERSION` unchanged, the `P2-23` precedent). The first pulse sends one job per owed order;
