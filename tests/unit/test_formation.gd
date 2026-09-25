@@ -11,12 +11,14 @@ const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 ## ig-uu7.3 kiting changed the ranger,mage,cleric/advance digest (.agent-results/ig-uu7.3/nokite.log
 ## shows all 4 old digests come back with kiting off). ig-9gf's reach fix then changed all four on
 ## purpose: approaches stop inside a reach instead of parking a float32 hair outside it. With the fix
-## off, this file printed the previous four (.agent-results/ig-9gf/formation_fix_off.log).
+## off, this file printed the previous four (.agent-results/ig-9gf/formation_fix_off.log). ig-el4's
+## enemy retune (atk budget 0.04 -> 0.03, hp 1.0 -> 1.15) changed the two three-hero fights on purpose;
+## the two party fights kept theirs.
 const UNCHANGED_DIGESTS: Dictionary = {
 	"knight,knight,ranger,mage,cleric/defend": "63e17ddd770cd8024451c6076ec5a466",
 	"knight,knight,ranger,mage,cleric/protect": "a737f9c6949ac597424114ec073eae52",
-	"ranger,mage,cleric/advance": "596677a44ed6a81d96d04a07ce7823ca",
-	"ranger,mage,cleric/stay_together": "e2c8f47e4ec413bd364251ee183d7eb8",
+	"ranger,mage,cleric/advance": "8d971a8753d72c9dcfeb3faa9a33208c",
+	"ranger,mage,cleric/stay_together": "a7908e6a99218a632f35b976170f21c9",
 }
 
 

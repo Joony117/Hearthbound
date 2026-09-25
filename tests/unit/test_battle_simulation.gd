@@ -389,15 +389,16 @@ func test_enemy_budget_uses_actual_authored_resource_values() -> void:
 		five.append(_hero(five_ids[index], ["knight", "ranger", "mage", "rogue", "knight"][index]))
 	var full_state: BattleState = BattleSimulation.create_run("order:budget-five", five, zone, _squads(five_ids), {}, {"healing": 0, "revival": 0}, 1)
 	var full_enemy: BattleActor = full_state.actors[5]
-	assert_almost_eq(full_enemy.max_hp, 90.0, 0.0001)
-	assert_almost_eq(full_enemy.atk, 3.6, 0.0001)
+	# A budget of 90: HP x 1.15, ATK x 0.03 (ig-el4).
+	assert_almost_eq(full_enemy.max_hp, 103.5, 0.0001)
+	assert_almost_eq(full_enemy.atk, 2.7, 0.0001)
 
 	var three_ids: Array[String] = ["hero:a", "hero:b", "hero:c"]
 	var three: Array[Dictionary] = [_hero("hero:a", "knight"), _hero("hero:b", "ranger"), _hero("hero:c", "mage")]
 	var small_state: BattleState = BattleSimulation.create_run("order:budget-three", three, zone, _squads(three_ids), {}, {"healing": 0, "revival": 0}, 1)
 	var small_enemy: BattleActor = small_state.actors[3]
-	assert_almost_eq(small_enemy.max_hp, 54.0, 0.0001)
-	assert_almost_eq(small_enemy.atk, 2.16, 0.0001)
+	assert_almost_eq(small_enemy.max_hp, 62.1, 0.0001)
+	assert_almost_eq(small_enemy.atk, 1.62, 0.0001)
 
 
 func test_snapshot_validation_rejects_corrupt_persistent_shapes() -> void:

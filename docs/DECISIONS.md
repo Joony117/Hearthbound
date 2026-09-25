@@ -862,7 +862,9 @@ simulation. The paused inspector refresh is required for tactical commands.
 
 Initial enemy-budget HP×2/ATK×0.20 values failed all eight measured starter-team runs. Revised
 HP×1/ATK×0.04 remains provisional until measured from actual spawned actors. The failed
-in-memory override experiment is explicitly excluded from balance evidence.
+in-memory override experiment is explicitly excluded from balance evidence. After the ig-9gf
+reach fix, ig-el4 (2026-09-24) retuned them to HP×1.15/ATK×0.03, measured on spawned actors
+(SYSTEMS.md § Provisional shared combat numbers). They stay provisional until played.
 
 The first scene/input seam is desktop RTS: box selection, contextual commands, squad hotkeys,
 orthographic pan/zoom, abilities/items and tactical pause. The historical first-class action

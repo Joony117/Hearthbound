@@ -173,7 +173,7 @@ before changing these values based on measurements.
 | Ally ranged range (ranger, mage) | 12.0 units (owner ruling 2026-09-24: "our ranged heroes" stood too close; enemies keep 8.0; `basic_range` still multiplies it) |
 | Separation / formation spacing | 0.65 / 1.8 units |
 | Guard distance | 4 units |
-| Enemy HP / ATK / DEF from per-enemy wave budget | budget × 1 / × 0.04 / × 0.10 |
+| Enemy HP / ATK / DEF from per-enemy wave budget | budget × 1.15 / × 0.03 / × 0.10 (`ig-el4`; was × 1 / × 0.04) |
 | Enemy SPD / crit rate / crit damage | 20 / 0.05 / 1.5 |
 
 Per-enemy budget is `Wave` power scaled by deployed force/reference force, divided by the
@@ -182,9 +182,10 @@ Citadel and fifty for Frontier March. Enemy archetypes cycle Knight, Knight, Ran
 Rogue; they use the same signatures/passives with their own faction, cannot consume allied
 supplies, and die at zero HP. Elite marks an objective/visual role, not an extra stat bonus.
 
-> ⚠️ **PROVISIONAL** — every clear time and downing count in the next paragraph and in both
-> "Restated 2026-09-24" blocks below was measured with the ig-9gf reach bug (a unit walking to a
-> still target could stop a float32 hair outside reach and never act) · **Settled by:** ig-el4
+> **History, measured with the ig-9gf reach bug.** Every clear time and downing count in the next
+> paragraph and in both "Restated 2026-09-24" blocks below came from a sim where a unit walking to
+> a still target could stop a float32 hair outside reach and never act. The multipliers they name
+> were × 1 / × 0.04. The current band is the `ig-el4` block after them.
 
 The first HP×2 / ATK×0.20 translation stranded all eight measured F-rank starter runs before
 Verdant completion. The director revised only these new enemy conversion multipliers to the
@@ -244,6 +245,43 @@ eight cases, before kiting, then with it:
   toward the enemies the Knight is fighting.
 
 Evidence: `.agent-results/ig-uu7.3/balance_gate.gd`, `balance_head.log`, `balance_new.log`.
+
+**Restated 2026-09-24, after the reach fix and its retune (`ig-9gf`, `ig-el4`).** The fix makes
+melee land for both sides. The same eight cases:
+
+| Case | Before the fix (s, downings) | Fix, old enemy values | Retuned |
+|---|---|---|---|
+| mixed:1 | 65.9, 2 | 68.2, 5 | 66.2, 2 |
+| mixed_suggested:1 | 66.6, 0 | 56.7, 1 | 65.5, 0 |
+| mixed:2 | 83.3, 4 | 70.8, 6 | 78.6, 4 |
+| mixed_suggested:2 | 70.6, 0 | 56.9, 0 | 62.9, 1 |
+| starter_knights:1 | 138.0, 3 | stranded 98.8, 3 | 116.4, 1 |
+| starter_knights_suggested:1 | 173.5, 0 | 96.4, 0 | 116.4, 0 |
+| starter_knights:2 | 169.2, 1 | stranded 112.2, 4 | 113.8, 2 |
+| starter_knights_suggested:2 | timeout 180, 1 | 100.1, 0 | 112.2, 0 |
+
+- The retune: enemy ATK multiplier 0.04 → 0.03, HP 1.0 → 1.15 (table above). It was picked from a
+  six-config grid over seeds 1–4.
+- **Five mixed heroes: 62.9–78.6 s.** All won. This is the current band.
+- **Three starter Knights: 112.2–116.4 s.** All won, including seed 2 supplied, which used to time
+  out. The Knights' old 138–180 s was mostly the bug (Knights parked beside a still boss), so it
+  is not restored.
+- ATK brings survival back. Nearly every new downing was an enemy Knight's hit that now landed.
+  Both bare Knights losses were the final-wave boss, a single enemy holding the whole wave budget.
+- HP brings the mixed clear time back to the band the owner has been playing.
+- One waiver (director, 2026-09-24): mixed_suggested:2 has 1 downing where the pre-fix run had 0.
+  Over seeds 1–4, every candidate had exactly one supplied downing. The configs that passed on
+  seeds 1–2 had theirs on seed 4. The retuned values win all 16 runs on seeds 1–4.
+- Pins moved with it. The pre-skills checkpoint fight goes from stranded at 71.7 s to a win at
+  92.7 s. The formation digests changed for the Ranger, Mage and Cleric fights (advance and
+  stay_together). The two Knight-party fights didn't change.
+
+> ⚠️ **PROVISIONAL** — picked on eight cases and four seeds at Verdant, F-rank level 1, and not yet
+> played · **Settled by:** the owner playing the retuned build, then the `ig-eek` mid and late stage
+> saves
+
+Evidence: `.agent-results/ig-9gf/balance_head.log` and `balance_final.log`;
+`.agent-results/ig-el4/table.txt` (the grid) and `balance_final.log` (the real `balance.tres`).
 
 | Hero kit | Signature | Passive |
 |---|---|---|
@@ -709,8 +747,8 @@ unlimited repeats, sooner.
 
 > ⚠️ **PROVISIONAL** — the kits' effect on clear time is unmeasured · **Settled by:** the balance
 > pass, which retunes skill multipliers (not the six stats, not zone power) until five mixed
-> F-rank level-1 heroes clear Verdant in the current band again (72.5–79.0 s over seeds 1 and 2,
-> restated 2026-09-24 in § Provisional shared combat numbers), and three starter Knights win
+> F-rank level-1 heroes clear Verdant in the current band again (62.9–78.6 s over seeds 1 and 2,
+> restated after `ig-el4` in § Provisional shared combat numbers), and three starter Knights win
 > Verdant bare on seeds 1–4. General skills get their own check: a C-rank level-30 team of all five classes with
 > full class kits, run at Sundered with and without all six general skills each. With them, clear
 > time may fall by at most 10%, and any change in the `safe` verdict is reported to the director.
@@ -854,6 +892,44 @@ one set to that read: the order ids of the battles the owner fought in. As in sl
 two counts include routine victories, which the Ledger evicts first at the cap, so they can shrink
 there. At the cap, a `died` record can also outlive the battle that proves the owner was there.
 The section's PROVISIONAL covers all three numbers.
+
+---
+
+## Stage saves — *ig-eek, scoped 2026-09-24*
+
+Three saves that look like a real player's game at three points, for playtests and for tuning
+(bonds first). A bot plays the real game to make each one: it summons, ranks up, gears, builds and
+runs expeditions through the public `GameSession` calls, on the live clock, sped up. It never
+cheats: no granted resources and no edited heroes. Bonds and dreams read the Ledger, and a
+hand-written Ledger would bake in the one rate bond tuning has to measure: how often a battle is
+not routine.
+
+A stage is a length of game-clock play. The other columns are checks on the finished save, not
+inputs. If the bot falls short of one, the save is still made at that hour, and the gap is filed as
+a progression finding. It is never patched over.
+
+| Stage | Game clock | Ledger | Checks the save must pass |
+|---|---|---|---|
+| Early | 2 h | about 120 records | Verdant cleared. 5–10 heroes, none above D. One team. The free first producers placed; no hall above level 1 |
+| Mid | 20 h | about 1,200 | Ashfall cleared. 15–30 heroes; the best team mostly C–B. 2–4 teams. Halls at level 2–3. At least one death, one rescue and one bond in the Ledger |
+| Late | Until the Ledger is at its 10,000 cap and has evicted | 10,000 | Sundered Vault cleared; Fallen Citadel and Frontier March tried. 40+ heroes; the best team A–SS. Every built hall at level 5. Several bonds and dreams. 5+ deaths |
+
+- Late is set by the cap, not by hours, so bond tuning sees eviction happen (routine victories go
+  first). At the guessed 60 records an hour, that is about 170 hours.
+- The bot plays in fixed, greedy order. Summon when stones allow. Fill 5-hero teams by power.
+  Send every idle team, with suggested supplies, to the hardest unlocked zone where its power is
+  at least 90% of recommended. Spare heroes are fodder for the best ones. Equip the best gear on
+  the strongest heroes, and enhance up to the Forge cap. Place the free producers first, then
+  upgrade halls when affordable (Circle, Forge, Sanctum, Training Hall, Reliquary). Keep food
+  above zero. Rescue every stranded hero it can, and let the rest die as the rules say.
+- The bot stops dispatching near the end and saves with no order in flight. A loaded save runs
+  offline progress for the time since it was written.
+- The bot's records per hour are not the owner's. They don't settle the Ledger's PROVISIONAL.
+
+> ⚠️ **PROVISIONAL** — the stage lengths and every check are desk guesses about what a player has
+> at 2 h, 20 h and the cap. How far a greedy bot gets is unmeasured, and Ashfall's boss is already
+> flagged unwinnable ungeared (§ The three zones) · **Settled by:** the first bot runs, then the
+> owner playing each save
 
 ---
 

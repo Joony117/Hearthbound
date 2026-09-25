@@ -23,9 +23,9 @@
 						-3.59999990463257,
 						-16.0
 					],
-					"last_crit_tick": 0.0,
-					"last_hit_tick": 555,
-					"last_skill_tick": 413,
+					"last_crit_tick": 503,
+					"last_hit_tick": 602,
+					"last_skill_tick": 574,
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
@@ -41,8 +41,8 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.9980431795120239,
-					-0.06252798438072205
+					-0.9417554140090942,
+					0.33629852533340454
 				],
 				"faction": "ally",
 				"guard_target_id": "",
@@ -55,13 +55,13 @@
 				"move_speed": 3.64,
 				"order_kind": "attack",
 				"order_point": [
-					0.5076774954795837,
-					8.01513957977295
+					0.8736477494239807,
+					7.447011470794678
 				],
 				"order_target_id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:5:30",
 				"position": [
-					2.1044468879699707,
-					8.115178108215332
+					2.380362033843994,
+					6.9089674949646
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -72,7 +72,7 @@
 			{
 				"archetype": "ranger",
 				"atk": 28.6,
-				"attack_cooldown": 0.4861932938856016,
+				"attack_cooldown": 0.0,
 				"attack_range": 9.6,
 				"carried_by_id": "",
 				"carrying_id": "",
@@ -91,10 +91,10 @@
 						-1.79999995231628,
 						-16.0
 					],
-					"kite_ready_tick": 740,
+					"kite_ready_tick": 871,
 					"last_crit_tick": 0.0,
-					"last_hit_tick": 717,
-					"last_skill_tick": 656,
+					"last_hit_tick": 849,
+					"last_skill_tick": 757,
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
@@ -110,8 +110,8 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					0.8010286688804626,
-					0.5986259579658508
+					0.8363394737243652,
+					0.548211932182312
 				],
 				"faction": "ally",
 				"guard_target_id": "",
@@ -124,16 +124,16 @@
 				"move_speed": 4.056,
 				"order_kind": "attack",
 				"order_point": [
-					-6.815713882446289,
-					-1.8451448678970337
+					-3.748167037963867,
+					-6.705532550811768
 				],
 				"order_target_id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:5:30",
 				"position": [
-					-8.09727954864502,
-					-2.802886486053467
+					-5.086226463317871,
+					-7.582616806030273
 				],
 				"signature_auto": true,
-				"signature_cooldown": 3.9000000000000212,
+				"signature_cooldown": 0.0,
 				"spawn_index": 1,
 				"speed": 101.4,
 				"squad_id": "ed819acc996748c34b667c19622ef072"
@@ -141,7 +141,7 @@
 			{
 				"archetype": "mage",
 				"atk": 37.4,
-				"attack_cooldown": 0.0,
+				"attack_cooldown": 1.0395010395010396,
 				"attack_range": 8.0,
 				"carried_by_id": "",
 				"carrying_id": "",
@@ -160,8 +160,9 @@
 						0.0,
 						-16.0
 					],
+					"kite_ready_tick": 951,
 					"last_crit_tick": 47.0,
-					"last_hit_tick": 645,
+					"last_hit_tick": 882,
 					"last_skill_tick": 0.0,
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
@@ -178,27 +179,27 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.7392358779907227,
-					-0.673446536064148
+					-0.6265048980712891,
+					-0.7794174551963806
 				],
 				"faction": "ally",
 				"guard_target_id": "",
 				"hero_id": "hero:checkpoint:2",
-				"hp": 0.0,
+				"hp": 31.658844765342977,
 				"id": "hero:hero:checkpoint:2",
 				"item_cooldown": 0.0,
-				"life": "downed",
+				"life": "alive",
 				"max_hp": 86.0,
 				"move_speed": 3.848,
-				"order_kind": "move",
+				"order_kind": "attack",
 				"order_point": [
-					-3.87361478805542,
-					0.35354727506637573
+					1.0165947675704956,
+					-0.7778212428092957
 				],
-				"order_target_id": "",
+				"order_target_id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:5:30",
 				"position": [
-					-1.0427337884902954,
-					2.932490110397339
+					2.018939971923828,
+					0.4691687822341919
 				],
 				"signature_auto": false,
 				"signature_cooldown": 0.0,
@@ -229,8 +230,8 @@
 						-16.0
 					],
 					"last_crit_tick": 0.0,
-					"last_hit_tick": 588,
-					"last_skill_tick": 558,
+					"last_hit_tick": 384,
+					"last_skill_tick": 356,
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
@@ -246,8 +247,8 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.9693480730056763,
-					-0.24569156765937805
+					0.995327353477478,
+					-0.09655758738517761
 				],
 				"faction": "ally",
 				"guard_target_id": "",
@@ -258,15 +259,15 @@
 				"life": "downed",
 				"max_hp": 103.0,
 				"move_speed": 4.464,
-				"order_kind": "attack",
+				"order_kind": "move",
 				"order_point": [
-					0.5076774954795837,
-					8.01513957977295
+					2.0196077823638916,
+					5.61234188079834
 				],
-				"order_target_id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:5:30",
+				"order_target_id": "",
 				"position": [
-					2.0586342811584473,
-					8.408246040344238
+					-4.572677135467529,
+					6.251865386962891
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -297,8 +298,8 @@
 						-16.0
 					],
 					"last_crit_tick": 270,
-					"last_hit_tick": 476,
-					"last_skill_tick": 412,
+					"last_hit_tick": 669,
+					"last_skill_tick": 573,
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
@@ -314,8 +315,8 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.0858619287610054,
-					-0.9963070154190063
+					-0.998031497001648,
+					-0.06271516531705856
 				],
 				"faction": "ally",
 				"guard_target_id": "",
@@ -328,13 +329,13 @@
 				"move_speed": 3.64,
 				"order_kind": "attack",
 				"order_point": [
-					0.5076774954795837,
-					8.01513957977295
+					1.9426207542419434,
+					7.579786777496338
 				],
 				"order_target_id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:5:30",
 				"position": [
-					0.6450479626655579,
-					9.609130859375
+					3.5393712520599365,
+					7.680124759674072
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -1379,7 +1380,7 @@
 			},
 			{
 				"archetype": "knight",
-				"atk": 5.76,
+				"atk": 4.32,
 				"attack_cooldown": 0.0,
 				"attack_range": 1.6,
 				"carried_by_id": "",
@@ -1399,7 +1400,7 @@
 						-3.5999999046325684,
 						8.0
 					],
-					"last_crit_tick": 0,
+					"last_crit_tick": 331,
 					"last_hit_tick": 331,
 					"last_skill_tick": 268,
 					"objective_id": "",
@@ -1428,7 +1429,7 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:3:20",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 144.0,
+				"max_hp": 165.6,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
@@ -1448,7 +1449,7 @@
 			},
 			{
 				"archetype": "knight",
-				"atk": 5.76,
+				"atk": 4.32,
 				"attack_cooldown": 0.0,
 				"attack_range": 1.6,
 				"carried_by_id": "",
@@ -1469,7 +1470,7 @@
 						8.0
 					],
 					"last_crit_tick": 0,
-					"last_hit_tick": 325,
+					"last_hit_tick": 331,
 					"last_skill_tick": 268,
 					"objective_id": "",
 					"stun_remaining": 0.0,
@@ -1497,7 +1498,7 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:3:21",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 144.0,
+				"max_hp": 165.6,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
@@ -1517,7 +1518,7 @@
 			},
 			{
 				"archetype": "ranger",
-				"atk": 5.76,
+				"atk": 4.32,
 				"attack_cooldown": 0.0,
 				"attack_range": 9.6,
 				"carried_by_id": "",
@@ -1538,7 +1539,7 @@
 						8.0
 					],
 					"last_crit_tick": 0,
-					"last_hit_tick": 331,
+					"last_hit_tick": 343,
 					"last_skill_tick": 257,
 					"objective_id": "",
 					"stun_remaining": 0.0,
@@ -1556,8 +1557,8 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.10652833431959152,
-					-0.994309663772583
+					-0.10327105224132538,
+					-0.9946532249450684
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
@@ -1566,7 +1567,7 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:3:22",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 144.0,
+				"max_hp": 165.6,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
@@ -1586,7 +1587,7 @@
 			},
 			{
 				"archetype": "mage",
-				"atk": 5.76,
+				"atk": 4.32,
 				"attack_cooldown": 0.0,
 				"attack_range": 8.0,
 				"carried_by_id": "",
@@ -1607,7 +1608,7 @@
 						8.0
 					],
 					"last_crit_tick": 351,
-					"last_hit_tick": 351,
+					"last_hit_tick": 355,
 					"last_skill_tick": 257,
 					"objective_id": "",
 					"stun_remaining": 0.0,
@@ -1625,8 +1626,8 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.9162775874137878,
-					-0.4005438983440399
+					-0.9168176651000977,
+					-0.39930614829063416
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
@@ -1635,7 +1636,7 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:3:23",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 144.0,
+				"max_hp": 165.6,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
@@ -1655,7 +1656,7 @@
 			},
 			{
 				"archetype": "rogue",
-				"atk": 5.76,
+				"atk": 4.32,
 				"attack_cooldown": 0.0,
 				"attack_range": 1.6,
 				"carried_by_id": "",
@@ -1676,7 +1677,7 @@
 						8.0
 					],
 					"last_crit_tick": 0,
-					"last_hit_tick": 303,
+					"last_hit_tick": 312,
 					"last_skill_tick": 274,
 					"objective_id": "",
 					"stun_remaining": 0.0,
@@ -1704,7 +1705,7 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:3:24",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 144.0,
+				"max_hp": 165.6,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
@@ -1724,7 +1725,7 @@
 			},
 			{
 				"archetype": "knight",
-				"atk": 6.48,
+				"atk": 4.859999999999999,
 				"attack_cooldown": 0.0,
 				"attack_range": 1.6,
 				"carried_by_id": "",
@@ -1745,26 +1746,26 @@
 						8.0
 					],
 					"last_crit_tick": 0,
-					"last_hit_tick": 428,
-					"last_skill_tick": 388,
+					"last_hit_tick": 485,
+					"last_skill_tick": 371,
 					"objective_id": "",
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
-						0.10863545536994934,
-						8.152372360229492
+						-2.9927568435668945,
+						7.625694274902344
 					],
 					"telegraph_point": [
-						0.746904730796814,
-						8.27426528930664
+						-3.2491304874420166,
+						6.89569616317749
 					],
 					"telegraph_radius": 1.5,
 					"telegraph_remaining": 0.0,
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					0.1758137047290802,
-					-0.9844234585762024
+					0.9885643720626831,
+					0.15079963207244873
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
@@ -1773,17 +1774,17 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:4:25",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 162.0,
+				"max_hp": 186.29999999999998,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
 					0.0,
 					0.0
 				],
-				"order_target_id": "hero:hero:checkpoint:0",
+				"order_target_id": "hero:hero:checkpoint:4",
 				"position": [
-					-0.12762977182865143,
-					7.8584160804748535
+					-0.04349539801478386,
+					6.459784984588623
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -1793,7 +1794,7 @@
 			},
 			{
 				"archetype": "knight",
-				"atk": 6.48,
+				"atk": 4.859999999999999,
 				"attack_cooldown": 0.0,
 				"attack_range": 1.6,
 				"carried_by_id": "",
@@ -1813,27 +1814,27 @@
 						-1.7999999523162842,
 						8.0
 					],
-					"last_crit_tick": 399,
-					"last_hit_tick": 401,
-					"last_skill_tick": 375,
+					"last_crit_tick": 451,
+					"last_hit_tick": 451,
+					"last_skill_tick": 367,
 					"objective_id": "",
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
-						0.8943004608154297,
-						8.012551307678223
+						-1.6639107465744019,
+						7.896749019622803
 					],
 					"telegraph_point": [
-						2.452941656112671,
-						8.373546600341797
+						-1.4635307788848877,
+						6.89569616317749
 					],
 					"telegraph_radius": 1.5,
 					"telegraph_remaining": 0.0,
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.3161773681640625,
-					-0.9487001299858093
+					0.8342913389205933,
+					0.5513238906860352
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
@@ -1842,7 +1843,7 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:4:26",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 162.0,
+				"max_hp": 186.29999999999998,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
@@ -1851,8 +1852,8 @@
 				],
 				"order_target_id": "hero:hero:checkpoint:0",
 				"position": [
-					0.5193086862564087,
-					7.795836448669434
+					-1.6283890008926392,
+					5.536144733428955
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -1862,7 +1863,7 @@
 			},
 			{
 				"archetype": "ranger",
-				"atk": 6.48,
+				"atk": 4.859999999999999,
 				"attack_cooldown": 0.0,
 				"attack_range": 9.6,
 				"carried_by_id": "",
@@ -1882,27 +1883,27 @@
 						0.0,
 						8.0
 					],
-					"last_crit_tick": 0,
-					"last_hit_tick": 439,
-					"last_skill_tick": 352,
+					"last_crit_tick": 416,
+					"last_hit_tick": 454,
+					"last_skill_tick": 359,
 					"objective_id": "",
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
-						-0.08832886070013046,
-						8.05638599395752
+						-0.11383029818534851,
+						7.98270845413208
 					],
 					"telegraph_point": [
-						8.340628623962402,
-						2.6756181716918945
+						-7.351478099822998,
+						1.0822405815124512
 					],
 					"telegraph_radius": 1.0,
 					"telegraph_remaining": 0.0,
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					0.7117670178413391,
-					0.7024155855178833
+					-0.33734363317489624,
+					-0.941381573677063
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
@@ -1911,17 +1912,17 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:4:27",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 162.0,
+				"max_hp": 186.29999999999998,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
 					0.0,
 					0.0
 				],
-				"order_target_id": "hero:hero:checkpoint:4",
+				"order_target_id": "hero:hero:checkpoint:0",
 				"position": [
-					0.2838023602962494,
-					9.045528411865234
+					-0.11383029818534851,
+					7.98270845413208
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -1931,7 +1932,7 @@
 			},
 			{
 				"archetype": "mage",
-				"atk": 6.48,
+				"atk": 4.859999999999999,
 				"attack_cooldown": 0.0,
 				"attack_range": 8.0,
 				"carried_by_id": "",
@@ -1951,27 +1952,27 @@
 						1.7999999523162842,
 						8.0
 					],
-					"last_crit_tick": 356,
-					"last_hit_tick": 369,
-					"last_skill_tick": 352,
+					"last_crit_tick": 0,
+					"last_hit_tick": 498,
+					"last_skill_tick": 465,
 					"objective_id": "",
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
-						1.7999999523162842,
-						8.0
+						1.804864764213562,
+						8.043498992919922
 					],
 					"telegraph_point": [
-						0.8662514090538025,
-						7.533140182495117
+						-1.009891152381897,
+						6.701049327850342
 					],
 					"telegraph_radius": 2.5,
 					"telegraph_remaining": 0.0,
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.6557552218437195,
-					0.7549735307693481
+					-0.18643006682395935,
+					-0.9824682474136353
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
@@ -1980,7 +1981,7 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:4:28",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 162.0,
+				"max_hp": 186.29999999999998,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
@@ -1989,8 +1990,8 @@
 				],
 				"order_target_id": "hero:hero:checkpoint:4",
 				"position": [
-					1.8535956144332886,
-					7.975883960723877
+					1.804864764213562,
+					8.043498992919922
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -2000,7 +2001,7 @@
 			},
 			{
 				"archetype": "rogue",
-				"atk": 6.48,
+				"atk": 4.859999999999999,
 				"attack_cooldown": 0.0,
 				"attack_range": 1.6,
 				"carried_by_id": "",
@@ -2014,15 +2015,15 @@
 					"attack_windup_total": 0.3,
 					"direct_order": false,
 					"elite": false,
-					"guard_reduction": 0.3,
+					"guard_reduction": 0.0,
 					"guard_remaining": 0.0,
 					"home_position": [
 						3.5999999046325684,
 						8.0
 					],
 					"last_crit_tick": 0,
-					"last_hit_tick": 451,
-					"last_skill_tick": 356,
+					"last_hit_tick": 403,
+					"last_skill_tick": 365,
 					"objective_id": "",
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
@@ -2039,8 +2040,8 @@
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					0.9343452453613281,
-					0.3563690781593323
+					-0.8536178469657898,
+					0.5208996534347534
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
@@ -2049,17 +2050,17 @@
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:4:29",
 				"item_cooldown": 0.0,
 				"life": "dead",
-				"max_hp": 162.0,
+				"max_hp": 186.29999999999998,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
 					0.0,
 					0.0
 				],
-				"order_target_id": "hero:hero:checkpoint:4",
+				"order_target_id": "hero:hero:checkpoint:0",
 				"position": [
-					0.4615747034549713,
-					9.670745849609375
+					0.5730522871017456,
+					5.255060195922852
 				],
 				"signature_auto": true,
 				"signature_cooldown": 0.0,
@@ -2069,8 +2070,8 @@
 			},
 			{
 				"archetype": "knight",
-				"atk": 39.60000000000001,
-				"attack_cooldown": 3.0,
+				"atk": 29.700000000000006,
+				"attack_cooldown": 0.0,
 				"attack_range": 1.6,
 				"carried_by_id": "",
 				"carrying_id": "",
@@ -2089,64 +2090,63 @@
 						0.0,
 						8.0
 					],
-					"last_crit_tick": 551,
-					"last_hit_tick": 712,
-					"last_skill_tick": 632,
+					"last_crit_tick": 913,
+					"last_hit_tick": 927,
+					"last_skill_tick": 845,
 					"objective_id": "",
 					"stun_remaining": 0.0,
 					"telegraph_kind": "",
 					"telegraph_origin": [
-						-0.34949544072151184,
-						3.1432576179504395
+						0.0659559816122055,
+						-4.054223537445068
 					],
 					"telegraph_point": [
-						-0.6267280578613281,
-						1.5675601959228516
+						-0.4108545482158661,
+						-5.5814208984375
 					],
 					"telegraph_radius": 1.5,
 					"telegraph_remaining": 0.0,
 					"telegraph_total": 0.0
 				},
 				"facing": [
-					-0.8010286688804626,
-					-0.5986259579658508
+					0.6265048980712891,
+					0.7794174551963806
 				],
 				"faction": "enemy",
 				"guard_target_id": "",
 				"hero_id": "",
-				"hp": 87.13768844221109,
+				"hp": 0.0,
 				"id": "enemy:e41feeb94d91c24b433a6609dbfc9e65:5:30",
 				"item_cooldown": 0.0,
-				"life": "alive",
-				"max_hp": 990.0000000000002,
+				"life": "dead",
+				"max_hp": 1138.5000000000002,
 				"move_speed": 1.5,
 				"order_kind": "attack",
 				"order_point": [
 					0.0,
 					0.0
 				],
-				"order_target_id": "hero:hero:checkpoint:1",
+				"order_target_id": "hero:hero:checkpoint:2",
 				"position": [
-					-6.815713882446289,
-					-1.8451448678970337
+					1.0165947675704956,
+					-0.7778212428092957
 				],
 				"signature_auto": true,
-				"signature_cooldown": 11.900000000000064,
+				"signature_cooldown": 8.500000000000062,
 				"spawn_index": 30,
 				"speed": 20.0,
 				"squad_id": "enemy"
 			}
 		],
 		"command_sequence": 1,
-		"completed_waves": 5,
+		"completed_waves": 6,
 		"downed_ever_ids": [
 			"hero:checkpoint:3",
-			"hero:checkpoint:4",
 			"hero:checkpoint:0",
-			"hero:checkpoint:2",
+			"hero:checkpoint:4",
 			"hero:checkpoint:1"
 		],
-		"elapsed_seconds": 71.70000000000022,
+		"elapsed_seconds": 92.69999999999902,
 		"extracted_ids": [],
 		"kind": "normal",
 		"max_seconds": 180.0,
@@ -2194,7 +2194,7 @@
 			"reserve_last_revival": false,
 			"retreat_when_supplies_empty": false
 		},
-		"rng_state": "8886537413487936833",
+		"rng_state": "4092681566350749389",
 		"simulation_version": 1,
 		"squads": [
 			{
@@ -2215,19 +2215,19 @@
 				]
 			}
 		],
-		"status": "stranded",
+		"status": "victory",
 		"supplies_remaining": {
 			"healing": 0.0,
 			"revival": 0.0
 		},
-		"tick": 717,
+		"tick": 927,
 		"tick_remainder": 0.0,
 		"zone_id": "verdant_outskirts"
 	},
 	"order_id": "e41feeb94d91c24b433a6609dbfc9e65",
 	"outcome": {
-		"completed_waves": 5,
-		"elapsed_seconds": 71.70000000000022,
+		"completed_waves": 6,
+		"elapsed_seconds": 92.69999999999902,
 		"enemy_dead_ids": [
 			"enemy:e41feeb94d91c24b433a6609dbfc9e65:0:5",
 			"enemy:e41feeb94d91c24b433a6609dbfc9e65:0:6",
@@ -2253,17 +2253,18 @@
 			"enemy:e41feeb94d91c24b433a6609dbfc9e65:4:26",
 			"enemy:e41feeb94d91c24b433a6609dbfc9e65:4:27",
 			"enemy:e41feeb94d91c24b433a6609dbfc9e65:4:28",
-			"enemy:e41feeb94d91c24b433a6609dbfc9e65:4:29"
+			"enemy:e41feeb94d91c24b433a6609dbfc9e65:4:29",
+			"enemy:e41feeb94d91c24b433a6609dbfc9e65:5:30"
 		],
-		"secured_hero_ids": [],
-		"status": "stranded",
-		"stranded_hero_ids": [
+		"secured_hero_ids": [
 			"hero:checkpoint:0",
 			"hero:checkpoint:1",
 			"hero:checkpoint:2",
 			"hero:checkpoint:3",
 			"hero:checkpoint:4"
 		],
+		"status": "victory",
+		"stranded_hero_ids": [],
 		"supplies_remaining": {
 			"healing": 0.0,
 			"revival": 0.0
