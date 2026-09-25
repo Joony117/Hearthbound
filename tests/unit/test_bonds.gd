@@ -658,6 +658,42 @@ func test_rebuild_and_refresh_cost_at_the_cap() -> void:
 	assert_eq(GameSession.bond_builds - builds, 1, "the first build; each new record folds in")
 
 
+## ig-uu7.4: the cover-order build for a 50-hero launch at the cap, best and worst of seven. 25
+## Knights and 25 back-row heroes, the most work a launch can ask of it. The index is kept (in step);
+## the first read after a load is the rebuild above. A measurement for this bead, not a gate.
+func test_cover_order_cost_for_a_50_hero_launch_at_the_cap() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var heroes: Array[String] = []
+	var team: Array[Hero] = []
+	for index: int in 50:
+		var hero: Hero = _hero("hero:%d" % index, "H%d" % index)
+		hero.def_id = &"knight" if index % 2 == 0 else &"mage"
+		heroes.append(hero.instance_id)
+		team.append(hero)
+	for index: int in BALANCE.ledger_max_records:
+		var members: Array[String] = _team(rng, heroes, 5)
+		_battle_in(GameSession.ledger, members, "victory", _mix(rng, index, members))
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	GameSession.bond_index()
+	var orders: Array[int] = []
+	var snapshots: Array[int] = []
+	var listed: int = 0
+	for _run: int in 7:
+		var started: int = Time.get_ticks_usec()
+		var built: Dictionary = GameSession._cover_orders(team, BALANCE)
+		orders.append(Time.get_ticks_usec() - started)
+		listed = 0
+		for order: Array in built.values():
+			listed += order.size()
+		started = Time.get_ticks_usec()
+		GameSession._team_snapshots(team)
+		snapshots.append(Time.get_ticks_usec() - started)
+	_print_cost("cover orders, 25 Knights x 25 back row (%d listed)" % listed, orders)
+	_print_cost("the whole 50-hero team snapshot, cover orders included", snapshots)
+	assert_gt(listed, 0, "the Knights have bonds to list")
+
+
 ## ---- ig-m6o.2.2.9: the kept index folds each record in and out instead of rebuilding
 
 func test_a_folded_index_equals_a_rebuild_after_every_append_and_eviction() -> void:

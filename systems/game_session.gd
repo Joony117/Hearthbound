@@ -1289,12 +1289,53 @@ static func _validate_battle_policies(policies: Dictionary, deployed_hero_ids: D
 func _team_snapshots(team: Array[Hero], squads: Array[Dictionary] = []) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var balance: BalanceTable = preload("res://balance.tres")
+	var cover_orders: Dictionary = _cover_orders(team, balance)
 	for hero: Hero in team:
 		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
 		var level: int = Hero.level_for(hero, balance)
 		var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, balance, level)
-		result.append({"hero_id": hero.instance_id, "archetype": str(hero.def_id), "hp": stats[Hero.STAT_HP], "atk": stats[Hero.STAT_ATK], "defense": stats[Hero.STAT_DEF], "speed": stats[Hero.STAT_SPD], "crit_rate": stats[Hero.STAT_CRIT_RATE], "crit_damage": stats[Hero.STAT_CRIT_DMG], "level": level, "squad_id": _squad_for_hero(hero.instance_id, squads), "skills": Hero.bar_for(hero, balance), "chains": hero.skill_chains.duplicate(true)})
+		var snapshot: Dictionary = {"hero_id": hero.instance_id, "archetype": str(hero.def_id), "hp": stats[Hero.STAT_HP], "atk": stats[Hero.STAT_ATK], "defense": stats[Hero.STAT_DEF], "speed": stats[Hero.STAT_SPD], "crit_rate": stats[Hero.STAT_CRIT_RATE], "crit_damage": stats[Hero.STAT_CRIT_DMG], "level": level, "squad_id": _squad_for_hero(hero.instance_id, squads), "skills": Hero.bar_for(hero, balance), "chains": hero.skill_chains.duplicate(true)}
+		if hero.def_id == &"knight":
+			snapshot["cover_order"] = cover_orders.get(hero.instance_id, [])
+		result.append(snapshot)
 	return result
+
+
+## ig-uu7.4: each Knight's cover order by hero id, from the kept bond index: its bond partner first
+## when that is a back-row teammate, then the other back-row teammates it has bond points with, most
+## first, ties in team order. Derived for one battle like stats; bonds stay unsaved. {} without a
+## Knight or a back-row hero, and then the index is not read.
+func _cover_orders(team: Array[Hero], balance: BalanceTable) -> Dictionary:
+	var knights: Array[String] = []
+	var back_row: Array[String] = []
+	for hero: Hero in team:
+		if hero.def_id == &"knight":
+			knights.append(hero.instance_id)
+		elif str(hero.def_id) in BattleSimulation.BACK_ROW:
+			back_row.append(hero.instance_id)
+	var orders: Dictionary = {}
+	if knights.is_empty() or back_row.is_empty():
+		return orders
+	var pairs: Dictionary = bond_index()
+	var living: Dictionary = {}
+	for hero: Hero in roster:
+		living[hero.instance_id] = true
+	for knight_id: String in knights:
+		var tallies: Dictionary = pairs.get(knight_id, {})
+		var order: Array[String] = []
+		for hero_id: String in back_row:
+			if int((tallies.get(hero_id, {}) as Dictionary).get("points", 0)) > 0:
+				order.append(hero_id)
+		order.sort_custom(func(a: String, b: String) -> bool:
+			var a_points: int = int(tallies[a]["points"])
+			var b_points: int = int(tallies[b]["points"])
+			return a_points > b_points or (a_points == b_points and back_row.find(a) < back_row.find(b)))
+		var partner: String = str(Bonds.bond_from(pairs, knight_id, living, balance).get("partner", ""))
+		if partner in order:
+			order.erase(partner)
+			order.push_front(partner)
+		orders[knight_id] = order
+	return orders
 
 
 func _squad_for_hero(hero_id: String, squads: Array[Dictionary] = []) -> String:

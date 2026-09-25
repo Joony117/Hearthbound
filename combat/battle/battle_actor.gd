@@ -243,6 +243,9 @@ static func validate_dict(data: Dictionary) -> String:
 	# A hop in flight derives its start from kite_ready_tick, so one without the other is refused.
 	if effects.has("kite_point") and not effects.has("kite_ready_tick"):
 		return "Battle actor effect kite_point needs kite_ready_tick."
+	# Optional: a Knight's cover order (ig-uu7.4). A battle from before it has no key and reads as [].
+	if effects.has("cover_order") and not (effects.get("cover_order") is Array and (effects.get("cover_order") as Array).all(func(entry: Variant) -> bool: return entry is String)):
+		return "Battle actor effect cover_order must be an Array of Strings."
 	return ""
 
 

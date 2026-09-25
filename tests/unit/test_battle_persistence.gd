@@ -212,6 +212,105 @@ func _first_actor_effects(profile: Dictionary) -> Dictionary:
 	return (actors[0] as Dictionary)["effect_state"] as Dictionary
 
 
+## ---- ig-uu7.4: a Knight's cover order in the team snapshot and the saved battle
+
+func test_a_knights_cover_order_is_its_back_row_partner_then_points_then_team_order() -> void:
+	var knight: Hero = _cover_hero("hero:k", &"knight")
+	var mage: Hero = _cover_hero("hero:m", &"mage")
+	var ranger: Hero = _cover_hero("hero:r", &"ranger")
+	var cleric: Hero = _cover_hero("hero:c", &"cleric")
+	var rogue: Hero = _cover_hero("hero:q", &"rogue")
+	# The mage is the partner (9 points), the ranger has 3, the cleric shared a routine win (0).
+	_bond_ledger({"hero:m": 3, "hero:r": 1, "hero:c": 0})
+	var builds: int = GameSession.bond_builds
+	var snapshots: Array[Dictionary] = GameSession._team_snapshots([mage, cleric, rogue] as Array[Hero])
+	assert_false(snapshots.any(func(snapshot: Dictionary) -> bool: return snapshot.has("cover_order")), "no Knight, no cover order")
+	snapshots = GameSession._team_snapshots([knight, rogue] as Array[Hero])
+	assert_eq(snapshots[0]["cover_order"], [], "a Knight with no back-row teammate")
+	assert_eq(GameSession.bond_builds, builds, "neither team reads the bond index")
+	snapshots = GameSession._team_snapshots([knight, cleric, ranger, mage] as Array[Hero])
+	assert_eq(snapshots[0]["cover_order"], ["hero:m", "hero:r"], "the partner, then points; 0 points is left out")
+	assert_false(snapshots[3].has("cover_order"), "only a Knight's snapshot carries it")
+	assert_eq(GameSession.bond_builds, builds + 1, "one index read")
+	# A rogue partner (12 points) is left out; the mage and ranger tie at 3 and keep team order.
+	_bond_ledger({"hero:q": 4, "hero:m": 1, "hero:r": 1})
+	assert_eq(GameSession._team_snapshots([knight, rogue, ranger, mage] as Array[Hero])[0]["cover_order"], ["hero:r", "hero:m"])
+	assert_eq(GameSession._team_snapshots([knight, rogue, mage, ranger] as Array[Hero])[0]["cover_order"], ["hero:m", "hero:r"])
+	# A tie at 9 points: the partner is the one with the later save, and it goes first over team order.
+	_bond_ledger({"hero:m": 3, "hero:r": 3})
+	assert_eq(Bonds.bond_from(GameSession.bond_index(), "hero:k", {"hero:m": true, "hero:r": true}, preload("res://balance.tres"))["partner"], "hero:r")
+	assert_eq(GameSession._team_snapshots([knight, mage, ranger] as Array[Hero])[0]["cover_order"], ["hero:r", "hero:m"])
+
+
+func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_reads_as_empty() -> void:
+	var knight: Hero = _cover_hero("hero:k", &"knight")
+	var mage: Hero = _cover_hero("hero:m", &"mage")
+	_bond_ledger({"hero:m": 3})
+	var preset_id: String = GameSession.save_team_preset("", "Cover", [knight.instance_id, mage.instance_id], "verdant_outskirts")
+	var order_id: String = GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, _zero_loadout())
+	assert_ne(order_id, "", GameSession.last_action_error)
+	GameSession.tick_expeditions(1.0)
+	assert_eq(_knight_cover(GameSession.to_dict()), ["hero:m"], "the launch copied it onto the Knight actor")
+	# Through disk: SaveService writes the file and a fresh session reads it back.
+	GameSession.set("_save_deferred_depth", 0)
+	var saved: bool = SaveService.save()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_true(saved, SaveService.last_write_error)
+	GameSession.from_dict({"roster": []})
+	assert_true(GameSession.get_battle_snapshot(order_id).is_empty())
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	assert_eq(_knight_cover(GameSession.to_dict()), ["hero:m"], "equal after the reload")
+	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
+	# A battle from before the key: it loads as [] and advances.
+	var legacy: Dictionary = _json_round_trip(profile)
+	_knight_effects(legacy).erase("cover_order")
+	assert_eq(GameSession.validate_saved_state(legacy, 3), "")
+	GameSession.from_dict(legacy)
+	var tick: int = int(GameSession.get_battle_snapshot(order_id)["tick"])
+	for actor: Dictionary in GameSession.get_battle_snapshot(order_id)["actors"]:
+		if actor["archetype"] == "knight":
+			assert_eq((actor["effect_state"] as Dictionary).get("cover_order", []), [], "a legacy Knight reads as []")
+	GameSession.tick_expeditions(1.0)
+	assert_gt(int(GameSession.get_battle_snapshot(order_id)["tick"]), tick, "and advances")
+	for bad_value: Variant in [["hero:m", 3], "hero:m", [null], {}]:
+		var broken: Dictionary = _json_round_trip(profile)
+		_knight_effects(broken)["cover_order"] = bad_value
+		assert_string_contains(GameSession.validate_saved_state(broken, 3), "cover_order", "cover_order %s is rejected" % str(bad_value))
+
+
+func _cover_hero(id: String, def_id: StringName) -> Hero:
+	var hero := Hero.new(id, 7)
+	hero.def_id = def_id
+	hero.level = 80
+	hero.instance_id = id
+	GameSession.roster.append(hero)
+	return hero
+
+
+## A fresh ledger where the Knight "hero:k" saved each other hero `saves` times: 3 points each, and a
+## routine victory together for 0.
+func _bond_ledger(saves: Dictionary) -> void:
+	var ledger: Array[Dictionary] = []
+	for hero_id: String in saves:
+		var count: int = maxi(int(saves[hero_id]), 1)
+		for index: int in count:
+			var moments: Array = [{"tick": 1, "what": "revived", "hero": hero_id, "by": "hero:k"}] if int(saves[hero_id]) > 0 else []
+			Ledger.append(ledger, ledger.size() + 1, 0, "battle", {"order": "order:%d" % ledger.size(), "zone": "verdant_outskirts", "team": ["hero:k", hero_id], "result": "victory", "moments": moments})
+	GameSession.ledger = ledger
+	GameSession.ledger_next_seq = ledger.size() + 1
+
+
+func _knight_effects(profile: Dictionary) -> Dictionary:
+	for actor: Variant in ((profile["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"]:
+		if (actor as Dictionary)["archetype"] == "knight":
+			return (actor as Dictionary)["effect_state"] as Dictionary
+	return {}
+
+
+func _knight_cover(profile: Dictionary) -> Variant:
+	return _knight_effects(profile).get("cover_order")
+
+
 func test_v3_validation_rejects_orphaned_mislinked_or_cross_zone_rescue_orders() -> void:
 	var valid_fixture: Dictionary = _active_rescue_fixture()
 	assert_eq(GameSession.validate_saved_state(valid_fixture, 3), "")

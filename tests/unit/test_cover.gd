@@ -158,6 +158,50 @@ func test_the_same_seed_gives_the_same_fight() -> void:
 
 
 ## An enemy placed at point, locked on victim, with its home there so the leash holds.
+## ---- ig-uu7.4: the cover order
+
+func test_the_knight_covers_its_partner_first_and_without_bonds_the_lower_hp() -> void:
+	# The mage is the farther victim; the ranger is nearer and, in the second case, hurt worse.
+	for case: Array in [[["hero:1"], 0.5, "partner"], [["hero:1"], 0.8, "partner"], [[], 0.8, "ranger"]]:
+		var state: BattleState = _run([["knight", Vector2(0, 0)], ["mage", Vector2(-10, 0)], ["ranger", Vector2(6, 0)]], "advance", 1)
+		var knight: BattleActor = state.actors[0]
+		var mage: BattleActor = state.actors[1]
+		var ranger: BattleActor = state.actors[2]
+		if not (case[0] as Array).is_empty():
+			knight.effect_state["cover_order"] = case[0]
+		var enemies: Array[BattleActor] = _enemies(state)
+		var on_mage: BattleActor = _lock(state, enemies[0], Vector2(-10, 3), mage)
+		var on_ranger: BattleActor = _lock(state, enemies[1], Vector2(6, 3), ranger)
+		knight.move_speed = 0.0
+		mage.hp = mage.max_hp * float(case[1])
+		ranger.hp = ranger.max_hp * 0.5
+		BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
+		var expected: BattleActor = on_mage if case[2] == "partner" else on_ranger
+		assert_eq(knight.order_target_id, expected.id, "cover_order %s, the partner at %.1f HP" % [str(case[0]), float(case[1])])
+
+
+func test_a_threat_on_the_partner_takes_the_knight_off_an_unlisted_victim_and_never_back() -> void:
+	var state: BattleState = _run([["knight", Vector2(0, 0)], ["mage", Vector2(-10, 0)], ["ranger", Vector2(6, 0)]], "advance", 1)
+	var knight: BattleActor = state.actors[0]
+	var mage: BattleActor = state.actors[1]
+	var ranger: BattleActor = state.actors[2]
+	knight.effect_state["cover_order"] = [mage.hero_id]
+	knight.move_speed = 0.0
+	var enemies: Array[BattleActor] = _enemies(state)
+	var on_ranger: BattleActor = _lock(state, enemies[1], Vector2(6, 3), ranger)
+	BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
+	assert_eq(knight.order_target_id, on_ranger.id, "the only threat, on an unlisted victim")
+	var on_mage: BattleActor = _lock(state, enemies[0], Vector2(-10, 3), mage)
+	ranger.hp = ranger.max_hp * 0.2
+	BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
+	assert_eq(knight.order_target_id, on_mage.id, "a threat on the partner: it switches on the next tick")
+	for _tick: int in int(10.0 / BALANCE.battle_tick_seconds):
+		ranger.hp = ranger.max_hp * 0.2
+		BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
+		assert_true(on_mage.order_target_id == mage.id and on_ranger.order_target_id == ranger.id, "both threats stand")
+		assert_eq(knight.order_target_id, on_mage.id, "tick %d: never back to the unlisted victim, though it is hurt worse" % state.tick)
+
+
 func _lock(state: BattleState, enemy: BattleActor, point: Vector2, victim: BattleActor) -> BattleActor:
 	enemy.position = point
 	enemy.effect_state["home_position"] = [point.x, point.y]

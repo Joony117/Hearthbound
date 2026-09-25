@@ -925,6 +925,13 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 		actor.effect_state.merge((snapshot_effects as Dictionary).duplicate(true), true)
 	if not snapshot_effects is Dictionary or not (snapshot_effects as Dictionary).has("home_position"):
 		actor.effect_state["home_position"] = [actor.position.x, actor.position.y]
+	# ig-uu7.4: a Knight's cover order, derived for this one battle and saved with it like its stats.
+	if snapshot.get("cover_order") is Array:
+		var cover_order: Array = []
+		for hero_id: Variant in snapshot.get("cover_order") as Array:
+			if hero_id is String:
+				cover_order.append(hero_id)
+		actor.effect_state["cover_order"] = cover_order
 	if actor.life in [BattleActor.LIFE_DOWNED, BattleActor.LIFE_DEAD]:
 		actor.hp = 0.0
 	return actor
@@ -2089,10 +2096,12 @@ static var _cover_nearby: Array[BattleActor] = []
 
 
 ## ig-uu7.2 Cover (SYSTEMS.md § Hero AI on auto): the enemy in the stance zone that is on a back-row
-## ally of this Knight's squad and that no other living Knight targets (auto or piloted). It keeps its
-## previous threat while that stays one; a new pick takes the lowest victim HP fraction, then the
-## nearest, then state.actors order. Worst case: one pass over state.actors (80 at frontier_march
-## 50v30) per Knight per tick, then a filter over the enemies inside the zone.
+## ally of this Knight's squad and that no other living Knight targets (auto or piloted). A pick takes
+## the victim earliest in the Knight's cover_order (ig-uu7.4; unlisted counts as last), then the lowest
+## victim HP fraction, then the nearest, then state.actors order. It keeps its previous threat while
+## that stays one, unless a threat's victim is strictly earlier in cover_order. Worst case: one pass
+## over state.actors (80 at frontier_march 50v30) per Knight per tick, then a filter over the enemies
+## inside the zone.
 static func _cover_threat(state: BattleState, knight: BattleActor, previous_target_id: String, center: Vector2, radius: float) -> BattleActor:
 	for other: BattleActor in state.actors:
 		if other == knight or other.life != BattleActor.LIFE_ALIVE:
@@ -2105,27 +2114,35 @@ static func _cover_threat(state: BattleState, knight: BattleActor, previous_targ
 				_cover_victims[other.id] = other
 			if other.archetype == "knight" and not other.order_target_id.is_empty():
 				_cover_claims[other.order_target_id] = true
+	var cover_order: Array = knight.effect_state.get("cover_order", [])
 	var kept: BattleActor = null
+	var kept_rank: int = 0
 	var best: BattleActor = null
+	var best_rank: int = cover_order.size() + 1
 	var best_fraction: float = INF
 	var best_distance: float = INF
 	for enemy: BattleActor in _cover_nearby:
 		var victim: BattleActor = _cover_victims.get(enemy.order_target_id) as BattleActor
 		if victim == null or _cover_claims.has(enemy.id):
 			continue
+		var rank: int = cover_order.find(victim.hero_id)
+		if rank < 0:
+			rank = cover_order.size()
 		if enemy.id == previous_target_id:
 			kept = enemy
-			break
+			kept_rank = rank
+			continue
 		var fraction: float = victim.hp / victim.max_hp
 		var distance: float = enemy.position.distance_to(knight.position)
-		if fraction < best_fraction or (fraction == best_fraction and distance < best_distance):
+		if rank < best_rank or (rank == best_rank and (fraction < best_fraction or (fraction == best_fraction and distance < best_distance))):
 			best = enemy
+			best_rank = rank
 			best_fraction = fraction
 			best_distance = distance
 	_cover_victims.clear()
 	_cover_claims.clear()
 	_cover_nearby.clear()
-	return kept if kept != null else best
+	return kept if kept != null and kept_rank <= best_rank else best
 
 
 # ponytail: static scratch for the back row, filled by _scan_rows and cleared by _choose_intentions
