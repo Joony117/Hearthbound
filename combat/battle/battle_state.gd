@@ -12,6 +12,9 @@ const MASTERWORK_SUFFIX: String = "_masterwork"
 var simulation_version: int = SIMULATION_VERSION
 var order_id: String = ""
 var zone_id: String = ""
+## The zone behind zone_id. Not saved: create_run sets it, from_dict resolves it on the main thread, so a
+## sim job never loads a resource (ig-7sn.13). Jobs may share one; nothing writes to it.
+var zone: ZoneDefinition = null
 var kind: String = "normal"
 var status: String = "active"
 var tick: int = 0
@@ -71,6 +74,8 @@ static func from_dict(data: Dictionary) -> BattleState:
 	state.simulation_version = int(data.get("simulation_version", 0))
 	state.order_id = str(data.get("order_id", ""))
 	state.zone_id = str(data.get("zone_id", ""))
+	if not state.zone_id.is_empty():
+		state.zone = ZoneDefinition.definition_for(StringName(state.zone_id))
 	state.kind = str(data.get("kind", "normal"))
 	state.status = str(data.get("status", "active"))
 	state.tick = int(data.get("tick", 0))

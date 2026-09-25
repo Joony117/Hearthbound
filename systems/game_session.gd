@@ -90,6 +90,9 @@ var _battle_notifications_pending: Dictionary[String, bool] = {}
 var _expedition_pulse_accumulator: float = 0.0
 var _periodic_save_accumulator: float = 0.0
 var _paused_battle_orders: Dictionary[String, bool] = {}
+## Sim jobs out on WorkerThreadPool (ig-7sn.13, DECISIONS.md 2026-09-25 "Battle sim threading").
+## Private and unsaved; nothing here is ever written by a job.
+var _battle_jobs: Array[BattleJob] = []
 var _checkpoint_save_failed: bool = false
 var _checkpoint_error: String = ""
 var _command_errors: Dictionary[String, String] = {}
@@ -100,6 +103,28 @@ func _ready() -> void:
 	SaveService.load_game()
 	# Connected after the load so from_dict()'s emit doesn't immediately write back.
 	roster_changed.connect(SaveService.save)
+
+
+func _exit_tree() -> void:
+	_cancel_battle_jobs()
+
+
+## work(job) runs on a worker thread and returns the job's plain-data result.
+func _submit_battle_job(work: Callable) -> BattleJob:
+	var job := BattleJob.new()
+	job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = work.call(job))
+	_battle_jobs.append(job)
+	return job
+
+
+## Stops every job at its next chunk and waits for it; their results are dropped. Runs on quit and
+## before from_dict replaces the session, so no job outlives the state it was sent for.
+func _cancel_battle_jobs() -> void:
+	for job: BattleJob in _battle_jobs:
+		job.cancelled = true
+	for job: BattleJob in _battle_jobs:
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+	_battle_jobs.clear()
 
 
 func _process(delta: float) -> void:
@@ -2536,6 +2561,7 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(data: Dictionary) -> void:
+	_cancel_battle_jobs()
 	roster.clear()
 	inventory.clear()
 	parts.fill(0)

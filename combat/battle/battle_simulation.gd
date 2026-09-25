@@ -103,6 +103,7 @@ static func create_run(
 	var state := BattleState.new()
 	state.order_id = order_id
 	state.zone_id = str(zone.zone_id)
+	state.zone = zone
 	state.kind = kind
 	state.max_seconds = zone.max_battle_seconds
 	state.rng_state = str(seed)
@@ -251,6 +252,7 @@ static func issue_command(state: BattleState, command: Dictionary) -> Dictionary
 	return _accept_command(state)
 
 
+## job: a BattleJob when this runs as one (ig-7sn.13); a cancelled job gets {}.
 static func forecast(
 	order_id: String,
 	team_snapshots: Array[Dictionary],
@@ -259,14 +261,19 @@ static func forecast(
 	policies: Dictionary,
 	supply_escrow: Dictionary,
 	seed: int,
+	job: BattleJob = null,
 ) -> Dictionary:
 	var normal_state := create_run(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed)
-	var normal: BattleOutcome = advance(normal_state, zone.max_battle_seconds)
+	if not BattleJob.advance(normal_state, zone.max_battle_seconds, job):
+		return {}
+	var normal: BattleOutcome = snapshot_outcome(normal_state)
 	var stress_policies: Dictionary = policies.duplicate(true)
 	stress_policies["force_enemy_crit"] = true
 	stress_policies["suppress_ally_crit"] = true
 	var stress_state := create_run(order_id + ":stress", team_snapshots, zone, squads, stress_policies, supply_escrow, seed)
-	var stress: BattleOutcome = advance(stress_state, zone.max_battle_seconds)
+	if not BattleJob.advance(stress_state, zone.max_battle_seconds, job):
+		return {}
+	var stress: BattleOutcome = snapshot_outcome(stress_state)
 	var safe: bool = (
 		normal.status == "victory"
 		and stress.status == "victory"
@@ -544,13 +551,9 @@ static func _choose_intentions(state: BattleState) -> void:
 			continue
 		if bool(state.policies.get("auto_battle", true)):
 			# One pass for the back row feeds both the kite below and the formation in the stance.
-			var back_row: bool = actor.archetype in BACK_ROW
-			if back_row:
-				_scan_rows(state, actor)
-			if not (back_row and _kite_order(state, actor)):
-				_choose_squad_intention(state, actor, previous_target_id, plan)
-			_row_front.clear()
-			_row_threat = null
+			var rows: RowScan = _scan_rows(state, actor) if actor.archetype in BACK_ROW else null
+			if not (rows != null and _kite_order(state, actor, rows)):
+				_choose_squad_intention(state, actor, previous_target_id, plan, rows)
 
 
 static func _move_actors(state: BattleState) -> void:
@@ -732,7 +735,7 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 static func _update_objectives(state: BattleState) -> void:
 	if state.kind == "rescue":
 		return
-	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(state.zone_id))
+	var zone: ZoneDefinition = state.zone
 	if zone == null:
 		state.status = "retreated"
 		return
@@ -887,7 +890,7 @@ static func _spawn_group(
 	objective_id: String = "",
 ) -> void:
 	var deployed_count: int = maxi(_deployed_hero_count(state), 1)
-	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(state.zone_id))
+	var zone: ZoneDefinition = state.zone
 	assert(zone != null)
 	var scaled_power: float = wave_power * float(deployed_count) / float(maxi(zone.reference_force_size, 1))
 	var budget: float = scaled_power / float(maxi(count, 1))
@@ -2151,7 +2154,8 @@ static func _choose_enemy_intention(state: BattleState, actor: BattleActor) -> v
 
 
 ## plan: _choose_intentions' cache for this pass, by squad: "leader:<id>" and "objective:<id>".
-static func _choose_squad_intention(state: BattleState, actor: BattleActor, previous_target_id: String, plan: Dictionary) -> void:
+## rows: the back row's _scan_rows, null for everyone else.
+static func _choose_squad_intention(state: BattleState, actor: BattleActor, previous_target_id: String, plan: Dictionary, rows: RowScan) -> void:
 	var squad: Dictionary = _squad_for(state, actor.squad_id)
 	var stance: String = str(squad.get("stance", state.policies.get("default_stance", "stay_together")))
 	var objective_key: String = "objective:" + actor.squad_id
@@ -2207,19 +2211,12 @@ static func _choose_squad_intention(state: BattleState, actor: BattleActor, prev
 		var threat: BattleActor = _cover_threat(state, actor, previous_target_id, zone_center, zone_radius)
 		if threat != null:
 			target = threat
-	if (stance == "advance" or stance == "stay_together") and actor.archetype in BACK_ROW and _formation_order(actor, target.position if target != null else objective):
+	if (stance == "advance" or stance == "stay_together") and rows != null and _formation_order(actor, rows, target.position if target != null else objective):
 		return
 	if target != null:
 		_set_auto_order(actor, COMMAND_ATTACK, target.id, target.position)
 	else:
 		_set_auto_order(actor, COMMAND_MOVE, "", objective)
-
-
-# ponytail: static scratch for _cover_threat, cleared at the end of every call. Assumes a single-threaded
-# sim (nothing re-enters advance mid-tick); switch to per-state scratch if a sim ever runs off the main thread.
-static var _cover_victims: Dictionary = {}
-static var _cover_claims: Dictionary = {}
-static var _cover_nearby: Array[BattleActor] = []
 
 
 ## ig-uu7.2 Cover (SYSTEMS.md § Hero AI on auto): the enemy in the stance zone that is on a back-row
@@ -2230,17 +2227,21 @@ static var _cover_nearby: Array[BattleActor] = []
 ## over state.actors (80 at frontier_march 50v30) per Knight per tick, then a filter over the enemies
 ## inside the zone.
 static func _cover_threat(state: BattleState, knight: BattleActor, previous_target_id: String, center: Vector2, radius: float) -> BattleActor:
+	# Per call, not static: sims run on worker threads (ig-7sn.13).
+	var victims: Dictionary = {}
+	var claims: Dictionary = {}
+	var nearby: Array[BattleActor] = []
 	for other: BattleActor in state.actors:
 		if other == knight or other.life != BattleActor.LIFE_ALIVE:
 			continue
 		if other.faction == "enemy":
 			if other.position.distance_to(center) <= radius:
-				_cover_nearby.append(other)
+				nearby.append(other)
 		elif other.faction == "ally":
 			if other.squad_id == knight.squad_id and other.archetype in BACK_ROW:
-				_cover_victims[other.id] = other
+				victims[other.id] = other
 			if other.archetype == "knight" and not other.order_target_id.is_empty():
-				_cover_claims[other.order_target_id] = true
+				claims[other.order_target_id] = true
 	var cover_order: Array = knight.effect_state.get("cover_order", [])
 	var kept: BattleActor = null
 	var kept_rank: int = 0
@@ -2248,9 +2249,9 @@ static func _cover_threat(state: BattleState, knight: BattleActor, previous_targ
 	var best_rank: int = cover_order.size() + 1
 	var best_fraction: float = INF
 	var best_distance: float = INF
-	for enemy: BattleActor in _cover_nearby:
-		var victim: BattleActor = _cover_victims.get(enemy.order_target_id) as BattleActor
-		if victim == null or _cover_claims.has(enemy.id):
+	for enemy: BattleActor in nearby:
+		var victim: BattleActor = victims.get(enemy.order_target_id) as BattleActor
+		if victim == null or claims.has(enemy.id):
 			continue
 		var rank: int = cover_order.find(victim.hero_id)
 		if rank < 0:
@@ -2266,45 +2267,42 @@ static func _cover_threat(state: BattleState, knight: BattleActor, previous_targ
 			best_rank = rank
 			best_fraction = fraction
 			best_distance = distance
-	_cover_victims.clear()
-	_cover_claims.clear()
-	_cover_nearby.clear()
 	return kept if kept != null and kept_rank <= best_rank else best
 
 
-# ponytail: static scratch for the back row, filled by _scan_rows and cleared by _choose_intentions
-# right after the hero's planning. Same single-threaded assumption as the cover scratch above.
-static var _row_front: Array[BattleActor] = []
-static var _row_contact: bool = false
-static var _row_threat: BattleActor = null
+## What _scan_rows found for one back-row hero this tick. Per call, not static: sims run on worker
+## threads (ig-7sn.13).
+class RowScan:
+	var front: Array[BattleActor] = []
+	var contact: bool = false
+	var threat: BattleActor = null
 
 
 ## The back row's one pass over state.actors per tick (ig-uu7.1 formation, ig-uu7.3 kiting): whether
 ## a living enemy is within the hero's contact range, its squad's living front-liners, and the
 ## nearest living enemy targeting it. Worst case: 80 actors at frontier_march 50v30.
-static func _scan_rows(state: BattleState, actor: BattleActor) -> void:
+static func _scan_rows(state: BattleState, actor: BattleActor) -> RowScan:
+	var rows := RowScan.new()
 	var contact: float = maxf(BALANCE.battle_detection_range, actor.attack_range)
 	var threat_distance: float = INF
-	_row_front.clear()
-	_row_contact = false
-	_row_threat = null
 	for other: BattleActor in state.actors:
 		if other.life != BattleActor.LIFE_ALIVE:
 			continue
 		if other.faction == "enemy":
 			var distance: float = other.position.distance_to(actor.position)
-			_row_contact = _row_contact or distance <= contact
+			rows.contact = rows.contact or distance <= contact
 			if other.order_target_id == actor.id and distance < threat_distance:
-				_row_threat = other
+				rows.threat = other
 				threat_distance = distance
 		elif other.squad_id == actor.squad_id and other.archetype in FRONT_ROW:
-			_row_front.append(other)
+			rows.front.append(other)
+	return rows
 
 
 ## ig-uu7.3 Kiting (SYSTEMS.md § Hero AI on auto): a back-row hero that outranges the trigger hops
 ## once toward the spot behind its nearest front-liner when an enemy on it comes close, then fights
 ## out the cooldown. Reads _scan_rows. Returns whether it set the order.
-static func _kite_order(state: BattleState, actor: BattleActor) -> bool:
+static func _kite_order(state: BattleState, actor: BattleActor, rows: RowScan) -> bool:
 	if actor.effect_state.get("kite_point") is Array:
 		var point: Vector2 = _array_vector(actor.effect_state.get("kite_point"), actor.position)
 		# A hop lasts at most a full hop's walk plus one tick, so bodies pinning it short can't hold it
@@ -2312,18 +2310,18 @@ static func _kite_order(state: BattleState, actor: BattleActor) -> bool:
 		var started: int = int(actor.effect_state.get("kite_ready_tick", 0)) - ceili(BALANCE.battle_kite_cooldown_seconds / BALANCE.battle_tick_seconds)
 		# A loaded snapshot may carry move_speed 0; a real hero never walks slower than the minimum.
 		var longest: int = ceili(BALANCE.battle_kite_distance / (maxf(actor.move_speed, BALANCE.battle_move_speed_min) * BALANCE.battle_tick_seconds)) + 1
-		if _row_threat == null or state.tick - started >= longest or actor.position.distance_to(point) <= BALANCE.battle_separation_radius:
+		if rows.threat == null or state.tick - started >= longest or actor.position.distance_to(point) <= BALANCE.battle_separation_radius:
 			actor.effect_state.erase("kite_point")
 			return false
 		_set_auto_order(actor, COMMAND_MOVE, "", point)
 		return true
-	if actor.attack_range <= BALANCE.battle_kite_trigger_range or _row_threat == null or state.tick < int(actor.effect_state.get("kite_ready_tick", 0)):
+	if actor.attack_range <= BALANCE.battle_kite_trigger_range or rows.threat == null or state.tick < int(actor.effect_state.get("kite_ready_tick", 0)):
 		return false
-	var threat_at: Vector2 = _row_threat.position
+	var threat_at: Vector2 = rows.threat.position
 	if threat_at.distance_to(actor.position) > BALANCE.battle_kite_trigger_range:
 		return false
 	var front: BattleActor = null
-	for other: BattleActor in _row_front:
+	for other: BattleActor in rows.front:
 		if front == null or other.position.distance_to(actor.position) < front.position.distance_to(actor.position):
 			front = other
 	var away: Vector2 = actor.position + (actor.position - threat_at).normalized() * BALANCE.battle_kite_distance
@@ -2348,11 +2346,11 @@ static func _kite_order(state: BattleState, actor: BattleActor) -> bool:
 ## formation spacing farther from its reference point than its squad's nearest living front-liner.
 ## Off while any living enemy is within its contact range, or with no living front-liner. Returns
 ## whether it set the order. Reads _scan_rows, so it adds no pass of its own.
-static func _formation_order(actor: BattleActor, reference: Vector2) -> bool:
-	if _row_contact or _row_front.is_empty():
+static func _formation_order(actor: BattleActor, rows: RowScan, reference: Vector2) -> bool:
+	if rows.contact or rows.front.is_empty():
 		return false
 	var front_distance: float = INF
-	for other: BattleActor in _row_front:
+	for other: BattleActor in rows.front:
 		front_distance = minf(front_distance, other.position.distance_to(reference))
 	var cap: float = front_distance + BALANCE.battle_formation_spacing
 	if actor.position.distance_to(reference) > cap:
