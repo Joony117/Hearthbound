@@ -1507,12 +1507,16 @@ any wall spell, so its tests place walls by hand.
 - **An actor whose straight line crosses a footprint** heads for the next corner on the shortest
   path through footprint corners (four per wall). Ties go to the lower corner number: walls in
   cast order, corners in a fixed order. The corner-to-corner graph is rebuilt when a wall is
-  cast or ends; the actor's own step is worked out fresh each tick.
+  cast or ends, and lazily after any fresh decode (a reload, a command: `ig-7sn.15`); the actor's
+  own step is worked out fresh each tick.
 - **A goal inside a footprint** (a target standing against the wall) moves to the nearest point
   on the footprint's edge, on the goal's side.
 - **Walled in:** no path means the actor holds until a wall ends.
-- **Instant moves stop at walls.** Charge, knockback, the lane push, separation, Slip, Dust Roll,
-  Turncoat Cut and evade all cut their move at the first footprint edge they meet.
+- **Instant moves stop at walls.** Every push (Arcane Bloom, Threadneedle, Charge's lane push,
+  enemy telegraph pushes, the crit push), every move skill (Charge, Slip, Dust Roll, Turncoat Cut)
+  and separation cut their move at the first footprint edge they meet. The cut sits where all of
+  them pass (`_push`, the move effect, separation, the walk step), so a new skill can't skip it. A
+  carried body moves with its carrier. A telegraph evade is a walk, so it paths like one.
 
 | Row | Value | Why |
 |---|---|---|
@@ -1527,7 +1531,7 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
 | Row | Value | Why |
 |---|---|---|
 | `battle_wall_cap` | 3 | Walls live at once, inside `battle_field_object_cap`. Pathing cost grows with corners squared: 12 corners at 3 walls. The oldest wall ends first when a fourth is cast |
-| Rime Wall thickness | 1.2 | Two actors on opposite sides stay at least 1.2 + 0.65 = 1.85 apart, over melee reach (1.6). Walls block walking, not attacks (the ADR's item 2), so this keeps melee from hitting through one. Ranged attacks go over |
+| Rime Wall thickness | 1.2 | Two actors on opposite sides stay at least 1.2 + 0.65 = 1.85 apart, over melee reach (1.6). Walls block walking, not attacks (the ADR's item 2), so this keeps a basic melee attack from hitting through one. Ranged attacks go over, and area skills reach across (Ground Slam's radius is 2.5) |
 | Rime Wall length | 6 | About a five-hero front line |
 
 - **Rime Wall:** level 1, cooldown 30 s, range 8 to its center, lifetime 8 s. At P = 6: 180 s
@@ -1538,8 +1542,10 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
   lower spawn index. It blocks both sides, so a Knight holding in front of the wall has to walk
   around it too.
 - **Cast on actors:** an actor whose center falls inside the new footprint is pushed out across
-  the segment to the side it stood on. One exactly on the segment's line goes to the caster's
-  side (director default, agreed).
+  the segment to the side it stood on, downed bodies too; a carried body moves with its carrier.
+  One exactly on the segment's line goes to the caster's side (director default, agreed). The AI
+  skips a placement whose push would leave anyone inside another wall's footprint, and tries
+  again next tick (director, 2026-09-25). So no actor ever stands inside a footprint.
 - **It deals no damage** and has no counter tag. Its name passed the `ig-x8g` web check (2026-09-25, see Zones).
 - **Heroes only in v1,** like zones.
 
