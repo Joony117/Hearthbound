@@ -318,7 +318,7 @@ the same fight, P times longer. So win rates, downings and the forecast's `safe`
 | Max HP of every actor, both sides, at spawn. Not a damage divisor: the `max(1, …)` floor would break it | An F Knight at level 1: 154 HP → 924 |
 | Ability cooldowns, heroes and enemies. Weaponskills have none | Stand Fast 16 s → 96 s, Crushing Blow 14 s → 84 s |
 | An ability's ATK-based amount per cast: damage multiplier, heal, shield. Max-HP fractions (revives, Catch Breath, supplies) already follow HP | Threadneedle 1.8× → 10.8×, Mend 3.0 ATK → 18 ATK |
-| The seconds of every status or control an ability applies: damage reduction, stat changes, bleed, burn, heal over time, stun, root, silence, taunt. Per-second magnitudes don't change | Stand Fast's 4 s guard → 24 s, Buckler Blow's 1.5 s stun → 9 s |
+| The seconds of every status or control an ability applies: damage reduction, stat changes, bleed, burn, heal over time, stun, root, silence, taunt; and a zone's lifetime. Per-second magnitudes don't change | Stand Fast's 4 s guard → 24 s, Buckler Blow's 1.5 s stun → 9 s |
 | Objective holds (`objective_hold_seconds`, `simultaneous_hold_seconds`) | Fallen Citadel's hold 10 s → 60 s |
 | The combat bound (`max_battle_seconds`) | 180 / 300 / 420 s → 1080 / 1800 / 2520 s |
 | The route base and minimum (§ Timed dispatch) | Verdant 60 / 15 s → 360 / 90 s |
@@ -327,7 +327,7 @@ the same fight, P times longer. So win rates, downings and the forecast's `safe`
 
 **What stays in real seconds.** Basic swings and their interval, weaponskills and the bleed or
 burn they apply, passives, movement, the 0.3 s windup, telegraphs and aims (0.8 s, 1.2 s), a delayed
-area's delay (Hanging Star's 1.0 s), the dodge window, the ability lock, the combo window, the chain
+area's delay (Hanging Star's 1.0 s), a zone's 1 s pulse and the 1.5 s status each pulse applies, the dodge window, the ability lock, the combo window, the chain
 step timeout, the status tick, the carry channel, the Knight cover taunt, detection and leash,
 pushes, and the 0.1 s tick. Supplies: their amounts are max-HP fractions and their counts are
 limited, so they already scale; the 15 s item cooldown stays.
@@ -683,8 +683,8 @@ owner's current Knights get both). So a Knight's chain can hold every one of its
 non-passive skills, with no step to spare.
 
 Level caps by rank (§ Ranks) set how many class skills a hero can reach: F (cap 10) five, D (cap
-20) six, C and above (cap 30+) seven, plus its class book skill; two more for a Knight. General skills come on top (below).
-With the v1 pools, a hero can know at most 8 class + 6 general = 14 skills (a Knight 16). A Training Hall teaches ahead of level for parts, up to
+20) six, C and above (cap 30+) seven, plus its class book skill; two more for a Knight or a Mage, one more for a Cleric. General skills come on top (below).
+With the v1 pools, a hero can know at most 8 class + 6 general = 14 skills (a Knight or a Mage 16, a Cleric 15). A Training Hall teaches ahead of level for parts, up to
 `hero.level + 5 * hall level`. Taught and book skills are saved on the hero. Level skills are
 derived from level and archetype, so they cannot fall out of step with it.
 
@@ -712,7 +712,7 @@ about 1% of class books; this way it gets one share per archetype owned, a fifth
 
 ### The v1 kits
 
-Five kits of eight; the Knight's has ten since `ig-zht`. The four signatures and passives keep today's numbers exactly, so the first
+Five kits of eight; the Knight's has ten since `ig-zht`, the Cleric's nine since `ig-vl1.4`, and the Mage's ten since `ig-vl1.5`. The four signatures and passives keep today's numbers exactly, so the first
 slice can prove that nothing changed. Multipliers are on the basic damage formula. "Heal 3.0 ATK"
 means ATK times 3.0. The counter column is the tag. Every number in these tables is at pace 1;
 § Battle pace says which ones `battle_pace` multiplies.
@@ -795,6 +795,8 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Chain Spark | Weaponskill | 15 | — | 1.0×, then jumps to 2 more enemies within 3 at 0.6× | 2+ enemies within 3 | — |
 | Warding Glyph | Ability | 25 | 25 s | Range 8: shield 2.0 ATK on an ally for 6 s | an ally inside a telegraph, else an ally below 50% | `shield` |
 | Hanging Star | Ability | book | 45 s | Range 8, radius 3: 2.5× after a 1.0 s delay | 3+ enemies or an elite | — |
+| Rime Circle | Ability | 1 | 20 s | Range 8: a zone of radius 3 for 6 s. Each second, enemies inside take 0.3× and SPD −30% for 1.5 s | its target has 3+ enemies within 3, or is elite | — |
+| Rime Wall | Ability | 1 | 30 s | Range 8: a wall 6 long and 1.2 thick for 8 s. Blocks walking for both sides, not attacks (`ig-vl1.5`) | an enemy melee actor 3.5–6 from a back-row ally | — |
 
 **Cleric** (healer)
 
@@ -808,6 +810,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Wellspring | Ability | 15 | 12 s | Range 6: heal 0.3 ATK a second for 10 s | an ally below 70% without it | — |
 | Prayer Circle | Ability | 25 | 30 s | Heal 1.5 ATK to every ally within 4 | 3+ allies below 70% | — |
 | Hearthcall | Ability | book | 60 s | Range 4: revive a downed ally to 30% HP | a downed ally | — |
+| Hearthward | Ability | 1 | 25 s | Range 6: a zone of radius 3.5 for 8 s. Each second, allies inside take 20% less damage for 1.5 s and heal 0.15 ATK | the lowest-HP ally in range with 3+ allies within 3.5 of it, one below 70% or inside a telegraph | — |
 
 The Cleric has no combo, so its level-5 slot is a second counter. Mend's 3.0 ATK is 48 HP at the
 Cleric's base ATK of 16: about a third of a base Knight.
@@ -1246,11 +1249,98 @@ median of each measure:
 - Measured at `battle_pace` 6 and with Charge and Ground Slam in the Knight's kit (`ig-1jw` and
   `ig-zht` first), since both move the Knight.
 
-**The spells (`ig-vl1.4`).** Scope only; the numbers wait for the ADR. Each caster gets one or two
+**The spells (`ig-vl1.4`).** Each caster gets one or two
 spells with long cooldowns and a big footprint on the field. At P = 6, one or two casts a wave.
 The owner picked zones and walls, 2026-09-24: "1 & 2, we're eventually going to need pathfinding
 anyways". Built in this order: zones (`ig-vl1.4`, no pathfinding needed), then battle pathfinding
 (`ig-0qh`), then walls (`ig-vl1.5`). All three follow the ADR (`ig-vl1.2`).
+
+**Zones** (`ig-vl1.4`, design 2026-09-25; `DECISIONS.md` 2026-09-25 "Casters shape the field").
+One each, at level 1, in § The v1 kits: the Mage's **Rime Circle** holds enemies down, the
+Cleric's **Hearthward** holds a line up.
+
+| Row | Value | Why |
+|---|---|---|
+| `battle_field_object_cap` | 8 | Live zones and walls in one battle, together. The oldest ends first when a ninth is cast. A caster's zone lasts less than its cooldown, so one caster has at most one up; 8 covers a frontier_march force with several casters. The cost per tick is at most 8 × the actors (80 on frontier_march) distance checks |
+
+- **A zone** is a circle on the field for its lifetime. Every 1 s from the cast it applies its
+  effects to every living actor of one side whose center is inside. Rime Circle hits enemies,
+  Hearthward allies. It never touches the other side.
+- **Placement.** Rime Circle centers on the caster's current target, in range 8, when 3+ enemies
+  are within 3 of it or it is elite: Hail of Arrows' rule (`enemies_near_target`). Hearthward
+  centers on the lowest-HP ally in range 6 with 3+ allies (itself included) within 3.5 of it, one
+  of them below 70% or inside a telegraph. That is one new AI rule; it is data like the others
+  (`DECISIONS.md` 2026-09-23, item 7). The zone stays where it was cast.
+- **Amounts** use the caster's ATK the way bleed and burn do. A zone draws no RNG, so it never
+  crits. Grace's +20% applies to Hearthward's heal.
+- **The status each pulse applies lasts 1.5 s,** so it drops soon after an actor walks out.
+  Overlapping zones of the same skill count once per actor per pulse: the same effect refreshes,
+  never stacks. Damage reduction keeps its rule: the strongest applies, so Stand Fast's 30% beats
+  Hearthward's 20%.
+- **It outlasts its caster.** A zone keeps going if its caster is downed or leaves, and through
+  a wave change: new enemies spawn into it.
+- **Heroes only in v1.** No enemy kit gets a zone (director default, agreed: no enemy needs one
+  yet, and § Enemies keeps enemy Mages as they are).
+- **At P = 6** (§ Battle pace): Rime Circle's cooldown 20 s → 120 s and its lifetime 6 s → 36 s;
+  Hearthward's 25 s → 150 s and 8 s → 48 s. About one cast a wave. The per-second amounts don't
+  change, so each zone's total grows ×6 with the fight.
+- **Then the stats step back.** Once zones land, re-run the presence test (above) and cut
+  `caster_rank_offset` as far as the lower bound still holds. Re-run it again after walls.
+- **Names.** Rime Circle and Hearthward get the same web check as `ig-x8g` before they ship
+  (`DECISIONS.md` 2026-09-23, item 10).
+
+> ⚠️ **PROVISIONAL** — every zone number is arithmetic, chosen next to Hail of Arrows, Hanging Star,
+> Prayer Circle and Wellspring; the presence test has not run with them · **Settled by:** the
+> presence test at P = 6 with zones in, before the `caster_rank_offset` cut
+
+**Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
+any wall spell, so its tests place walls by hand.
+- **With no wall up, nothing changes.** Movement runs today's straight-line code; one check per
+  battle per tick skips the rest.
+- **A wall's footprint** for walking is the segment grown by half its thickness plus half
+  `battle_separation_radius` (0.325), ends included: a rectangle. No actor's center enters it.
+- **An actor whose straight line crosses a footprint** heads for the next corner on the shortest
+  path through footprint corners (four per wall). Ties go to the lower corner number: walls in
+  cast order, corners in a fixed order. The corner-to-corner graph is rebuilt when a wall is
+  cast or ends; the actor's own step is worked out fresh each tick.
+- **A goal inside a footprint** (a target standing against the wall) moves to the nearest point
+  on the footprint's edge, on the goal's side.
+- **Walled in:** no path means the actor holds until a wall ends.
+- **Instant moves stop at walls.** Charge, knockback, the lane push, separation, Slip, Dust Roll,
+  Turncoat Cut and evade all cut their move at the first footprint edge they meet.
+
+| Row | Value | Why |
+|---|---|---|
+| Pathfinding budget | 2 ms | What walls may add to a watched frontier_march pulse (today's sim 14.0 ms) with `battle_wall_cap` walls across both armies' paths. A miss switches the fallback the ADR names |
+
+> ⚠️ **PROVISIONAL** — 2 ms is a share of the pulse, not a measurement · **Settled by:** the
+> `ig-0qh` measure with three walls on frontier_march
+
+**Walls** (`ig-vl1.5`, design 2026-09-25). The Mage's second spell, **Rime Wall** (§ The v1 kits).
+Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
+
+| Row | Value | Why |
+|---|---|---|
+| `battle_wall_cap` | 3 | Walls live at once, inside `battle_field_object_cap`. Pathing cost grows with corners squared: 12 corners at 3 walls. The oldest wall ends first when a fourth is cast |
+| Rime Wall thickness | 1.2 | Two actors on opposite sides stay at least 1.2 + 0.65 = 1.85 apart, over melee reach (1.6). Walls block walking, not attacks (the ADR's item 2), so this keeps melee from hitting through one. Ranged attacks go over |
+| Rime Wall length | 6 | About a five-hero front line |
+
+- **Rime Wall:** level 1, cooldown 30 s, range 8 to its center, lifetime 8 s. At P = 6: 180 s
+  and 48 s, like the zones' pace rule.
+- **Where the AI puts it.** When an enemy melee actor is 3.5–6 from a back-row ally (Ranger,
+  Mage or Cleric), so the wall lands between them, it goes across the line from that ally to that
+  enemy, 2.5 from the ally, centered on the line. The nearest such enemy decides; ties go to the
+  lower spawn index. It blocks both sides, so a Knight holding in front of the wall has to walk
+  around it too.
+- **Cast on actors:** an actor whose center falls inside the new footprint is pushed out across
+  the segment to the side it stood on. One exactly on the segment's line goes to the caster's
+  side (director default, agreed).
+- **It deals no damage** and has no counter tag. Its name gets the `ig-x8g` web check too.
+- **Heroes only in v1,** like zones.
+
+> ⚠️ **PROVISIONAL** — every wall number is arithmetic, and the AI's placement is untested
+> against real fights · **Settled by:** the presence test at P = 6 with walls in, and a watched
+> frontier_march fight
 
 > ⚠️ **PROVISIONAL** — 1.5 is arithmetic; the presence test has never run · **Settled by:** the
 > presence test at P = 6 with the Knight's new kit, then again after the spells land
