@@ -1192,8 +1192,9 @@ never a surprise, and never happens while you are not looking.
 - **The warning ladder.**
   1. **Food low** — under 10 minutes of eating left. The HUD shows a warning.
   2. **Starving** — food is 0. Work runs at half speed. The HUD names who dies next, and when.
-  3. **Last warning** — 5 minutes before a death, the game stops the death clock and asks you to
-     look. It does not start again until you do. Nobody starves while you are away from the keys.
+  3. **Last warning** — 5 minutes before a death, the game stops the death clock and a dialog
+     names who starves, and when. The clock does not start again until you close it: OK, Esc or
+     the X. The game does not pause. Nobody starves while you are away from the keys.
   4. **A death** — one hero at a time. The first dies after 20 minutes of starving, then one every
      10 minutes while food stays at 0.
 - **Who dies first.** Among heroes at home, the lowest rank, then the lowest level, then the newest

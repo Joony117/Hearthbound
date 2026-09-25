@@ -476,7 +476,7 @@ func test_the_hub_builds_on_a_clicked_hex_and_staffs_the_building() -> void:
 	var hub: Node3D = _instantiate_hub()
 	var town: TownView = hub.get_node("%Town") as TownView
 	var wood_label: Label = hub.get_node("%Wood") as Label
-	assert_eq(wood_label.text, "Wood: 40   Stone: 0   Food: 30")
+	assert_eq(wood_label.text, "Wood: 40   Stone: 0   Food: 30   Beds: 0/1")
 	var menu: PopupMenu = (hub.get_node("%Build") as MenuButton).get_popup()
 	assert_eq([menu.get_item_text(0), menu.get_item_text(1), menu.get_item_text(2), menu.get_item_text(3)], ["House · 0 wood", "Lumbermill · 0 wood", "Mine · 0 wood", "Farm · 0 wood"])
 	menu.index_pressed.emit(0)
@@ -485,7 +485,7 @@ func test_the_hub_builds_on_a_clicked_hex_and_staffs_the_building() -> void:
 	assert_eq((hub.get_node("%Status") as Label).text, "The Forge stands there. Esc cancels.")
 	town.hex_selected.emit(FREE_HEX)
 	assert_eq(town.placing, &"", "placing ends after a build")
-	assert_eq(wood_label.text, "Wood: 40   Stone: 0   Food: 30", "the first House is free")
+	assert_eq(wood_label.text, "Wood: 40   Stone: 0   Food: 30   Beds: 0/1", "the first House is free")
 	assert_eq(menu.get_item_text(0), "House · 10 wood", "the next one is not")
 	var placed: Node3D = town.get_node("House_1") as Node3D
 	assert_eq(placed.position, TownRules.hex_to_world(FREE_HEX))
@@ -508,6 +508,64 @@ func test_the_hub_builds_on_a_clicked_hex_and_staffs_the_building() -> void:
 	menu.index_pressed.emit(1)
 	town.hex_selected.emit(NEXT_HEX)
 	assert_eq(menu.get_item_text(1), "Lumbermill · 20 wood", "the menu shows the second one's price")
+
+
+## ig-0og.2 (ACC 4): after a House the tool stays armed while every House placed (finished or going up)
+## x house_capacity is fewer than heroes and wood covers the next price; an empty finished House counts
+## as a bed. Esc disarms it, and a workplace disarms after one. (A move never stays armed: the Move test.)
+func test_the_hub_keeps_placing_houses_while_heroes_outnumber_them_and_wood_covers_the_next() -> void:
+	for index: int in 4:
+		_add_hero("H%d" % index)
+	GameSession.town_resources["wood"] = 1000.0
+	var hub: Node3D = _instantiate_hub()
+	var town: TownView = hub.get_node("%Town") as TownView
+	var status: Label = hub.get_node("%Status") as Label
+	var menu: PopupMenu = (hub.get_node("%Build") as MenuButton).get_popup()
+	menu.index_pressed.emit(0)
+	town.hex_selected.emit(FREE_HEX)
+	var next_cost: int = TownRules.wood_cost(TownRules.HOUSE, GameSession.town_buildings, BALANCE)
+	assert_eq(town.placing, TownRules.HOUSE, "1 House, 4 heroes: still armed")
+	assert_eq(status.text, "Built House 1 for 0 wood. Click a free hex for the next House (%d wood). Esc stops." % next_cost)
+	GameSession.town_building(&"House_1").erase("build_remaining")
+	town.hex_selected.emit(NEXT_HEX)
+	assert_eq(town.placing, TownRules.HOUSE, "2 Houses (one finished and empty), 4 heroes")
+	var third_cost: int = TownRules.wood_cost(TownRules.HOUSE, GameSession.town_buildings, BALANCE)
+	GameSession.town_resources["wood"] = float(third_cost)
+	town.hex_selected.emit(Vector2i(2, 2))
+	assert_eq(town.placing, &"", "3 Houses, 4 heroes, but no wood for the next")
+	assert_eq(status.text, "Built House 3 for %d wood." % third_cost)
+	GameSession.town_resources["wood"] = 1000.0
+	menu.index_pressed.emit(0)
+	town.hex_selected.emit(Vector2i(3, 2))
+	assert_eq(town.placing, &"", "4 Houses, 4 heroes: a bed each, empty ones counted")
+	_add_hero("H4")
+	_add_hero("H5")
+	menu.index_pressed.emit(0)
+	town.hex_selected.emit(Vector2i(4, 2))
+	assert_eq(town.placing, TownRules.HOUSE)
+	_press_key(hub, KEY_ESCAPE)
+	assert_eq([town.placing, status.text], [&"", "Stopped building."])
+	menu.index_pressed.emit(1)
+	town.hex_selected.emit(Vector2i(5, 2))
+	assert_eq(town.placing, &"", "a workplace disarms after one")
+
+
+## ig-0og.2 (ACC 5): the resource line counts beds, housed/heroes, and a finished House's empty bed.
+## A House going up is no free bed yet. The mood stays in the warning panel.
+func test_the_resource_line_counts_beds_and_a_finished_house_s_empty_one() -> void:
+	var mira: Hero = _add_hero("Mira")
+	_add_hero("Bo")
+	var hub: Node3D = _instantiate_hub()
+	var line: Label = hub.get_node("%Wood") as Label
+	assert_eq(line.text, "Wood: 40   Stone: 0   Food: 30   Beds: 0/2")
+	var house: StringName = _place(TownRules.HOUSE, FREE_HEX)
+	GameSession.expeditions_changed.emit()
+	assert_eq(line.text, "Wood: 40   Stone: 0   Food: 30   Beds: 0/2, 1 free")
+	assert_true(GameSession.assign_home(mira, house), GameSession.last_action_error)
+	assert_eq(line.text, "Wood: 40   Stone: 0   Food: 30   Beds: 1/2")
+	assert_true(GameSession.place_building(TownRules.HOUSE, NEXT_HEX), GameSession.last_action_error)
+	GameSession.expeditions_changed.emit()
+	assert_true(line.text.ends_with("   Beds: 1/2"), "going up: no free bed yet")
 
 
 ## The same flow through pushed mouse clicks, so TownView's input handler and the GUI's click

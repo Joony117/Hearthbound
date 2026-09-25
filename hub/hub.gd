@@ -59,6 +59,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _pause_menu: CanvasLayer = %PauseMenu
 @onready var _confirm_dialog: ConfirmationDialog = %ConfirmDialog
 @onready var _enhance_dialog: ConfirmationDialog = %EnhanceDialog
+@onready var _starve_dialog: AcceptDialog = %StarveDialog
 @onready var _close_panel: Button = %ClosePanel
 @onready var _roster_availability_filter: OptionButton = %RosterAvailabilityFilter
 @onready var _roster_favorites_only: CheckBox = %RosterFavoritesOnly
@@ -222,7 +223,6 @@ func _connect_ui_signals() -> void:
 		_building_button(building_id).pressed.connect(_open.bind(building_id))
 	_close_panel.pressed.connect(_open.bind(NO_BUILDING))
 	%MoveBuilding.pressed.connect(_on_move_pressed)
-	%StarveAck.pressed.connect(_on_starve_ack_pressed)
 	_pause_menu.visibility_changed.connect(_on_pause_menu_visibility_changed)
 	_roster_list.multi_selected.connect(_on_roster_list_multi_selected)
 	_roster_rank_filter.item_selected.connect(_on_roster_rank_filter_item_selected)
@@ -1066,6 +1066,19 @@ func _refresh_town() -> void:
 func _refresh_wood() -> void:
 	var resources: Dictionary = GameSession.town_resources
 	_wood.text = "Wood: %d   Stone: %d   Food: %d" % [floori(float(resources["wood"])), floori(float(resources["stone"])), floori(float(resources["food"]))]
+	# ig-0og.2: beds on the line, and a finished House's empty bed, so a forgotten one is on screen.
+	var housed: int = GameSession.roster.size() - GameSession.homeless_heroes().size()
+	_wood.text += "   Beds: %d/%d" % [housed, GameSession.roster.size()]
+	var finished: Dictionary[StringName, bool] = {}
+	for building: Dictionary in GameSession.town_buildings:
+		# "build_remaining" is the going-up mark (GameSession._is_building); still_building would re-find it.
+		if str(building["type"]) == String(TownRules.HOUSE) and not building.has("build_remaining"):
+			finished[StringName(str(building["id"]))] = true
+	var empty_beds: int = finished.size() * BALANCE.house_capacity
+	for hero: Hero in GameSession.roster:
+		empty_beds -= 1 if finished.has(hero.home) else 0
+	if empty_beds > 0:
+		_wood.text += ", %d free" % empty_beds
 
 
 ## The starvation ladder (ig-6m2.5.2), and "<name> starved." once per death, read off the Ledger.
@@ -1098,8 +1111,12 @@ func _refresh_starvation() -> void:
 		text = mood if text.is_empty() else text + "\n" + mood
 	%StarveText.text = text
 	%StarveWarning.visible = not text.is_empty()
-	# ig-0og.1: with nobody home there is no one to name, so there is nothing to acknowledge yet.
-	%StarveAck.visible = GameSession.is_starvation_stopped() and victim != null
+	# ig-0og.2: the last warning is a dialog the player must close; any close is the ack. ig-0og.1:
+	# with nobody home there is no one to name, so it waits. One exclusive child per window: it also
+	# waits while another dialog is open, and pops at the first refresh after that one closes.
+	if GameSession.is_starvation_stopped() and victim != null and not _starve_dialog.visible and not _confirm_dialog.visible and not _enhance_dialog.visible:
+		_starve_dialog.dialog_text = "%s starves in %s unless the town is fed. The clock waits until you close this." % [victim.hero_name, _format_duration(TownRules.starve_due_seconds(clock, BALANCE) - clock)]
+		_starve_dialog.popup_centered(Vector2i(560, 0))
 
 
 ## ig-0og.1: the town mood's line under the food line, while the mood is under 100 or more than the
@@ -1155,6 +1172,13 @@ func _on_hex_selected(hex: Vector2i) -> void:
 	if GameSession.place_building(type, hex):
 		%Town.placing = &""
 		_status.text = "Built %s for %d wood." % [str(plan["id"]).capitalize(), int(plan["cost"])]
+		# ig-0og.2: after a House the tool stays armed while every House placed (finished or going up,
+		# an empty one counts as a bed) is fewer beds than heroes, and wood covers the next one.
+		var next_cost: int = TownRules.wood_cost(TownRules.HOUSE, GameSession.town_buildings, BALANCE)
+		var houses: int = GameSession.town_buildings.filter(func(building: Dictionary) -> bool: return str(building["type"]) == String(TownRules.HOUSE)).size()
+		if type == TownRules.HOUSE and houses * BALANCE.house_capacity < GameSession.roster.size() and float(GameSession.town_resources["wood"]) >= next_cost:
+			%Town.placing = type
+			_status.text += " Click a free hex for the next House (%d wood). Esc stops." % next_cost
 	else:
 		_status.text = "%s Esc cancels." % GameSession.last_action_error
 

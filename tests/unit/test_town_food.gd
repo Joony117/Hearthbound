@@ -188,7 +188,7 @@ func test_the_farm_scene_is_pickable_and_its_panel_says_food() -> void:
 	var camera: Camera3D = hub.get_viewport().get_camera_3d()
 	var node: Node3D = town.get_node(NodePath(str(farm))) as Node3D
 	assert_eq(town.building_at(camera.unproject_position(node.global_position + Vector3(0.0, 1.0, 0.0))), farm, "it is clickable")
-	assert_eq((hub.get_node("%Wood") as Label).text, "Wood: 1000   Stone: 0   Food: 30")
+	assert_eq((hub.get_node("%Wood") as Label).text, "Wood: 1000   Stone: 0   Food: 30   Beds: 1/1")
 	town.building_selected.emit(farm)
 	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 1/2: Farmer\nMakes 1.0 food a minute")
 

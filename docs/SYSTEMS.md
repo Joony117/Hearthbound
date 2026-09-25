@@ -5816,6 +5816,10 @@ Measured (`ig-eek.1`, Mid seed 1): 29 heroes and 28 Houses at 20 h, 20 heroes ad
 and 9 in hours 11-20 (18 to 28 Houses from hour 10 to 20). Seeds 2-4 end at 29-30 heroes. The
 grace of 2 held on every seed: no strike, and 15-20 minutes under mood 100 (low 90).
 
+**Keep placing** (`ig-0og.2`). After a House, the build tool stays armed while every House placed,
+finished or going up, times `house_capacity` is fewer than the heroes, and wood covers the next
+price. The status shows that price. Esc stops it. A workplace or a move never stays armed.
+
 ### The first of each producer is free
 
 **A producer type you have none of costs nothing.** The producers are the Lumbermill, the Mine and
@@ -5873,7 +5877,7 @@ Design: `GAME_SPEC.md` § Heroes eat, and can starve to death.
 | `starving_work_multiplier` | 0.5 | Every workplace, farms included, while starving |
 | `starve_first_death_minutes` | 20 | Minutes of starving before the first death |
 | `starve_next_death_minutes` | 10 | Minutes between later deaths |
-| `starve_last_warning_minutes` | 5 | The death clock stops this long before each death until the player acknowledges |
+| `starve_last_warning_minutes` | 5 | The death clock stops this long before each death until the player closes the last-warning dialog |
 
 **Who eats.** Every hero, wherever it is: housed or not, at home, away on an order or stranded
 (owner ruling 2026-09-25, `ig-0og`). Only a hero at home can starve (below).
@@ -5902,8 +5906,9 @@ at the reset, so work does not flicker between half and full speed (tech-lead, 2
 
 **Deaths.** Death `n` (from 1) is due at `starve_first_death_minutes + (n - 1) *
 starve_next_death_minutes` of starving: 20, 30, 40 minutes. At `due - starve_last_warning_minutes`
-(15, 25, 35) the clock stops and the HUD asks the player to look. It runs again only after they
-acknowledge. The victim is the eater at home (one `is_hero_busy` does not hold) with the lowest
+(15, 25, 35) the clock stops and a dialog names the victim and the time left. It runs again only
+after the player closes it: OK, Esc or the X, and any close is the acknowledgement (`ig-0og.2`). It
+pops once someone is home, and waits while another dialog is open. The victim is the eater at home (one `is_hero_busy` does not hold) with the lowest
 rank, then the lowest level, then the newest in the roster. With no eater at home, the clock holds
 at the next stop point, as if its warning were unanswered: the death comes once someone is home
 and the warning is acknowledged. So `kill_hero()` never runs on a hero on an order or stranded. Its gear goes to inventory, then `GameSession.kill_hero()` removes it, so no Lost

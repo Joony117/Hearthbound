@@ -524,13 +524,12 @@ static func _build_starve_warning(root: Control) -> void:
 	warning.offset_top = -98.0
 	warning.offset_right = -20.0
 	warning.offset_bottom = -62.0
-	# Only the button takes clicks; the town under the rest of the row stays clickable.
+	# The row takes no clicks; the town under it stays clickable. The last warning's ack is %StarveDialog.
 	warning.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var text := _label(warning, "", "StarveText", true)
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text.add_theme_color_override("font_color", Color("E8AAA0"))
-	_button(warning, "Understood", "StarveAck", true).visible = false
 
 
 static func _build_enhance_dialog(dialog: ConfirmationDialog) -> void:

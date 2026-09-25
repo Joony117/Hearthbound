@@ -54,7 +54,16 @@ theme = ExtResource("3_theme")
 title = "Bulk enhance"
 ok_button_text = "Enhance"
 
+[node name="StarveDialog" type="AcceptDialog" parent="UI"]
+unique_name_in_owner = true
+theme = ExtResource("3_theme")
+title = "Last warning"
+ok_button_text = "Understood"
+dialog_autowrap = true
+
 [node name="PauseMenu" parent="." instance=ExtResource("2_pause")]
 unique_name_in_owner = true
 
 [connection signal="confirmed" from="UI/ConfirmDialog" to="." method="_on_confirm_dialog_confirmed"]
+[connection signal="confirmed" from="UI/StarveDialog" to="." method="_on_starve_ack_pressed"]
+[connection signal="canceled" from="UI/StarveDialog" to="." method="_on_starve_ack_pressed"]

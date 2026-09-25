@@ -192,23 +192,31 @@ func test_an_ack_with_nobody_home_kills_no_busy_hero_and_the_one_home_is_the_vic
 	assert_not_null(GameSession.hero_by_id(ada.instance_id), "Ada, the lower rank, is still stranded")
 
 
-# Sol, ig-0og.1: at the stop with nobody home there is no one to name, so the hub offers no ack; once a
-# hero is home, the last warning names that hero and asks.
-func test_the_hub_offers_the_ack_only_once_someone_is_home_to_name() -> void:
+# Sol, ig-0og.1: at the stop with nobody home there is no one to name, so nothing pops; once a hero is
+# home, the last warning names that hero and ig-0og.2's dialog pops. If she leaves while it is open, it
+# stays open, and closing it still acks (acknowledge_starvation checks only the stop).
+func test_the_hub_pops_the_last_warning_only_once_someone_is_home_to_name() -> void:
 	var ada: Hero = _housed("Ada", Vector2i(0, 2))
 	_strand([ada])
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
 	var text: Label = hub.get_node("%StarveText") as Label
-	var ack: Button = hub.get_node("%StarveAck") as Button
+	var dialog: AcceptDialog = hub.get_node("%StarveDialog") as AcceptDialog
 	GameSession.town_resources["food"] = 0.0
 	GameSession.tick_expeditions(1.0e7)
 	assert_true(GameSession.is_starvation_stopped())
-	assert_false(ack.visible, "nobody home: nothing to acknowledge")
+	assert_false(dialog.visible, "nobody home: nothing to acknowledge")
 	GameSession.stranded_incidents.clear()
 	GameSession.expeditions_changed.emit()
 	assert_eq(text.text, "Last warning: Ada starves in 5:00 unless the town is fed. The clock waits for you.")
-	assert_true(ack.visible, "Ada is home")
+	assert_true(dialog.visible, "Ada is home")
+	assert_eq(dialog.dialog_text, "Ada starves in 5:00 unless the town is fed. The clock waits until you close this.")
+	_strand([ada])
+	GameSession.expeditions_changed.emit()
+	assert_true(dialog.visible, "she left, and it stays open")
+	dialog.get_ok_button().pressed.emit()
+	assert_true(GameSession.town_starve_acked, "closing it still acks")
+	assert_false(dialog.visible)
 
 
 # The pulse's look-ahead and the live tick agree: nobody home, no death either way; one home, the death
@@ -331,44 +339,122 @@ func test_bad_or_missing_starvation_keys_are_repaired_never_refused() -> void:
 	assert_true(SaveService.save(), SaveService.last_write_error)
 
 
-func test_the_hub_shows_each_rung_and_the_ack_button_and_says_who_starved() -> void:
+func test_the_hub_shows_each_rung_pops_the_dialog_once_per_stop_and_says_who_starved() -> void:
 	var mira: Hero = _housed("Mira", Vector2i(0, 2), 0)
 	_housed("Sol", Vector2i(1, 2), 5)
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
 	var warning: Control = hub.get_node("%StarveWarning") as Control
 	var text: Label = hub.get_node("%StarveText") as Label
-	var ack: Button = hub.get_node("%StarveAck") as Button
+	var dialog: AcceptDialog = hub.get_node("%StarveDialog") as AcceptDialog
+	var status: Label = hub.get_node("%Status") as Label
 	assert_false(warning.visible, "fed")
 	GameSession.town_resources["food"] = 3.0
 	GameSession.expeditions_changed.emit()
 	assert_eq(text.text, "Food low: 3 left, and the town eats 0.4 a minute.")
-	assert_false(ack.visible)
+	assert_false(dialog.visible)
 	GameSession.town_resources["food"] = 0.0
 	GameSession.tick_expeditions(270.0)
 	assert_eq(text.text, "Starving: work runs at 50% speed. Mira starves in 15:30 unless the town is fed.")
-	assert_false(ack.visible)
+	assert_false(dialog.visible)
 	GameSession.tick_expeditions(1.0e7)
 	assert_eq(text.text, "Last warning: Mira starves in 5:00 unless the town is fed. The clock waits for you.")
-	assert_true(ack.visible)
+	assert_true(dialog.visible, "the stop pops it")
+	assert_eq(dialog.dialog_text, "Mira starves in 5:00 unless the town is fed. The clock waits until you close this.")
+	# The row still lets town clicks through once the dialog is out of the way.
+	dialog.hide()
 	await wait_process_frames(2, "let the row lay out, as the player sees it")
 	var row_point := Vector2(text.get_global_rect().position.x + 8.0, text.get_global_rect().get_center().y)
 	var under_row: Control = _hovered(hub, row_point)
 	assert_true(under_row == null or hub.is_ancestor_of(under_row), "a point GUT's own panel doesn't cover")
 	assert_false(under_row in [warning, text], "the row lets town clicks through")
-	var gut_layer: CanvasLayer = _gut_layer_over(hub, ack.get_global_rect().get_center())
-	assert_eq(_hovered(hub, ack.get_global_rect().get_center()), ack, "the button is on top")
-	_click(hub, ack.get_global_rect().get_center())
-	if gut_layer != null:
-		gut_layer.visible = true
+	GameSession.expeditions_changed.emit()
+	assert_true(dialog.visible, "hidden without a close, it pops again: only a close acks")
+	status.text = "before"
+	dialog.get_ok_button().pressed.emit()
 	assert_true(GameSession.town_starve_acked)
-	assert_false(ack.visible)
+	assert_eq(status.text, "before", "one close is one ack: no error")
+	assert_false(dialog.visible)
+	GameSession.tick_expeditions(1.0)
+	assert_false(dialog.visible, "not again for the same stop")
 	GameSession.tick_expeditions(1.0e7)
 	assert_null(GameSession.hero_by_id(mira.instance_id))
-	assert_eq((hub.get_node("%Status") as Label).text, "Mira starved.")
-	(hub.get_node("%Status") as Label).text = "later"
+	assert_eq(status.text, "Mira starved.")
+	status.text = "later"
 	GameSession.expeditions_changed.emit()
-	assert_eq((hub.get_node("%Status") as Label).text, "later", "said once, not re-said")
+	assert_eq(status.text, "later", "said once, not re-said")
+	for _tick: int in 40:
+		GameSession.tick_expeditions(60.0)
+	assert_eq(GameSession.town_starving_seconds, STOP_2)
+	assert_true(dialog.visible, "the next stop, after the next death, pops again")
+	assert_eq(dialog.dialog_text, "Sol starves in 5:00 unless the town is fed. The clock waits until you close this.")
+
+
+# ig-0og.2 (ACC 1): OK, Esc and the X each ack, and the clock runs again. Esc goes to the dialog, not
+# the pause menu.
+func test_ok_esc_and_the_x_each_ack_and_the_clock_runs_again() -> void:
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var dialog: AcceptDialog = hub.get_node("%StarveDialog") as AcceptDialog
+	for way: String in ["ok", "esc", "x"]:
+		GameSession.from_dict({"roster": []})
+		_housed("Ada", Vector2i(0, 2))
+		GameSession.town_resources["food"] = 0.0
+		GameSession.tick_expeditions(1.0e7)
+		assert_true(dialog.visible, way)
+		match way:
+			"ok":
+				dialog.get_ok_button().pressed.emit()
+			"esc":
+				for pressed: bool in [true, false]:
+					var key := InputEventKey.new()
+					key.keycode = KEY_ESCAPE
+					key.physical_keycode = KEY_ESCAPE
+					key.pressed = pressed
+					hub.get_viewport().push_input(key)
+			"x":
+				# What the embedded window's X sends (Window._event_callback); AcceptDialog cancels on it.
+				dialog.notification(NOTIFICATION_WM_CLOSE_REQUEST)
+		await wait_process_frames(1, "a cancel hides the dialog deferred")
+		assert_true(GameSession.town_starve_acked, way)
+		assert_false(dialog.visible, way)
+		assert_false((hub.get_node("%PauseMenu") as CanvasLayer).visible, way)
+		GameSession.tick_expeditions(1.0)
+		assert_eq(GameSession.town_starving_seconds, STOP_1 + 1.0, "%s: the clock runs again" % way)
+
+
+# ig-0og.2 (ACC 2, boundary #2): the dialog is a scene node, each close signal reaches the hub once,
+# and the old button is gone.
+func test_the_dialog_is_in_the_scene_and_each_close_signal_is_connected_once() -> void:
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var dialog: AcceptDialog = hub.get_node_or_null("%StarveDialog") as AcceptDialog
+	assert_not_null(dialog, "%StarveDialog resolves")
+	assert_null(hub.get_node_or_null("%StarveAck"), "the button is gone")
+	for signal_name: String in ["confirmed", "canceled"]:
+		var to_hub: Array = dialog.get_signal_connection_list(signal_name).filter(func(connection: Dictionary) -> bool: return (connection["callable"] as Callable).get_object() == hub)
+		assert_eq(to_hub.size(), 1, signal_name)
+		assert_eq((to_hub[0]["callable"] as Callable).get_method(), &"_on_starve_ack_pressed", signal_name)
+
+
+# ig-0og.2 (ACC 3): one exclusive child per window. A stop reached while %ConfirmDialog is open waits,
+# and pops at the first refresh after it closes.
+func test_a_stop_behind_the_confirm_dialog_waits_and_pops_after_it_closes() -> void:
+	_housed("Ada", Vector2i(0, 2))
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var confirm: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
+	var dialog: AcceptDialog = hub.get_node("%StarveDialog") as AcceptDialog
+	confirm.popup_centered(Vector2i(400, 200))
+	GameSession.town_resources["food"] = 0.0
+	GameSession.tick_expeditions(1.0e7)
+	assert_true(GameSession.is_starvation_stopped())
+	assert_false(dialog.visible, "it waits behind the confirm dialog")
+	confirm.hide()
+	GameSession.expeditions_changed.emit()
+	assert_true(dialog.visible, "and pops at the next refresh")
+	dialog.get_ok_button().pressed.emit()
+	assert_true(GameSession.town_starve_acked)
 
 
 func _hovered(hub: Node3D, at: Vector2) -> Control:
@@ -377,28 +463,6 @@ func _hovered(hub: Node3D, at: Vector2) -> Control:
 	motion.global_position = at
 	hub.get_viewport().push_input(motion, true)
 	return hub.get_viewport().gui_get_hovered_control()
-
-
-## GUT's own output panel can sit over the bottom-right corner and take the click; hide its layer.
-func _gut_layer_over(hub: Node3D, at: Vector2) -> CanvasLayer:
-	var node: Node = _hovered(hub, at)
-	if node == null or hub.is_ancestor_of(node):
-		return null
-	while node != null and not node is CanvasLayer:
-		node = node.get_parent()
-	if node != null:
-		(node as CanvasLayer).visible = false
-	return node as CanvasLayer
-
-
-func _click(hub: Node3D, at: Vector2) -> void:
-	for pressed: bool in [true, false]:
-		var click := InputEventMouseButton.new()
-		click.button_index = MOUSE_BUTTON_LEFT
-		click.position = at
-		click.global_position = at
-		click.pressed = pressed
-		hub.get_viewport().push_input(click, true)
 
 
 func _load_with(state: Dictionary, clock: Variant, acked: Variant) -> void:
