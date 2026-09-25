@@ -95,6 +95,8 @@ Knight and Rogue, the back row is Ranger, Mage and Cleric.
   and its hits still give the cover taunt ("auto or not", below).
 - Its chains run when the player fires a trigger, with no cut-ins, because cut-ins are the AI's. A
   skill fired by hand that is not a trigger leaves the chain running.
+- It uses no item on its own: the order's auto healing and auto revival skip it (director ruling,
+  2026-09-25). The item commands still work, and the other heroes still use the supplies.
 - Piloting is view state and never saved. When it ends, the hero is on auto again on the next tick.
 
 **Formation.** A back-row hero never walks closer to its reference point (its attack target, else

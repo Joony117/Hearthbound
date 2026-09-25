@@ -802,6 +802,7 @@ chain is a preference, not an order queue. Orders still replace orders.
 **Take control of one hero.** In a watched battle you can take one hero over and play it like an
 MMO character. Its AI stops picking skills and targets for it. It keeps auto-attacking your
 target. Its bar appears with number keys for the first ten skills; the rest are a click away.
+The keys fire the bar only while you control a hero; otherwise they select squads.
 Your other heroes keep their AI. Leave the battle view, and the AI takes the hero back. Control
 changes nothing about rewards: the same simulation runs either way.
 
