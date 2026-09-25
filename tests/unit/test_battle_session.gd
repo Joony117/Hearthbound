@@ -193,6 +193,31 @@ func test_a_launch_and_a_repeat_build_the_team_snapshot_once() -> void:
 	assert_eq(GameSession.team_snapshot_builds, builds + 1, "a set number of runs: the preview forecast and the run")
 
 
+## ig-7sn.5: the pulse's look ahead advances each battle once, and the pulse keeps that advance
+## instead of simulating it again. Every pulse must still leave the battle a fresh advance would.
+func test_a_pulse_advances_each_battle_once_and_as_a_fresh_advance_would() -> void:
+	assert_ne(_dispatch_one(), "", GameSession.last_action_error)
+	var active_pulses: int = 0
+	var advances: int = GameSession.pulse_battle_advances
+	var mismatched: Array[int] = []
+	for pulse: int in 4000:
+		var before: Dictionary = (GameSession.expedition_orders[0]["battle"] as Dictionary).duplicate(true)
+		if str(before["status"]) != "active":
+			break
+		active_pulses += 1
+		GameSession.tick_expeditions(0.25)
+		var fresh := BattleState.from_dict(before)
+		BattleSimulation.advance(fresh, 0.25)
+		if GameSession.expedition_orders.is_empty():
+			break  # The pulse that ended the battle settled the run too.
+		if GameSession.expedition_orders[0]["battle"] != fresh.to_dict():
+			mismatched.append(pulse)
+	assert_gt(active_pulses, 10, "the battle ran")
+	assert_eq(GameSession.expedition_reports.size(), 1, "the run settled")
+	assert_eq(mismatched, [] as Array[int], "every pulse leaves what a fresh advance would")
+	assert_eq(GameSession.pulse_battle_advances - advances, active_pulses, "one advance per active pulse (was two)")
+
+
 func _dispatch_one() -> String:
 	var hero := Hero.new("Battle Tester", 0)
 	hero.def_id = &"knight"

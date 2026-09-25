@@ -124,9 +124,11 @@ func _pulse_frames(label: String) -> void:
 
 ## SAMPLES pulses split into phases. Each phase's work is done again, on copies of the same battles,
 ## just before the real tick_expeditions; "rest" is the tick minus the phases (signals, town, keepers).
+## Since ig-7sn.5 the tick's look ahead decodes and advances once and the pulse keeps that, so there is
+## no separate preview phase (the ig-7sn.2 baseline had one: 44 ms at five battles).
 func _pulse_phases(label: String) -> void:
 	session.set_process(false)
-	var phases: Dictionary[String, Array] = {"preview": [], "decode": [], "advance": [], "encode": [], "tick": [], "rest": [], "commit pulse": []}
+	var phases: Dictionary[String, Array] = {"decode": [], "advance": [], "encode": [], "tick": [], "rest": [], "commit pulse": []}
 	var fewest: int = _active()
 	for _pulse: int in SAMPLES:
 		fewest = mini(fewest, _active())
@@ -135,13 +137,6 @@ func _pulse_phases(label: String) -> void:
 			if order.get("battle") is Dictionary:
 				battles.append(order["battle"] as Dictionary)
 		var started: int = Time.get_ticks_usec()
-		for battle: Dictionary in battles:
-			BattleState.from_dict(battle)
-			var preview := BattleState.from_dict(battle)
-			if preview.status == "active":
-				BattleSimulation.advance(preview, PULSE)
-		var preview_ms: float = _since(started)
-		started = Time.get_ticks_usec()
 		var states: Array[BattleState] = []
 		for battle: Dictionary in battles:
 			states.append(BattleState.from_dict(battle))
@@ -159,7 +154,7 @@ func _pulse_phases(label: String) -> void:
 		started = Time.get_ticks_usec()
 		session.tick_expeditions(PULSE)
 		var tick_ms: float = _since(started)
-		for pair: Array in [["preview", preview_ms], ["decode", decode_ms], ["advance", advance_ms], ["encode", encode_ms], ["tick", tick_ms], ["rest", tick_ms - preview_ms - decode_ms - advance_ms - encode_ms]]:
+		for pair: Array in [["decode", decode_ms], ["advance", advance_ms], ["encode", encode_ms], ["tick", tick_ms], ["rest", tick_ms - decode_ms - advance_ms - encode_ms]]:
 			phases[pair[0]].append(pair[1])
 		if session.expedition_reports.size() != reports:
 			phases["commit pulse"].append(tick_ms)

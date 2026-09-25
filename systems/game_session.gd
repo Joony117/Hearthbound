@@ -74,6 +74,9 @@ var _bond_seq: int = -1
 var bond_builds: int = 0
 ## How many times a team snapshot was built, for tests (ig-7sn.4).
 var team_snapshot_builds: int = 0
+## How many battle advances the live pulse ran, for tests (ig-7sn.5): one per active battle, or two
+## for one already at its time limit (the look ahead's advance can time it out; the pulse's cannot).
+var pulse_battle_advances: int = 0
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
@@ -1767,6 +1770,9 @@ func tick_expeditions(delta_seconds: float) -> void:
 	if delta_seconds <= 0.0 or SaveService.load_blocked or _checkpoint_save_failed:
 		return
 	var has_due_order: bool = false
+	# The look ahead's advanced battles, by order id: [the battle Dictionary it read, the state]. The
+	# advance below takes them instead of simulating the same pulse again (ig-7sn.5).
+	var advanced: Dictionary = {}
 	for order: Dictionary in expedition_orders:
 		var route_due: bool = Item.float_field(order, "remaining_seconds", 0.0, "expedition order") - delta_seconds <= 0.0
 		if str(order.get("backend", "legacy_v2")) != "battle_v1":
@@ -1775,15 +1781,19 @@ func tick_expeditions(delta_seconds: float) -> void:
 				break
 			continue
 		var order_id: String = str(order.get("id", ""))
-		var current_state := BattleState.from_dict(order.get("battle") as Dictionary)
-		if current_state.status != "active":
-			if route_due or _battle_has_no_secured_allies(current_state):
+		var state := BattleState.from_dict(order.get("battle") as Dictionary)
+		if state.status != "active":
+			if route_due or _battle_has_no_secured_allies(state):
 				has_due_order = true
 				break
 		elif not _paused_battle_orders.has(order_id):
-			var preview_state := BattleState.from_dict(order.get("battle") as Dictionary)
-			BattleSimulation.advance(preview_state, delta_seconds)
-			if preview_state.status != "active" and (route_due or _battle_has_no_secured_allies(preview_state)):
+			# The advance's own step; the same result as delta_seconds whenever it is above 0.
+			var step: float = minf(delta_seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0))
+			BattleSimulation.advance(state, delta_seconds)
+			pulse_battle_advances += 1
+			if step > 0.0:
+				advanced[order_id] = [order.get("battle"), state]
+			if state.status != "active" and (route_due or _battle_has_no_secured_allies(state)):
 				has_due_order = true
 				break
 	var has_expiring_cache: bool = false
@@ -1807,9 +1817,9 @@ func tick_expeditions(delta_seconds: float) -> void:
 	# never write it, and every reload would build it again.
 	var finishes_build: bool = town_buildings.any(func(building: Dictionary) -> bool: return _is_building(building) and float(building["build_remaining"]) <= delta_seconds)
 	if has_due_order or has_expiring_cache or has_expiring_incident or starve_death or finishes_build:
-		_commit_profile_mutation(_advance_time_in_memory.bind(delta_seconds))
+		_commit_profile_mutation(_advance_time_in_memory.bind(delta_seconds, advanced))
 	else:
-		_advance_clocks_in_memory(delta_seconds)
+		_advance_clocks_in_memory(delta_seconds, advanced)
 		_notify_expeditions_changed()
 
 
@@ -1857,8 +1867,8 @@ func migrate_v2_orders(now_unix: float) -> bool:
 	return true
 
 
-func _advance_time_in_memory(delta_seconds: float) -> void:
-	_advance_clocks_in_memory(delta_seconds)
+func _advance_time_in_memory(delta_seconds: float, advanced: Dictionary = {}) -> void:
+	_advance_clocks_in_memory(delta_seconds, advanced)
 	_resolve_due_orders_in_memory()
 	_expire_recovery_caches_in_memory()
 	_expire_stranded_incidents_in_memory()
@@ -1883,13 +1893,21 @@ func _advance_orders_in_memory(delta_seconds: float) -> void:
 	_notify_expeditions_changed()
 
 
-func _advance_clocks_in_memory(delta_seconds: float) -> void:
+## advanced: tick_expeditions' look ahead, [the battle Dictionary it read, that battle advanced by
+## delta_seconds] by order id. One still holding the order's battle is taken as this pulse's advance:
+## every writer replaces the battle Dictionary rather than editing it, so identity says it is unchanged.
+func _advance_clocks_in_memory(delta_seconds: float, advanced: Dictionary = {}) -> void:
 	for order: Dictionary in expedition_orders:
 		order["remaining_seconds"] = maxf(Item.float_field(order, "remaining_seconds", 0.0, "expedition order") - delta_seconds, 0.0)
 		if str(order.get("backend", "legacy_v2")) == "battle_v1" and not _paused_battle_orders.has(str(order.get("id", ""))):
-			var state := BattleState.from_dict(order.get("battle") as Dictionary)
-			if state.status == "active":
+			var ahead: Array = advanced.get(str(order.get("id", "")), [])
+			var taken: bool = not ahead.is_empty() and is_same(ahead[0], order.get("battle"))
+			var state: BattleState = ahead[1] as BattleState if taken else BattleState.from_dict(order.get("battle") as Dictionary)
+			if not taken and state.status == "active":
 				BattleSimulation.advance(state, minf(delta_seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
+				pulse_battle_advances += 1
+				taken = true
+			if taken:
 				order["battle"] = state.to_dict()
 				if state.status != "active":
 					order["phase"] = "returning"
