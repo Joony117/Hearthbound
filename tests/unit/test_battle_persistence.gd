@@ -177,6 +177,9 @@ func _pre_skills_shape(state: BattleState, rallied: Dictionary = {}) -> Dictiona
 		# ig-gy0.4 bookkeeping: the telegraph claim and the answer tick.
 		(actor_data["effect_state"] as Dictionary).erase("telegraph_claimed_by")
 		(actor_data["effect_state"] as Dictionary).erase("last_counter_tick")
+		# ig-36y view cues: where the last hit came from, and the last push.
+		(actor_data["effect_state"] as Dictionary).erase("hit_from")
+		(actor_data["effect_state"] as Dictionary).erase("last_push_tick")
 		# The old guard keys: Stand Fast's time left, and the largest reduction it ever gave.
 		var guard_remaining: float = 0.0
 		for status: Dictionary in actor.statuses:

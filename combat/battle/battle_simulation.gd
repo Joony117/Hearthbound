@@ -120,6 +120,8 @@ static func create_run(
 		# Timestamps are relative to this battle's tick, which starts at 0; carried ones would sit ahead of it.
 		for key: String in ["last_hit_tick", "last_skill_tick", "last_crit_tick"]:
 			actor.effect_state[key] = 0
+		actor.effect_state.erase("last_push_tick")
+		actor.effect_state.erase("hit_from")
 		actor.effect_state.erase("kite_point")
 		actor.effect_state.erase("kite_ready_tick")
 		state.actors.append(actor)
@@ -356,7 +358,7 @@ static func validate_snapshot(data: Dictionary) -> String:
 		var carried_by_id: String = str(actor_data.get("carried_by_id", ""))
 		var carrying_id: String = str(actor_data.get("carrying_id", ""))
 		var effects: Dictionary = actor_data.get("effect_state") as Dictionary
-		if int(effects.get("last_hit_tick")) > int(data.get("tick")) or int(effects.get("last_skill_tick")) > int(data.get("tick")) or int(effects.get("last_crit_tick", 0)) > int(data.get("tick")):
+		if int(effects.get("last_hit_tick")) > int(data.get("tick")) or int(effects.get("last_skill_tick")) > int(data.get("tick")) or int(effects.get("last_crit_tick", 0)) > int(data.get("tick")) or int(effects.get("last_push_tick", 0)) > int(data.get("tick")):
 			return "Battle effect timestamps cannot be ahead of the simulation tick."
 		if not carried_by_id.is_empty() and not carrying_id.is_empty():
 			return "A battle actor cannot carry and be carried simultaneously."
@@ -1114,6 +1116,9 @@ static func _apply_effects(
 					_start_telegraph(state, actor, skill, point, float(effect["delay_seconds"]))
 					continue
 				var hit_any: bool = false
+				# Every hit lands at pre-push positions, then the pushes (SYSTEMS.md § Knockback).
+				var push: float = float(effect.get("push", 0.0))
+				var pushes: Array = []
 				match str(effect["area"]):
 					"target":
 						_damage(state, actor, target, multiplier, rng, weaponskill)
@@ -1128,16 +1133,19 @@ static func _apply_effects(
 							if along >= 0.0 and along <= skill.range_units and candidate.position.distance_to(closest) <= skill.radius_units * 0.5:
 								_damage(state, actor, candidate, multiplier, rng)
 								hit_any = true
+								pushes.append([candidate, direction])
 					"circle", "around_caster":
 						var center: Vector2 = point if str(effect["area"]) == "circle" else actor.position
 						for candidate: BattleActor in state.actors:
 							if candidate.faction != actor.faction and candidate.life == BattleActor.LIFE_ALIVE and candidate.position.distance_to(center) <= skill.radius_units:
 								_damage(state, actor, candidate, multiplier, rng)
 								hit_any = true
+								pushes.append([candidate, candidate.position - center])
 					"near_target":
 						for candidate: BattleActor in _nearest_others(state, actor, target, skill.radius_units, int(effect["count"])):
 							_damage(state, actor, candidate, multiplier, rng)
 							hit_any = true
+				_push_all(state, pushes, actor.facing, push)
 				if not hit_any and bool(effect.get("required", false)):
 					return false
 	return true
@@ -1521,6 +1529,41 @@ static func _in_range_target(state: BattleState, actor: BattleActor) -> BattleAc
 	return target
 
 
+## Knockback (SYSTEMS.md § Knockback): moves a living, non-elite target distance along direction (the
+## source's facing when the two coincide), clamped to the battlefield; a carrier takes its body along.
+## Instant, no RNG, no interrupt. Shared with ig-zht's Charge.
+static func _push(state: BattleState, target: BattleActor, direction: Vector2, facing: Vector2, distance: float) -> void:
+	if target.life != BattleActor.LIFE_ALIVE or bool(target.effect_state.get("elite", false)):
+		return
+	var away: Vector2 = _push_direction(direction, facing)
+	target.position = _clamp_to_bounds(state, target.position + away * distance)
+	target.effect_state["hit_from"] = [away.x, away.y]
+	target.effect_state["last_push_tick"] = state.tick
+	if not target.carrying_id.is_empty():
+		var carried: BattleActor = _actor_by_id(state, target.carrying_id)
+		if carried != null:
+			carried.position = target.position
+
+
+## An area's hits, after all of them landed: each target's view cue points away from the area (a
+## killed one keeps it for its fling), then each living one is pushed distance, if the skill pushes.
+static func _push_all(state: BattleState, pushes: Array, facing: Vector2, distance: float) -> void:
+	for pushed: Array in pushes:
+		var target: BattleActor = pushed[0]
+		var away: Vector2 = _push_direction(pushed[1] as Vector2, facing)
+		target.effect_state["hit_from"] = [away.x, away.y]
+		if distance > 0.0:
+			# The raw direction: normalizing twice can move the last bit.
+			_push(state, target, pushed[1] as Vector2, facing, distance)
+
+
+## direction, else facing when they coincide, else +x for a saved zero facing.
+static func _push_direction(direction: Vector2, facing: Vector2) -> Vector2:
+	if direction != Vector2.ZERO:
+		return direction.normalized()
+	return facing.normalized() if facing != Vector2.ZERO else Vector2.RIGHT
+
+
 static func _face(actor: BattleActor, at: Vector2) -> void:
 	var aim: Vector2 = at - actor.position
 	if aim != Vector2.ZERO:
@@ -1557,9 +1600,15 @@ static func _resolve_telegraph(state: BattleState, actor: BattleActor, rng: Rand
 				skill = ability
 				break
 	var multiplier: float = float(_effect_of(skill, "damage").get("multiplier", 0.0)) if skill != null else 0.0
+	var push: float = float(_effect_of(skill, "damage").get("push", 0.0)) if skill != null else 0.0
+	var point: Vector2 = _array_vector(actor.effect_state.get("telegraph_point"))
+	var line: Vector2 = point - _array_vector(actor.effect_state.get("telegraph_origin"))
+	var pushes: Array = []
 	for candidate: BattleActor in state.actors:
 		if candidate.faction != actor.faction and candidate.life == BattleActor.LIFE_ALIVE and not _has_status(candidate, "dodge") and _in_telegraph(actor, candidate.position):
 			_damage(state, actor, candidate, multiplier, rng)
+			pushes.append([candidate, line if kind == "line" else candidate.position - point])
+	_push_all(state, pushes, actor.facing, push)
 	_cancel_telegraph(actor)
 
 
@@ -1819,7 +1868,14 @@ static func _damage(
 		var rear: Dictionary = _passive_effect(attacker, "rear_basic_damage")
 		if not rear.is_empty() and _is_behind(attacker, target):
 			damage *= 1.0 + float(rear["magnitude"])
+	# Read before this hit writes it; 0 is no crit yet (tick 0 never holds one).
+	var previous_crit: int = int(target.effect_state.get("last_crit_tick", 0))
+	var away: Vector2 = _push_direction(target.position - attacker.position, attacker.facing)
 	_take_damage(state, attacker, target, damage, critical)
+	# View only: where the hit came from, for recoil and the death fling. The sim never reads it.
+	target.effect_state["hit_from"] = [away.x, away.y]
+	if basic_hit and critical and (previous_crit <= 0 or state.tick - previous_crit >= BALANCE.battle_crit_push_gate_ticks):
+		_push(state, target, away, attacker.facing, BALANCE.battle_crit_push_units)
 	# ig-uu7.2: any direct Knight hit, auto or not, pulls an enemy that is on a back-row ally. Bleed and
 	# burn ticks go straight to _take_damage and never get here.
 	if attacker.faction == "ally" and attacker.archetype == "knight" and target.life == BattleActor.LIFE_ALIVE:

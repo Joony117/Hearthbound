@@ -222,6 +222,11 @@ static func validate_dict(data: Dictionary) -> String:
 	# Optional: saves written before crits were recorded have no key.
 	if effects.has("last_crit_tick") and not _valid_nonnegative_integer(effects.get("last_crit_tick")):
 		return "Battle actor effect last_crit_tick must be a non-negative integer."
+	# Optional view cues (ig-36y): saves from before knockback have neither.
+	if effects.has("last_push_tick") and not _valid_nonnegative_integer(effects.get("last_push_tick")):
+		return "Battle actor effect last_push_tick must be a non-negative integer."
+	if effects.has("hit_from") and not _valid_vector(effects.get("hit_from")):
+		return "Battle actor effect hit_from must contain two finite numbers."
 	for key: String in ["attack_target_id", "telegraph_kind"]:
 		if not effects.get(key) is String:
 			return "Battle actor effect %s must be a String." % key

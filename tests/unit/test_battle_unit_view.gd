@@ -73,6 +73,32 @@ func test_crit_recoils_further_back_along_facing_then_springs_home() -> void:
 	assert_almost_eq(unit.global_position, Vector3.ZERO, Vector3.ONE * 0.001, "the unit root never moves")
 
 
+## ig-36y: the recoil and the fling follow the sim's hit_from; a real push plays no recoil (the slide is it).
+func test_recoil_and_fling_follow_the_hit_and_a_pushed_hit_does_not_recoil() -> void:
+	var unit: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0}})
+	unit.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 2, "last_crit_tick": 2, "hit_from": [0.0, 1.0]}}), false)
+	unit._recoil_tween.custom_step(BattleUnitView.RECOIL_OUT_SECONDS)
+	assert_almost_eq(_recoil_offset(unit), Vector3(0.0, 0.0, BattleUnitView.RECOIL_CRIT_DISTANCE), Vector3.ONE * 0.01, "along the hit, not -facing")
+
+	var pushed: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0, "last_push_tick": 0}})
+	pushed.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 2, "last_crit_tick": 2, "last_push_tick": 2, "hit_from": [0.0, 1.0]}}), false)
+	assert_null(pushed._recoil_tween, "the real slide is the recoil")
+	assert_eq(pushed._animator.assigned_animation, &"Hit_B", "the crit still reads")
+
+	var first_push: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0}})
+	first_push.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 2, "last_crit_tick": 2, "last_push_tick": 2}}), false)
+	assert_null(first_push._recoil_tween, "a first push, the key new since the last render, also skips it")
+
+	var later_hit: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0, "last_push_tick": 0}})
+	later_hit.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 12, "last_crit_tick": 12, "last_push_tick": 11}}), false)
+	assert_not_null(later_hit._recoil_tween, "a push, then a later gated crit in the same render: that crit recoils")
+
+	var killed: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0}})
+	killed.set_actor(_actor({"hp": 0.0, "life": "dead", "effect_state": {"last_hit_tick": 2, "last_crit_tick": 0, "hit_from": [0.0, -1.0]}}), false)
+	await wait_seconds(BattleUnitView.DEAD_TWEEN_SECONDS + 0.2)
+	assert_almost_eq(_pivot_offset(killed), Vector3(0.0, 0.0, -BattleUnitView.FLING_DISTANCE), Vector3.ONE * 0.01, "the corpse flies along the hit")
+
+
 func test_heavy_hit_recoils_and_light_hit_does_not() -> void:
 	var heavy: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1}})
 	heavy.set_actor(_actor({"hp": 15.0, "effect_state": {"last_hit_tick": 2}}), false)

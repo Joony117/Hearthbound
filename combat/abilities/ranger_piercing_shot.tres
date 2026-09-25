@@ -14,5 +14,6 @@ radius_units = 1.0
 effects = Array[Dictionary]([{
 "type": "damage",
 "area": "line",
-"multiplier": 1.8
+"multiplier": 1.8,
+"push": 1.0
 }])

@@ -13,12 +13,13 @@ const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 ## purpose: approaches stop inside a reach instead of parking a float32 hair outside it. With the fix
 ## off, this file printed the previous four (.agent-results/ig-9gf/formation_fix_off.log). ig-el4's
 ## enemy retune (atk budget 0.04 -> 0.03, hp 1.0 -> 1.15) changed the two three-hero fights on purpose;
-## the two party fights kept theirs.
+## the two party fights kept theirs. ig-36y's knockback (Threadneedle and Arcane Bloom push what they
+## hit) changed the same two on purpose; the party fights kept theirs.
 const UNCHANGED_DIGESTS: Dictionary = {
 	"knight,knight,ranger,mage,cleric/defend": "63e17ddd770cd8024451c6076ec5a466",
 	"knight,knight,ranger,mage,cleric/protect": "a737f9c6949ac597424114ec073eae52",
-	"ranger,mage,cleric/advance": "8d971a8753d72c9dcfeb3faa9a33208c",
-	"ranger,mage,cleric/stay_together": "a7908e6a99218a632f35b976170f21c9",
+	"ranger,mage,cleric/advance": "0d8f348b645fc5d481a29eb847d9bc5c",
+	"ranger,mage,cleric/stay_together": "ff9e4e8ec35fcd0b19ced5d83b50c6b7",
 }
 
 

@@ -19,5 +19,6 @@ effects = Array[Dictionary]([{
 "type": "damage",
 "area": "circle",
 "multiplier": 1.5,
+"push": 1.5,
 "required": true
 }])

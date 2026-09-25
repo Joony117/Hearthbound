@@ -385,25 +385,29 @@ Not changed: the combat seam's contract, the six stats, `hero_power`, zone recom
 ### Knockback — *ig-n9r, proposed 2026-09-23*
 
 A qualifying hit moves its living target instantly, in the same tick, away from the hit's
-source. No new saved state: no velocity, no timer, no per-target cooldown field. The push
+source. No new sim state: no velocity, no timer, no per-target cooldown field. The push
 rewrites `position` (already saved and bounds-validated) and reads only fields that already
 save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_id`.
+Two optional, view-only cues ride in `effect_state`, and the sim never reads them: `hit_from`
+(the last hit's direction, `[x, y]`, for recoil and the death fling) and `last_push_tick`. A
+checkpoint without them loads, and the view falls back to `-facing`.
 
 | Hit (either faction) | Push | Away from |
 |---|---|---|
-| Basic attack that crits | 1.0 units, crit gate below | the attacker |
+| Basic attack that crits | 0.5 units, crit gate below | the attacker |
 | Ranger Threadneedle, each target | 1.0 units | along the shot line |
 | Mage Arcane Bloom, each target | 1.5 units | the burst center |
 | Knight Stand Fast, Rogue Turncoat Cut, Cleric | none | — |
 
-> ⚠️ **PROVISIONAL** — the three push distances and the 1.0 s crit gate are arithmetic only (sustained crit pushes stay under the 1.5 u/s every enemy walks at), never seen on screen · **Settled by:** a played build plus the ig-544 starter re-measure below
+> ⚠️ **PROVISIONAL** — the crit push (0.5 u) and its 3.0 s gate were cut from 1.0 u / 1.0 s by the ig-36y starter re-measure below; the two skill distances are arithmetic only; none of it has been seen on screen · **Settled by:** the owner playing knockback (ig-rwr)
 
 - **One push per hit.** Skill hits push by the table whether or not they crit; basic hits push
   only on a crit. Crit push and gate live in `balance.tres`; skill pushes on their ability
   Resources.
 - **Crit gate.** A basic crit pushes only if the target's previous crit (`last_crit_tick`, read
-  before this hit writes it) is at least 10 ticks (1.0 s) old. Closer crits still deal crit
-  damage. Crit push on one target therefore caps at 1.0 u/s however many attackers it has.
+  before this hit writes it) is at least 30 ticks (3.0 s) old; 0 means no crit yet, which always
+  qualifies. Closer crits still deal crit damage. Crit push on one target therefore caps at 0.5 u
+  per 3.0 s however many attackers it has.
   Skill pushes are not gated; their cooldowns bound them.
 - **Immune:** elites, and any hit that downs or kills, so bodies stay where revive and carry
   expect them.
@@ -422,14 +426,20 @@ save: `facing`, `effect_state.last_crit_tick`, `effect_state.elite`, `carrying_i
   landed.
 
 **Balance.** Ranged heroes gain: pushes delay melee enemies, who all walk at 1.5 u/s. Melee
-heroes pay a re-close of at most 1.0 unit after their own crit push (0.2–0.7 s at 1.5–5 u/s).
+heroes pay a re-close of at most 0.5 unit after their own crit push (0.1–0.33 s at 1.5–5 u/s).
 At base crit rates of 5–15% this is a light touch, not a swing. Pushing enemies out of a seal
 or cart radius helps; an enemy push can break an ally's seal hold. The forecast needs no special
 case: its stress run forces enemy crits (more gated pushes on allies) and suppresses ally crits
 (no ally crit pushes; skill pushes remain), so it stays the harsher run and "safe" keeps its
 definition. No existing number moves, but the ig-544 starter evidence goes stale: the
 implementation re-runs those eight cases on the same seeds, and any loss, any new downing in a
-supplied case, or a clear-time shift over 15% returns this to design. Known ceiling: skill
+supplied case, or a clear-time shift over 15% returns this to design. ig-36y ran them: at 1.0 u /
+1.0 s, starter_knights:1 was stranded; at 0.5 u / 3.0 s, no loss and no new supplied downing, and
+only mixed:2 moved over 15% (78.6 → 66.7 s, faster: the ranged gain above).
+
+> ⚠️ **PROVISIONAL** — mixed:2 clearing 15.1% faster is accepted as the expected ranged gain, not re-tuned · **Settled by:** ig-1jw's re-baseline of all eight cases
+
+Known ceiling: skill
 pushes stack per caster, so five Mages bursting one target outpace a 1.5 u/s walk; accepted
 because elites are immune and clustered trash is meant to fall.
 
@@ -516,7 +526,7 @@ requires an ally within 1.5 and one second of channeling beside the body (design
 dodge), a stun or a root pauses the channel, and it resumes where it stopped. The progress
 belongs to one carrier and one body. It starts over on a new order or a new body, and when
 the body is revived or taken by another carrier, or the carrier is downed. Why: a push never
-interrupts, and with a restart rule a crit push every second (the crit gate's cap) or a stun
+interrupts, and with a restart rule a crit push every 3 seconds (the crit gate's cap) or a stun
 chain could hold off a rescue for good. Carry permits one body per carrier, reduces movement
 to 65%, and extracts both within 2 of the exit. Downing the carrier drops the body. A retreat
 only secures downed heroes actually carried out.

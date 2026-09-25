@@ -116,6 +116,7 @@ var _last_hit_tick: int = -1
 var _last_skill_tick: int = -1
 var _last_crit_tick: int = -1
 var _last_counter_tick: int = -1
+var _last_push_tick: int = -1
 var _recoil_tween: Tween
 var _lunge_tween: Tween
 # Pivot offsets live in world space, one per effect; _apply_pivot is the only writer of _pivot.position.
@@ -136,6 +137,8 @@ var _fling_arc: float = 0.0:
 		_fling_arc = value
 		_apply_pivot()
 var _facing_world: Vector3 = Vector3.RIGHT
+# Where the last hit sent this unit (the sim's hit_from, ig-36y); -facing for a save from before it.
+var _hit_away: Vector3 = Vector3.LEFT
 var _fling_distance: float = FLING_DISTANCE
 # Every tween this view starts, so slow-mo and hit-stop can rescale them together.
 var _tweens: Array[Tween] = []
@@ -183,16 +186,27 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 	var hit_tick: int = int(_effects.get("last_hit_tick", -1))
 	var skill_tick: int = int(_effects.get("last_skill_tick", -1))
 	var crit_tick: int = int(_effects.get("last_crit_tick", -1))
+	var push_tick: int = int(_effects.get("last_push_tick", 0))
 	var was_hit: bool = _last_hit_tick >= 0 and hit_tick > _last_hit_tick
+	var facing: Vector2 = _vector2(actor.get("facing", [1.0, 0.0]))
+	_facing_world = Vector3(facing.x, 0.0, facing.y).normalized()
+	var hit_from: Variant = _effects.get("hit_from")
+	var away: Vector2 = _vector2(hit_from) if hit_from is Array else -facing
+	_hit_away = Vector3(away.x, 0.0, away.y).normalized()
 	var reaction: Dictionary = {
 		"hit": was_hit,
 		"skill": _last_skill_tick >= 0 and skill_tick > _last_skill_tick,
 		"critical": was_hit and crit_tick > _last_crit_tick,
 		"heavy": was_hit and hp_before - hp >= max_hp * RECOIL_HP_FRACTION,
+		# A real push slides the unit itself, so it plays no view recoil (director, ig-36y item 4). Only
+		# when the latest hit pushed: a push and the hit that pushed share a tick.
+		"pushed": _last_push_tick >= 0 and push_tick > _last_push_tick and push_tick >= hit_tick,
+		"away": _hit_away,
 	}
 	_last_hit_tick = hit_tick
 	_last_skill_tick = skill_tick
 	_last_crit_tick = crit_tick
+	_last_push_tick = push_tick
 	var counter_tick: int = int(_effects.get("last_counter_tick", 0))
 	if _last_counter_tick >= 0 and counter_tick > _last_counter_tick:
 		_show_counter(str(_effects.get("last_skill_id", "")))
@@ -215,8 +229,6 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 		_glide_elapsed = 0.0
 	target_position = destination
 	_placed = true
-	var facing: Vector2 = _vector2(actor.get("facing", [1.0, 0.0]))
-	_facing_world = Vector3(facing.x, 0.0, facing.y).normalized()
 	# +Z along the facing: KayKit models look down their own +Z.
 	rotation.y = atan2(facing.x, facing.y)
 	if reaction_delay > 0.0 and (reaction["hit"] or reaction["skill"]):
@@ -292,8 +304,8 @@ func _react(reaction: Dictionary) -> void:
 	var critical: bool = reaction["critical"]
 	_fling_distance = FLING_CRIT_DISTANCE if critical else FLING_DISTANCE
 	# A killing hit skips recoil and the hit clip so the death clip reads cleanly.
-	if (critical or reaction["heavy"]) and life != "dead" and _pivot != null:
-		_recoil(critical)
+	if (critical or reaction["heavy"]) and not bool(reaction.get("pushed", false)) and life != "dead" and _pivot != null:
+		_recoil(critical, reaction.get("away", _hit_away) as Vector3)
 	if reaction["hit"]:
 		_flash(critical)
 		_play_once("Hit_B" if critical else "Hit_A")
@@ -459,11 +471,11 @@ func _update_status() -> void:
 
 # View-only knockback: the sim position is untouched. Each effect owns its own offset and
 # _apply_pivot sums them, so an in-flight recoil, a lunge and the death fling never fight.
-func _recoil(critical: bool) -> void:
+func _recoil(critical: bool, away: Vector3) -> void:
 	if _recoil_tween != null:
 		_recoil_tween.kill()
 	_recoil_tween = _track(create_tween())
-	_recoil_tween.tween_property(self, "_recoil_offset", -_facing_world * (RECOIL_CRIT_DISTANCE if critical else RECOIL_DISTANCE), RECOIL_OUT_SECONDS)
+	_recoil_tween.tween_property(self, "_recoil_offset", away * (RECOIL_CRIT_DISTANCE if critical else RECOIL_DISTANCE), RECOIL_OUT_SECONDS)
 	_recoil_tween.tween_property(self, "_recoil_offset", Vector3.ZERO, RECOIL_BACK_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
@@ -491,7 +503,7 @@ func _pose_dead() -> void:
 		return
 	_fall_animated = true
 	var tween: Tween = _track(create_tween().set_parallel())
-	tween.tween_property(self, "_fling_offset", -_facing_world * _fling_distance, DEAD_TWEEN_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "_fling_offset", _hit_away * _fling_distance, DEAD_TWEEN_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_method(_set_fling_phase, 0.0, 1.0, DEAD_TWEEN_SECONDS)
 
 

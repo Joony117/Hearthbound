@@ -40,6 +40,8 @@ func _protect_run(start: Vector2) -> BattleState:
 	_still(state, Vector2(16.0, 14.0))
 	state.actors[1].move_speed = 0.0
 	state.actors[1].atk = 0.0
+	# No Threadneedle: its push (ig-36y) would move the enemy off the guard this test measures.
+	state.actors[1].skills.clear()
 	return state
 
 

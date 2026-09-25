@@ -163,6 +163,10 @@ extends Resource
 @export var battle_revival_masterwork_fraction: float = 0.5
 @export var battle_revival_range: float = 3.0
 @export var battle_carry_range: float = 1.5
+# Knockback (SYSTEMS.md § Knockback): a basic crit pushes its target this far, unless the target's
+# previous crit is under the gate's ticks old.
+@export var battle_crit_push_units: float = 0.5
+@export var battle_crit_push_gate_ticks: int = 30
 @export var battle_carry_seconds: float = 1.0
 @export var battle_carry_speed_fraction: float = 0.65
 @export var battle_exit_radius: float = 2.0

@@ -52,7 +52,8 @@ const AI_BANDS: Dictionary = {
 ## the caster) or "near_target" (up to count other opponents nearest the target, within
 ## radius_units of it). A "required" effect that lands on nobody fails the cast; it must come before
 ## any effect that changes state. combo_multiplier replaces multiplier on a combo step.
-## delay_seconds: the area is marked and lands that much later (a telegraph).
+## delay_seconds: the area is marked and lands that much later (a telegraph). push: units each living,
+## non-elite target it hits is knocked back (SYSTEMS.md § Knockback), after every hit has landed.
 ## heal: multiplier x the caster's ATK, or max_hp_fraction of the healed ally's max HP; area
 ## "target" (a living, hurt ally; the cast needs one), "self" or "allies_near_caster". Never past
 ## max HP.
@@ -66,7 +67,7 @@ const AI_BANDS: Dictionary = {
 ## taunt: the target attacks the caster for seconds.
 ## Heals, shields and heal-over-time from a caster with heal_bonus are that much larger.
 const EFFECT_KEYS: Dictionary = {
-	"damage": ["area", "multiplier", "combo_multiplier", "required", "count", "delay_seconds"],
+	"damage": ["area", "multiplier", "combo_multiplier", "required", "count", "delay_seconds", "push"],
 	"heal": ["area", "multiplier", "max_hp_fraction"],
 	"shield": ["multiplier", "seconds"],
 	"status": ["target", "status", "magnitude", "seconds", "radius", "combo"],
@@ -166,6 +167,8 @@ func _effect_problem(type: String, effect: Dictionary) -> String:
 				return "a delay needs a circle and a positive delay."
 			if str(effect["area"]) == "near_target" and int(effect.get("count", 0)) <= 0:
 				return "near_target needs a positive count."
+			if effect.has("push") and (not str(effect["area"]) in ["line", "circle"] or not (effect["push"] is float or effect["push"] is int) or not (float(effect["push"]) > 0.0 and is_finite(float(effect["push"])))):
+				return "a push needs a line or circle and a positive, finite distance."
 		"heal":
 			if not str(effect.get("area", "target")) in HEAL_AREAS or (float(effect.get("multiplier", 0.0)) <= 0.0) == (float(effect.get("max_hp_fraction", 0.0)) <= 0.0):
 				return "needs a known area and exactly one of multiplier or max_hp_fraction."
