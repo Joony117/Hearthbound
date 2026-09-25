@@ -4,6 +4,7 @@ extends GutTest
 ## target at once, away from the hit, and draws no RNG.
 
 const SIM = preload("res://combat/battle/battle_simulation.gd")
+const Compare = preload("res://tests/unit/compare.gd")
 var PUSH: float = SIM.BALANCE.battle_crit_push_units
 var GATE: int = SIM.BALANCE.battle_crit_push_gate_ticks
 
@@ -210,15 +211,15 @@ func test_a_mid_fight_save_and_reload_reproduces_the_pushes_and_legacy_saves_loa
 	GameSession.from_dict(JSON.parse_string(exact) as Dictionary)
 	for _second: int in 12:
 		GameSession.tick_expeditions(1.0)
-	assert_eq(_mismatch(_where(GameSession.get_battle_snapshot(order_id)), straight), "", "the saved state pushes as the unbroken fight")
+	assert_eq(Compare.mismatch(_where(GameSession.get_battle_snapshot(order_id)), straight), "", "the saved state pushes as the unbroken fight")
 
 	# ig-85w: the file holds full-precision floats, so the disk path is held to the unbroken fight too.
-	# Within _mismatch's tolerance: the parser misrounds some 17-digit numbers by 1 ulp.
+	# Within Compare.mismatch's tolerance: the parser misrounds some 17-digit numbers by 1 ulp.
 	GameSession.from_dict({"roster": []})
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
 	for _second: int in 12:
 		GameSession.tick_expeditions(1.0)
-	assert_eq(_mismatch(_where(GameSession.get_battle_snapshot(order_id)), straight), "", "the save on disk pushes as the unbroken fight")
+	assert_eq(Compare.mismatch(_where(GameSession.get_battle_snapshot(order_id)), straight), "", "the save on disk pushes as the unbroken fight")
 	assert_gt(_pushes(GameSession.get_battle_snapshot(order_id)), pushes_at_save, "and it pushed after the reload")
 
 	# The cues themselves through disk: saved after the pushes, loaded back as they were.
@@ -228,7 +229,7 @@ func test_a_mid_fight_save_and_reload_reproduces_the_pushes_and_legacy_saves_loa
 	var profile: Dictionary = JSON.parse_string(JSON.stringify(GameSession.to_dict())) as Dictionary
 	GameSession.from_dict({"roster": []})
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
-	assert_eq(_mismatch(_where(GameSession.get_battle_snapshot(order_id)), pushed), "", "hit_from and last_push_tick survive the file")
+	assert_eq(Compare.mismatch(_where(GameSession.get_battle_snapshot(order_id)), pushed), "", "hit_from and last_push_tick survive the file")
 
 	var legacy: Dictionary = profile.duplicate(true)
 	for actor: Dictionary in _actors(legacy):
@@ -295,20 +296,6 @@ func _where(snapshot: Dictionary) -> Array:
 		var from: Array = effects.get("hit_from", [0.0, 0.0])
 		result.append(["%s %s %s %d %d" % [snapshot["rng_state"], actor["id"], actor["life"], int(snapshot["tick"]), int(effects.get("last_push_tick", 0))], float(actor["hp"]), float(actor["position"][0]), float(actor["position"][1]), float(from[0]), float(from[1])])
 	return result
-
-
-## To 1e-6: the save writes full precision, but a reload lands within 1 ulp, not bit for bit (Godot's
-## parser misrounds some 17-digit numbers, ig-85w).
-func _mismatch(got: Array, want: Array) -> String:
-	if got.size() != want.size():
-		return "%d actors, not %d" % [got.size(), want.size()]
-	for index: int in want.size():
-		if got[index][0] != want[index][0]:
-			return "%s, not %s" % [got[index][0], want[index][0]]
-		for field: int in range(1, want[index].size()):
-			if absf(float(got[index][field]) - float(want[index][field])) > 0.000001:
-				return "%s field %d: %f, not %f" % [want[index][0], field, got[index][field], want[index][field]]
-	return ""
 
 
 func _pushes(snapshot: Dictionary) -> int:

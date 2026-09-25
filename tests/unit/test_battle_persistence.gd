@@ -1,5 +1,7 @@
 extends GutTest
 
+const Compare = preload("res://tests/unit/compare.gd")
+
 
 func before_each() -> void:
 	GameSession.set("_save_deferred_depth", 1)
@@ -74,7 +76,7 @@ func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
 	var tick: int = int(((profile["expedition_orders"] as Array)[0]["battle"] as Dictionary)["tick"])
 	assert_gt(tick, 0)
 
-	var old_shape: Dictionary = _json_round_trip(profile)
+	var old_shape: Dictionary = Compare.json_round_trip(profile)
 	for raw_actor: Variant in ((old_shape["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"]:
 		((raw_actor as Dictionary)["effect_state"] as Dictionary).erase("last_crit_tick")
 	assert_eq(GameSession.validate_saved_state(old_shape, 3), "", "a save from before crits were recorded still loads")
@@ -83,16 +85,16 @@ func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
 
 	var with_crit: Dictionary = profile.duplicate(true)
 	_first_actor_effects(with_crit)["last_crit_tick"] = tick
-	var recorded: Dictionary = _json_round_trip(with_crit)
+	var recorded: Dictionary = Compare.json_round_trip(with_crit)
 	assert_eq(GameSession.validate_saved_state(recorded, 3), "")
 	GameSession.from_dict(recorded)
 	var reloaded: Dictionary = ((GameSession.get_battle_snapshot(order_id)["actors"] as Array)[0] as Dictionary)["effect_state"]
 	assert_eq(int(reloaded["last_crit_tick"]), tick, "value survives the round trip")
-	var resaved: Dictionary = _json_round_trip(GameSession.to_dict())
+	var resaved: Dictionary = Compare.json_round_trip(GameSession.to_dict())
 	assert_eq(int(_first_actor_effects(resaved)["last_crit_tick"]), tick, "and survives the next save")
 
 	for bad_value: Variant in [-1, 1.5, "3", tick + 1]:
-		var broken: Dictionary = _json_round_trip(profile)
+		var broken: Dictionary = Compare.json_round_trip(profile)
 		_first_actor_effects(broken)["last_crit_tick"] = bad_value
 		assert_ne(GameSession.validate_saved_state(broken, 3), "", "last_crit_tick %s is rejected" % str(bad_value))
 
@@ -135,7 +137,7 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 		if actor.faction == "ally":
 			var mode: String = "manual" if actor.hero_id == "hero:checkpoint:2" else "auto"
 			assert_eq(str(actor.skills[1]["mode"]), mode, "%s signature mode survives migration" % actor.hero_id)
-	var resaved: Dictionary = _json_round_trip(state.to_dict())
+	var resaved: Dictionary = Compare.json_round_trip(state.to_dict())
 	assert_eq(BattleSimulation.validate_snapshot(resaved), "", "the migrated battle saves in the new shape")
 	state = BattleState.from_dict(resaved)
 	# Tick by tick, to rebuild the old guard_reduction, which only ever grew (ig-gy0.2), from the
@@ -158,7 +160,7 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 	assert_eq(_exact_json(_pre_skills_shape(state, rallied)), _exact_json(expected["final"]), "final state matches the pre-change finish")
 
 	GameSession.tick_expeditions(0.1)
-	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
+	var profile: Dictionary = Compare.json_round_trip(GameSession.to_dict())
 	assert_eq(GameSession.validate_saved_state(profile, 3), "", "the session re-saves the migrated battle")
 	assert_true(((((profile["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"] as Array)[0] as Dictionary).has("skills"))
 
@@ -208,11 +210,6 @@ func _without_ledger_keys(data: Dictionary) -> Dictionary:
 ## Full precision, sorted keys, and ints read back as floats like the parsed expectation.
 func _exact_json(value: Variant) -> String:
 	return JSON.stringify(JSON.parse_string(JSON.stringify(value, "", true, true)), "", true, true)
-
-
-## As SaveService writes it (ig-85w): full precision.
-func _json_round_trip(profile: Dictionary) -> Dictionary:
-	return JSON.parse_string(JSON.stringify(profile, "", true, true)) as Dictionary
 
 
 func _first_actor_effects(profile: Dictionary) -> Dictionary:
@@ -269,9 +266,9 @@ func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_read
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
 	_land_catch_ups()
 	assert_eq(_knight_cover(GameSession.to_dict()), ["hero:m"], "equal after the reload")
-	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
+	var profile: Dictionary = Compare.json_round_trip(GameSession.to_dict())
 	# A battle from before the key: it loads as [] and advances.
-	var legacy: Dictionary = _json_round_trip(profile)
+	var legacy: Dictionary = Compare.json_round_trip(profile)
 	_knight_effects(legacy).erase("cover_order")
 	assert_eq(GameSession.validate_saved_state(legacy, 3), "")
 	GameSession.from_dict(legacy)
@@ -282,7 +279,7 @@ func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_read
 	GameSession.tick_expeditions(1.0)
 	assert_gt(int(GameSession.get_battle_snapshot(order_id)["tick"]), tick, "and advances")
 	for bad_value: Variant in [["hero:m", 3], "hero:m", [null], {}]:
-		var broken: Dictionary = _json_round_trip(profile)
+		var broken: Dictionary = Compare.json_round_trip(profile)
 		_knight_effects(broken)["cover_order"] = bad_value
 		assert_string_contains(GameSession.validate_saved_state(broken, 3), "cover_order", "cover_order %s is rejected" % str(bad_value))
 
@@ -312,10 +309,10 @@ func test_a_battle_keeps_its_pace_through_a_real_save_and_a_legacy_one_is_pace_1
 	var reloaded := BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
 	assert_eq(reloaded.pace, balance.battle_pace, "equal after the reload")
 	assert_eq(reloaded.max_seconds, zone.max_battle_seconds * balance.battle_pace)
-	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
+	var profile: Dictionary = Compare.json_round_trip(GameSession.to_dict())
 	assert_eq(_settle_as_victory(), [zone.stone_reward * balance.battle_pace, balance.battle_pace], "stones and loot rolls xP")
 	# A battle from before the key (and inside the pace-1 bound): pace 1, pace-1 rewards.
-	var legacy: Dictionary = _json_round_trip(profile)
+	var legacy: Dictionary = Compare.json_round_trip(profile)
 	var legacy_battle: Dictionary = (legacy["expedition_orders"] as Array)[0]["battle"] as Dictionary
 	legacy_battle.erase("pace")
 	legacy_battle["max_seconds"] = zone.max_battle_seconds
@@ -343,7 +340,7 @@ func test_five_battles_mid_fight_survive_a_real_save_and_each_resumes() -> void:
 		var battle: Dictionary = order["battle"] as Dictionary
 		assert_eq(str(battle["status"]), "active", "mid-fight")
 		assert_gt(float(battle["elapsed_seconds"]), 0.0, "it advanced")
-		saved_battles[order["id"]] = _json_round_trip(battle)  # As the save writes it.
+		saved_battles[order["id"]] = Compare.json_round_trip(battle)  # As the save writes it.
 	assert_eq(saved_battles.size(), 5)
 	assert_eq(GameSession._battle_states.size(), 5, "each holds a kept state")
 	# Nothing saved reads the kept states or the owed time.
@@ -396,7 +393,7 @@ func _settle_as_victory() -> Array:
 ## ig-85w (boundary #1): a battle saved mid-fight by the real SaveService and loaded back from the file
 ## is its own full-precision round trip, every field ==, no tolerance, at load and 30 s later. (Not the
 ## unsaved battle's bits: Godot's parser misrounds some 17-digit numbers by 1 ulp, docs/KNOWN_ISSUES.md.)
-## _json_round_trip is fixed at full precision, so a save back at 14 digits fails here.
+## Compare.json_round_trip is fixed at full precision, so a save back at 14 digits fails here.
 func test_a_checkpoint_through_the_real_save_file_reads_back_as_its_full_precision_round_trip() -> void:
 	var ids: Array[String] = []
 	for archetype: StringName in [&"knight", &"ranger", &"mage", &"rogue", &"cleric"]:
@@ -412,7 +409,7 @@ func test_a_checkpoint_through_the_real_save_file_reads_back_as_its_full_precisi
 		GameSession.tick_expeditions(0.1)
 	var battle: Dictionary = GameSession.expedition_orders[0]["battle"]
 	assert_eq(str(battle["status"]), "active", "mid-fight")
-	var round_trip: Dictionary = _json_round_trip(battle)
+	var round_trip: Dictionary = Compare.json_round_trip(battle)
 	var written := BattleState.from_dict(round_trip)
 	var start: int = written.tick
 	GameSession.set("_save_deferred_depth", 0)
@@ -429,39 +426,13 @@ func test_a_checkpoint_through_the_real_save_file_reads_back_as_its_full_precisi
 	GameSession.from_dict({"roster": []})
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
 	var read_back: Dictionary = GameSession.expedition_orders[0]["battle"]
-	assert_eq(_first_difference(read_back, round_trip), "", "the file reads back as the round trip, raw")
+	assert_eq(Compare.first_difference(read_back, round_trip), "", "the file reads back as the round trip, raw")
 	var loaded := BattleState.from_dict(read_back)
 	for step: int in 300:
 		BattleSimulation.advance(written, 0.1)
 		BattleSimulation.advance(loaded, 0.1)
 	assert_eq(written.tick, start + 300, "it ran on all 30 s")
-	assert_eq(_first_difference(loaded.to_dict(), written.to_dict()), "", "and runs on the same")
-
-
-## Where got first differs from want, or "". Numbers compare by value, so a reload's 43.0 is 43, but a
-## float must match to the last bit.
-static func _first_difference(got: Variant, want: Variant, path: String = "") -> String:
-	if (got is int or got is float) and (want is int or want is float):
-		return "" if float(got) == float(want) else "%s: %s, not %s" % [path, var_to_str(got), var_to_str(want)]
-	if got is Dictionary and want is Dictionary:
-		if (got as Dictionary).size() != (want as Dictionary).size():
-			return "%s: keys %s, not %s" % [path, (got as Dictionary).keys(), (want as Dictionary).keys()]
-		for key: Variant in want:
-			if not (got as Dictionary).has(key):
-				return "%s.%s: missing" % [path, key]
-			var inner: String = _first_difference(got[key], want[key], "%s.%s" % [path, key])
-			if not inner.is_empty():
-				return inner
-		return ""
-	if got is Array and want is Array:
-		if (got as Array).size() != (want as Array).size():
-			return "%s: %d items, not %d" % [path, (got as Array).size(), (want as Array).size()]
-		for index: int in (want as Array).size():
-			var inner: String = _first_difference(got[index], want[index], "%s[%d]" % [path, index])
-			if not inner.is_empty():
-				return inner
-		return ""
-	return "" if typeof(got) == typeof(want) and got == want else "%s: %s, not %s" % [path, var_to_str(got), var_to_str(want)]
+	assert_eq(Compare.first_difference(loaded.to_dict(), written.to_dict()), "", "and runs on the same")
 
 
 func _cover_hero(id: String, def_id: StringName) -> Hero:

@@ -11,6 +11,9 @@ export/
 *.pck
 *.zip
 
+# Stage playtests (ig-eek): each launcher's own APPDATA, made on first run
+playtest/*/appdata/
+
 # Agent working files (logs + artifacts, per WORKER-CONTRACT.md)
 .agent-results/
 

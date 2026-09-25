@@ -1,0 +1,1581 @@
+{
+	"building_levels": [
+		1,
+		1,
+		0,
+		0,
+		0
+	],
+	"cleared_zone_ids": [
+		"ashfall_reaches",
+		"verdant_outskirts"
+	],
+	"embodied_hero_id": "",
+	"essence": 20,
+	"expedition_orders": [],
+	"expedition_reports": [
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 864,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"adb1d8f9b142b0422eb32ca6dae58e3e"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Brenna Westmarch"
+			],
+			"id": "b1749e497ad37355bf6fbc846ea09da8",
+			"items_earned": 6,
+			"order_id": "560c1ccfe76287bb2f50b20a535cc393",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 864,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1152,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"adb1d8f9b142b0422eb32ca6dae58e3e",
+				"0a260ba6a48f10e621bbe4508b61bb3a"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Brenna Westmarch",
+				"Vesna Valebrook"
+			],
+			"id": "03928b425608b374a1bb34c423784d3b",
+			"items_earned": 6,
+			"order_id": "13f378e90ea413e54cdde78854c81a25",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1152,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"adb1d8f9b142b0422eb32ca6dae58e3e",
+				"0a260ba6a48f10e621bbe4508b61bb3a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Brenna Westmarch",
+				"Vesna Valebrook",
+				"Orla Valebrook"
+			],
+			"id": "96f139ffb2a623451dc20df674be0dea",
+			"items_earned": 6,
+			"order_id": "a756e2756fa0dccfed1c4e3f8fa2b85a",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"452ab916df949e940a6c4055ddae8ed4",
+				"0a260ba6a48f10e621bbe4508b61bb3a",
+				"adb1d8f9b142b0422eb32ca6dae58e3e"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Orla Valebrook",
+				"Vesna Valebrook",
+				"Brenna Westmarch"
+			],
+			"id": "608cc3afed310dbae984fa563da89753",
+			"items_earned": 6,
+			"order_id": "590380d92fa36096b2c26adf27e1a726",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "6f9971b85d8021b9c314f07701263c6c",
+			"items_earned": 6,
+			"order_id": "8b9eea02db2628cd98cd2fd3570c0d19",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "7af2b732ac5b9611ec0ca61690f88d03",
+			"items_earned": 6,
+			"order_id": "2a6c325388b8bc1344c97640968bcfdd",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "5836075e86d7561e4ec34045a66afd4b",
+			"items_earned": 6,
+			"order_id": "0a20faf6280c60d0ad7d48129d5b334d",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Ivo Fairwind",
+				"Nils Emberfell",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "409264d1f1057f3c691e0c69247c3615",
+			"items_earned": 6,
+			"order_id": "4c2643bc49f1c2e83c9024144ef482e6",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Ivo Fairwind",
+				"Nils Emberfell",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "59b8bb0543a5528f7838e13c1dc47d9a",
+			"items_earned": 6,
+			"order_id": "d7d4d58601e0cda72b47e99faa70be4e",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Ivo Fairwind",
+				"Nils Emberfell",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "a5e1b1219862e6ed29a36777a5aa0499",
+			"items_earned": 6,
+			"order_id": "e2584ded4d50e9055d68b9ab68883272",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Ivo Fairwind",
+				"Nils Emberfell",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "a9927195d415fdacb1d876acbca926b1",
+			"items_earned": 6,
+			"order_id": "de31f56f245757511c4d189091aad586",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Ivo Fairwind",
+				"Nils Emberfell",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "9d0098edf5199f07a0d0af4ee4a0ad04",
+			"items_earned": 6,
+			"order_id": "d20eff2190e01cfd615720aa4c0ea4a5",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Ivo Fairwind",
+				"Nils Emberfell",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "78e13c9ffcb46332d2fa76b1043a896c",
+			"items_earned": 6,
+			"order_id": "47c37435bfeba2fd1cc640456b16e67c",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "5ce6b28b2789cab02c68fb4db45a547c",
+			"items_earned": 6,
+			"order_id": "b9a0b5f47c2204daa8d8ac2fa7390c98",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "6cb6969b1a6b56a21d259097ac7a9812",
+			"items_earned": 6,
+			"order_id": "23f0bc1922146f4497800b0ab26181c9",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 150,
+			"cumulative_xp": 1440,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "ac9c1438f31fec350f9cf9020345438f",
+			"items_earned": 6,
+			"order_id": "390b43ebb2cf733872f71da0e777f220",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 150,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 1440,
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 450,
+			"cumulative_xp": 3000,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "c7e9a5461bb992cbe92cdd5bbe3ba230",
+			"items_earned": 6,
+			"order_id": "3f9d9200af0969aa7538ffa1a9a9194f",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 450,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 3000,
+			"zone_id": "ashfall_reaches"
+		},
+		{
+			"casualty_names": [],
+			"cumulative_items": 6,
+			"cumulative_stones": 450,
+			"cumulative_xp": 3000,
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"hero_names": [
+				"Nils Ravensworth",
+				"Nils Emberfell",
+				"Ivo Fairwind",
+				"Quill Pinecroft",
+				"Orla Valebrook"
+			],
+			"id": "e4bfb1cef8fb620d830d674fa1a3a772",
+			"items_earned": 6,
+			"order_id": "b7f18bd43aec0fc91e05d6367311e376",
+			"outcome": "victory",
+			"runs_completed": 1,
+			"stones_earned": 450,
+			"stopped_reason": "completed",
+			"team_name": "Team 1",
+			"total_runs": 1,
+			"xp_earned": 3000,
+			"zone_id": "ashfall_reaches"
+		}
+	],
+	"inventory": [],
+	"ledger_next_seq": 82,
+	"lost_caches": [],
+	"parts": [
+		0,
+		1,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0
+	],
+	"recovery_clock_paused": false,
+	"recovery_clock_seconds": 0.0,
+	"rescue_clock_seconds": 0.0,
+	"roster": [
+		{
+			"def_id": "rogue",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "head",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "5c90fada4604f16c654aa950ee690275",
+						"rank": 2
+					},
+					"slot": 0
+				},
+				{
+					"item": {
+						"def_id": "chest",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "0d5d64dcb2482e7ec6a98416cc4452e2",
+						"rank": 2
+					},
+					"slot": 1
+				},
+				{
+					"item": {
+						"def_id": "legs",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "3d333c8a54a0d056510d56c8b9608f1d",
+						"rank": 1
+					},
+					"slot": 2
+				},
+				{
+					"item": {
+						"def_id": "gloves",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "b63b9a98f7ce9e526523f0ec0f7cbe63",
+						"rank": 2
+					},
+					"slot": 3
+				},
+				{
+					"item": {
+						"def_id": "boots",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "e2f1012b1083f25b336df208d502172e",
+						"rank": 1
+					},
+					"slot": 4
+				},
+				{
+					"item": {
+						"def_id": "main_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "65cea00709ef40e4d00970f576e651b3",
+						"rank": 1
+					},
+					"slot": 5
+				},
+				{
+					"item": {
+						"def_id": "off_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "3b0ec6531355e035e05840625a1a1720",
+						"rank": 2
+					},
+					"slot": 6
+				},
+				{
+					"item": {
+						"def_id": "necklace",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "b84d534d2bfa79dbef8d0545274f2e89",
+						"rank": 3
+					},
+					"slot": 7
+				},
+				{
+					"item": {
+						"def_id": "ring",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "581439985af06ad52264e8a50146d233",
+						"rank": 2
+					},
+					"slot": 8
+				},
+				{
+					"item": {
+						"def_id": "belt",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "4b4b2ecbd705948808571d8c3747d564",
+						"rank": 2
+					},
+					"slot": 9
+				}
+			],
+			"favorite": false,
+			"home": "",
+			"instance_id": "9a5dc3a554a61d64fce984a542939bd8",
+			"learned_skills": [],
+			"level": 33,
+			"name": "Nils Emberfell",
+			"passions": [
+				"woodcutting",
+				"rites"
+			],
+			"profession_xp": {},
+			"rank": 3,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 198
+		},
+		{
+			"def_id": "knight",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "head",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "d1b68097e83ea4a887d92f83e0b2183a",
+						"rank": 3
+					},
+					"slot": 0
+				},
+				{
+					"item": {
+						"def_id": "chest",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "0dd757d1136834dbd784a4b5e50ec335",
+						"rank": 3
+					},
+					"slot": 1
+				},
+				{
+					"item": {
+						"def_id": "legs",
+						"enhance_level": 2,
+						"favorite": false,
+						"instance_id": "991cab88054d970a1cb86bfd48a98056",
+						"rank": 1
+					},
+					"slot": 2
+				},
+				{
+					"item": {
+						"def_id": "gloves",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "2583b1d6105469e2a08c750ee05c9a63",
+						"rank": 2
+					},
+					"slot": 3
+				},
+				{
+					"item": {
+						"def_id": "boots",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "ae9515a04518e8451f69239b9f761d91",
+						"rank": 2
+					},
+					"slot": 4
+				},
+				{
+					"item": {
+						"def_id": "main_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "5b4f63521bd19778902922e26149d55a",
+						"rank": 2
+					},
+					"slot": 5
+				},
+				{
+					"item": {
+						"def_id": "off_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "127f8d2cd9c9bdd04e1f0b985d6b6a4f",
+						"rank": 2
+					},
+					"slot": 6
+				},
+				{
+					"item": {
+						"def_id": "necklace",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "b740bd017b0bfac104f26d8f1045d061",
+						"rank": 4
+					},
+					"slot": 7
+				},
+				{
+					"item": {
+						"def_id": "ring",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "a06f599b57515fc7806e483cadb7e681",
+						"rank": 3
+					},
+					"slot": 8
+				},
+				{
+					"item": {
+						"def_id": "belt",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "badbc1adb9f82225541fce700d3f570c",
+						"rank": 4
+					},
+					"slot": 9
+				}
+			],
+			"favorite": false,
+			"home": "",
+			"instance_id": "050b34bd4136469e0f07ef59f707f602",
+			"learned_skills": [],
+			"level": 33,
+			"name": "Nils Ravensworth",
+			"passions": [
+				"farming",
+				"mining"
+			],
+			"profession_xp": {},
+			"rank": 4,
+			"resonance": 3,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 198
+		},
+		{
+			"def_id": "ranger",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "main_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "25df5fe1b118117dffbfcc21289e1637",
+						"rank": 0
+					},
+					"slot": 5
+				}
+			],
+			"favorite": false,
+			"home": "House_5",
+			"instance_id": "adb1d8f9b142b0422eb32ca6dae58e3e",
+			"learned_skills": [],
+			"level": 10,
+			"name": "Brenna Westmarch",
+			"passions": [
+				"woodcutting",
+				"mining"
+			],
+			"profession_xp": {},
+			"rank": 0,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "Lumbermill_3",
+			"taught_traits": [
+				"ranger_light_step"
+			],
+			"xp": 0
+		},
+		{
+			"def_id": "ranger",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "head",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "8c85c9f9244da77328015b2178d02cea",
+						"rank": 1
+					},
+					"slot": 0
+				},
+				{
+					"item": {
+						"def_id": "chest",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "20e09e4aca913c3505fd729fab02a3b1",
+						"rank": 0
+					},
+					"slot": 1
+				},
+				{
+					"item": {
+						"def_id": "legs",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "c40068407c7c110754f2d9b7dd96da5f",
+						"rank": 1
+					},
+					"slot": 2
+				},
+				{
+					"item": {
+						"def_id": "gloves",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "3970ba44e24528feff944a1e59965f7e",
+						"rank": 0
+					},
+					"slot": 3
+				},
+				{
+					"item": {
+						"def_id": "boots",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "81ae6716bbf082f70b1c681bd01acfa6",
+						"rank": 1
+					},
+					"slot": 4
+				},
+				{
+					"item": {
+						"def_id": "main_hand",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "44817c8ecd4fc682dd1e503006b09b6d",
+						"rank": 0
+					},
+					"slot": 5
+				},
+				{
+					"item": {
+						"def_id": "off_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "38ce0de92745c2e28740bc5a48c2270b",
+						"rank": 2
+					},
+					"slot": 6
+				},
+				{
+					"item": {
+						"def_id": "necklace",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "70d7055a93f1e00389cf1724ea30b958",
+						"rank": 1
+					},
+					"slot": 7
+				},
+				{
+					"item": {
+						"def_id": "ring",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "0656ce2569f677d520ec19c47c629b25",
+						"rank": 0
+					},
+					"slot": 8
+				},
+				{
+					"item": {
+						"def_id": "belt",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "641841be21ad1ac3bae6398974719781",
+						"rank": 1
+					},
+					"slot": 9
+				}
+			],
+			"favorite": false,
+			"home": "",
+			"instance_id": "452ab916df949e940a6c4055ddae8ed4",
+			"learned_skills": [],
+			"level": 30,
+			"name": "Orla Valebrook",
+			"passions": [
+				"smithing",
+				"alchemy"
+			],
+			"profession_xp": {},
+			"rank": 2,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [
+				"ranger_trueshot"
+			],
+			"xp": 0
+		},
+		{
+			"def_id": "rogue",
+			"equipped": [],
+			"favorite": false,
+			"home": "House_2",
+			"instance_id": "72e598cce365b3743196b8785d465fc3",
+			"learned_skills": [],
+			"level": 0,
+			"name": "Fenna Hallowick",
+			"passions": [
+				"drill",
+				"mining"
+			],
+			"profession_xp": {},
+			"rank": 0,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "Farm_1",
+			"taught_traits": [],
+			"xp": 0
+		},
+		{
+			"def_id": "ranger",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "head",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "032a43085edb7cbd0d03d6420e39f35f",
+						"rank": 1
+					},
+					"slot": 0
+				},
+				{
+					"item": {
+						"def_id": "chest",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "4d7dbb4e787833b765af865b7537ac59",
+						"rank": 1
+					},
+					"slot": 1
+				},
+				{
+					"item": {
+						"def_id": "legs",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "39205f2cbc6532bd8bbd5fd8e98728df",
+						"rank": 1
+					},
+					"slot": 2
+				},
+				{
+					"item": {
+						"def_id": "gloves",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "a8af483f989d3c6198ae201e969d1a8c",
+						"rank": 1
+					},
+					"slot": 3
+				},
+				{
+					"item": {
+						"def_id": "boots",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "0e1a1dabe252613624556cf76b872ef5",
+						"rank": 1
+					},
+					"slot": 4
+				},
+				{
+					"item": {
+						"def_id": "main_hand",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "cca38d6b72dbc1a303b08b6f3e48ca1c",
+						"rank": 0
+					},
+					"slot": 5
+				},
+				{
+					"item": {
+						"def_id": "off_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "042e755d1d1f734887230e4bf9c0490d",
+						"rank": 2
+					},
+					"slot": 6
+				},
+				{
+					"item": {
+						"def_id": "necklace",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "c1a70e8e31932923f5dcd609f501d151",
+						"rank": 1
+					},
+					"slot": 7
+				},
+				{
+					"item": {
+						"def_id": "ring",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "c0ac1458caba805b5d3e8a0306135e19",
+						"rank": 1
+					},
+					"slot": 8
+				},
+				{
+					"item": {
+						"def_id": "belt",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "55e69f7dc5c1450bd70c2c7e10d65d5c",
+						"rank": 1
+					},
+					"slot": 9
+				}
+			],
+			"favorite": false,
+			"home": "",
+			"instance_id": "9e7078d6f9471eb6a763b0487dc0136d",
+			"learned_skills": [],
+			"level": 30,
+			"name": "Ivo Fairwind",
+			"passions": [
+				"mining",
+				"smithing"
+			],
+			"profession_xp": {},
+			"rank": 3,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 6
+		},
+		{
+			"def_id": "rogue",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "head",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "6c058e3393f229a2dacf8e70d47c5d5c",
+						"rank": 2
+					},
+					"slot": 0
+				},
+				{
+					"item": {
+						"def_id": "chest",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "5988abba238ccfb8eb3eeae2a286b671",
+						"rank": 1
+					},
+					"slot": 1
+				},
+				{
+					"item": {
+						"def_id": "legs",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "a8fad49bb3fe46d6320bb1dc04adfd33",
+						"rank": 1
+					},
+					"slot": 2
+				},
+				{
+					"item": {
+						"def_id": "gloves",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "511bae5654ba4b2376a8d1cfb8d25f92",
+						"rank": 1
+					},
+					"slot": 3
+				},
+				{
+					"item": {
+						"def_id": "boots",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "969bbb466a796e2935d5d1f34bbca63d",
+						"rank": 1
+					},
+					"slot": 4
+				},
+				{
+					"item": {
+						"def_id": "main_hand",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "3794b78bd0b800b70f1c35c21eaf8e1e",
+						"rank": 0
+					},
+					"slot": 5
+				},
+				{
+					"item": {
+						"def_id": "off_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "79474a3829267e1fdd801698a02026f4",
+						"rank": 2
+					},
+					"slot": 6
+				},
+				{
+					"item": {
+						"def_id": "necklace",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "4a4c6790773e47ebfdb883f43d18d223",
+						"rank": 1
+					},
+					"slot": 7
+				},
+				{
+					"item": {
+						"def_id": "ring",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "0609069c323807bcc53a99c56334874a",
+						"rank": 0
+					},
+					"slot": 8
+				},
+				{
+					"item": {
+						"def_id": "belt",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "3980921e42ec88a78db7c8a3de24c46c",
+						"rank": 2
+					},
+					"slot": 9
+				}
+			],
+			"favorite": false,
+			"home": "",
+			"instance_id": "47c186b9919665d199c71989e1fe5e2a",
+			"learned_skills": [],
+			"level": 30,
+			"name": "Quill Pinecroft",
+			"passions": [
+				"tracking",
+				"alchemy"
+			],
+			"profession_xp": {},
+			"rank": 3,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 6
+		},
+		{
+			"def_id": "knight",
+			"equipped": [],
+			"favorite": false,
+			"home": "House_6",
+			"instance_id": "57d7f1ec9ebb2a891da936e8834adaf2",
+			"learned_skills": [],
+			"level": 0,
+			"name": "Lyra Fairwind",
+			"passions": [
+				"tracking",
+				"woodcutting"
+			],
+			"profession_xp": {},
+			"rank": 0,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "Mine_4",
+			"taught_traits": [],
+			"xp": 0
+		},
+		{
+			"def_id": "knight",
+			"equipped": [],
+			"favorite": false,
+			"home": "",
+			"instance_id": "cd81c42467806dce3495a7f208aeace3",
+			"learned_skills": [],
+			"level": 0,
+			"name": "Dara Oakenshield",
+			"passions": [
+				"smithing",
+				"rites"
+			],
+			"profession_xp": {},
+			"rank": 0,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 0
+		},
+		{
+			"def_id": "ranger",
+			"equipped": [],
+			"favorite": false,
+			"home": "",
+			"instance_id": "fd1ae0f29a65bd46c5d59f37c4f011d3",
+			"learned_skills": [],
+			"level": 0,
+			"name": "Morgen Fairwind",
+			"passions": [
+				"tracking",
+				"alchemy"
+			],
+			"profession_xp": {},
+			"rank": 0,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 0
+		},
+		{
+			"def_id": "rogue",
+			"equipped": [],
+			"favorite": false,
+			"home": "",
+			"instance_id": "714b45957226a12e94e561a4da66a0b7",
+			"learned_skills": [],
+			"level": 0,
+			"name": "Rowan Thornbury",
+			"passions": [
+				"drill",
+				"smithing"
+			],
+			"profession_xp": {},
+			"rank": 1,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 0
+		},
+		{
+			"def_id": "rogue",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "off_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "2e62771cf56449dbf927d1035e14b6a4",
+						"rank": 1
+					},
+					"slot": 6
+				},
+				{
+					"item": {
+						"def_id": "belt",
+						"enhance_level": 2,
+						"favorite": false,
+						"instance_id": "724a98850d0dfad6dc6504af6cac3623",
+						"rank": 0
+					},
+					"slot": 9
+				}
+			],
+			"favorite": false,
+			"home": "",
+			"instance_id": "57ee8459b7624ca08d2f74612896292c",
+			"learned_skills": [],
+			"level": 0,
+			"name": "Fenna Fairwind",
+			"passions": [
+				"woodcutting",
+				"alchemy"
+			],
+			"profession_xp": {},
+			"rank": 1,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 0
+		},
+		{
+			"def_id": "rogue",
+			"equipped": [
+				{
+					"item": {
+						"def_id": "gloves",
+						"enhance_level": 1,
+						"favorite": false,
+						"instance_id": "841257114218626e1d63682d9af60e4d",
+						"rank": 0
+					},
+					"slot": 3
+				},
+				{
+					"item": {
+						"def_id": "off_hand",
+						"enhance_level": 0,
+						"favorite": false,
+						"instance_id": "4ec343b7ae04a3d9b4043a20b072a7d5",
+						"rank": 1
+					},
+					"slot": 6
+				},
+				{
+					"item": {
+						"def_id": "necklace",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "6d70673311e9075fe4616669b5b910a6",
+						"rank": 0
+					},
+					"slot": 7
+				},
+				{
+					"item": {
+						"def_id": "belt",
+						"enhance_level": 3,
+						"favorite": false,
+						"instance_id": "75eded6870cfd14e7f5c93e1cbf4b32f",
+						"rank": 0
+					},
+					"slot": 9
+				}
+			],
+			"favorite": false,
+			"home": "",
+			"instance_id": "5a3f947d9be003b6f867af229464188b",
+			"learned_skills": [],
+			"level": 0,
+			"name": "Dara Greymantle",
+			"passions": [
+				"farming",
+				"drill"
+			],
+			"profession_xp": {},
+			"rank": 2,
+			"resonance": 0,
+			"skill_bar": [],
+			"skill_chains": [],
+			"station": "",
+			"taught_traits": [],
+			"xp": 0
+		}
+	],
+	"saved_at_unix": 1790348449.728,
+	"stones": 0,
+	"stranded_incidents": [],
+	"supplies": {
+		"healing": 5,
+		"healing_masterwork": 0,
+		"revival": 1,
+		"revival_masterwork": 0
+	},
+	"team_presets": [
+		{
+			"hero_ids": [
+				"050b34bd4136469e0f07ef59f707f602",
+				"9a5dc3a554a61d64fce984a542939bd8",
+				"47c186b9919665d199c71989e1fe5e2a",
+				"9e7078d6f9471eb6a763b0487dc0136d",
+				"452ab916df949e940a6c4055ddae8ed4"
+			],
+			"id": "9d61a2fb0fbde7f4042e5673d8628384",
+			"name": "Team 1",
+			"zone_id": "verdant_outskirts"
+		},
+		{
+			"hero_ids": [
+				"5a3f947d9be003b6f867af229464188b",
+				"57ee8459b7624ca08d2f74612896292c",
+				"714b45957226a12e94e561a4da66a0b7",
+				"fd1ae0f29a65bd46c5d59f37c4f011d3",
+				"cd81c42467806dce3495a7f208aeace3"
+			],
+			"id": "647db6e45db4d40b11f94441a56171ef",
+			"name": "Team 2",
+			"zone_id": "verdant_outskirts"
+		}
+	],
+	"town_buildings": [
+		{
+			"id": "SummoningCircle",
+			"q": -2,
+			"r": 0,
+			"type": "SummoningCircle"
+		},
+		{
+			"id": "Forge",
+			"q": -1,
+			"r": 0,
+			"type": "Forge"
+		},
+		{
+			"id": "TrainingHall",
+			"q": 0,
+			"r": 0,
+			"type": "TrainingHall"
+		},
+		{
+			"id": "Sanctum",
+			"q": 1,
+			"r": 0,
+			"type": "Sanctum"
+		},
+		{
+			"id": "Reliquary",
+			"q": 2,
+			"r": 0,
+			"type": "Reliquary"
+		},
+		{
+			"id": "TownGate",
+			"q": 0,
+			"r": -2,
+			"type": "TownGate"
+		},
+		{
+			"id": "Apothecary",
+			"q": 2,
+			"r": -2,
+			"type": "Apothecary"
+		},
+		{
+			"id": "Farm_1",
+			"q": 0,
+			"r": -1,
+			"type": "Farm"
+		},
+		{
+			"id": "House_2",
+			"q": 1,
+			"r": -1,
+			"type": "House"
+		},
+		{
+			"id": "Lumbermill_3",
+			"q": -1,
+			"r": 1,
+			"type": "Lumbermill"
+		},
+		{
+			"id": "Mine_4",
+			"q": 0,
+			"r": 1,
+			"type": "Mine"
+		},
+		{
+			"id": "House_5",
+			"q": -1,
+			"r": 2,
+			"type": "House"
+		},
+		{
+			"id": "House_6",
+			"q": 0,
+			"r": 2,
+			"type": "House"
+		}
+	],
+	"town_next_id": 7,
+	"town_resources": {
+		"food": 76.85000000000359,
+		"stone": 27.416666666666885,
+		"wood": 78.58333333333368
+	},
+	"town_starve_acked": false,
+	"town_starving_seconds": 0.0,
+	"turns": 18,
+	"version": 3
+}

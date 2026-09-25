@@ -5,6 +5,7 @@ extends GutTest
 ## and stuns every opponent around the Knight.
 
 const SIM = preload("res://combat/battle/battle_simulation.gd")
+const Compare = preload("res://tests/unit/compare.gd")
 var CHARGE: AbilityDefinition = SIM.ABILITIES["knight_charge"]
 var SLAM: AbilityDefinition = SIM.ABILITIES["knight_ground_slam"]
 var TICK: float = SIM.BALANCE.battle_tick_seconds
@@ -244,7 +245,7 @@ func test_a_mid_fight_save_and_reload_repeats_the_charges_and_pushes() -> void:
 	GameSession.from_dict({"roster": []})
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
 	var read_back: Dictionary = GameSession.expedition_orders[0]["battle"]
-	assert_eq(_first_difference(read_back, round_trip), "", "the file reads back as the round trip, raw")
+	assert_eq(Compare.first_difference(read_back, round_trip), "", "the file reads back as the round trip, raw")
 	var loaded := BattleState.from_dict(read_back)
 	var ready: Array[String] = []
 	for actor: BattleActor in written.actors:
@@ -267,8 +268,8 @@ func test_a_mid_fight_save_and_reload_repeats_the_charges_and_pushes() -> void:
 	assert_eq(written.tick, start + 150, "it ran on all 15 s")
 	assert_gt(charges, 0, "the Knights charged after the save")
 	assert_gt(lane_pushes, 0, "and pushed their lanes aside")
-	assert_eq(_first_difference(loaded.to_dict(), written.to_dict()), "", "the reload runs on as its round trip")
-	assert_eq(_mismatch(_where(loaded.to_dict()), _where(straight.to_dict())), "", "and as the unbroken fight, to 1e-6")
+	assert_eq(Compare.first_difference(loaded.to_dict(), written.to_dict()), "", "the reload runs on as its round trip")
+	assert_eq(Compare.mismatch(_where(loaded.to_dict()), _where(straight.to_dict())), "", "and as the unbroken fight, to 1e-6")
 
 
 func _charger(enemies: Array[Vector2]) -> BattleState:
@@ -289,43 +290,6 @@ func _where(snapshot: Dictionary) -> Array:
 		var from: Array = effects.get("hit_from", [0.0, 0.0])
 		result.append(["%s %s %s %d %d %s %d" % [snapshot["rng_state"], actor["id"], actor["life"], int(snapshot["tick"]), int(effects.get("last_push_tick", 0)), effects.get("last_skill_id", ""), int(effects.get("last_skill_tick", 0))], float(actor["hp"]), float(actor["position"][0]), float(actor["position"][1]), float(from[0]), float(from[1]), float(effects.get("stun_remaining", 0.0))])
 	return result
-
-
-func _mismatch(got: Array, want: Array) -> String:
-	if got.size() != want.size():
-		return "%d actors, not %d" % [got.size(), want.size()]
-	for index: int in want.size():
-		if got[index][0] != want[index][0]:
-			return "%s, not %s" % [got[index][0], want[index][0]]
-		for field: int in range(1, want[index].size()):
-			if absf(float(got[index][field]) - float(want[index][field])) > 0.000001:
-				return "%s field %d: %f, not %f" % [want[index][0], field, got[index][field], want[index][field]]
-	return ""
-
-
-## Where got first differs from want, or "". Numbers compare by value; a float must match to the bit.
-static func _first_difference(got: Variant, want: Variant, path: String = "") -> String:
-	if (got is int or got is float) and (want is int or want is float):
-		return "" if float(got) == float(want) else "%s: %s, not %s" % [path, var_to_str(got), var_to_str(want)]
-	if got is Dictionary and want is Dictionary:
-		if (got as Dictionary).size() != (want as Dictionary).size():
-			return "%s: keys %s, not %s" % [path, (got as Dictionary).keys(), (want as Dictionary).keys()]
-		for key: Variant in want:
-			if not (got as Dictionary).has(key):
-				return "%s.%s: missing" % [path, key]
-			var inner: String = _first_difference(got[key], want[key], "%s.%s" % [path, key])
-			if not inner.is_empty():
-				return inner
-		return ""
-	if got is Array and want is Array:
-		if (got as Array).size() != (want as Array).size():
-			return "%s: %d items, not %d" % [path, (got as Array).size(), (want as Array).size()]
-		for index: int in (want as Array).size():
-			var inner: String = _first_difference(got[index], want[index], "%s[%d]" % [path, index])
-			if not inner.is_empty():
-				return inner
-		return ""
-	return "" if typeof(got) == typeof(want) and got == want else "%s: %s, not %s" % [path, var_to_str(got), var_to_str(want)]
 
 
 ## A hero's actor id is "hero:" + its hero_id.
