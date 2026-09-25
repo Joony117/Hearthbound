@@ -150,9 +150,14 @@ the single-thread run.
        `BattleState` itself, not a copy: the main thread drops its reference when it sends the
        job and takes the state back only after the task is waited on. So there is one owner at a
        time. Any main-thread read in between decodes the order's last landed Dictionary, as
-       `_battle_state` already does on a miss.
-     - A job lands on the first frame after it finishes, except the pulse's own frame (the
-       `ig-7sn.15` rule), in order-list order. It lands only while the order still holds the
+       `_battle_state` already does on a miss. A landing puts `[battle, state]` back in
+       `_battle_states`, as `_advance_battle` does. A dropped job's state is thrown away, never
+       put back: the job advanced it in place, so beside the old Dictionary it would run ahead of
+       `order["battle"]`.
+     - A job lands on the first frame after it finishes that runs no other heavy job, one landing
+       per frame, in order-list order. So it never lands on the pulse's own frame (the `ig-7sn.15`
+       rule), the periodic save's frame (`ig-7sn.10`) or a settle's refresh frame (`ig-7sn.16`, if
+       it made one). It lands only while the order still holds the
        battle Dictionary the job was sent from (a command replaces it), is live, and no load came
        between (item 4's check, for live battles). A job for a paused order is dropped, as the
        owed time is today. On any other mismatch, or during a save stall, the job is dropped and
