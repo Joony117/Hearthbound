@@ -23,7 +23,12 @@ static func roll(circle_level: int = 0) -> Hero:
 	assert(weights.size() == BALANCE.rank_names.size(), "Summon weights and rank names must align.")
 	var rank: int = rank_for_ticket(randi() % total_weight, weights, total_weight)
 	assert(rank >= 0, "A ticket inside the summon weight range must resolve to a rank.")
-	var def_id: StringName = StringName(ARCHETYPE_DEF_IDS[randi() % ARCHETYPE_DEF_IDS.size()])
+	# The class, after the rank and apart from it: the Circle moves ranks only (SYSTEMS.md, Class odds).
+	var class_weights: Array[int] = BALANCE.summon_archetype_weights
+	var class_total: int = _total_weight(class_weights)
+	assert(class_total > 0, "Summon class weights must have a positive total.")
+	assert(class_weights.size() == ARCHETYPE_DEF_IDS.size(), "Summon class weights and archetypes must align.")
+	var def_id: StringName = StringName(ARCHETYPE_DEF_IDS[rank_for_ticket(randi() % class_total, class_weights, class_total)])
 	var definition: HeroDefinition = definition_for(def_id)
 	assert(definition != null, "Every authored summon archetype must resolve to a HeroDefinition.")
 	var hero := Hero.new(random_name(), rank)

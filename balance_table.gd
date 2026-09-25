@@ -9,6 +9,8 @@ extends Resource
 @export var rank_up_essence_costs: Array[int] = [40, 110, 300, 800, 2200, 6000, 16000]
 @export var resonance_trait_thresholds: Array[int] = [1, 3, 6]
 @export var summon_weights: Array[int] = [4000, 2700, 1700, 1000, 450, 120, 28, 2]
+# Class odds (SYSTEMS.md § Summoning, Class odds): of 300, in Summon.ARCHETYPE_DEF_IDS order.
+@export var summon_archetype_weights: Array[int] = [98, 98, 98, 3, 3]
 @export var summon_pull_cost: int = 100
 @export var xp_coefficient: int = 10
 @export var xp_per_wave: int = 4

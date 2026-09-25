@@ -90,6 +90,18 @@ func test_cap_shifts_mass_to_high_ranks_and_preserves_block_proportions() -> voi
 	_assert_block_is_proportional(cap_weights, 4, 8, multiplier, denominator)
 
 
+func test_every_class_ticket_gives_casters_one_in_a_hundred() -> void:
+	var weights: Array[int] = BALANCE.summon_archetype_weights
+	assert_eq(weights.size(), Summon.ARCHETYPE_DEF_IDS.size(), "one weight per archetype, in order")
+	var total: int = _total_weight(weights)
+	assert_eq(total, 300)
+	var counts: Dictionary = {}
+	for ticket: int in total:
+		var def_id: String = Summon.ARCHETYPE_DEF_IDS[Summon.rank_for_ticket(ticket, weights, total)]
+		counts[def_id] = int(counts.get(def_id, 0)) + 1
+	assert_eq(counts, {"knight": 98, "rogue": 98, "ranger": 98, "mage": 3, "cleric": 3})
+
+
 func test_roll_never_mutates_authored_weights() -> void:
 	Summon.roll()
 	Summon.roll(BALANCE.summoning_circle_level_cap)
