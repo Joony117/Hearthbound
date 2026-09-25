@@ -276,9 +276,9 @@ melee land for both sides. The same eight cases:
   92.7 s. The formation digests changed for the Ranger, Mage and Cleric fights (advance and
   stay_together). The two Knight-party fights didn't change.
 
-> ⚠️ **PROVISIONAL** — picked on eight cases and four seeds at Verdant, F-rank level 1, and not yet
-> played · **Settled by:** the owner playing the retuned build, then the `ig-eek` mid and late stage
-> saves
+**Settled 2026-09-24: played, too fast, superseded by `ig-1jw`.** The owner played the retuned build
+and asked for combat 5–6x slower. This band stays the pace-1 reference that § Battle pace
+multiplies. The enemy multipliers above stand.
 
 Evidence: `.agent-results/ig-9gf/balance_head.log` and `balance_final.log`;
 `.agent-results/ig-el4/table.txt` (the grid) and `balance_final.log` (the real `balance.tres`).
@@ -299,6 +299,88 @@ passive requires another actor, not the Knight itself.
 Turncoat Cut tests the rear center and then rear ±45-degree positions against actor separation;
 when all are occupied, it refuses without spending cooldown. Ranger's fixed enemy telegraph spans
 its full authored range along the chosen direction.
+
+### Battle pace — *ig-1jw, design 2026-09-24*
+
+Owner: the combat is "still too fast", toward a Total War: Warhammer 3 feel, "5~6x slower". The pace
+comes from longer time-to-kill and bigger, rarer exchanges. Nothing moves in slow motion: swings,
+walking and every reaction window keep their real seconds. One `balance.tres` row sets it.
+
+| Row | Value | Why |
+|---|---|---|
+| `battle_pace` | 6 | An integer, so a victory can pay whole loot rolls. The walk-in, windups and telegraphs don't scale, so a clear lands near 5.5x, inside the owner's 5–6x |
+
+**What `battle_pace` (P) multiplies.** Everything below is ×P. Relative to HP, a battle then runs
+the same fight, P times longer. So win rates, downings and the forecast's `safe` should hold.
+
+| What | At P = 6 |
+|---|---|
+| Max HP of every actor, both sides, at spawn. Not a damage divisor: the `max(1, …)` floor would break it | An F Knight at level 1: 154 HP → 924 |
+| Ability cooldowns, heroes and enemies. Weaponskills have none | Stand Fast 16 s → 96 s, Crushing Blow 14 s → 84 s |
+| An ability's ATK-based amount per cast: damage multiplier, heal, shield. Max-HP fractions (revives, Catch Breath, supplies) already follow HP | Threadneedle 1.8× → 10.8×, Mend 3.0 ATK → 18 ATK |
+| The seconds of every status or control an ability applies: damage reduction, stat changes, bleed, burn, heal over time, stun, root, silence, taunt. Per-second magnitudes don't change | Stand Fast's 4 s guard → 24 s, Buckler Blow's 1.5 s stun → 9 s |
+| Objective holds (`objective_hold_seconds`, `simultaneous_hold_seconds`) | Fallen Citadel's hold 10 s → 60 s |
+| The combat bound (`max_battle_seconds`) | 180 / 300 / 420 s → 1080 / 1800 / 2520 s |
+| The route base and minimum (§ Timed dispatch) | Verdant 60 / 15 s → 360 / 90 s |
+| Rewards per victory: stones and XP ×P; loot is P rolls | Verdant 25 stones → 150 |
+| The recovery lifetime (`recovery_lifetime_seconds`): stranded incidents and lost caches. A rescue is a battle, so it gets P times the window | 900 + 300 × level s → 5400 + 1800 × level s |
+
+**What stays in real seconds.** Basic swings and their interval, weaponskills and the bleed or
+burn they apply, passives, movement, the 0.3 s windup, telegraphs and aims (0.8 s, 1.2 s), a delayed
+area's delay (Hanging Star's 1.0 s), the dodge window, the ability lock, the combo window, the chain
+step timeout, the status tick, the carry channel, the Knight cover taunt, detection and leash,
+pushes, and the 0.1 s tick. Supplies: their amounts are max-HP fractions and their counts are
+limited, so they already scale; the 15 s item cooldown stays.
+
+Why abilities scale and swings don't: a swing's damage per second is unchanged, and HP ×P gives
+the time-to-kill. An ability that kept its cooldown would fire P times as often per fight, and a
+spell would become a swing. Scaling its cooldown and its amount together keeps it the same share
+of the fight: one big moment, as often per fight as today. Why control scales too: a 1.5 s stun in
+a fight P times longer would be worth a sixth as much. The owner's words on casters, "battlefield
+shaping" (`ig-vl1`), need control to keep its weight.
+
+**A battle keeps the pace it spawned with.** The battle checkpoint gets one optional key, `pace`,
+written at spawn. Every ×P above reads the battle's own `pace`, rewards included. A checkpoint
+without it is pace 1, so a battle in flight across the update ends as it began. `SIMULATION_VERSION`
+stays 1. This is a save round-trip change (boundary #1: a checkpoint missing `pace` must load).
+Orders with no battle (`legacy_v2`) read the live `battle_pace` for route and rewards.
+
+**Targets at P = 6** (the balance gate's eight cases, seeds 1 and 2, same as § Provisional shared
+combat numbers):
+- Five mixed heroes: 315–472 s, 5–6x the pace-1 band of 62.9–78.6 s. All win.
+- Three starter Knights: 561–698 s (5–6x of 112.2–116.4), under the 1080 s bound. All win.
+- Downings: at most one more than pace 1 in any case. Any new downing in a supplied case goes to
+  the director, as today's gate does.
+- If the mixed band falls under 315 s, the unscaled share is bigger than guessed: try P = 7 and
+  report back. Don't tune other numbers to reach it.
+
+> ⚠️ **PROVISIONAL** — 6 and every row above are arithmetic, not played. The two feel risks: a 9 s
+> stun may read as dead time, and six times as many small swing numbers may read as busy
+> · **Settled by:** the owner playing P = 6. If stuns feel dead, control goes back to real seconds
+> and the gate re-runs. If swings feel busy, a later row can lengthen the swing interval and raise
+> each hit to match (not built now)
+
+**What changes elsewhere.** These follow from the rule and need no owner call:
+- Earnings per hour hold: an order takes about P times as long and pays P times as much. Where the
+  walk-in keeps a clear under 6x, earnings per hour rise a little (up to about 6 / 5.5).
+- The Ledger gets about a sixth as many records an hour: about 10, not the guessed 60. Bonds and
+  dreams count battles, so they form about 6x slower per hour. Their numbers are already
+  PROVISIONAL desk guesses, settled by a calibration run in battles, not hours.
+- `GameSession.turns` counts runs and gates nothing today, so it simply grows slower.
+- The repeat's safety forecast simulates two whole battles, so it costs about 6x (`ig-7sn.6`: the
+  time-slice is required).
+- Offline catch-up simulates the run's battle-seconds, so it costs about 6x. At `ig-7sn.7`,
+  frontier_march's catch-up after 8 h away was 6.3 s of a 9.8 s load; at P = 6, expect the load
+  near 40 s. That is `ig-7sn.12`, to settle before this ships.
+- The balance gate's eight cases, the formation digests and the pre-skills checkpoint fight get a
+  new baseline.
+- UI that prints a cooldown, a heal or a stun length must print the ×P value. Kit tables in
+  § The v1 kits stay at pace 1.
+- Knockback distances don't change: pushes are movement.
+- Stage saves (`ig-eek`) should run after this lands, or they measure the wrong pace.
+
+Not changed: the combat seam's contract, the six stats, `hero_power`, zone recommended power,
+`quick_resolve`, and the autoload count.
 
 ### Knockback — *ig-n9r, proposed 2026-09-23*
 
@@ -586,9 +668,13 @@ player's order decides. The telegraph half of each cell arrives with the counter
 level 0 as level 1 (`max(level, 1)`): skill unlocks, the general tier minimums and the hall's
 reach (`hero.level + 5 * hall level`). So a new hero has its level-1 skills.
 
+Knights also open Charge and Ground Slam at level 1 (`ig-zht`; director default: early, so the
+owner's current Knights get both). So a Knight's chain can hold every one of its nine
+non-passive skills, with no step to spare.
+
 Level caps by rank (§ Ranks) set how many class skills a hero can reach: F (cap 10) five, D (cap
-20) six, C and above (cap 30+) seven, plus its class book skill. General skills come on top (below).
-With the v1 pools, a hero can know at most 8 class + 6 general = 14 skills. A Training Hall teaches ahead of level for parts, up to
+20) six, C and above (cap 30+) seven, plus its class book skill; two more for a Knight. General skills come on top (below).
+With the v1 pools, a hero can know at most 8 class + 6 general = 14 skills (a Knight 16). A Training Hall teaches ahead of level for parts, up to
 `hero.level + 5 * hall level`. Taught and book skills are saved on the hero. Level skills are
 derived from level and archetype, so they cannot fall out of step with it.
 
@@ -610,12 +696,16 @@ since the hall caps at level 5.
 Stones, parts or Essence, and no Essence formula reads skills (`compute_essence_yield` reads rank
 and level). Books cannot be salvaged or sold. So ~327 → ~219 → ~188 does not move. A book teaches
 one skill. Its class is picked at random, weighted by your roster's archetypes.
+*Amended 2026-09-24 (`ig-vl1`, not built yet):* each archetype on the roster counts once, whatever
+its head count. Casters are 1 in 100 each, so a roster weighting would make a lone Mage's book
+about 1% of class books; this way it gets one share per archetype owned, a fifth with all five.
 
 ### The v1 kits
 
-Five kits of eight. The four signatures and passives keep today's numbers exactly, so the first
+Five kits of eight; the Knight's has ten since `ig-zht`. The four signatures and passives keep today's numbers exactly, so the first
 slice can prove that nothing changed. Multipliers are on the basic damage formula. "Heal 3.0 ATK"
-means ATK times 3.0. The counter column is the tag.
+means ATK times 3.0. The counter column is the tag. Every number in these tables is at pace 1;
+§ Battle pace says which ones `battle_pace` multiplies.
 
 **Renamed 2026-09-24 (director; `DECISIONS.md` 2026-09-23, item 10: no Square Enix skill name,
 no close copy).** Display names only. Older text that says Burst, Bulwark, Rally or Flank means
@@ -654,6 +744,8 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Gauntlet Toss | Ability | 15 | 15 s | Range 6: taunt for 4 s, so that enemy targets the Knight | the Knight's covered threat (§ Hero AI on auto); else an enemy on a back-row or lower-HP ally | — |
 | Sweeping Blow | Weaponskill | 25 | — | 0.9× to every enemy within 2 | 3+ enemies within 2 | — |
 | Anvilheart | Ability | book | 60 s | Self: 60% less damage for 5 s | a telegraph on the Knight, or HP below 30% | `shield` |
+| Charge | Ability | 1 | 15 s | Range 4–12: dash in a straight line to 1.2 short of the target. Enemies in the lane are pushed 1.5 aside. No damage | the Knight's target is 4–12 away with another enemy within 2.5 of it, or is elite | — |
+| Ground Slam | Ability | 1 | 15 s | 1.0× to every enemy within 2.5, and a 1.5 s stun that cancels their windups | right after Charge (`combo_after`) | — |
 
 **Rogue** (melee damage)
 
@@ -710,6 +802,41 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 The Cleric has no combo, so its level-5 slot is a second counter. Mend's 3.0 ATK is 48 HP at the
 Cleric's base ATK of 16: about a third of a base Knight.
 
+**Charge and Ground Slam** (`ig-zht`, design 2026-09-24). Owner: charge "in a straight line towards
+an selected enemy", "immune to cc while in motion", knocking aside enemies in between; the slam is
+"aoe dmg+stun around the knight", and the AI should "charge then ground slam as an opener".
+- **At P = 6** (§ Battle pace): both cooldowns 90 s, about once a wave. The slam hits 6.0× and
+  stuns 9 s.
+- **Charge is instant in the sim, like every move today** (Turncoat Cut, Slip, Dust Roll). The
+  Knight lands on the cast tick, so nothing can stun, root, taunt or push it mid-dash: that is
+  the owner's immunity, with no timer and no saved state. The watched view draws the dash over
+  0.4 s. If it reads as a teleport when played, a timed dash with a real immunity window is the
+  fallback (saved state, boundary #1).
+- **The line.** Straight from the Knight to the target as it stands at the cast. The Knight ends
+  1.2 short of it, inside melee reach (1.6), clamped to the battlefield. Allies in the way are
+  passed through, and separation sorts them out next tick.
+- **The lane push.** Every enemy other than the target whose center is within 0.8 of the line is
+  pushed 1.5 sideways, to its own side of the line; one exactly on it goes to the Knight's right.
+  All of § Knockback's rules apply: elites are immune, no damage, no interrupt, bounds clamp, no
+  RNG, all hits resolve before any push.
+- **Ground Slam** hits opponents only, never allies. Its stun is the interrupt primitive over the
+  area, so it cancels a windup or telegraph like Buckler Blow does. It has no counter tag, so the
+  counter picker never spends it.
+- **The opener.** The AI charges its current target (§ Hero AI on auto picks it; Charge never
+  retargets, so cover holds) when it is 4–12 away and the slam will hit two (another enemy
+  within 2.5 of it), or it is elite. Ground Slam's rule is `combo`: it fires right after Charge,
+  once the 1.0 s ability lock clears, inside the combo window. On auto the slam is only an
+  opener; by hand it fires any time. Under 4 away the Knight just walks in.
+- **Enemies don't get either.** Enemy Knights keep § Enemies' kit.
+- **Four small schema additions,** each inside ADR item 1's closed set: `move.to = "charge"` with a
+  `lane_push` distance, an `area` on `interrupt` (`target` or `around_caster`), a
+  `min_range_units` field, and the `combo` rule for abilities, not only weaponskills.
+
+> ⚠️ **PROVISIONAL** — every number in the two rows, and the 0.4 s dash, are desk picks, never
+> played. The Knight gets stronger, so the ig-544 gate's Knights cases move · **Settled by:** the
+> owner playing the Knights at P = 6, then the balance gate (any loss, or a new downing in a
+> supplied case, goes to design)
+
 ### The v1 general pool
 
 Six skills, any class. All are abilities. None is a weaponskill, none deals damage, and none
@@ -748,7 +875,8 @@ unlimited repeats, sooner.
 > ⚠️ **PROVISIONAL** — the kits' effect on clear time is unmeasured · **Settled by:** the balance
 > pass, which retunes skill multipliers (not the six stats, not zone power) until five mixed
 > F-rank level-1 heroes clear Verdant in the current band again (62.9–78.6 s over seeds 1 and 2,
-> restated after `ig-el4` in § Provisional shared combat numbers), and three starter Knights win
+> restated after `ig-el4` in § Provisional shared combat numbers; at P = 6, § Battle pace's
+> 315–472 s), and three starter Knights win
 > Verdant bare on seeds 1–4. General skills get their own check: a C-rank level-30 team of all five classes with
 > full class kits, run at Sundered with and without all six general skills each. With them, clear
 > time may fall by at most 10%, and any change in the `safe` verdict is reported to the director.
@@ -925,6 +1053,9 @@ a progression finding. It is never patched over.
 - The bot stops dispatching near the end and saves with no order in flight. A loaded save runs
   offline progress for the time since it was written.
 - The bot's records per hour are not the owner's. They don't settle the Ledger's PROVISIONAL.
+- The Ledger column is at pace 1. At `battle_pace` 6 (§ Battle pace) a battle takes about 6x as
+  long, so Early and Mid hold about a sixth as many records (about 20 and 200), and Late, set by
+  the cap, takes about 6x the game clock. Make the saves after `ig-1jw` lands.
 
 > ⚠️ **PROVISIONAL** — the stage lengths and every check are desk guesses about what a player has
 > at 2 h, 20 h and the cap. How far a greedy bot gets is unmeasured, and Ashfall's boss is already
@@ -1068,6 +1199,50 @@ Expeditions' recommended power is pinned against.
 > take five" once gear is layered on is a feel question arithmetic can't answer. · **Settled by:**
 > a played build with real teams and real gear, since gear is exactly where this kind of gap
 > would show up.
+
+### Casters — *ig-vl1, design 2026-09-24*
+
+Owner: "magic in general to be rare but battlefield shaping", and "a 2 star mage should have a
+battlefield presence of a 3 to 4 star knight". The game has ranks, not stars, so a Mage or Cleric
+at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this order:
+
+1. **Rare** (`ig-vl1.1`): 1 in 100 each from a summon. § Summoning, Class odds.
+2. **Strong, for now by stats** (`ig-vl1.3`): the row below, tuned to the presence test.
+3. **Battlefield shaping** (`ig-vl1.4`, after an ADR, `ig-vl1.2`): a few big casts a fight. Then
+   the row below is cut back, so the spells carry the presence and the stats don't.
+
+| Row | Value | Why |
+|---|---|---|
+| `caster_rank_offset` | 1.5 | A Mage's or Cleric's HP, ATK and DEF × 1.35^1.5 ≈ 1.57: halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks) |
+
+- It applies in `Hero.compute_final_stats`, so the sim, `quick_resolve` and team power all see it,
+  and the combat seam stays one number. Enemy Mages are unchanged: enemy stats come from the wave
+  budget, not ranks.
+- Cleric heals and shields read ATK, so they grow by the same 1.57.
+- `hero_power` gains less than the fight does: an F Mage at level 10 goes 207 → 264, against a
+  D Knight's 286. So dispatch time and the safety forecast's power check see a caster team as a
+  little weaker than it plays. That errs safe.
+- Heroes you own get it too (director: fine).
+
+**Presence, as the sim measures it.** Take the balance gate's mixed team (Knight, Ranger, Mage,
+Rogue, Knight) and swap the Mage slot. Same rank and level for everyone else, seeds 1–4, the
+median of each measure:
+- A Mage at rank R must clear at least as fast as a Knight at R+1 in that slot, and no faster
+  than a Knight at R+2.
+- A Cleric at rank R: the team's HP left at victory (downed heroes count as 0) at least that of a
+  Knight at R+1 in the slot, and no more than a Knight at R+2's.
+- Checked at two points: F level 1 at Verdant (the Knight at D, then C), and C level 30 at
+  Sundered (the Knight at B, then A).
+- Measured at `battle_pace` 6 and with Charge and Ground Slam in the Knight's kit (`ig-1jw` and
+  `ig-zht` first), since both move the Knight.
+
+**The spells (`ig-vl1.4`).** Scope only; the numbers wait for the ADR. Each caster gets one or two
+spells with long cooldowns and a big footprint on the field. At P = 6, one or two casts a wave.
+The owner picks the first shape (director's list: zones, walls, slows, mass heals or wards). The
+battle has no pathfinding, so walls cost the most.
+
+> ⚠️ **PROVISIONAL** — 1.5 is arithmetic; the presence test has never run · **Settled by:** the
+> presence test at P = 6 with the Knight's new kit, then again after the spells land
 
 ---
 
@@ -4477,6 +4652,22 @@ for its old turn unit; damaged-item effects, power penalty, and Reliquary reduct
 | Effective | 40% | 27% | 17% | 10% | 4.5% | 1.2% | 0.28% | 0.02% |
 
 Roll a rank from the table, then a random definition from that rank's pool.
+
+**Class odds** (`ig-vl1.1`, design 2026-09-24). Owner: mages and clerics "ultra rare compared to the
+knights and rangers", "1 in 100 each". The class is rolled after the rank and apart from it, so a
+caster's rank odds are everyone's, and the Circle moves ranks only.
+
+| Row | Knight | Rogue | Ranger | Mage | Cleric |
+|---|---|---|---|---|---|
+| `summon_archetype_weights` (of 300, in `Summon.ARCHETYPE_DEF_IDS` order) | 98 | 98 | 98 | 3 | 3 |
+| Effective | 32.7% | 32.7% | 32.7% | 1.0% | 1.0% |
+
+- Expected pulls to a first Mage: 100; to a first caster of either kind: 50. At 100 stones a pull,
+  a first Mage is about 10,000 stones.
+- The Rogue stays common (director default): the owner named only Knights and Rangers, and the
+  3-front formation needs front-liners.
+- This is the only production class roll. Heroes you already own keep their class.
+- No pity (the rule below).
 
 SSS at 0.02% is near-mythical on purpose — the design assumes you **build** an SSS through
 sacrifice. Pulling one is a lightning strike, not a plan. Expected pulls to a first hit: **~83**
