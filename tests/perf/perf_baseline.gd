@@ -8,6 +8,7 @@ extends SceneTree
 ## Measures (the ig-7sn.2 list): pulse1, pulse5, hub, battle_citadel, battle_frontier, roster, town, load;
 ## preview (ig-7sn.14).
 ## Since ig-7sn.6: settle1, settle5 (the pulse that settles a leg, split).
+## Since ig-7sn.15: pulse_split (the pulse's "other", split; each battle's decode, advance and encode by zone).
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -64,6 +65,8 @@ func _run() -> void:
 			await _measure_pulse(1)
 		"pulse5":
 			await _measure_pulse(5)
+		"pulse_split":
+			await _measure_pulse_split()
 		"settle1":
 			await _measure_settle(1)
 		"settle5":
@@ -107,7 +110,8 @@ func _measure_pulse(count: int) -> void:
 ## Frames with GameSession's own _process driving the pulse, called from here so each pulse is timed.
 func _pulse_frames(label: String) -> void:
 	session.set_process(false)
-	# Keyed by the battles active when the pulse began; -1 holds the pulses that settled a leg.
+	# Keyed by the battles active when the pulse began; -1 holds the pulses that settled a leg, -2 the
+	# ones that ran the 15 s periodic save (ig-7sn.10).
 	var pulses: Dictionary[int, Array] = {}
 	var frames: Array[float] = await _frames(func(delta: float, recording: bool) -> void:
 		var reports: int = session.expedition_reports.size()
@@ -116,7 +120,7 @@ func _pulse_frames(label: String) -> void:
 		session._process(delta)
 		if recording and session._expedition_pulse_accumulator == 0.0:
 			# A pulse that settles a leg (a new report) commits: roster_changed, its handlers, a save.
-			var key: int = -1 if session.expedition_reports.size() != reports else active
+			var key: int = -1 if session.expedition_reports.size() != reports else -2 if session._periodic_save_accumulator == 0.0 else active
 			if not pulses.has(key):
 				pulses[key] = []
 			pulses[key].append(_since(started)))
@@ -127,7 +131,7 @@ func _pulse_frames(label: String) -> void:
 	for key: int in keys:
 		var samples: Array[float] = []
 		samples.assign(pulses[key])
-		_report("%s: whole pulse (GameSession._process), %s" % [label, "that settled a leg" if key == -1 else "%d active, no leg settled" % key], samples)
+		_report("%s: whole pulse (GameSession._process), %s" % [label, "that settled a leg" if key == -1 else "that ran the periodic save" if key == -2 else "%d active, no leg settled" % key], samples)
 
 
 ## SAMPLES pulses split into phases. Each phase's work is done again, on copies of the same battles,
@@ -171,6 +175,94 @@ func _pulse_phases(label: String) -> void:
 		var samples: Array[float] = []
 		samples.assign(phases[phase])
 		_report("pulse phases, %s, at least %d active: %s" % [label, fewest, phase], samples)
+
+
+## ---- 1c. ig-7sn.15: all five dispatched, the hub shown, the pulse split for RECORD_SECONDS of pulses.
+## Just before each real tick_expeditions, each part is timed on the side: each battle's decode, and an
+## active one's advance and encode, by zone; the tick's scans (lost caches, incidents, starve_step,
+## finishes_build); the battle_changed handlers (every battle order) and the expeditions_changed ones.
+## Just after it, the idle _release_battle_jobs, _land_battle_checks and _send_battle_checks (nothing out,
+## as on most pulses). "rest" is the tick less the side parts: _advance_clocks' town work, the signals
+## and a second decode where the tick makes one. Decodes a pulse are GameSession's counters. A pulse
+## that settles a leg is left out (ig-7sn.16 owns it).
+func _measure_pulse_split() -> void:
+	await _open_hub()
+	for zone_id: String in ZONES:
+		_dispatch(zone_id, _cap(zone_id))
+	_print_orders()
+	session.set_process(false)
+	var parts: Dictionary[String, Array] = {}
+	var balance: BalanceTable = preload("res://balance.tres")
+	for _pulse: int in int(RECORD_SECONDS / PULSE):
+		var side: Dictionary[String, float] = {}
+		var active: int = 0
+		for order: Dictionary in session.expedition_orders:
+			if not order.get("battle") is Dictionary:
+				continue
+			var zone: String = str((order["battle"] as Dictionary).get("zone_id", "?"))
+			var started: int = Time.get_ticks_usec()
+			var state := BattleState.from_dict(order["battle"] as Dictionary)
+			side["decode " + zone] = _since(started)
+			if state.status != "active":
+				continue
+			active += 1
+			started = Time.get_ticks_usec()
+			BattleSimulation.advance(state, minf(PULSE, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
+			side["advance " + zone] = _since(started)
+			started = Time.get_ticks_usec()
+			state.to_dict()
+			side["encode " + zone] = _since(started)
+		var started_scan: int = Time.get_ticks_usec()
+		for cache: LostCache in session.lost_caches:
+			session.cache_seconds_remaining(cache, session.recovery_clock_seconds + PULSE)
+		side["scan lost caches"] = _since(started_scan)
+		started_scan = Time.get_ticks_usec()
+		for incident: Dictionary in session.stranded_incidents:
+			session._incident_remaining_seconds(incident)
+		side["scan incidents"] = _since(started_scan)
+		started_scan = Time.get_ticks_usec()
+		TownRules.starve_step(float(session.town_resources["food"]), session.town_starving_seconds, session.town_starve_acked, session._workers_home(TownRules.FARM), session.food_eaters().size(), PULSE, balance)
+		side["scan starve_step"] = _since(started_scan)
+		started_scan = Time.get_ticks_usec()
+		session.town_buildings.any(func(building: Dictionary) -> bool: return session._is_building(building) and float(building["build_remaining"]) <= PULSE)
+		side["scan finishes_build"] = _since(started_scan)
+		started_scan = Time.get_ticks_usec()
+		for order: Dictionary in session.expedition_orders:
+			if str(order.get("backend", "")) == "battle_v1":
+				session.battle_changed.emit(str(order.get("id", "")))
+		side["battle_changed handlers"] = _since(started_scan)
+		started_scan = Time.get_ticks_usec()
+		session.expeditions_changed.emit()
+		side["expeditions_changed handlers"] = _since(started_scan)
+		var reports: int = session.expedition_reports.size()
+		var decodes: Array[int] = [session.pulse_decodes_active, session.pulse_decodes_idle]
+		var started_tick: int = Time.get_ticks_usec()
+		session.tick_expeditions(PULSE)
+		var tick_ms: float = _since(started_tick)
+		var decoded: Array[int] = [session.pulse_decodes_active - decodes[0], session.pulse_decodes_idle - decodes[1]]
+		started_scan = Time.get_ticks_usec()
+		session._release_battle_jobs()
+		session._land_battle_checks()
+		session._send_battle_checks()
+		side["idle release/land/send checks"] = _since(started_scan)
+		if session.expedition_reports.size() != reports:
+			continue
+		var side_total: float = 0.0
+		for part: String in side:
+			if not parts.has(part):
+				parts[part] = []
+			parts[part].append(side[part])
+			side_total += side[part]
+		for pair: Array in [["tick (whole)", tick_ms], ["rest", tick_ms - side_total], ["decodes of active battles, %d active" % active, float(decoded[0])], ["decodes of battles not active", float(decoded[1])]]:
+			if not parts.has(pair[0]):
+				parts[pair[0]] = []
+			parts[pair[0]].append(pair[1])
+	session.set_process(true)
+	var names: Array[String] = parts.keys()
+	names.sort()
+	for part: String in names:
+		_report("pulse split, 5 dispatched: %s" % part, parts[part])
+	_print_orders()
 
 
 ## ---- 1b. The pulse that settles a leg, split (ig-7sn.6). One battle or all five, 99-run orders,

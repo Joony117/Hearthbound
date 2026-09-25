@@ -76,9 +76,12 @@ var _bond_seq: int = -1
 var bond_builds: int = 0
 ## How many times a team snapshot was built, for tests (ig-7sn.4).
 var team_snapshot_builds: int = 0
-## How many battle advances the live pulse ran, for tests (ig-7sn.5): one per active battle, or two
-## for one already at its time limit (the look ahead's advance can time it out; the pulse's cannot).
+## How many battle advances the live pulse ran, for tests (ig-7sn.5): one per active battle a pulse.
 var pulse_battle_advances: int = 0
+## How many times the pulse decoded a battle, for tests and the perf measure (ig-7sn.15): an active
+## battle's, and one whose fight is over (returning, or ended).
+var pulse_decodes_active: int = 0
+var pulse_decodes_idle: int = 0
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
@@ -92,6 +95,14 @@ var _battle_notifications_pending: Dictionary[String, bool] = {}
 var _expedition_pulse_accumulator: float = 0.0
 var _periodic_save_accumulator: float = 0.0
 var _paused_battle_orders: Dictionary[String, bool] = {}
+## ig-7sn.15: each battle order's last state, [the battle Dictionary it was written as or decoded from,
+## the BattleState], by order id. Unsaved; from_dict clears it. Every writer replaces an order's battle
+## Dictionary and never edits it (ig-7sn.5), so while the order still holds that Dictionary the state is
+## its exact decode. A BattleState holds nothing unsaved but derived caches (its zone, the corner-graph
+## cache), the threading ADR's rule for them (DECISIONS.md 2026-09-25).
+var _battle_states: Dictionary[String, Array] = {}
+## ig-7sn.15: the real seconds each live battle is owed since its last advance, by order id. Unsaved.
+var _battle_owed: Dictionary[String, float] = {}
 ## Sim jobs out on WorkerThreadPool (ig-7sn.13, DECISIONS.md 2026-09-25 "Battle sim threading").
 ## Private and unsaved; nothing here is ever written by a job.
 var _battle_jobs: Array[BattleJob] = []
@@ -324,7 +335,12 @@ func _process(delta: float) -> void:
 		_release_battle_jobs()
 		return
 	_expedition_pulse_accumulator += delta
-	if _expedition_pulse_accumulator < EXPEDITION_PULSE_SECONDS:
+	var pulse_frame: bool = _expedition_pulse_accumulator >= EXPEDITION_PULSE_SECONDS
+	# No battle moves during a stall (a failed checkpoint save), nor on the pulse's own frame unless the
+	# frame is itself a pulse long (below 4 fps every frame is a pulse's, and the battles must still move).
+	if not _checkpoint_save_failed:
+		_owe_battles(delta, not pulse_frame or delta >= EXPEDITION_PULSE_SECONDS)
+	if not pulse_frame:
 		return
 	var elapsed_seconds: float = _expedition_pulse_accumulator
 	_expedition_pulse_accumulator = 0.0
@@ -344,7 +360,7 @@ func _process(delta: float) -> void:
 				_notify_expeditions_changed()
 		_release_battle_jobs()
 		return
-	tick_expeditions(elapsed_seconds)
+	_pulse(elapsed_seconds)
 	_periodic_save_accumulator += elapsed_seconds
 	if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 		_periodic_save_accumulator = 0.0
@@ -2033,13 +2049,44 @@ func _hero_protection_reasons() -> Dictionary[String, String]:
 	return reasons
 
 
+## One pulse with its battles: each live battle advances by delta_seconds, then the pulse runs.
 func tick_expeditions(delta_seconds: float) -> void:
 	if delta_seconds <= 0.0 or SaveService.load_blocked or _checkpoint_save_failed:
 		return
+	for order: Dictionary in expedition_orders:
+		if _battle_live(order):
+			_advance_battle(order, delta_seconds)
+	_pulse(delta_seconds)
+
+
+## ig-7sn.15: one battle a frame. Each live battle is owed the frame's time; on a frame that may advance,
+## the live battle owed the most (at least a whole pulse; the first in order-list order on a tie) advances
+## by all it is owed. So each advances about once a pulse, no frame runs two, and at a low frame rate none
+## starves. The sim carries tick_remainder, so the battle runs the same ticks as advancing at the pulse did,
+## up to the sim's TICK_EPSILON rounding at a chunk's edge (the pulse's own chunks varied the same way).
+## A battle that ends turns home at the next pulse, at most a pulse later.
+func _owe_battles(delta: float, may_advance: bool) -> void:
+	var owed: Dictionary[String, float] = {}
+	var next: Dictionary = {}
+	var next_id: String = ""
+	for order: Dictionary in expedition_orders:
+		if not _battle_live(order):
+			continue
+		var order_id: String = str(order.get("id", ""))
+		owed[order_id] = float(_battle_owed.get(order_id, 0.0)) + delta
+		if may_advance and owed[order_id] >= EXPEDITION_PULSE_SECONDS and (next_id.is_empty() or owed[order_id] > owed[next_id]):
+			next = order
+			next_id = order_id
+	_battle_owed = owed
+	if not next.is_empty():
+		_advance_battle(next, _battle_owed[next_id])
+		_battle_owed.erase(next_id)
+
+
+## The pulse without the battles' advances: the route clocks, the due orders, the town, the checks.
+## _process runs it every EXPEDITION_PULSE_SECONDS, its battles advancing on the frames between.
+func _pulse(delta_seconds: float) -> void:
 	var has_due_order: bool = false
-	# The look ahead's advanced battles, by order id: [the battle Dictionary it read, the state]. The
-	# advance below takes them instead of simulating the same pulse again (ig-7sn.5).
-	var advanced: Dictionary = {}
 	for order: Dictionary in expedition_orders:
 		var route_due: bool = Item.float_field(order, "remaining_seconds", 0.0, "expedition order") - delta_seconds <= 0.0
 		if str(order.get("backend", "legacy_v2")) != "battle_v1":
@@ -2047,24 +2094,14 @@ func tick_expeditions(delta_seconds: float) -> void:
 				has_due_order = true
 				break
 			continue
-		var order_id: String = str(order.get("id", ""))
 		if str(order.get("phase", "")) == "checking":
 			continue
-		var state := BattleState.from_dict(order.get("battle") as Dictionary)
-		if state.status != "active":
-			if route_due or _battle_has_no_secured_allies(state):
-				has_due_order = true
-				break
-		elif not _battle_clock_stopped(order):
-			# The advance's own step; the same result as delta_seconds whenever it is above 0.
-			var step: float = minf(delta_seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0))
-			BattleSimulation.advance(state, delta_seconds)
-			pulse_battle_advances += 1
-			if step > 0.0:
-				advanced[order_id] = [order.get("battle"), state]
-			if state.status != "active" and (route_due or _battle_has_no_secured_allies(state)):
-				has_due_order = true
-				break
+		if _battle_order_due(order, route_due):
+			has_due_order = true
+			break
+	for order_id: String in _battle_states.keys():
+		if _order_index(order_id) < 0:
+			_battle_states.erase(order_id)
 	var has_expiring_cache: bool = false
 	if not recovery_clock_paused:
 		var next_clock: float = recovery_clock_seconds + delta_seconds
@@ -2086,9 +2123,9 @@ func tick_expeditions(delta_seconds: float) -> void:
 	# never write it, and every reload would build it again.
 	var finishes_build: bool = town_buildings.any(func(building: Dictionary) -> bool: return _is_building(building) and float(building["build_remaining"]) <= delta_seconds)
 	if has_due_order or has_expiring_cache or has_expiring_incident or starve_death or finishes_build:
-		_commit_profile_mutation(_advance_time_in_memory.bind(delta_seconds, advanced))
+		_commit_profile_mutation(_advance_time_in_memory.bind(delta_seconds))
 	else:
-		_advance_clocks_in_memory(delta_seconds, advanced)
+		_advance_clocks_in_memory(delta_seconds)
 		_notify_expeditions_changed()
 	# ig-7sn.6: the repeat checks land and go out at the pulse, never inside load_game.
 	_land_battle_checks()
@@ -2139,8 +2176,8 @@ func migrate_v2_orders(now_unix: float) -> bool:
 	return true
 
 
-func _advance_time_in_memory(delta_seconds: float, advanced: Dictionary = {}) -> void:
-	_advance_clocks_in_memory(delta_seconds, advanced)
+func _advance_time_in_memory(delta_seconds: float) -> void:
+	_advance_clocks_in_memory(delta_seconds)
 	_resolve_due_orders_in_memory()
 	_expire_recovery_caches_in_memory()
 	_expire_stranded_incidents_in_memory()
@@ -2168,26 +2205,19 @@ func _advance_orders_in_memory(delta_seconds: float) -> void:
 	_notify_expeditions_changed()
 
 
-## advanced: tick_expeditions' look ahead, [the battle Dictionary it read, that battle advanced by
-## delta_seconds] by order id. One still holding the order's battle is taken as this pulse's advance:
-## every writer replaces the battle Dictionary rather than editing it, so identity says it is unchanged.
-func _advance_clocks_in_memory(delta_seconds: float, advanced: Dictionary = {}) -> void:
+## The pulse's clocks. A live battle is not advanced here (_advance_battle does that, and says so); one
+## whose fight ended since the last pulse turns home here, and leaves an incident if nobody can.
+func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	for order: Dictionary in expedition_orders:
 		order["remaining_seconds"] = maxf(Item.float_field(order, "remaining_seconds", 0.0, "expedition order") - delta_seconds, 0.0)
 		if str(order.get("backend", "legacy_v2")) == "battle_v1" and not _battle_clock_stopped(order):
-			var ahead: Array = advanced.get(str(order.get("id", "")), [])
-			var taken: bool = not ahead.is_empty() and is_same(ahead[0], order.get("battle"))
-			var state: BattleState = ahead[1] as BattleState if taken else BattleState.from_dict(order.get("battle") as Dictionary)
-			if not taken and state.status == "active":
-				BattleSimulation.advance(state, minf(delta_seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
-				pulse_battle_advances += 1
-				taken = true
-			if taken:
-				order["battle"] = state.to_dict()
-				if state.status != "active":
-					order["phase"] = "returning"
-					if _battle_has_no_secured_allies(state):
-						_capture_stranded_incident(order, state)
+			if _battle_live(order):
+				continue
+			if not str(order.get("phase", "")) in ["returning", "checking"]:
+				var state: BattleState = _battle_state(order)
+				order["phase"] = "returning"
+				if _battle_has_no_secured_allies(state):
+					_capture_stranded_incident(order, state)
 			_notify_battle_changed(str(order.get("id", "")))
 	if not recovery_clock_paused and not lost_caches.is_empty():
 		recovery_clock_seconds += delta_seconds
@@ -2233,8 +2263,7 @@ func _resolve_due_orders_in_memory() -> void:
 			# A "checking" order is settled already; its check lands at the pulse (ig-7sn.6).
 			if str(order.get("phase", "")) == "checking":
 				continue
-			var state := BattleState.from_dict(order.get("battle") as Dictionary)
-			ready = state.status != "active" and (ready or _battle_has_no_secured_allies(state))
+			ready = _battle_order_due(order, ready)
 		if ready:
 			due_orders.append(order)
 	due_orders.sort_custom(_due_order_before)
@@ -2245,6 +2274,52 @@ func _resolve_due_orders_in_memory() -> void:
 ## Offline battle-seconds the order still owes (ig-7sn.12). from_dict drops a bad value.
 static func _catch_up_seconds(order: Dictionary) -> float:
 	return Item.float_field(order, "catch_up_seconds", 0.0, "expedition order")
+
+
+## A battle that advances: a battle order past its check, fighting, its clock running. The status is read
+## off the Dictionary, the value from_dict would read, so asking decodes nothing (ig-7sn.15).
+func _battle_live(order: Dictionary) -> bool:
+	return str(order.get("backend", "legacy_v2")) == "battle_v1" and str(order.get("phase", "")) != "checking" and not _battle_clock_stopped(order) and str((order.get("battle") as Dictionary).get("status", "active")) == "active"
+
+
+## Due once its fight is over and its route home is done, or at once when nobody is left to walk home.
+func _battle_order_due(order: Dictionary, route_due: bool) -> bool:
+	if str((order.get("battle") as Dictionary).get("status", "active")) == "active":
+		return false
+	return route_due or _battle_has_no_secured_allies(_battle_state(order))
+
+
+## Advances a live battle by seconds (its leg's rest at most), writes it back and says so (ig-7sn.15).
+func _advance_battle(order: Dictionary, seconds: float) -> void:
+	var order_id: String = str(order.get("id", ""))
+	var state: BattleState = _battle_state(order)
+	BattleSimulation.advance(state, minf(seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
+	pulse_battle_advances += 1
+	var battle: Dictionary = state.to_dict()
+	order["battle"] = battle
+	_battle_states[order_id] = [battle, state]
+	_notify_battle_changed(order_id)
+
+
+## The order's battle as a BattleState: the kept one while the order still holds its Dictionary, else a
+## decode, kept. Callers other than _advance_battle only read it.
+func _battle_state(order: Dictionary) -> BattleState:
+	var order_id: String = str(order.get("id", ""))
+	var battle: Dictionary = order.get("battle") as Dictionary
+	var kept: Array = _battle_states.get(order_id, [])
+	if not kept.is_empty() and is_same(kept[0], battle):
+		return kept[1] as BattleState
+	var state := BattleState.from_dict(battle)
+	_count_pulse_decode(state)
+	_battle_states[order_id] = [battle, state]
+	return state
+
+
+func _count_pulse_decode(state: BattleState) -> void:
+	if state.status == "active":
+		pulse_decodes_active += 1
+	else:
+		pulse_decodes_idle += 1
 
 
 ## A player's tactical pause, or a catch-up still owed: either stops the battle's clock. They are kept
@@ -2616,6 +2691,7 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 		return false
 	var snapshot: Dictionary = to_dict()
 	var paused_snapshot: Dictionary[String, bool] = _paused_battle_orders.duplicate()
+	var owed_snapshot: Dictionary[String, float] = _battle_owed.duplicate()
 	var checkpoint_failed_snapshot: bool = _checkpoint_save_failed
 	var checkpoint_error_snapshot: String = _checkpoint_error
 	var command_errors_snapshot: Dictionary[String, String] = _command_errors.duplicate()
@@ -2639,6 +2715,8 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 		_ledger_tiers = tiers_kept
 		_ledger_tiers.resize(ledger_kept_size)
 		_paused_battle_orders = paused_snapshot
+		# ig-7sn.15: a rollback is not a load; the battles keep the time they are owed.
+		_battle_owed = owed_snapshot
 		_checkpoint_save_failed = checkpoint_failed_snapshot
 		_checkpoint_error = checkpoint_error_snapshot
 		_command_errors = command_errors_snapshot
@@ -2663,6 +2741,7 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 	_ledger_tiers = tiers_kept
 	_ledger_tiers.resize(ledger_kept_size)
 	_paused_battle_orders = paused_snapshot
+	_battle_owed = owed_snapshot
 	_checkpoint_save_failed = checkpoint_failed_snapshot
 	_checkpoint_error = checkpoint_error_snapshot
 	_command_errors = command_errors_snapshot
@@ -2829,6 +2908,8 @@ func from_dict(data: Dictionary) -> void:
 	stranded_incidents.clear()
 	rescue_clock_seconds = 0.0
 	_paused_battle_orders.clear()
+	_battle_states.clear()
+	_battle_owed.clear()
 	_checkpoint_save_failed = false
 	_checkpoint_error = ""
 	_command_errors.clear()

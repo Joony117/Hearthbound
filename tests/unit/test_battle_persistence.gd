@@ -326,6 +326,61 @@ func test_a_battle_keeps_its_pace_through_a_real_save_and_a_legacy_one_is_pace_1
 	assert_eq(_settle_as_victory(), [zone.stone_reward, 1], "stones and one loot roll")
 
 
+## ig-7sn.15 (ACC 6): five battles mid-fight, driven by frames so each holds a kept state and owed time,
+## survive a real save and reload. The kept states add nothing saved, and each battle resumes.
+func test_five_battles_mid_fight_survive_a_real_save_and_each_resumes() -> void:
+	for index: int in 5:
+		var knight: Hero = _cover_hero("hero:k%d" % index, &"knight")
+		var preset_id: String = GameSession.save_team_preset("", "Five %d" % index, [knight.instance_id], "verdant_outskirts")
+		assert_ne(GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, _zero_loadout()), "", GameSession.last_action_error)
+	GameSession.set_process(false)
+	for ignored_frame: int in 100:
+		GameSession._process(1.0 / 60.0)
+	GameSession.set_process(true)
+	var saved_battles: Dictionary = {}
+	for order: Dictionary in GameSession.expedition_orders:
+		var battle: Dictionary = order["battle"] as Dictionary
+		assert_eq(str(battle["status"]), "active", "mid-fight")
+		assert_gt(float(battle["elapsed_seconds"]), 0.0, "it advanced")
+		saved_battles[order["id"]] = _json_round_trip(battle)  # At the save's float precision.
+	assert_eq(saved_battles.size(), 5)
+	assert_eq(GameSession._battle_states.size(), 5, "each holds a kept state")
+	# Nothing saved reads the kept states or the owed time.
+	var profile: String = _exact_json(GameSession.to_dict())
+	var kept: Dictionary = GameSession._battle_states.duplicate()
+	var owed: Dictionary = GameSession._battle_owed.duplicate()
+	assert_false(owed.is_empty(), "the battles are owed time")
+	GameSession._battle_states.clear()
+	GameSession._battle_owed.clear()
+	assert_eq(_exact_json(GameSession.to_dict()), profile, "no saved key")
+	GameSession._battle_states.assign(kept)
+	GameSession._battle_owed.assign(owed)
+	# Through disk: SaveService writes the file and a fresh session reads it back.
+	GameSession.set("_save_deferred_depth", 0)
+	var saved: bool = SaveService.save()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_true(saved, SaveService.last_write_error)
+	GameSession.from_dict({"roster": []})
+	assert_true(GameSession._battle_states.is_empty(), "from_dict clears the kept states")
+	assert_true(GameSession._battle_owed.is_empty(), "and the owed time")
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	assert_eq(GameSession.expedition_orders.size(), 5)
+	for order: Dictionary in GameSession.expedition_orders:
+		assert_eq(_exact_json(order["battle"]), _exact_json(saved_battles[order["id"]]), "%s reloads as saved" % order["id"])
+	_land_catch_ups()
+	var decodes: int = GameSession.pulse_decodes_active
+	var resumed: Dictionary = {}
+	for order: Dictionary in GameSession.expedition_orders:
+		var fresh := BattleState.from_dict(order["battle"] as Dictionary)
+		BattleSimulation.advance(fresh, 0.25)
+		resumed[order["id"]] = fresh.to_dict()
+	GameSession.tick_expeditions(0.25)
+	assert_eq(GameSession.pulse_decodes_active - decodes, 5, "each reloaded battle is decoded")
+	for order: Dictionary in GameSession.expedition_orders:
+		assert_eq(order["battle"], resumed[order["id"]], "%s resumes" % order["id"])
+		assert_gt(float((order["battle"] as Dictionary)["elapsed_seconds"]), float((saved_battles[order["id"]] as Dictionary)["elapsed_seconds"]))
+
+
 ## Lands the first order as a victory; returns [stones earned, items earned].
 func _settle_as_victory() -> Array:
 	var order: Dictionary = GameSession.expedition_orders[0]

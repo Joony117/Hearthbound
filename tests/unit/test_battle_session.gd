@@ -205,6 +205,7 @@ func test_a_pulse_advances_each_battle_once_and_as_a_fresh_advance_would() -> vo
 	assert_ne(_dispatch_one(), "", GameSession.last_action_error)
 	var active_pulses: int = 0
 	var advances: int = GameSession.pulse_battle_advances
+	var active_decodes: int = GameSession.pulse_decodes_active
 	var mismatched: Array[int] = []
 	# ig-1jw: a pace-6 battle runs about 6x longer; the loop ends when the battle does.
 	for pulse: int in 4000 * preload("res://balance.tres").battle_pace:
@@ -219,13 +220,151 @@ func test_a_pulse_advances_each_battle_once_and_as_a_fresh_advance_would() -> vo
 			break  # The pulse that ended the battle settled the run too.
 		if GameSession.expedition_orders[0]["battle"] != fresh.to_dict():
 			mismatched.append(pulse)
-	assert_gt(active_pulses, 10, "the battle ran")
+	assert_gte(active_pulses, 200, "ig-7sn.15 ACC 4: 200 pulses or more with reuse")
 	assert_eq(mismatched, [] as Array[int], "every pulse leaves what a fresh advance would")
 	assert_eq(GameSession.pulse_battle_advances - advances, active_pulses, "one advance per active pulse (was two)")
+	# ig-7sn.15: decoded once, on the first advance; every later pulse reuses the kept state.
+	assert_eq(GameSession.pulse_decodes_active - active_decodes, 1, "the battle is decoded once")
+	# ACC 3: walking home after the fight, a pulse that is not due decodes nothing.
+	var idle_decodes: int = GameSession.pulse_decodes_idle
+	while not GameSession.expedition_orders.is_empty() and float(GameSession.expedition_orders[0]["remaining_seconds"]) > 0.5:
+		GameSession.tick_expeditions(0.25)
+	assert_eq(GameSession.pulse_decodes_idle, idle_decodes, "no decode walking home")
 	# ig-1jw: at pace 6 the route (xP) can outlast the battle; walk the rest of it home.
 	if not GameSession.expedition_orders.is_empty():
 		GameSession.tick_expeditions(float(GameSession.expedition_orders[0]["remaining_seconds"]) + 0.25)
 	assert_eq(GameSession.expedition_reports.size(), 1, "the run settled")
+
+
+## ig-7sn.15 (ACC 3, 4): a battle Dictionary another writer replaced is decoded once; a pulse after that
+## on which the returning order is not due decodes nothing.
+func test_a_returning_battle_is_not_decoded_on_a_pulse_where_it_is_not_due() -> void:
+	assert_ne(_dispatch_one(), "", GameSession.last_action_error)
+	var battle: Dictionary = (GameSession.expedition_orders[0]["battle"] as Dictionary).duplicate(true)
+	battle["status"] = "victory"
+	GameSession.expedition_orders[0]["battle"] = battle
+	GameSession.expedition_orders[0]["remaining_seconds"] = 60.0
+	var decodes: int = GameSession.pulse_decodes_idle
+	GameSession.tick_expeditions(0.25)
+	assert_eq(GameSession.pulse_decodes_idle - decodes, 1, "the replaced Dictionary is decoded")
+	assert_eq(GameSession.expedition_orders[0]["phase"], "returning")
+	for ignored_pulse: int in 100:
+		GameSession.tick_expeditions(0.25)
+	assert_eq(GameSession.pulse_decodes_idle - decodes, 1, "and not again on a pulse where it is not due")
+	assert_eq(GameSession.expedition_orders.size(), 1, "still walking home")
+
+
+## ig-7sn.15 (ACC 4): a command issued between two advances is in the next advance's state. Its writer
+## replaced the battle Dictionary, so the advance decodes it rather than reusing its own; a load too.
+func test_a_command_between_advances_and_a_load_are_decoded_not_reused() -> void:
+	var order_id: String = _dispatch_one()
+	assert_ne(order_id, "", GameSession.last_action_error)
+	GameSession.tick_expeditions(0.25)
+	var decodes: int = GameSession.pulse_decodes_active
+	GameSession.tick_expeditions(0.25)
+	assert_eq(GameSession.pulse_decodes_active, decodes, "an unchanged battle is reused")
+	var result: Dictionary = GameSession.issue_battle_command(order_id, {"kind": BattleSimulation.COMMAND_SET_ITEM_AUTO, "value": {"auto_heal": false, "auto_revive": true}})
+	assert_true(bool(result["accepted"]), str(result))
+	var commanded: Dictionary = GameSession.expedition_orders[0]["battle"] as Dictionary
+	var fresh := BattleState.from_dict(commanded)
+	BattleSimulation.advance(fresh, 0.25)
+	GameSession.tick_expeditions(0.25)
+	assert_eq(GameSession.pulse_decodes_active, decodes + 1, "the commanded battle is decoded")
+	var advanced: Dictionary = GameSession.expedition_orders[0]["battle"] as Dictionary
+	assert_eq(advanced, fresh.to_dict(), "the advance is the commanded state's")
+	assert_gt(int(advanced["command_sequence"]), 0)
+	assert_eq(advanced["command_sequence"], commanded["command_sequence"], "and carries the command")
+	GameSession.from_dict(GameSession.to_dict())
+	fresh = BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary)
+	BattleSimulation.advance(fresh, 0.25)
+	GameSession.tick_expeditions(0.25)
+	assert_eq(GameSession.pulse_decodes_active, decodes + 2, "a loaded battle is decoded")
+	assert_eq(GameSession.expedition_orders[0]["battle"], fresh.to_dict())
+
+
+## ig-7sn.15 (ACC 5): between pulses _process advances at most one battle a frame and none on the pulse's
+## frame; each active battle keeps up with real time to within a pulse and a frame per live battle, and
+## a battle_changed goes out once per advance.
+func test_frames_advance_one_battle_each_and_keep_up_with_real_time() -> void:
+	_dispatch_frame_battles()
+	var bad_frames: Array[String] = _drive_frames(1.0 / 60.0, 3600, 1800)
+	assert_eq(bad_frames.slice(0, 10), [] as Array[String])
+
+
+## ig-7sn.15 (Sol): at 20 fps (four frames free a pulse for five battles) none starves; below 4 fps (every
+## frame a pulse's) the pulse's frame advances one, so the battles still move.
+func test_battles_keep_up_at_low_frame_rates() -> void:
+	for fixture: Array in [[0.05, 600], [0.3, 100]]:
+		GameSession.from_dict({"roster": []})
+		_dispatch_frame_battles()
+		var bad_frames: Array[String] = _drive_frames(float(fixture[0]), int(fixture[1]), int(fixture[1]))
+		assert_eq(bad_frames.slice(0, 10), [] as Array[String], "%s s frames" % fixture[0])
+
+
+## ig-7sn.15 (Sol): a rejected command rolls the profile back through from_dict, but keeps the time the
+## battles are owed; a load drops it.
+func test_a_rollback_keeps_the_owed_time_and_a_load_drops_it() -> void:
+	var order_id: String = _dispatch_one()
+	GameSession.set_process(false)
+	GameSession._process(0.1)
+	GameSession.set_process(true)
+	var owed: Dictionary = GameSession._battle_owed.duplicate()
+	assert_eq(owed.keys(), [order_id])
+	assert_false(bool(GameSession.issue_battle_command(order_id, {"kind": "not_a_command"})["accepted"]))
+	assert_eq(GameSession._battle_owed, owed, "kept through the rollback")
+	GameSession.from_dict(GameSession.to_dict())
+	assert_true(GameSession._battle_owed.is_empty(), "dropped by a load")
+
+
+func _dispatch_frame_battles() -> void:
+	for index: int in 5:
+		var hero := Hero.new("Frame %d" % index, 0)
+		hero.def_id = &"knight"
+		hero.instance_id = "hero:frame:%d" % index
+		GameSession.roster.append(hero)
+		var preset_id: String = GameSession.save_team_preset("", "Frame %d" % index, [hero.instance_id], "verdant_outskirts")
+		assert_ne(GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, _zero_loadout()), "", GameSession.last_action_error)
+
+
+## Drives GameSession._process with frames of frame seconds; returns what broke the one-battle-a-frame rule
+## or let a battle fall behind real time by more than a pulse and a frame per live battle. At least
+## five_live of the frames must start with all five battles live.
+func _drive_frames(frame: float, count: int, five_live: int) -> Array[String]:
+	var changes: Array[int] = [0]
+	var on_change := func(_order_id: String) -> void: changes[0] += 1
+	GameSession.battle_changed.connect(on_change)
+	GameSession.set_process(false)
+	var bad_frames: Array[String] = []
+	var most_live: int = 0
+	var five_live_frames: int = 0
+	var advanced_frames: int = 0
+	for index: int in count:
+		var advances: int = GameSession.pulse_battle_advances
+		var live: int = GameSession.expedition_orders.filter(func(order: Dictionary) -> bool: return GameSession._battle_live(order)).size()
+		most_live = maxi(most_live, live)
+		if live == 5:
+			five_live_frames += 1
+		changes[0] = 0
+		GameSession._process(frame)
+		var ran: int = GameSession.pulse_battle_advances - advances
+		advanced_frames += ran
+		var pulse_frame: bool = GameSession._expedition_pulse_accumulator == 0.0
+		if ran > 1 or (pulse_frame and ran > 0 and frame < GameSession.EXPEDITION_PULSE_SECONDS) or (not pulse_frame and changes[0] != ran):
+			bad_frames.append("frame %d: %d advances, %d changes, pulse %s" % [index, ran, changes[0], pulse_frame])
+		var real: float = (index + 1) * frame
+		for order: Dictionary in GameSession.expedition_orders:
+			var battle: Dictionary = order["battle"] as Dictionary
+			if str(battle.get("status", "active")) != "active":
+				continue
+			var lag: float = real - float(battle["elapsed_seconds"]) - float(battle["tick_remainder"])
+			if lag < -0.0001 or lag > GameSession.EXPEDITION_PULSE_SECONDS + (live + 1) * frame + 0.0001:
+				bad_frames.append("frame %d: %s lags %.4f s" % [index, order["id"], lag])
+	GameSession.set_process(true)
+	GameSession.battle_changed.disconnect(on_change)
+	assert_gte(most_live, 2, "several battles ran at once")
+	assert_gte(five_live_frames, five_live, "%s s frames: all five live" % frame)
+	assert_gt(advanced_frames, int(count * frame), "the battles advanced")
+	return bad_frames
 
 
 func _dispatch_one() -> String:

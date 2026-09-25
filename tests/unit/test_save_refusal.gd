@@ -72,6 +72,24 @@ func test_a_refused_commit_leaves_the_ledger_without_an_orphan_line() -> void:
 	assert_eq(GameSession.ledger.map(func(record: Dictionary) -> int: return int(record["seq"])), seqs, "every line reloads from disk")
 
 
+## ig-7sn.15: a refused save rolls the profile back through from_dict, but the battles keep the time
+## they are owed.
+func test_a_refused_save_keeps_the_battles_owed_time() -> void:
+	var hero: Hero = _add_hero("Runner")
+	var stranded: Hero = _add_hero("Stranded")
+	var preset_id: String = GameSession.save_team_preset("", "Runners", [hero.instance_id], "verdant_outskirts")
+	assert_ne(GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}), "", GameSession.last_action_error)
+	var kept: Dictionary = _good_save()
+	GameSession._process(0.1)
+	var owed: Dictionary = GameSession._battle_owed.duplicate()
+	assert_eq(owed.size(), 1, "the battle is owed time")
+	_add_bad_incident(stranded)
+	assert_false(GameSession.set_hero_favorite(hero, true))
+	assert_push_error("Save refused")
+	assert_eq(GameSession._battle_owed, owed, "kept through the rollback")
+	_assert_files_unchanged(kept)
+
+
 func test_a_periodic_save_is_refused_and_marks_the_checkpoint_failed() -> void:
 	var hero: Hero = _add_hero("Runner")
 	var stranded: Hero = _add_hero("Stranded")
