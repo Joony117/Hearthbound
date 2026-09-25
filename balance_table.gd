@@ -143,6 +143,11 @@ extends Resource
 @export var battle_enemy_leash_range: float = 18.0
 ## A Knight hit on an enemy targeting a back-row ally taunts it this long (ig-uu7.2, PROVISIONAL in SYSTEMS).
 @export var battle_cover_taunt_seconds: float = 3.0
+## Kiting (ig-uu7.3, PROVISIONAL in SYSTEMS): a back-row hero hops when an enemy on it comes this close,
+## at most this far, then waits this long before the next hop.
+@export var battle_kite_trigger_range: float = 3.0
+@export var battle_kite_distance: float = 4.0
+@export var battle_kite_cooldown_seconds: float = 5.0
 @export var battle_enemy_hp_budget_multiplier: float = 1.0
 @export var battle_enemy_atk_budget_multiplier: float = 0.04
 @export var battle_enemy_def_budget_multiplier: float = 0.1

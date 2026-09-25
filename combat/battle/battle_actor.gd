@@ -234,6 +234,15 @@ static func validate_dict(data: Dictionary) -> String:
 		return "Battle actor direct_order effect must be a bool."
 	if effects.has("carry_progress") and (not _valid_number(effects.get("carry_progress")) or float(effects.get("carry_progress")) < 0.0):
 		return "Battle actor carry_progress must be finite and non-negative."
+	# Optional: a hop in flight and the next hop's tick (ig-uu7.3), and a telegraph evade in flight.
+	for key: String in ["kite_point", "evade_point"]:
+		if effects.has(key) and not _valid_vector(effects.get(key)):
+			return "Battle actor effect %s must contain two finite numbers." % key
+	if effects.has("kite_ready_tick") and not _valid_nonnegative_integer(effects.get("kite_ready_tick")):
+		return "Battle actor effect kite_ready_tick must be a non-negative integer."
+	# A hop in flight derives its start from kite_ready_tick, so one without the other is refused.
+	if effects.has("kite_point") and not effects.has("kite_ready_tick"):
+		return "Battle actor effect kite_point needs kite_ready_tick."
 	return ""
 
 

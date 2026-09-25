@@ -116,6 +116,8 @@ static func create_run(
 		# Timestamps are relative to this battle's tick, which starts at 0; carried ones would sit ahead of it.
 		for key: String in ["last_hit_tick", "last_skill_tick", "last_crit_tick"]:
 			actor.effect_state[key] = 0
+		actor.effect_state.erase("kite_point")
+		actor.effect_state.erase("kite_ready_tick")
 		state.actors.append(actor)
 		has_enemy_snapshot = has_enemy_snapshot or actor.faction == "enemy"
 	if not has_enemy_snapshot and kind != "rescue":
@@ -461,6 +463,8 @@ static func _choose_intentions(state: BattleState) -> void:
 			var safe_point: Variant = _danger_safe_point(state, actor)
 			if safe_point is Vector2:
 				actor.effect_state["evade_point"] = [(safe_point as Vector2).x, (safe_point as Vector2).y]
+				# Evasion cancels a hop in flight; its cooldown stays spent (ig-uu7.3).
+				actor.effect_state.erase("kite_point")
 				continue
 		actor.effect_state.erase("evade_point")
 		if bool(actor.effect_state.get("direct_order", false)) and actor.order_kind == COMMAND_ATTACK:
@@ -525,7 +529,14 @@ static func _choose_intentions(state: BattleState) -> void:
 			actor.effect_state["direct_order"] = false
 			continue
 		if bool(state.policies.get("auto_battle", true)):
-			_choose_squad_intention(state, actor, previous_target_id)
+			# One pass for the back row feeds both the kite below and the formation in the stance.
+			var back_row: bool = actor.archetype in BACK_ROW
+			if back_row:
+				_scan_rows(state, actor)
+			if not (back_row and _kite_order(state, actor)):
+				_choose_squad_intention(state, actor, previous_target_id)
+			_row_front.clear()
+			_row_threat = null
 
 
 static func _move_actors(state: BattleState) -> void:
@@ -2057,7 +2068,7 @@ static func _choose_squad_intention(state: BattleState, actor: BattleActor, prev
 		var threat: BattleActor = _cover_threat(state, actor, previous_target_id, zone_center, zone_radius)
 		if threat != null:
 			target = threat
-	if (stance == "advance" or stance == "stay_together") and actor.archetype in BACK_ROW and _formation_order(state, actor, target.position if target != null else objective):
+	if (stance == "advance" or stance == "stay_together") and actor.archetype in BACK_ROW and _formation_order(actor, target.position if target != null else objective):
 		return
 	if target != null:
 		_set_auto_order(actor, COMMAND_ATTACK, target.id, target.position)
@@ -2112,23 +2123,88 @@ static func _cover_threat(state: BattleState, knight: BattleActor, previous_targ
 	return kept if kept != null else best
 
 
-## ig-uu7.1 Formation (SYSTEMS.md § Hero AI on auto): before contact, a back-row hero stays one
-## formation spacing farther from its reference point than its squad's nearest living front-liner.
-## Off while any living enemy is within its contact range, or with no living front-liner. Returns
-## whether it set the order. Worst case: one pass over state.actors (80 at frontier_march 50v30).
-static func _formation_order(state: BattleState, actor: BattleActor, reference: Vector2) -> bool:
+# ponytail: static scratch for the back row, filled by _scan_rows and cleared by _choose_intentions
+# right after the hero's planning. Same single-threaded assumption as the cover scratch above.
+static var _row_front: Array[BattleActor] = []
+static var _row_contact: bool = false
+static var _row_threat: BattleActor = null
+
+
+## The back row's one pass over state.actors per tick (ig-uu7.1 formation, ig-uu7.3 kiting): whether
+## a living enemy is within the hero's contact range, its squad's living front-liners, and the
+## nearest living enemy targeting it. Worst case: 80 actors at frontier_march 50v30.
+static func _scan_rows(state: BattleState, actor: BattleActor) -> void:
 	var contact: float = maxf(BALANCE.battle_detection_range, actor.attack_range)
-	var front_distance: float = INF
+	var threat_distance: float = INF
+	_row_front.clear()
+	_row_contact = false
+	_row_threat = null
 	for other: BattleActor in state.actors:
 		if other.life != BattleActor.LIFE_ALIVE:
 			continue
 		if other.faction == "enemy":
-			if other.position.distance_to(actor.position) <= contact:
-				return false
+			var distance: float = other.position.distance_to(actor.position)
+			_row_contact = _row_contact or distance <= contact
+			if other.order_target_id == actor.id and distance < threat_distance:
+				_row_threat = other
+				threat_distance = distance
 		elif other.squad_id == actor.squad_id and other.archetype in FRONT_ROW:
-			front_distance = minf(front_distance, other.position.distance_to(reference))
-	if front_distance == INF:
+			_row_front.append(other)
+
+
+## ig-uu7.3 Kiting (SYSTEMS.md § Hero AI on auto): a back-row hero that outranges the trigger hops
+## once toward the spot behind its nearest front-liner when an enemy on it comes close, then fights
+## out the cooldown. Reads _scan_rows. Returns whether it set the order.
+static func _kite_order(state: BattleState, actor: BattleActor) -> bool:
+	if actor.effect_state.get("kite_point") is Array:
+		var point: Vector2 = _array_vector(actor.effect_state.get("kite_point"), actor.position)
+		# A hop lasts at most a full hop's walk plus one tick, so bodies pinning it short can't hold it
+		# forever. It started a cooldown before the next ready tick, so no key of its own is saved.
+		var started: int = int(actor.effect_state.get("kite_ready_tick", 0)) - ceili(BALANCE.battle_kite_cooldown_seconds / BALANCE.battle_tick_seconds)
+		# A loaded snapshot may carry move_speed 0; a real hero never walks slower than the minimum.
+		var longest: int = ceili(BALANCE.battle_kite_distance / (maxf(actor.move_speed, BALANCE.battle_move_speed_min) * BALANCE.battle_tick_seconds)) + 1
+		if _row_threat == null or state.tick - started >= longest or actor.position.distance_to(point) <= BALANCE.battle_separation_radius:
+			actor.effect_state.erase("kite_point")
+			return false
+		_set_auto_order(actor, COMMAND_MOVE, "", point)
+		return true
+	if actor.attack_range <= BALANCE.battle_kite_trigger_range or _row_threat == null or state.tick < int(actor.effect_state.get("kite_ready_tick", 0)):
 		return false
+	var threat_at: Vector2 = _row_threat.position
+	if threat_at.distance_to(actor.position) > BALANCE.battle_kite_trigger_range:
+		return false
+	var front: BattleActor = null
+	for other: BattleActor in _row_front:
+		if front == null or other.position.distance_to(actor.position) < front.position.distance_to(actor.position):
+			front = other
+	var away: Vector2 = actor.position + (actor.position - threat_at).normalized() * BALANCE.battle_kite_distance
+	var end: Vector2 = away
+	if front != null:
+		var behind: Vector2 = front.position + (front.position - threat_at).normalized() * BALANCE.battle_formation_spacing
+		end = actor.position + (behind - actor.position).limit_length(BALANCE.battle_kite_distance)
+		# The tank is on the far side of the enemy: that hop closes in, so run straight away instead.
+		if end.distance_to(threat_at) < actor.position.distance_to(threat_at):
+			end = away
+	end = _clamp_to_bounds(state, end)
+	# Cornered: stand and fight, and keep the hop for next tick.
+	if end.distance_to(actor.position) < BALANCE.battle_kite_distance * 0.5:
+		return false
+	actor.effect_state["kite_point"] = [end.x, end.y]
+	actor.effect_state["kite_ready_tick"] = state.tick + ceili(BALANCE.battle_kite_cooldown_seconds / BALANCE.battle_tick_seconds)
+	_set_auto_order(actor, COMMAND_MOVE, "", end)
+	return true
+
+
+## ig-uu7.1 Formation (SYSTEMS.md § Hero AI on auto): before contact, a back-row hero stays one
+## formation spacing farther from its reference point than its squad's nearest living front-liner.
+## Off while any living enemy is within its contact range, or with no living front-liner. Returns
+## whether it set the order. Reads _scan_rows, so it adds no pass of its own.
+static func _formation_order(actor: BattleActor, reference: Vector2) -> bool:
+	if _row_contact or _row_front.is_empty():
+		return false
+	var front_distance: float = INF
+	for other: BattleActor in _row_front:
+		front_distance = minf(front_distance, other.position.distance_to(reference))
 	var cap: float = front_distance + BALANCE.battle_formation_spacing
 	if actor.position.distance_to(reference) > cap:
 		_set_auto_order(actor, COMMAND_MOVE, "", reference + (actor.position - reference).normalized() * cap)

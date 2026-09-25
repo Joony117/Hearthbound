@@ -11,7 +11,8 @@ const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 const UNCHANGED_DIGESTS: Dictionary = {
 	"knight,knight,ranger,mage,cleric/defend": "e27b3bf345fd0412ff2cc8ea83fc8613",
 	"knight,knight,ranger,mage,cleric/protect": "bf42e8851762e1159d98daa82c508d4e",
-	"ranger,mage,cleric/advance": "0761d263387ed05e33756b02e73aec7a",
+	# ig-uu7.3 kiting changed this one (no front-liner, so they hop away); .agent-results/ig-uu7.3/nokite.log shows all 4 old digests come back with kiting off.
+	"ranger,mage,cleric/advance": "57a1859dc08f268e25d1c1d4c500979c",
 	"ranger,mage,cleric/stay_together": "b8da2981878054f540b2e5d27e7c35c4",
 }
 

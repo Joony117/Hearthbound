@@ -123,12 +123,13 @@ first (§ The v1 kits, Knight).
 
 **Kiting.** A back-row hero whose attack range exceeds `battle_kite_trigger_range` hops once when
 a living enemy targeting it comes that close and its hop is ready. The hop point sits one formation
-spacing behind the nearest living front-liner, as seen from that enemy, so the tank ends up between
+spacing behind its own squad's nearest living front-liner, as seen from that enemy, so the tank ends up between
 them. With no living front-liner, or when that point would end nearer the enemy, it hops straight
 away instead. A hop is at most `battle_kite_distance` long and clamped to the battle bounds. A clamp
 that leaves under half of that (cornered) means no hop: stand and fight. The hop ends on arrival or
 once no living enemy targets the hero, and the next is ready `battle_kite_cooldown_seconds` after
-this one started. Evasion cancels a hop in flight; the cooldown stays spent. After a hop the
+this one started. A hop lasts at most the time to cover `battle_kite_distance` at the hero's speed, plus
+one tick, so bodies pinning it short of its point can't hold it forever. Evasion cancels a hop in flight; the cooldown stays spent. After a hop the
 stance's own return applies as usual. Clerics swing at melee range 1.6 and would hop, walk back to
 swing and hop again, so the range test leaves them out; formation and cover still protect them.
 
@@ -210,6 +211,35 @@ is restated rather than restored. The same eight cases now measure:
   173.9 to 130.3 s.
 
 Evidence: `.agent-results/ig-gy0.1/golden_before.json`, captured before any `ig-gy0.1` edit.
+
+**Restated 2026-09-24, after kiting (`ig-uu7.3`, the epic's balance gate).** The band above was
+already stale before kiting: the tree just before `ig-uu7.3` measured 60.9–86.8 s mixed. The same
+eight cases, before kiting, then with it:
+
+| Case | Before kiting (s, downings) | With kiting (s, downings, hops) |
+|---|---|---|
+| mixed:1 | 86.8, 5 | 65.9, 2, 2 |
+| mixed_suggested:1 | 60.9, 0 | 66.6, 0, 2 |
+| mixed:2 | 73.3, 1 | 83.3, 4, 6 |
+| mixed_suggested:2 | 73.0, 1 | 70.6, 0, 2 |
+| starter_knights:1 / suggested:1 | 138.0, 3 / 173.5, 0 | the same (Knights never hop) |
+| starter_knights:2 / suggested:2 | 169.2, 1 / timeout 180, 1 | the same |
+
+- **Five mixed heroes: 65.9–83.3 s.** All four won. This is the current band.
+- **Three starter Knights:** unchanged. Seed 2 supplied still times out on the edge described above.
+- No loss, and no new downing in a supplied case.
+- mixed:1 is 24% faster, past the gate's 15% line. Accepted (design verdict, 2026-09-24): the gate
+  catches regressions. A clear that is faster and has fewer downings (5 → 2) is the back row
+  surviving, which is what kiting is for. The gate counts a time shift over 15% when it is slower,
+  or faster with more downings.
+- mixed:2 (+14%, downings 1 → 4, bare) is under the line and accepted. The cause is not known yet.
+  The mixed team has no Cleric and the case has no supplies, so a hop can't take anyone out of
+  healing. The reach effects that guard this team are the Knights' Close Ranks and Stand Fast
+  (within 3), and a hop moves toward a Knight. The open suspect is where a hop lands. The hop point is set against the one
+  enemy chasing the hero, so a chase from behind the squad lands the hero 1.8 past its Knight,
+  toward the enemies the Knight is fighting.
+
+Evidence: `.agent-results/ig-uu7.3/balance_gate.gd`, `balance_head.log`, `balance_new.log`.
 
 | Hero kit | Signature | Passive |
 |---|---|---|
