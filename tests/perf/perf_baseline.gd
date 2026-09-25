@@ -6,6 +6,7 @@ extends SceneTree
 ## the seeded APPDATA first: a measure changes its save.
 ##   APPDATA="$(cygpath -w <copy>)" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --windowed -s res://tests/perf/perf_baseline.gd -- <measure> <commit>
 ## Measures (the ig-7sn.2 list): pulse1, pulse5, hub, battle_citadel, battle_frontier, roster, town, load.
+## Since ig-7sn.6: settle1, settle5 (the pulse that settles a leg, split).
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -62,6 +63,10 @@ func _run() -> void:
 			await _measure_pulse(1)
 		"pulse5":
 			await _measure_pulse(5)
+		"settle1":
+			await _measure_settle(1)
+		"settle5":
+			await _measure_settle(5)
 		"hub":
 			await _measure_hub()
 		"battle_citadel":
@@ -163,6 +168,82 @@ func _pulse_phases(label: String) -> void:
 		var samples: Array[float] = []
 		samples.assign(phases[phase])
 		_report("pulse phases, %s, at least %d active: %s" % [label, fewest, phase], samples)
+
+
+## ---- 1b. The pulse that settles a leg, split (ig-7sn.6). One battle or all five, 99-run orders,
+## pulsed with the hub shown until SETTLES legs settle. Before each settling pulse, each part's work is
+## done again on the side: the repeat's forecast (its team snapshot apart), the profile to_dict (the
+## commit's snapshot), a save, and each signal's handlers. "rest" is the pulse minus those (the other
+## battles' advance, the report, the Ledger record and bond fold, the save's own to_dict).
+const SETTLES: int = 5
+
+
+func _measure_settle(count: int) -> void:
+	await _open_hub()
+	for zone_id: String in ZONES.slice(0, count):
+		_dispatch(zone_id, _cap(zone_id))
+	session.set_process(false)
+	var settles: int = 0
+	var pulses: int = 0
+	while settles < SETTLES and pulses < 20000:
+		pulses += 1
+		var due: Dictionary = {}
+		for order: Dictionary in session.expedition_orders:
+			if str((order["battle"] as Dictionary).get("status", "")) != "active" and float(order.get("remaining_seconds", 0.0)) <= PULSE:
+				due = order
+		var parts: Dictionary = {}
+		if not due.is_empty():
+			parts = _settle_parts(due)
+		var active: int = _active()
+		var reports: int = session.expedition_reports.size()
+		var started: int = Time.get_ticks_usec()
+		session.tick_expeditions(PULSE)
+		var whole: float = _since(started)
+		if session.expedition_reports.size() != reports and not parts.is_empty():
+			settles += 1
+			var line: String = "SETTLE %s (%d active before): whole pulse %.1f" % [due.get("zone_id", "?"), active, whole]
+			var rest: float = whole
+			for part: String in parts:
+				line += ", %s %.1f" % [part, parts[part]]
+				if part != "team snapshot":
+					rest -= float(parts[part])
+			print("%s, rest %.1f ms" % [line, rest])
+		await process_frame
+	session.set_process(true)
+
+
+## The settling pulse's parts for due, each timed once on the side (ms).
+func _settle_parts(due: Dictionary) -> Dictionary:
+	var parts: Dictionary = {}
+	var team: Array[Hero] = []
+	for hero_id: String in session._string_array(due["hero_ids"]):
+		team.append(session.hero_by_id(hero_id))
+	var squads: Array[Dictionary] = []
+	for squad: Dictionary in due["squads"]:
+		squads.append(squad.duplicate(true))
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(due["zone_id"])))
+	var started: int = Time.get_ticks_usec()
+	var snapshots: Array[Dictionary] = session._team_snapshots(team, squads)
+	parts["team snapshot"] = _since(started)
+	started = Time.get_ticks_usec()
+	BattleSimulation.forecast(str(due["id"]) + ":repeat", snapshots, zone, squads, due["policies"] as Dictionary, session._loadout_escrow(due["loadout"] as Dictionary), 1)
+	parts["forecast (with its snapshot)"] = _since(started) + float(parts["team snapshot"])
+	started = Time.get_ticks_usec()
+	session.to_dict()
+	parts["profile to_dict"] = _since(started)
+	started = Time.get_ticks_usec()
+	saves.save()
+	parts["save"] = _since(started)
+	for changed: Signal in [session.roster_changed, session.expeditions_changed]:
+		started = Time.get_ticks_usec()
+		for connection: Dictionary in changed.get_connections():
+			(connection["callable"] as Callable).call()
+		parts[changed.get_name() + " handlers"] = _since(started)
+	started = Time.get_ticks_usec()
+	for connection: Dictionary in session.battle_changed.get_connections():
+		(connection["callable"] as Callable).call(str(due["id"]))
+	parts["battle_changed handlers"] = _since(started)
+	return parts
 
 
 ## ---- 2. The hub's battle_changed and expeditions_changed handlers as the order count grows.

@@ -452,6 +452,14 @@ static func _expire_effects_and_cooldowns(state: BattleState) -> void:
 
 static func _choose_intentions(state: BattleState) -> void:
 	var supplies_out: bool = bool(state.policies.get("retreat_when_supplies_empty", false)) and _supply_count(state, BattleState.SUPPLY_KINDS) == 0
+	# Planning changes orders only: no life, position, telegraph or objective moves until the pass ends.
+	# So the telegraphing enemies, and each squad's leader and objective, are found once per pass
+	# (ig-7sn.7). Per call, not static, so a sim off the main thread stays possible.
+	var telegraphs: Array[BattleActor] = []
+	for enemy: BattleActor in state.actors:
+		if enemy.faction == "enemy" and enemy.life == BattleActor.LIFE_ALIVE and not (float(enemy.effect_state.get("telegraph_remaining", 0.0)) <= 0.0):
+			telegraphs.append(enemy)
+	var plan: Dictionary = {}
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0:
 			continue
@@ -464,7 +472,7 @@ static func _choose_intentions(state: BattleState) -> void:
 				actor.order_kind = ""
 				actor.order_target_id = ""
 		if bool(state.policies.get("auto_battle", true)) and not bool(actor.effect_state.get("direct_order", false)):
-			var safe_point: Variant = _danger_safe_point(state, actor)
+			var safe_point: Variant = _danger_safe_point(state, actor, telegraphs)
 			if safe_point is Vector2:
 				actor.effect_state["evade_point"] = [(safe_point as Vector2).x, (safe_point as Vector2).y]
 				# Evasion cancels a hop in flight; its cooldown stays spent (ig-uu7.3).
@@ -538,7 +546,7 @@ static func _choose_intentions(state: BattleState) -> void:
 			if back_row:
 				_scan_rows(state, actor)
 			if not (back_row and _kite_order(state, actor)):
-				_choose_squad_intention(state, actor, previous_target_id)
+				_choose_squad_intention(state, actor, previous_target_id, plan)
 			_row_front.clear()
 			_row_threat = null
 
@@ -599,21 +607,72 @@ static func _move_actors(state: BattleState) -> void:
 
 
 static func _support_actions(state: BattleState) -> void:
+	# Only work that cannot aim is skipped (ig-7sn.7). With no ally down, the revive band and the revival
+	# item have no one to aim at. Every heal rule, band or item, needs a living ally below its threshold,
+	# so with the lowest one at or above the highest threshold no heal can aim. Both are read again after
+	# any actor tries anything, landed or not: an effect list can stop part way.
+	var anyone_down: bool = _ally_downed(state)
+	var lowest: float = _lowest_ally_fraction(state)
+	var heal_below: float = float(state.policies.get("heal_below", 0.35))
+	var heal_ceiling: float = _heal_ceiling(state, heal_below)
+	var heal_always: bool = heal_ceiling == INF
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.faction != "ally":
 			continue
-		if _auto_cast(state, actor, null, ["revive"], null):
+		if not anyone_down and not heal_always and not (lowest < heal_ceiling):
 			continue
-		var downed: BattleActor = _nearest_actor(state, actor, "ally", BattleActor.LIFE_DOWNED)
-		if bool(state.policies.get("auto_revive", true)) and downed != null and actor.item_cooldown <= 0.0:
-			if _use_revival(state, actor, downed, false):
-				continue
-		if _auto_cast(state, actor, null, ["heal"], null):
-			continue
-		if bool(state.policies.get("auto_heal", true)) and actor.item_cooldown <= 0.0:
+		var landed: bool = false
+		if anyone_down:
+			landed = _auto_cast(state, actor, null, ["revive"], null)
+			if not landed:
+				var downed: BattleActor = _nearest_actor(state, actor, "ally", BattleActor.LIFE_DOWNED)
+				landed = bool(state.policies.get("auto_revive", true)) and downed != null and actor.item_cooldown <= 0.0 and _use_revival(state, actor, downed, false)
+		if not landed and (heal_always or lowest < heal_ceiling):
+			landed = _auto_cast(state, actor, null, ["heal"], null)
+		if not landed and lowest < heal_below and bool(state.policies.get("auto_heal", true)) and actor.item_cooldown <= 0.0:
 			var hurt: BattleActor = _lowest_health_ally(state, actor.position, BALANCE.battle_revival_range)
-			if hurt != null and hurt.hp / hurt.max_hp < float(state.policies.get("heal_below", 0.35)):
+			if hurt != null and hurt.hp / hurt.max_hp < heal_below:
 				_use_healing(state, actor, hurt)
+		anyone_down = _ally_downed(state)
+		lowest = _lowest_ally_fraction(state)
+
+
+static func _ally_downed(state: BattleState) -> bool:
+	for actor: BattleActor in state.actors:
+		if actor.faction == "ally" and actor.life == BattleActor.LIFE_DOWNED:
+			return true
+	return false
+
+
+## The lowest HP fraction among living allies, or INF.
+static func _lowest_ally_fraction(state: BattleState) -> float:
+	var lowest: float = INF
+	for actor: BattleActor in state.actors:
+		if actor.faction == "ally" and actor.life == BattleActor.LIFE_ALIVE and actor.hp / actor.max_hp < lowest:
+			lowest = actor.hp / actor.max_hp
+	return lowest
+
+
+## The highest threshold any ally's heal-band ability aims below (heal_below or its ai_fraction), or INF
+## when one could aim with no one below it (allies_below needing no ally). A NaN threshold passes no `<`
+## test, so it is left out rather than folded in.
+static func _heal_ceiling(state: BattleState, heal_below: float) -> float:
+	var ceiling: float = -INF
+	if heal_below > ceiling:
+		ceiling = heal_below
+	for actor: BattleActor in state.actors:
+		if actor.faction != "ally":
+			continue
+		for entry: Dictionary in actor.skills:
+			# get: a downed ally's skills are read here but not by the pass itself, so no new error on a bad id.
+			var skill: AbilityDefinition = ABILITIES.get(entry["id"]) as AbilityDefinition
+			if skill == null or not skill.is_ability() or skill.band() != "heal":
+				continue
+			if skill.ai_rule == "allies_below" and skill.ai_count <= 0:
+				return INF
+			if skill.ai_rule != "ally_below_heal_below" and skill.ai_fraction > ceiling:
+				ceiling = skill.ai_fraction
+	return ceiling
 
 
 static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -> void:
@@ -1403,7 +1462,10 @@ static func _class_heal_ready(actor: BattleActor) -> bool:
 static func _lowest_ally(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> BattleActor:
 	var lowest: BattleActor = null
 	var lowest_fraction: float = INF
-	for ally: BattleActor in _living_in_radius(state, actor.faction, actor.position, skill.range_units):
+	# _living_in_radius's filter, inline: no array per call (ig-7sn.7).
+	for ally: BattleActor in state.actors:
+		if ally.faction != actor.faction or ally.life != BattleActor.LIFE_ALIVE or not (ally.position.distance_to(actor.position) <= skill.range_units):
+			continue
 		if (not skill.ai_archetype.is_empty() and ally.archetype != skill.ai_archetype) or (not skill.ai_status.is_empty() and _has_status(ally, skill.ai_status)):
 			continue
 		if ally.hp / ally.max_hp < lowest_fraction:
@@ -1608,10 +1670,9 @@ static func _cancel_telegraph(actor: BattleActor) -> void:
 	actor.effect_state["telegraph_total"] = 0.0
 
 
-static func _danger_safe_point(state: BattleState, actor: BattleActor) -> Variant:
-	for enemy: BattleActor in state.actors:
-		if enemy.faction != "enemy" or enemy.life != BattleActor.LIFE_ALIVE or float(enemy.effect_state.get("telegraph_remaining", 0.0)) <= 0.0:
-			continue
+## telegraphs: the living enemies with a telegraph running, in state.actors order.
+static func _danger_safe_point(state: BattleState, actor: BattleActor, telegraphs: Array[BattleActor]) -> Variant:
+	for enemy: BattleActor in telegraphs:
 		var kind: String = str(enemy.effect_state.get("telegraph_kind", ""))
 		var origin: Vector2 = _array_vector(enemy.effect_state.get("telegraph_origin"))
 		var point: Vector2 = _array_vector(enemy.effect_state.get("telegraph_point"))
@@ -2033,17 +2094,27 @@ static func _choose_enemy_intention(state: BattleState, actor: BattleActor) -> v
 	actor.effect_state["direct_order"] = false
 
 
-static func _choose_squad_intention(state: BattleState, actor: BattleActor, previous_target_id: String = "") -> void:
+## plan: _choose_intentions' cache for this pass, by squad: "leader:<id>" and "objective:<id>".
+static func _choose_squad_intention(state: BattleState, actor: BattleActor, previous_target_id: String, plan: Dictionary) -> void:
 	var squad: Dictionary = _squad_for(state, actor.squad_id)
 	var stance: String = str(squad.get("stance", state.policies.get("default_stance", "stay_together")))
-	var objective: Vector2 = _assigned_objective_point(state, actor)
+	var objective_key: String = "objective:" + actor.squad_id
+	if not plan.has(objective_key):
+		plan[objective_key] = _assigned_objective_point(state, actor)
+	# Its fallback is the actor's own position, which is not the squad's to share.
+	var objective: Vector2 = actor.position
+	if plan[objective_key] is Vector2:
+		objective = plan[objective_key] as Vector2
 	var target: BattleActor = null
 	# The stance's zone, where a Knight looks for a threat to cover (ig-uu7.2).
 	var zone_center: Vector2 = actor.position
 	var zone_radius: float = BALANCE.battle_detection_range
 	match stance:
 		"stay_together":
-			var leader: BattleActor = _squad_leader(state, actor.squad_id)
+			var leader_key: String = "leader:" + actor.squad_id
+			if not plan.has(leader_key):
+				plan[leader_key] = _squad_leader(state, actor.squad_id)
+			var leader: BattleActor = plan[leader_key] as BattleActor
 			if leader != null:
 				if actor == leader and _squad_member_beyond(state, actor.squad_id, leader.position, BALANCE.battle_cohesion_wait_distance):
 					_set_auto_order(actor, COMMAND_HOLD, "", actor.position)
@@ -2371,7 +2442,8 @@ static func _lowest_health_ally(state: BattleState, center: Vector2, radius: flo
 	return lowest
 
 
-static func _assigned_objective_point(state: BattleState, actor: BattleActor) -> Vector2:
+## Null when the zone gives the squad no point and the actor keeps its own position.
+static func _assigned_objective_point(state: BattleState, actor: BattleActor) -> Variant:
 	if bool(state.objective_state.get("escort_active", false)):
 		return _objective_point(state, "cart_position")
 	if str(state.objective_state.get("battle_kind", "standard")) == "raid" and bool(state.objective_state.get("boss_spawned", false)):
@@ -2392,7 +2464,7 @@ static func _assigned_objective_point(state: BattleState, actor: BattleActor) ->
 		return _array_vector(objective_markers[squad_index % objective_markers.size()].get("position"))
 	if str(state.objective_state.get("battle_kind", "standard")) == "standard":
 		return Vector2(0.0, 8.0)
-	return actor.position
+	return null
 
 
 static func _assigned_objective_enemy(state: BattleState, actor: BattleActor, objective: Vector2) -> BattleActor:
