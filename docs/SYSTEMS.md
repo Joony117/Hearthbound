@@ -616,7 +616,7 @@ CRIT_DMG.
 **Amended 2026-09-24 (director rulings).**
 - v1 has no HP stat status. No skill needs one, and validation rejects it.
 - An SPD change (Hunter's Focus) changes only the swing interval.
-  - *Amended 2026-09-25 (`ig-vl1.7`, proposed):* a slow (an SPD cut; only Rime Circle has one)
+  - *Amended 2026-09-25 (`ig-vl1.7`):* a slow (an SPD cut; only Rime Circle has one)
     works after the clamps. It multiplies the finished swing interval by 1 / (1 − cut) and the walk
     speed by (1 − cut). Every enemy swings at SPD 20 (100 / 20 = 5 s, clamped to 3.0) and walks at
     the 1.5 floor (20 × 0.04 = 0.8), so a cut to SPD itself changed neither: before this, Rime
@@ -1556,9 +1556,10 @@ Cleric's **Hearthward** holds a line up.
 - **Amounts** use the caster's ATK the way bleed and burn do. A zone draws no RNG, so it never
   crits. Grace's +20% applies to Hearthward's heal.
 - **The status each pulse applies lasts 1.5 s,** so it drops soon after an actor walks out.
-  Overlapping zones of the same skill count once per actor per pulse: the same effect refreshes,
-  never stacks. Stat raises keep their rule: the strongest applies, so Hearthward's ATK +15% and a
-  Rogue's Venom Edge (+15%) don't add up.
+  One skill lands once per actor per tick, however many of its zones overlap there. Two of its
+  zones that pulse on different ticks each land: each deals its damage or heal, and the status
+  refreshes, never stacks (`ig-vl1.4`, as built). Stat raises keep their rule: the strongest
+  applies, so Hearthward's ATK +15% and a Rogue's Venom Edge (+15%) don't add up.
 - **It outlasts its caster.** A zone keeps going if its caster is downed or leaves, and through
   a wave change: new enemies spawn into it.
 - **Heroes only in v1.** No enemy kit gets a zone (director default, agreed: no enemy needs one
@@ -1579,7 +1580,8 @@ Cleric's **Hearthward** holds a line up.
     the whole caster, so it still picks right.
   - A caster whose two points sit more than a rank apart can't be fit by the offset or by sizing
     its spell, because both move the two points together. That goes to design as a change to what
-    the spell does. At offset 0 the Mage's points are 0.03 apart and the Cleric's 0.51.
+    the spell does. Before zones (`ig-vl1.3`, offset 0), the Mage's points were 0.03 apart and the
+    Cleric's 0.51.
   - A spell that only defends counts at a survival-bound point (F1) and hardly at a clock-bound one
     (B30), so it pulls a caster's two points apart. The zones run below showed it: the first
     Hearthward (20% less damage and 0.15 ATK of heal) added 0.87 of a rank at F1 and 0.06 at B30.
@@ -1608,20 +1610,60 @@ caster in them). Cells as the baseline's, with the baseline's equivalent in brac
     measure: a harder fight has more DEF.
 - Team power against the RP is the baseline's (the zones add no stat).
 
-**The fit** (`ig-vl1.7`, design 2026-09-25, not yet run). Two changes to what the spells do:
+**The fit** (`ig-vl1.7`, design 2026-09-25; built and run in `ig-vl1.8`). Two changes to what the
+spells do:
 - **Rime Circle's slow works.** It stretches the swing and shortens the walk after the clamps
   (§ Statuses, amended), so enemies inside swing about 30% less often (3.0 s → 4.3 s) and walk
-  1.05 instead of 1.5. That is defense, so it should lift the Mage most at F1, where its team loses
-  to wipes (21 of 27), and narrow its spread. Walls (`ig-vl1.5`) come after and lift it again.
+  1.05 instead of 1.5. That is defense, so the design expected it to lift the Mage most at F1,
+  where its team loses to wipes (21 of 27). The run found no clear lift (below). Walls
+  (`ig-vl1.5`) come after.
 - **Hearthward adds damage instead of damage reduction**: ATK +15% and 0.1 ATK of heal a second
-  inside, and it now casts whenever an ally in the group is targeted. The run tries three versions
-  and keeps one (the engine bead's rule): ATK +15% with 0.1 heal, ATK +15% with no heal, and ATK
-  +20% with no heal. The kit row shows the first.
+  inside, and it now casts whenever an ally in the group is targeted. The run tried three versions
+  (the engine bead's rule): V1, ATK +15% with 0.1 heal; V2, ATK +15% with no heal; V3, ATK +20%
+  with no heal. None could be kept, so V1 stays, and the kit row shows it.
+
+**The fit run** (`ig-vl1.8`, offset 0, the zones run's harness, logs
+`.agent-results/ig-vl1.8/presence_V<n>_<point>.log`). The Knight rows match the zones run exactly.
+The Mage ran once, and the Cleric once per Hearthward version. Cells as the zones run's, with its
+equivalent in brackets. V2's B30 and all of V3 ran the Cleric row alone, against the full run's
+Knight and Mage m's; that shortcut reproduced the full run's B30 line. It rounds the m's it is
+given, so V3's F1 log prints a 9.0% gap.
+
+| Point | Mage at R | Cleric V1 | Cleric V2 | Cleric V3 | Gap |
+|---|---|---|---|---|---|
+| F1 Verdant | F 1.446 (1.340–1.628), 19 / 5, **+0.13** [+0.63] | F 1.756 (1.664–1.854), 9 / 15, **+2.38** [+2.50] | F 1.664 (1.461–1.737), 16 / 11, **+1.75** | F 1.628 (1.399–1.775), 16 / 10, **+1.50** | 9.1% |
+| B30 Ashfall | B 2.970 (2.813–3.238), 10 / 21, **+1.12** [+1.47] | B 3.068 (3.002–3.101), 0 / 29, **+1.47** [+1.18] | B 3.068 (3.035–3.101), 0 / 29, **+1.47** | B 3.084 (3.035–3.101), 0 / 34, **+1.53** | 9.6% |
+
+- **No offset was picked,** by the engine bead's rule: an offset in steps of 0.25 that puts all
+  four caster points inside [1, 2].
+  - The Mage fits only between 0.87 and 0.88. At 0.75 its F1 point is 0.88, and at 1.00 its B30
+    point is 2.12.
+  - V1's Cleric is above R+2 at F1. It would need −0.38, below the floor of 0.
+  - V3's Cleric is flat (+1.50 / +1.53) and fits alone at 0 or 0.25. Only the Mage blocks a fit.
+  - So the offset stays 0 and Hearthward stays V1 (the engine bead's fallback). No re-run.
+- **The slow moved the Mage by less than the seeds spread.** Its medians fell, 0.50 at F1 and
+  0.35 at B30, but seed by seed it's mixed: at F1, 3 seeds rose, 4 fell and 1 held; at B30, 3 rose
+  and 5 fell. There is no lift. The Mage's team still loses to wipes at F1 (19 of 24).
+- **The Mage's slope is Rime Circle's damage.** Before zones the Mage was flat (+0.38 / +0.41,
+  `ig-vl1.3`). The zones run added 0.25 at F1 and 1.06 at B30, because zone damage skips DEF, and
+  the slow doesn't balance that. At 0.99 apart, the offset's window is 0.01 wide.
+- **Hearthward's heal is what pulls the Cleric apart.** V1 and V2 have the same B30 m (3.068), so
+  the heal adds nothing there, but it adds 0.63 at F1. The Cleric's team never wipes at B30 (all
+  its losses are timeouts), so a heal only counts at F1. Swapping damage reduction for ATK +15%
+  (the zones run against V1) moved F1 by −0.12 and B30 by +0.29, as the fit expected. V2 and V3
+  differ by less than the seeds spread (V2 to V3: −0.25 at F1, +0.06 at B30), so what holds is the
+  shape: with no heal, the Cleric's points sit within 0.3 of each other.
+- **Balance gate** (`.agent-results/ig-vl1.8/balance_final.log`, against `ig-vl1.4`'s): 8/8 cases
+  win, and starter_knights is exact. Supplied downings stay at 1 in total. Bare mixed downings
+  stay at 3 in total, spread differently (seed 1 now has 2, seed 2 has 1): input to `ig-gy0.9`.
+- **Next: a re-fit** (a bead after `ig-vl1.8`). The Mage needs its two points closer before any
+  offset can fit it. Then the Cleric drops the heal (V2 and V3's shape), and its ATK raise is sized
+  to the offset that fit picks.
 
 > ⚠️ **PROVISIONAL** — every zone number is arithmetic, chosen next to Hail of Arrows, Hanging Star,
-> Prayer Circle and Wellspring. The zones run measured the first versions (above); the fit's
-> numbers are desk choices the break hasn't run yet · **Settled by:** the fit's presence run
-> (`ig-vl1.7`'s engine bead), then walls' re-pick (`ig-vl1.5`)
+> Prayer Circle and Wellspring. The fit run measured the working slow and three Hearthwards
+> (above), and no offset fits: the Mage's two points sit 0.99 apart · **Settled by:** the re-fit
+> (the Mage's slope, then Hearthward's version and size), then walls' re-pick (`ig-vl1.5`)
 
 **Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
 any wall spell, so its tests place walls by hand.

@@ -101,27 +101,128 @@ func test_a_zone_kill_is_the_caster_s_and_a_slow_meets_a_raise() -> void:
 	assert_almost_eq(SIM._stat(state.actors[2], "speed"), 120.0, 0.000001, "the strongest raise and the strongest cut both apply")
 
 
-func test_hearthward_heals_with_grace_and_guards_allies_only() -> void:
+## ig-vl1.8 (ACC 1): a slow works after the clamps. An SPD-20 enemy swings at the 3.0 cap and walks at
+## the 1.5 floor; inside Rime Circle it swings every 3.0 / 0.7 s and walks 1.05 a second.
+func test_a_slow_works_after_the_clamps_on_the_swing() -> void:
+	var state: BattleState = _battle([
+		_unit("hero:mage", "mage", "ally", Vector2(0, 0)),
+		_unit("hero:k1", "knight", "ally", Vector2(5, 1)),
+		_unit("hero:k2", "knight", "ally", Vector2(25, 1)),
+		_unit("enemy:in", "rogue", "enemy", Vector2(5, 0), {"speed": 20.0}),
+		_unit("enemy:out", "rogue", "enemy", Vector2(25, 0), {"speed": 20.0}),
+	])
+	var inside: BattleActor = state.actors[3]
+	var outside: BattleActor = state.actors[4]
+	assert_true(SIM._use_skill(state, state.actors[0], RIME, inside, inside.position, _rng()))
+	for tick: int in 10:
+		SIM._update_field_objects(state)
+	assert_true(SIM._has_status(inside, "speed"), "slowed")
+	# Each enemy's cooldown on the tick its first swing lands.
+	var swung: Dictionary = {}
+	for _step: int in 100:
+		BattleSimulation.advance(state, SIM.BALANCE.battle_tick_seconds)
+		for pair: Array in [[inside, state.actors[1]], [outside, state.actors[2]]]:
+			var enemy: BattleActor = pair[0]
+			if not swung.has(enemy.id) and int((pair[1] as BattleActor).effect_state.get("last_hit_tick", 0)) == state.tick:
+				swung[enemy.id] = [enemy.attack_cooldown, SIM._has_status(enemy, "speed")]
+		if swung.size() == 2:
+			break
+	assert_eq(swung.size(), 2, "both swung")
+	assert_almost_eq(float(swung[inside.id][0]), 3.0 / 0.7, 0.000001, "inside: the 3.0 cap, then x 1 / 0.7")
+	assert_true(bool(swung[inside.id][1]), "still slowed when it swung")
+	assert_almost_eq(float(swung[outside.id][0]), 3.0, 0.000001, "outside: the cap")
+	assert_false(bool(swung[outside.id][1]))
+
+
+func test_a_slow_works_after_the_floor_on_the_walk_in_the_open_and_round_a_wall() -> void:
+	var state: BattleState = _battle([
+		_unit("hero:mage", "mage", "ally", Vector2(-8, 0)),
+		_unit("enemy:in", "rogue", "enemy", Vector2(-5, 0), {"speed": 20.0}),
+		_unit("enemy:out", "rogue", "enemy", Vector2(-5, -12), {"speed": 20.0}),
+		_unit("enemy:open", "rogue", "enemy", Vector2(-10, -6), {"speed": 20.0}),
+	])
+	var mage: BattleActor = state.actors[0]
+	var inside: BattleActor = state.actors[1]
+	var outside: BattleActor = state.actors[2]
+	var open: BattleActor = state.actors[3]
+	for target: BattleActor in [inside, open]:
+		mage.skill_cooldowns.clear()
+		mage.ability_lock = 0.0
+		assert_true(SIM._use_skill(state, mage, RIME, target, target.position, _rng()))
+	for tick: int in 10:
+		SIM._update_field_objects(state)
+	assert_true(SIM._has_status(inside, "speed") and SIM._has_status(open, "speed") and not SIM._has_status(outside, "speed"))
+	var step: float = 1.05 * SIM.BALANCE.battle_tick_seconds
+	# Open ground (the straight branch): slowed 1.05 a second, not slowed the 1.5 floor.
+	for walker: BattleActor in [outside, open]:
+		walker.order_kind = SIM.COMMAND_MOVE
+		walker.order_point = walker.position + Vector2(10, 0)
+	var from_open: Vector2 = open.position
+	var from_outside: Vector2 = outside.position
+	SIM._move_actors(state)
+	assert_almost_eq(open.position.distance_to(from_open), step, 0.000001, "slowed, in the open")
+	assert_almost_eq(outside.position.distance_to(from_outside), 1.5 * SIM.BALANCE.battle_tick_seconds, 0.000001, "not slowed: the floor")
+	for walker: BattleActor in [outside, open]:
+		walker.order_kind = ""
+	# A hand-placed wall between the slowed walker and its point (ig-0qh's walled branch).
+	state.field_sequence += 1
+	state.field_objects.append({"id": "field:%d" % state.field_sequence, "kind": "wall", "skill_id": "test_wall", "owner_actor_id": mage.id, "faction": "ally", "start": [0.0, -3.0], "end": [0.0, 3.0], "thickness": 1.2, "remaining_seconds": 60.0})
+	assert_gt(inside.position.distance_to(Vector2(-0.926, 3.926)), step, "the leg's next corner is more than one step away")
+	inside.order_kind = SIM.COMMAND_MOVE
+	inside.order_point = Vector2(5, 0)
+	var from_inside: Vector2 = inside.position
+	SIM._move_actors(state)
+	assert_almost_eq(inside.position.distance_to(from_inside), step, 0.000001, "slowed, round the wall")
+	assert_gt(inside.position.y, from_inside.y, "it headed for the corner, not straight")
+
+
+## A raise stays before the clamp: Hunter's Focus swings exactly as it did before the slow moved.
+func test_a_ranger_under_hunter_s_focus_swings_as_before() -> void:
+	var state: BattleState = _battle([
+		_unit("hero:ranger", "ranger", "ally", Vector2(0, 0)),
+		_unit("enemy:e", "rogue", "enemy", Vector2(0, 1), {"hp": 10000.0}),
+	])
+	var ranger: BattleActor = state.actors[0]
+	var target: BattleActor = state.actors[1]
+	SIM._add_status(ranger, "ranger_hunters_focus", "speed", ranger.id, 60.0, 0.4)
+	target.effect_state["home_position"] = [0.0, 1.0]
+	target.effect_state["stun_remaining"] = 1000.0
+	assert_true(bool(BattleSimulation.issue_command(state, {"kind": BattleSimulation.COMMAND_ATTACK, "actor_ids": [ranger.id], "target_id": target.id})["accepted"]))
+	for _step: int in 100:
+		BattleSimulation.advance(state, SIM.BALANCE.battle_tick_seconds)
+		if int(target.effect_state.get("last_hit_tick", 0)) == state.tick:
+			break
+	assert_eq(int(target.effect_state.get("last_hit_tick", 0)), state.tick, "it swung this tick")
+	var head: float = clampf(SIM.BALANCE.battle_basic_interval_numerator / maxf(SIM._stat(ranger, "speed"), 0.001), SIM.BALANCE.battle_basic_interval_min, SIM.BALANCE.battle_basic_interval_max)
+	assert_eq(ranger.attack_cooldown, head, "bit for bit")
+	assert_almost_eq(head, 100.0 / 140.0, 0.000001)
+
+
+## ig-vl1.8 (ACC 2): Hearthward's pulse is ATK +15% for 1.5 s and a heal of 0.1 ATK, with Grace; no
+## damage reduction. The strongest raise applies, so Venom Edge's +15% and Hearthward's never stack.
+func test_hearthward_heals_with_grace_and_raises_allies_atk_only() -> void:
 	var state: BattleState = _battle([
 		_unit("hero:cleric", "cleric", "ally", Vector2(0, 0)),
 		_unit("hero:hurt", "knight", "ally", Vector2(4, 0), {"current_hp": 50.0}),
-		_unit("hero:guard", "knight", "ally", Vector2(4, 1)),
+		_unit("hero:rogue", "rogue", "ally", Vector2(4, 1)),
 		_unit("enemy:near", "rogue", "enemy", Vector2(4, -1), {"current_hp": 50.0}),
 	])
 	var cleric: BattleActor = state.actors[0]
-	var guard: BattleActor = state.actors[2]
+	var rogue: BattleActor = state.actors[2]
 	_give(cleric, ["cleric_grace", "cleric_hearthward"])
-	SIM._add_status(guard, "knight_stand_fast", "damage_reduction", "", 30.0, 0.3)
+	SIM._add_status(rogue, "rogue_venom_edge", "atk", rogue.id, 30.0, 0.15)
 	assert_true(SIM._use_skill(state, cleric, HEARTH, state.actors[1], Vector2(4, 0), _rng()))
 	assert_eq(float(state.field_objects[0]["heal_scale"]), 1.2, "Grace, taken at the cast")
 	for tick: int in 10:
 		SIM._update_field_objects(state)
-	assert_almost_eq(state.actors[1].hp, 51.8, 0.000001, "0.15 x 10 ATK x 1.2")
-	assert_eq(SIM._status_value(state.actors[1], "damage_reduction"), 0.2)
-	assert_eq(SIM._status_value(guard, "damage_reduction"), 0.3, "the strongest applies")
+	assert_almost_eq(state.actors[1].hp, 51.2, 0.000001, "0.1 x 10 ATK x 1.2")
+	assert_almost_eq(SIM._stat(state.actors[1], "atk"), 11.5, 0.000001, "ATK +15%")
+	assert_true(rogue.statuses.any(func(status: Dictionary) -> bool: return status["id"] == "cleric_hearthward" and status["kind"] == "atk"), "Hearthward reached the Rogue")
+	assert_almost_eq(SIM._stat(rogue, "atk"), 11.5, 0.000001, "Venom Edge inside Hearthward: x 1.15, not x 1.30")
+	assert_false(SIM._has_status(state.actors[1], "damage_reduction"), "no damage reduction")
 	assert_eq(state.actors[3].hp, 50.0, "never an enemy")
-	assert_false(SIM._has_status(state.actors[3], "damage_reduction"))
-	assert_false(SIM._has_status(cleric, "damage_reduction"), "the caster stands outside it")
+	assert_false(SIM._has_status(state.actors[3], "atk"))
+	assert_false(SIM._has_status(cleric, "atk"), "the caster stands outside it")
 
 
 func test_overlapping_zones_of_one_skill_land_once_per_actor_per_pulse() -> void:
@@ -135,7 +236,7 @@ func test_overlapping_zones_of_one_skill_land_once_per_actor_per_pulse() -> void
 		assert_true(SIM._use_skill(state, state.actors[index], HEARTH, state.actors[2], Vector2(3, 0), _rng()))
 	for tick: int in 10:
 		SIM._update_field_objects(state)
-	assert_almost_eq(state.actors[2].hp, 51.5, 0.000001, "one heal, not two")
+	assert_almost_eq(state.actors[2].hp, 51.0, 0.000001, "one heal, not two")
 
 
 func test_the_ninth_zone_ends_the_oldest() -> void:
@@ -192,6 +293,26 @@ func test_hearthward_s_rule_wants_a_pressed_group_and_takes_its_lowest() -> void
 	assert_null(SIM._rule_aim(state, cleric, HEARTH, null, "buff"), "only two left together")
 
 
+## ig-vl1.8 (ACC 3): an ally a living enemy targets counts as pressed, so a group at full HP with no
+## telegraph gets Hearthward once the fight is on it.
+func test_hearthward_s_rule_counts_an_ally_a_living_enemy_targets() -> void:
+	var state: BattleState = _battle([
+		_unit("hero:cleric", "cleric", "ally", Vector2(0, 0)),
+		_unit("hero:a", "knight", "ally", Vector2(4, 0)),
+		_unit("hero:b", "knight", "ally", Vector2(4, 1)),
+		_unit("hero:c", "knight", "ally", Vector2(4, -1)),
+		_unit("enemy:e", "rogue", "enemy", Vector2(20, 0)),
+	])
+	var cleric: BattleActor = state.actors[0]
+	var enemy: BattleActor = state.actors[4]
+	enemy.order_target_id = ""
+	assert_null(SIM._rule_aim(state, cleric, HEARTH, null, "buff"), "full HP, untargeted, no telegraph")
+	enemy.order_target_id = state.actors[2].id
+	assert_not_null(SIM._rule_aim(state, cleric, HEARTH, null, "buff"), "b is targeted: it casts")
+	enemy.life = BattleActor.LIFE_DEAD
+	assert_null(SIM._rule_aim(state, cleric, HEARTH, null, "buff"), "only a living enemy counts")
+
+
 func test_a_mid_zone_save_through_disk_reloads_exactly_and_fights_on_as_the_unbroken_run() -> void:
 	GameSession.cleared_zone_ids[&"verdant_outskirts"] = true
 	var ids: Array[String] = []
@@ -208,11 +329,13 @@ func test_a_mid_zone_save_through_disk_reloads_exactly_and_fights_on_as_the_unbr
 	var seeded: Dictionary = Compare.json_round_trip(GameSession.to_dict())
 	((seeded["expedition_orders"] as Array)[0] as Dictionary)["battle"]["rng_state"] = "1"
 	GameSession.from_dict(seeded)
+	# ig-vl1.8 (ACC 6): saved mid-Hearthward, with an ally holding its atk status (saved as Venom Edge's is).
 	var waited: int = 0
-	while (GameSession.get_battle_snapshot(order_id).get("field_objects", []) as Array).is_empty() and waited < 120:
+	while not _holds_hearthward_atk(GameSession.get_battle_snapshot(order_id)) and waited < 240:
 		GameSession.tick_expeditions(1.0)
 		waited += 1
-	assert_false((GameSession.get_battle_snapshot(order_id)["field_objects"] as Array).is_empty(), "a zone is up by %d s" % waited)
+	assert_true(_holds_hearthward_atk(GameSession.get_battle_snapshot(order_id)), "an ally holds Hearthward's ATK by %d s" % waited)
+	assert_false((GameSession.get_battle_snapshot(order_id)["field_objects"] as Array).is_empty(), "a zone is up")
 	assert_eq(str(GameSession.get_battle_snapshot(order_id)["status"]), "active")
 	_save_to_disk()
 	var first: Dictionary = GameSession.to_dict()
@@ -280,6 +403,14 @@ func _save_to_disk() -> void:
 	var file: FileAccess = FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
 	file.store_string(JSON.stringify(on_disk, "	", true, true))
 	file.close()
+
+
+func _holds_hearthward_atk(snapshot: Dictionary) -> bool:
+	for actor: Dictionary in snapshot.get("actors", []):
+		for status: Dictionary in actor.get("statuses", []):
+			if str(actor.get("faction")) == "ally" and str(status["id"]) == "cleric_hearthward" and str(status["kind"]) == "atk":
+				return true
+	return false
 
 
 func _battle_of(profile: Dictionary) -> Dictionary:

@@ -21,11 +21,11 @@ effects = Array[Dictionary]([{
 "seconds": 8.0,
 "pulse": [{
 "type": "status",
-"status": "damage_reduction",
-"magnitude": 0.2,
+"status": "atk",
+"magnitude": 0.15,
 "seconds": 1.5
 }, {
 "type": "heal",
-"multiplier": 0.15
+"multiplier": 0.1
 }]
 }])

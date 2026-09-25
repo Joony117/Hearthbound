@@ -6,6 +6,8 @@ extends SceneTree
 ## Seeds 1-8, bare supplies (supplies heal, which would mask a Cleric), the live battle_pace.
 ##   APPDATA="$(cygpath -w "$(mktemp -d)")" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s res://tests/balance/presence_check.gd -- --offsets=0 --points=F1_verdant
 ## Args (optional; the defaults are shown): --offsets=0 (a,b,..) and --points=F1_verdant,B30_ashfall.
+## --ref=near,far,mage (ig-vl1.8) runs the Cleric row only: the two Knights' and the Mage's m come from an
+## earlier run of the same point and offset (one of each), for a Cleric-only change.
 ## The zone's enemy power is scaled by m (a duplicate with recommended_power x m; every enemy's HP, ATK
 ## and DEF follow the budget). Per seed, a geometric bisection finds the largest m the team wins
 ## ("victory"; anything else is a loss). The slot's break is the median of the seeds.
@@ -38,6 +40,7 @@ func _init() -> void:
 
 func _run() -> void:
 	var offsets: Array[float] = [0.0]
+	var ref: Array[float] = []
 	var labels: Array[String] = []
 	for point: Array in POINTS:
 		labels.append(point[0])
@@ -48,10 +51,17 @@ func _run() -> void:
 				offsets.append(part.to_float())
 		elif arg.begins_with("--points="):
 			labels.assign(arg.get_slice("=", 1).split(","))
+		elif arg.begins_with("--ref="):
+			for part: String in arg.get_slice("=", 1).split(","):
+				ref.append(part.to_float())
 		else:
 			push_error("presence_check: unknown arg %s" % arg)
 			quit(1)
 			return
+	if not ref.is_empty() and (ref.size() != 3 or labels.size() != 1 or offsets.size() != 1):
+		push_error("presence_check: --ref needs near,far,mage with one point and one offset")
+		quit(1)
+		return
 	var game_session: Node = root.get_node("GameSession")
 	print("PRESENCE pace=%d seeds=%s offsets=%s points=%s" % [_balance.battle_pace, SEEDS, offsets, labels])
 	_print_scale_check(game_session)
@@ -61,12 +71,14 @@ func _run() -> void:
 			continue
 		var zone: ZoneDefinition = ZoneDefinition.definition_for(point[1] as StringName)
 		var rank: int = point[2]
-		var near: Dictionary = _slot(game_session, point, zone, "knight", rank + 1, -1.0)
-		var far: Dictionary = _slot(game_session, point, zone, "knight", rank + 2, -1.0)
+		if not ref.is_empty():
+			print("INFO ref point=%s near=%.3f far=%.3f mage=%.3f (supplied, not run)" % [point[0], ref[0], ref[1], ref[2]])
+		var near: Dictionary = {"m": ref[0]} if not ref.is_empty() else _slot(game_session, point, zone, "knight", rank + 1, -1.0)
+		var far: Dictionary = {"m": ref[1]} if not ref.is_empty() else _slot(game_session, point, zone, "knight", rank + 2, -1.0)
 		var gap: float = far["m"] / near["m"]
 		for offset: float in offsets:
 			_balance.caster_rank_offset = offset
-			var mage: Dictionary = _slot(game_session, point, zone, "mage", rank, offset)
+			var mage: Dictionary = {"m": ref[2]} if not ref.is_empty() else _slot(game_session, point, zone, "mage", rank, offset)
 			var cleric: Dictionary = _slot(game_session, point, zone, "cleric", rank, offset)
 			var resolved: bool = gap >= MIN_GAP
 			print("EQUIV point=%s offset=%.2f mage=%s cleric=%s gap=%.1f%%%s" % [point[0], offset,

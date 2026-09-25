@@ -691,6 +691,10 @@ static func _move_actors(state: BattleState) -> void:
 				actor.effect_state["direct_order"] = false
 			continue
 		var speed: float = actor.move_speed
+		# ig-vl1.8: a slow works after the floor, once here, so the walled and straight steps both get it.
+		var slow: float = _cut(actor, "speed")
+		if slow < 0.0:
+			speed *= 1.0 + slow
 		if not actor.carrying_id.is_empty():
 			speed *= BALANCE.battle_carry_speed_fraction
 		# A hair inside a reach, never past a point.
@@ -833,11 +837,15 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 			_use_weaponskill(state, actor, weaponskill, target, rng)
 		else:
 			_damage(state, actor, target, 1.0, rng, true)
+		# ig-vl1.8: SPD's raise before the clamp (Hunter's Focus), a slow after it.
 		actor.attack_cooldown = clampf(
-			BALANCE.battle_basic_interval_numerator / maxf(_stat(actor, "speed"), 0.001),
+			BALANCE.battle_basic_interval_numerator / maxf(_stat(actor, "speed", false), 0.001),
 			BALANCE.battle_basic_interval_min,
 			BALANCE.battle_basic_interval_max,
 		)
+		var slow: float = _cut(actor, "speed")
+		if slow < 0.0:
+			actor.attack_cooldown /= 1.0 + slow
 		actor.effect_state["attack_target_id"] = ""
 
 
@@ -1373,7 +1381,8 @@ static func _has_status(actor: BattleActor, kind: String) -> bool:
 
 ## One of the five combat stats with its strongest raise and its strongest cut applied. Only Rime
 ## Circle's slow cuts (ig-vl1.4); with no cut lo stays 0.0, so the sum is the old one to the bit.
-static func _stat(actor: BattleActor, stat: String) -> float:
+## with_cut false leaves the cut out: the swing and the walk take a slow after their clamps (_cut).
+static func _stat(actor: BattleActor, stat: String, with_cut: bool = true) -> float:
 	var base: float = 0.0
 	match stat:
 		"atk":
@@ -1394,7 +1403,17 @@ static func _stat(actor: BattleActor, stat: String) -> float:
 		if status["kind"] == stat:
 			hi = maxf(hi, float(status["magnitude"]))
 			lo = minf(lo, float(status["magnitude"]))
-	return base * (1.0 + hi + lo)
+	return base * (1.0 + hi + (lo if with_cut else 0.0))
+
+
+## ig-vl1.8: a stat's strongest cut, 0.0 with none (SYSTEMS § Statuses, amended). A slow works after
+## the clamps: the swing interval x 1 / (1 + cut), the walk step x (1 + cut).
+static func _cut(actor: BattleActor, stat: String) -> float:
+	var lo: float = 0.0
+	for status: Dictionary in actor.statuses:
+		if status["kind"] == stat:
+			lo = minf(lo, float(status["magnitude"]))
+	return lo
 
 
 ## ig-vl1.4 (DECISIONS.md 2026-09-25, "Casters shape the field", item 3): the one point in the tick where
@@ -1692,17 +1711,21 @@ static func _rule_aim(state: BattleState, actor: BattleActor, skill: AbilityDefi
 
 
 ## allies_near_ally (Hearthward, ig-vl1.4): the lowest-HP living ally within range_units with ai_count
-## living allies (itself included) within ai_radius, one of them below ai_fraction or inside an enemy
-## telegraph; ties go to actor order. With no pressed ally in reach it stops after one pass, so a ready
+## living allies (itself included) within ai_radius, one of them below ai_fraction, inside an enemy
+## telegraph or targeted by a living enemy (ig-vl1.8); ties go to actor order. With no pressed ally in reach it stops after one pass, so a ready
 ## Hearthward costs a scan per tick, not a scan per ally.
 static func _pressed_group_aim(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> BattleActor:
 	var telegraphs: Array[BattleActor] = []
+	var targeted: Dictionary[String, bool] = {}
 	for enemy: BattleActor in state.actors:
-		if enemy.faction != actor.faction and enemy.life == BattleActor.LIFE_ALIVE and not str(enemy.effect_state.get("telegraph_kind", "")).is_empty():
-			telegraphs.append(enemy)
+		if enemy.faction != actor.faction and enemy.life == BattleActor.LIFE_ALIVE:
+			if not str(enemy.effect_state.get("telegraph_kind", "")).is_empty():
+				telegraphs.append(enemy)
+			if not enemy.order_target_id.is_empty():
+				targeted[enemy.order_target_id] = true
 	var pressed: Array[BattleActor] = []
 	for ally: BattleActor in state.actors:
-		if ally.faction == actor.faction and ally.life == BattleActor.LIFE_ALIVE and ally.position.distance_to(actor.position) <= skill.range_units + skill.ai_radius and (ally.hp / ally.max_hp < skill.ai_fraction or _inside_telegraph(telegraphs, ally.position)):
+		if ally.faction == actor.faction and ally.life == BattleActor.LIFE_ALIVE and ally.position.distance_to(actor.position) <= skill.range_units + skill.ai_radius and (ally.hp / ally.max_hp < skill.ai_fraction or targeted.has(ally.id) or _inside_telegraph(telegraphs, ally.position)):
 			pressed.append(ally)
 	if pressed.is_empty():
 		return null
