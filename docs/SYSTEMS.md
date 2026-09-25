@@ -1043,6 +1043,57 @@ two counts include routine victories, which the Ledger evicts first at the cap, 
 there. At the cap, a `died` record can also outlive the battle that proves the owner was there.
 The section's PROVISIONAL covers all three numbers.
 
+**Two dreams on meetings and meals** — *ig-m6o.2.2.10, design 2026-09-25, not built yet*. They
+read the `encounter` and `meal` records from § Encounters and shared meals, below.
+
+**Welcome them home** (`welcome_home`). A tablemate came back from a rescue. The owner stayed home
+and wants them back at the table.
+- Opens: a rescue battle lists X in `rescued`, the owner isn't in its `team`, and X's last meal
+  before it was at the owner's table (the latest `meal` record listing X also lists the owner).
+  The first such X in `rescued`. It's X's last meal, not the owner's, because a stranded hero isn't
+  home and misses meals. With the owner in the team, the same record is the owner rescuing X
+  (Watch over) or being rescued (the life debt) instead.
+- Desired change: X is home and well. Beneficiary: X. Methods: keep X home and at the table.
+- Milestones: X was carried home from Z; eat with X again (n / `dream_welcome_meals`), meals
+  listing both after the rescue.
+- Fulfilled: the count is reached. Lost: X dies.
+- Why: a rescue is the game's big stakes moment, and this gives the heroes who stayed home a part
+  in it. It's also a small choice: the dream wants X home for about three live hours, and the
+  player wants X back out.
+
+**Fight beside them** (`fight_beside`). Two heroes who talk in town but have never shared a fight.
+- Opens: a meeting with X that brings their meetings to `dream_along_meetings`, when no earlier
+  battle had both in its `team`. Meetings held while another dream was open count too.
+- Desired change: the owner and X fight side by side. Beneficiaries: both. Methods: the player puts
+  them on one team.
+- Milestones: got to know X in town (the meetings); fight beside X (n / `dream_fight_beside_battles`),
+  battles with both in the team, routine too.
+- Fulfilled: the count is reached. Lost: X dies. Faded: they meet `dream_along_meetings` more times
+  before their first battle together. Without the fade, two keepers the player never sends out
+  together would hold the one dream slot for ever.
+- Why: the mirror of the life debt. That one turns a battle into a town story; this one turns town
+  life into a team pick.
+
+The catalogue order becomes `life_debt`, `watch_over`, `carry_name`, `be_worthy`, `welcome_home`,
+`fight_beside`. The new two never tie with another: Welcome them home needs the owner outside the
+battle's team, where the life debt and Watch over need it inside, and Fight beside them is the only
+dream that opens on a meeting. The record that ends a dream still never opens the next.
+
+| Row | Value | Why |
+|---|---|---|
+| `dream_welcome_meals` | 3 | Three shared meals: about three live hours home together at `meal_interval_minutes` 60 |
+| `dream_along_meetings` | 4 | Four meetings to want it, four more to let it go. A neighbour or coworker pair in a 30-hero town meets about 0.27 times an hour, so about 15 live hours; in a two-hero town, about 4. Meetings are the most common record, so a lower count would crowd the battle dreams out of the one slot |
+
+Eviction: meetings and meals go first at the cap (tier 0). Welcome them home opens on a rescue
+battle, and only its proof and its count are meals. Fight beside them opens on a meeting. At the
+volume guessed in § Encounters and shared meals (about 30 records an hour in a 30-hero town), the
+ledger fills at about 330 live hours. After that, each new record evicts the oldest tier-0 one, so
+meetings and meals survive for a shrinking window: about 330 hours at the fill, about 50 at
+900 hours, and none from about 1,000 hours. Both dreams last a few live hours, so they read exactly
+until then. Past it, neither opens nor advances, the same ceiling the meeting and meal bond points
+have. The fix would be a Ledger budget for tier 0, worth filing only if a real save nears the cap.
+The section's PROVISIONAL covers both rows.
+
 ### Encounters and shared meals — *ig-m6o.2.2.4, ig-m6o.2.2.5, design 2026-09-25, not built yet*
 
 Two more ways to grow close. Both come from saved state on the live tick only: never in the
