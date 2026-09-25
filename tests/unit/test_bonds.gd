@@ -100,19 +100,6 @@ func test_the_lines() -> void:
 	var found: Dictionary = Bonds.bond(_ledger, A, {A: true, B: true}, BALANCE)
 	assert_eq(Bonds.bond_line(found, NAMES, false), "Closest to Bea: 2 hard fights, 2 rescues, 1 death seen together.")
 	assert_eq(Bonds.bond_line(found, NAMES, true), "Closest to Bea (away): 2 hard fights, 2 rescues, 1 death seen together.")
-	var zone: String = Ledger.zone_name(ZONE)
-	assert_eq(Bonds.greeting(found, NAMES), "I haven't forgotten %s. I owe you." % zone, "the latest 5-point fact: A rescued B")
-	assert_eq(Bonds.greeting(Bonds.bond(_ledger, B, {A: true, B: true}, BALANCE), NAMES), "I'd come for you again. %s or anywhere." % zone)
-	_ledger = []
-	_battle([A, B, C], "stranded", {"order": "order:1"})
-	_record("died", {"hero": C, "name": "Cal", "battle_order": "order:1"})
-	for _index: int in 2:
-		_battle([A, B], "retreated")
-	assert_eq(Bonds.greeting(Bonds.bond(_ledger, A, {A: true, B: true}, BALANCE), NAMES), "I still think about Cal.")
-	_ledger = []
-	for _index: int in 8:
-		_battle([A, B], "retreated")
-	assert_eq(Bonds.greeting(Bonds.bond(_ledger, A, _living(), BALANCE), NAMES), "Eight hard fights, and we're both still standing.")
 
 
 ## ---- the dream
@@ -227,7 +214,8 @@ func test_the_partner_stands_in_town_greets_once_per_approach_and_leaves_with_an
 	await _frames(2)
 	assert_eq(town.partner.greetings, 1)
 	assert_true(town.partner.is_showing_line())
-	assert_eq((town.partner.get_node("Line") as Label3D).text, "I'd come for you again. %s or anywhere." % Ledger.zone_name(ZONE))
+	assert_eq((town.partner.get_node("Line") as Label3D).text, Lines.line(town.partner.facts, 0), "the first approach shows the pair's first line")
+	assert_eq(town.partner.facts["kinds"], Lines.greeting_facts(Bonds.bond(GameSession.ledger, A, {A: true, B: true}, BALANCE), {}, A, {}).get("kinds"), "saved_by, from Ada's bond")
 	await _frames(5)
 	assert_eq(town.partner.greetings, 1, "once per approach")
 	GameSession.roster_changed.emit()
@@ -238,6 +226,14 @@ func test_the_partner_stands_in_town_greets_once_per_approach_and_leaves_with_an
 	town.body.global_position = town.partner.global_position + Vector3(-1.5, 0.0, 0.0)
 	await _frames(2)
 	assert_eq(town.partner.greetings, 2, "walking away re-arms it")
+	GameSession.roster_changed.emit()
+	await _frames(2)
+	town.body.global_position = town.partner.global_position + Vector3(0.0, 0.0, 6.0)
+	await _frames(2)
+	town.body.global_position = town.partner.global_position + Vector3(-1.5, 0.0, 0.0)
+	await _frames(2)
+	assert_eq(town.partner.greetings, 3)
+	assert_eq((town.partner.get_node("Line") as Label3D).text, Lines.line(town.partner.facts, 2), "a refresh with the same facts keeps the count: the third line, not the first again")
 	assert_ne(GameSession.dispatch_expedition([bea.instance_id], ZONE, 1, "Out"), "", GameSession.last_action_error)
 	assert_null(town.partner, "sent on an order, Bea leaves the town")
 	GameSession.step_out()
@@ -761,7 +757,61 @@ func test_the_detail_panel_reads_a_dream_once_per_ledger_change() -> void:
 	assert_string_contains((hub.get_node("%HeroDetail") as Label).text, "Fight beside Bea again (2/3).")
 
 
+## ---- ig-m6o.2.2.2: the partner greets from the line bank
+
+func test_three_approaches_in_a_row_show_three_different_lines() -> void:
+	var town: TownView = _bonded_town()
+	var bea: TownWalker = town.partner
+	bea.linger_at(town.free_point(Vector3(-12.0, 0.0, 12.0)), &"Idle_B", NAN, 1.0e6)
+	var said: Array[String] = []
+	for _approach: int in 3:
+		said.append(_approach_once(town, bea))
+	assert_eq(bea.greetings, 3)
+	assert_eq(said[0], Lines.line(bea.facts, 0), "the first approach: the pair's first pick")
+	assert_ne(said[0], said[1])
+	assert_ne(said[1], said[2])
+	assert_ne(said[0], said[2])
+
+
+func test_a_walker_that_stops_being_the_partner_starts_its_lines_over() -> void:
+	_hero(C, "Cal")
+	var town: TownView = _bonded_town()
+	var bea: TownWalker = town.partner
+	var facts: Dictionary = bea.facts
+	bea.linger_at(town.free_point(Vector3(-12.0, 0.0, 12.0)), &"Idle_B", NAN, 1.0e6)
+	var first: String = _approach_once(town, bea)
+	var second: String = _approach_once(town, bea)
+	assert_eq(second, Lines.line(facts, 1))
+	town.show_partner(GameSession.hero_by_id(C), {"kinds": ["hard"], "slots": {"name": "Ada", "place": "Here", "count": "Two"}, "start": 0})
+	assert_eq(bea.facts, {}, "no longer the partner: nothing to say")
+	assert_eq(town.walkers[C].facts["start"], 0, "Cal has the facts now")
+	town.show_partner(GameSession.hero_by_id(B), facts)
+	assert_eq(_approach_once(town, bea), first, "the partner again: its lines start over")
+
+
+func test_the_hub_gives_the_partner_its_debt_lines() -> void:
+	var town: TownView = _bonded_town(false)
+	assert_true(GameSession.embody_hero(B), "Bea is the body; Ada, whom she saved, is the partner")
+	assert_eq(town.partner.hero_id, A)
+	var facts: Dictionary = town.partner.facts
+	assert_eq(facts["kinds"].size(), 2)
+	assert_eq([facts["kinds"][0], facts["kinds"][1]], ["saved", "debt"], "Ada's open dream owes Bea")
+	assert_eq(facts["slots"]["name"], "Bea")
+	assert_eq(Lines.candidates(facts).size(), 10)
+
+
 ## ---- helpers
+
+## Walks the body out past REARM_DISTANCE and back in to bea, one step each, and returns its line.
+func _approach_once(town: TownView, bea: TownWalker) -> String:
+	var greeted: int = bea.greetings
+	town.body.global_position = town.to_global(bea.position + Vector3(0.0, 0.0, 8.0))
+	bea.step(0.1)
+	town.body.global_position = town.to_global(bea.position + Vector3(0.0, 0.0, 1.5))
+	bea.step(0.1)
+	assert_eq(bea.greetings, greeted + 1, "the approach greets")
+	return (bea.get_node("Line") as Label3D).text
+
 
 func _assert_same_answers(heroes: Array) -> void:
 	var livings: Array[Dictionary] = [{}, {D: true}]

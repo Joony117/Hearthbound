@@ -118,10 +118,11 @@ var _editing_preset_id: String = ""
 var _open_building: StringName = NO_BUILDING
 ## The building being moved while %Town.placing is set, or NO_BUILDING when placing builds.
 var _moving: StringName = NO_BUILDING
-## The walking hero's bonded partner and greeting from the last roster refresh ("" for none).
-## View state, not a tally: _refresh_partner rebuilds it from the Ledger on every roster change.
+## The walking hero's bonded partner ("" for none) and what it could say, as Lines facts ({} for
+## none), from the last roster refresh. View state, not a tally: _refresh_partner rebuilds it from the
+## Ledger on every roster change.
 var _partner_id: String = ""
-var _partner_line: String = ""
+var _partner_facts: Dictionary = {}
 ## The hub's last look at GameSession.bond_index() (DECISIONS.md 2026-09-24 "Bonds stay derived"):
 ## the ledger key it saw (array identity and ledger_next_seq), and the tallies that could have been a
 ## living hero's bond then, pairs-shaped, for the next look's "grew close". View state, never saved.
@@ -691,19 +692,20 @@ func _bond_text(hero: Hero) -> String:
 	return text
 
 
-## The walking hero's bonded partner and greeting, from the kept index on roster_changed only
-## (every settle that writes a record also changes the roster); never per frame or per pulse.
+## The walking hero's bonded partner and greeting facts, from the kept index and the partner's
+## dream memo on roster_changed only (every settle that writes a record also changes the roster);
+## never per frame or per pulse.
 func _refresh_partner() -> void:
 	var old_partner: String = _partner_id
 	_partner_id = ""
-	_partner_line = ""
+	_partner_facts = {}
 	var walker: Hero = GameSession.hero_by_id(GameSession.embodied_hero_id)
 	if walker != null:
 		var living: Dictionary = _roster_names()
 		var bond: Dictionary = Bonds.bond_from(_bond_index(), walker.instance_id, living, BALANCE)
 		if not bond.is_empty():
 			_partner_id = bond["partner"]
-			_partner_line = Bonds.greeting(bond, Ledger.known_names(GameSession.ledger, living))
+			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, Ledger.known_names(GameSession.ledger, living))
 	_show_partner()
 	# The walkers ran first on this roster_changed, against the old partner, who may have been cut by
 	# the wanderer cap.
@@ -821,7 +823,7 @@ func _show_partner() -> void:
 	var partner: Hero = GameSession.hero_by_id(_partner_id)
 	if partner != null and GameSession.is_hero_busy(partner):
 		partner = null
-	%Town.show_partner(partner, _partner_line)
+	%Town.show_partner(partner, _partner_facts)
 
 
 ## Roster hero id -> display name.

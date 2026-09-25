@@ -8,7 +8,6 @@ extends RefCounted
 const SAVES: Array[String] = ["revived", "carried"]
 ## The fact kinds in the order a record scores them, and the tally keys that count them.
 const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths"]
-const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"]
 
 
 ## hero_id's bond: the living hero (a key of living) with the most points, at or over
@@ -419,20 +418,6 @@ static func dream_lines(found: Dictionary, hero_id: String, names: Dictionary, b
 		"  [%s] Fight beside %s again (%d/%d)." % ["x" if fights >= goal else " ", owed, fights, goal],
 		"  [ ] Save %s." % owed,
 	]
-
-
-## What the partner says on meeting hero_id in town, from their strongest shared fact.
-static func greeting(found: Dictionary, names: Dictionary) -> String:
-	var fact: Dictionary = found["fact"]
-	match str(fact["kind"]):
-		"saved_by":
-			return "I'd come for you again. %s or anywhere." % Ledger.zone_name(fact["zone"])
-		"saved":
-			return "I haven't forgotten %s. I owe you." % Ledger.zone_name(fact["zone"])
-		"death":
-			return "I still think about %s." % _name(fact["dead"], names)
-	var hard: int = found["hard"]
-	return "%s hard fights, and we're both still standing." % (NUMBER_WORDS[hard] if hard < NUMBER_WORDS.size() else str(hard))
 
 
 static func _name(id: String, names: Dictionary) -> String:

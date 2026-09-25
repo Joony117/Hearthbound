@@ -58,9 +58,18 @@ var planner: Callable
 var trips: int = 0
 ## The body it greets while it is the partner, else null (follow()).
 var greet: Node3D
-var line: String = ""
+## What it says on meeting the body, as Lines facts ({} for nothing). Facts that differ start its
+## lines over from their first pick.
+var facts: Dictionary = {}:
+	set(value):
+		if value != facts:
+			_meetings = 0
+		facts = value
 ## How many times it has greeted, for tests.
 var greetings: int = 0
+## Greetings since facts last changed: the next Lines pick. Never saved.
+var _meetings: int = 0
+var _last_line: String = ""
 var _path := PackedVector3Array()
 var _then: StringName = WORK
 var _left: float = 0.0
@@ -283,7 +292,14 @@ func _greet() -> void:
 	_model.rotation.y = atan2(to_body.x, to_body.z)
 	_animator.play(&"Interact")
 	_animator.queue(&"Idle_A")
-	_label.text = line
+	var said: String = Lines.line(facts, _meetings)
+	_meetings += 1
+	# New facts start over at a pick that may be the line it just said.
+	if said == _last_line and Lines.candidates(facts).size() > 1:
+		said = Lines.line(facts, _meetings)
+		_meetings += 1
+	_last_line = said
+	_label.text = said
 	_label.visible = true
 	_sign.visible = false
 	_line_left = LINE_SECONDS

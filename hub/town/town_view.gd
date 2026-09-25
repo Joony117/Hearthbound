@@ -105,7 +105,7 @@ var _streets: Array[Vector2i] = []
 ## A hall's free approach hex -> the hall: a wanderer there uses its stall.
 var _stalls: Dictionary[Vector2i, String] = {}
 var _partner_id: String = ""
-var _partner_line: String = ""
+var _partner_facts: Dictionary = {}
 var _walkers_shown: bool = false
 ## The hero who just stopped being the body and where it stood (town space), for the next show_walkers.
 var _stepped_out: Dictionary = {}
@@ -311,23 +311,24 @@ static func walk_bounds() -> Rect2:
 	return rect.grow(TownRules.HEX_SIZE)
 
 
-## Makes hero the body's bonded partner, saying line on meeting; null (or no body) makes no one.
-## hub.gd picks who and what, and lists the partner in show_walkers like anyone in town: its own
-## walker greets, and walks, works or wanders by its role. The same hero again keeps its greeting
-## state, so a refresh does not replay it.
-func show_partner(hero: Hero, line: String) -> void:
+## Makes hero the body's bonded partner, greeting from facts (Lines) on meeting; null (or no body)
+## makes no one. hub.gd picks who and what, and lists the partner in show_walkers like anyone in
+## town: its own walker greets, and walks, works or wanders by its role. The same hero and facts
+## again keep its greeting state, so a refresh does not replay it or start its lines over.
+func show_partner(hero: Hero, facts: Dictionary) -> void:
 	var id: String = "" if hero == null or body == null else hero.instance_id
 	if id != _partner_id and walkers.has(_partner_id):
 		walkers[_partner_id].follow(null)
+		walkers[_partner_id].facts = {}
 	_partner_id = id
-	_partner_line = line
+	_partner_facts = facts
 	_attach_partner()
 
 
 func _attach_partner() -> void:
 	var walker: TownWalker = walkers.get(_partner_id)
 	if walker != null:
-		walker.line = _partner_line
+		walker.facts = _partner_facts
 		walker.follow(body)
 
 
