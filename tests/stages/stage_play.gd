@@ -358,12 +358,13 @@ func _dispatch(teams: Array[Dictionary]) -> void:
 
 
 ## Free first producers, then one hall upgrade when affordable, the lowest level first in SYSTEMS'
-## order. Houses go up in _house, and come first: no hall upgrade while anyone is homeless (ig-0og.1).
+## order. Houses go up in _house, and come first: no hall upgrade while more than the grace are
+## homeless (ig-eek.1 ACC 9; at the grace the mood doesn't fall).
 func _town() -> void:
 	for type: StringName in [TownRules.FARM, TownRules.HOUSE, TownRules.LUMBERMILL, TownRules.MINE]:
 		if not _has_building(type):
 			_place(type)
-	if not GameSession.homeless_heroes().is_empty():
+	if GameSession.homeless_heroes().size() > BALANCE.town_mood_homeless_grace:
 		return
 	var pick: int = -1
 	for index: int in HALL_ORDER:
@@ -449,16 +450,23 @@ func _report(seed_value: int, wall_seconds: float) -> bool:
 		print("INFO ledger_records=%d (SYSTEMS: about 30) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
 	else:
 		_check("ashfall_cleared", GameSession.cleared_zone_ids.has(&"ashfall_reaches"), GameSession.cleared_zone_ids.has(&"ashfall_reaches"))
-		# ig-eek.1: the row re-set from seed 1 (director's ruling); halls, deaths and rescues are INFO.
+		# ig-eek.1: the row re-set from seed 1 (director's ruling); deaths, rescues and bonds are INFO.
 		_check("heroes 25-34", roster.size(), roster.size() >= 25 and roster.size() <= 34)
 		var best: Array[String] = _best_team_ranks()
 		var a_or_better: int = best.filter(func(rank: String) -> bool: return BALANCE.rank_names.find(rank) >= BALANCE.rank_names.find("A")).size()
 		_check("best team A or better (3+ of 5)", best, best.size() == TEAM_SIZE and a_or_better >= 3)
 		_check("teams 2-4", teams, teams >= 2 and teams <= 4)
+		_check("every hall at level 1 or more", GameSession.building_levels, GameSession.building_levels.all(func(level: int) -> bool: return level >= 1))
 		var deaths: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and not str(record.get("cause", "")) in ["sacrifice", "starvation"]).size()
 		var rescues: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "battle" and str(record.get("battle_kind", "")) == "rescue").size()
-		print("INFO halls=%s deaths=%d rescues=%d" % [GameSession.building_levels, deaths, rescues])
-		_check("a bond", GameSession.bond_index().size(), GameSession.bond_index().size() >= 1)
+		# ACC 10: a bond is Bonds.bond_from with a living partner (hub.gd _bond_text), not a bond_index entry.
+		var living: Dictionary = {}
+		for hero: Hero in roster:
+			living[hero.instance_id] = hero.hero_name
+		var bonded: int = roster.filter(func(hero: Hero) -> bool: return not Bonds.bond_from(GameSession.bond_index(), hero.instance_id, living, BALANCE).is_empty()).size()
+		var battles: Array[Dictionary] = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "battle")
+		var hard: int = battles.filter(func(record: Dictionary) -> bool: return not Ledger.is_routine(record)).size()
+		print("INFO deaths=%d rescues=%d bonds=%d hard_battles=%d/%d" % [deaths, rescues, bonded, hard, battles.size()])
 		# ig-eek.1: the roster grows no faster in game hours 11-20 than in hours 1-10.
 		if _hour_roster.size() > 20:
 			var first: int = _hour_roster[10] - _hour_roster[0]
@@ -466,7 +474,7 @@ func _report(seed_value: int, wall_seconds: float) -> bool:
 			_check("growth linear (added h1-10, h11-20)", [first, second], second <= first)
 		else:
 			_check("growth linear (added h1-10, h11-20)", _hour_roster, false)
-		print("INFO ledger_records=%d (SYSTEMS: about 600) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
+		print("INFO ledger_records=%d (SYSTEMS: about 530) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
 	# ig-0og.1: a player who houses or feeds everyone beyond the grace never strikes, and never starves.
 	var starved: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and str(record.get("cause", "")) == "starvation").size()
 	_check("strike minutes 0", _strike_seconds / 60.0, _strike_seconds == 0.0)

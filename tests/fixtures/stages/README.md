@@ -8,4 +8,4 @@ purpose (SYSTEMS lists when). `tests/unit/test_stage_saves.gd` loads them, and
 | Stage | HEAD | Seed N | Step | Wall time | Game clock reached |
 |---|---|---|---|---|---|
 | early | c199d3b + the ig-0og.1 bot | 1 | 5.0 s | 5.0 s | 7200 s (2 h) |
-| mid | 67f254e + the ig-eek.1 bot | 1 | 5.0 s | 146.6 s | 72000 s (20 h) |
+| mid | 0944b90 + the ig-eek.1 bot | 1 | 5.0 s | 141.7 s | 72000 s (20 h) |

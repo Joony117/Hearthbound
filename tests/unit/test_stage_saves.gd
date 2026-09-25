@@ -38,15 +38,15 @@ func test_early_loads_as_its_run_log_and_reloads_as_its_round_trip() -> void:
 	_reloads_as_its_round_trip()
 
 
-## ig-eek.1: Mid's counts are seed 1's run log (RUN and CHECK "a bond").
+## ig-eek.1: Mid's counts are seed 1's run log (RUN, and the bond index as a fixture fingerprint).
 func test_mid_loads_as_its_run_log_and_reloads_as_its_round_trip() -> void:
 	_load_stage(MID)
-	assert_eq(GameSession.roster.size(), 31, "the roster")
-	assert_eq(str(GameSession.building_levels), "[0, 0, 0, 0, 0]", "the hall levels")
-	assert_eq(GameSession.ledger.size(), 602, "the Ledger")
-	assert_eq(GameSession.ledger_next_seq, 603, "nothing evicted")
+	assert_eq(GameSession.roster.size(), 29, "the roster")
+	assert_eq(str(GameSession.building_levels), "[2, 2, 2, 2, 1]", "the hall levels")
+	assert_eq(GameSession.ledger.size(), 517, "the Ledger")
+	assert_eq(GameSession.ledger_next_seq, 518, "nothing evicted")
 	assert_true(GameSession.expedition_orders.is_empty(), "saved with no order in flight")
-	assert_eq(GameSession.bond_index().size(), 5, "Mid's bonds")
+	assert_eq(GameSession.bond_index().size(), 5, "the bond index: heroes with a shared hard fight, not bonds")
 	_reloads_as_its_round_trip()
 
 
