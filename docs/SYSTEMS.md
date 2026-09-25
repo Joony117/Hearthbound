@@ -1086,6 +1086,48 @@ The pace this gives:
 > player lays out the town, which is unmeasured · **Settled by:** the `ig-eek` stage saves' bond
 > counts, then the owner watching a town for an evening
 
+### Layers and roles — *ig-m6o.2.2.6, design 2026-09-25, not built yet*
+
+A bond gets three layers. Each is read from the records like the points above, and each feeds one
+role. Roles are a read, never saved, and they change no number. A layer ships only with the role
+that reads it: familiarity waits for a reader, and grievance waits for knowledge (`ig-m6o.2.2.8`).
+
+| Layer | Direction | From (A toward B, points each) |
+|---|---|---|
+| Affection | Directed | Today's points, both ways: a hard fight, a death witnessed, a meeting, a meal. Saved or rescued by B: toward B (`bond_points_saved`, `bond_points_rescued`). New: saved or rescued B: toward B (`bond_points_saving`, `bond_points_rescuing`) |
+| Respect | Directed | A hard fight side by side where B had more kills than A: +1 toward B. A tie scores nothing, and a routine victory scores no respect |
+| Teamwork | Both ways | A meeting between coworkers: +1. Coworkers are checked first, so neighbours who also work side by side meet as coworkers (`ig-m6o.2.2.4`'s amendment) |
+
+| Role | Rule |
+|---|---|
+| Friend | Affection A toward B at or over `bond_threshold` (8, unchanged) |
+| Rival | Respect at or over `rival_threshold` both ways: A toward B and B toward A |
+| Works well with | Teamwork at or over `collaborator_threshold` |
+
+- Roles overlap: a rival can also be a friend and a collaborator. Living heroes only.
+- Each role lists its heroes strongest first (affection, the respect sum, or teamwork), then by the
+  latest record, then by id.
+- The partner (♥) is the first friend: today's rule, read from affection. The Knight cover order
+  (`ig-uu7.4`) reads affection, as it read points.
+- The detail panel adds one line under "Closest to", only when a role is held: "Friends: Mara,
+  Dunn. Rival: Wren. Works well with: Tamsin." Up to three names a role.
+- Two new line kinds, "rival" and "collaborator". A meeting between rivals or collaborators says
+  one, and so can the partner's greeting.
+
+| Row | Value | Why |
+|---|---|---|
+| `bond_points_saving` | 1 | The saver's affection toward the one it saved. Less than `bond_points_saved` 3: being saved is what makes a debt |
+| `bond_points_rescuing` | 2 | The rescuer's toward the rescued. Less than `bond_points_rescued` 5 |
+| `rival_threshold` | 3 | Outdone in three hard fights each way. With hard fights uncounted (this section's first PROVISIONAL), that's a long rivalry, not one lucky night |
+| `collaborator_threshold` | 4 | Four coworker meetings. A coworker pair in a 30-hero town meets about 0.27 times an hour, so about 15 live hours; in a small town, about 4 |
+
+What changes when it lands: a save counts in full only toward the saver. A hero who saves B twice
+reaches 4 toward B, not 8, while B reaches 8 toward the saver. So B's partner is the saver, and the
+saver's partner may be someone else. `bond_points_saved`'s "either way round" changes with the code.
+
+> ⚠️ **PROVISIONAL** — the four rows are desk picks, and how often heroes outdo each other in hard
+> fights is unmeasured · **Settled by:** the `ig-eek` stage saves' role counts, then the owner gate
+
 ---
 
 ## Quirks — *ig-m6o.2.2.3, design 2026-09-25, not built yet*

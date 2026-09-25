@@ -149,7 +149,9 @@ Guardrails:
 Relationships are directed and layered: familiarity, affection, situational trust, respect,
 grievances, commitments and shared techniques. Friends, rivals, partners, mentors, debtors and
 enemies can occupy overlapping roles. Concordance measures practiced coordination, including
-between rivals.
+between rivals. The first layers are affection, respect and teamwork, and the first roles are
+friend, rival and works-well-with (`SYSTEMS.md` § Bonds and dreams, "Layers and roles",
+`ig-m6o.2.2.6`, designed, not built yet).
 
 A **dream** names its owner, formative events, desired change, beneficiaries, acceptable methods
 and observable milestones. New knowledge can revise it. A woodcutter's crossing becomes a school;
