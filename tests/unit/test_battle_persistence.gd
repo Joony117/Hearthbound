@@ -102,7 +102,11 @@ func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
 ## The pre-change build recorded the expected finish. It was re-recorded at ig-gy0.4
 ## (.agent-results/ig-gy0.4/regen_pre_skills_expected.gd), because counters and enemy kits change
 ## this fight on purpose. The match with the old build is proven by a run with both switched off,
-## which finished as the old build did (.agent-results/ig-gy0.4/experiment_off.log).
+## which finished as the old build did (.agent-results/ig-gy0.4/experiment_off.log). It was
+## re-recorded again at ig-9gf (.agent-results/ig-9gf/regen_pre_skills_expected.gd): the reach fix
+## lets fighters on both sides close on still targets, so this fight now ends stranded at 71.7 s.
+## With the fix off, that script reproduced the previous file byte for byte
+## (.agent-results/ig-9gf/expected_fix_off.json).
 func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> void:
 	var fixture_path: String = "res://tests/fixtures/battle_checkpoint_pre_skills.json"
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fixture_path)) as Dictionary

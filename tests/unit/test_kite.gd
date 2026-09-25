@@ -33,6 +33,8 @@ func test_a_cornered_ranger_stands_and_keeps_its_hop() -> void:
 	var ranger: BattleActor = state.actors[0]
 	_lock(_melee(state)[0], Vector2(0, -17.5), ranger)
 	ranger.effect_state["kite_ready_tick"] = 0
+	# Pinned: once the enemy swings, a dodge along the wall would leave the corner (ig-9gf).
+	ranger.move_speed = 0.0
 	for _tick: int in int(2.0 / BALANCE.battle_tick_seconds):
 		BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
 		assert_false(ranger.effect_state.has("kite_point"), "tick %d: a hop into the wall is no hop" % state.tick)
@@ -117,7 +119,8 @@ func test_a_hop_saved_mid_flight_reloads_and_lands_exactly_where_it_would_have()
 	var run_on: BattleState = _hopping()
 	var reloaded: BattleState = _through_save_json(_hopping())
 	assert_eq(reloaded.actors[0].effect_state["kite_point"], run_on.actors[0].effect_state["kite_point"])
-	assert_eq(reloaded.actors[0].effect_state["kite_ready_tick"], run_on.actors[0].effect_state["kite_ready_tick"])
+	# JSON brings the tick back as a float; the simulation reads it through int().
+	assert_eq(int(reloaded.actors[0].effect_state["kite_ready_tick"]), int(run_on.actors[0].effect_state["kite_ready_tick"]))
 	for _tick: int in int(3.0 / BALANCE.battle_tick_seconds):
 		BattleSimulation.advance(run_on, BALANCE.battle_tick_seconds)
 		BattleSimulation.advance(reloaded, BALANCE.battle_tick_seconds)

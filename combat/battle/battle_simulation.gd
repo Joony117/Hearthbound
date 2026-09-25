@@ -59,6 +59,10 @@ const STANCES: Array[String] = ["advance", "stay_together", "defend", "protect"]
 const FRONT_ROW: Array[String] = ["knight", "rogue"]
 const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 const TICK_EPSILON: float = 0.000001
+## ig-9gf: positions are float32, so an approach aimed exactly at a reach can park one ulp outside it
+## (1.6000000238 from 1.6) and never close. _move_actors aims this far inside a reach instead, and
+## counts a point as reached within it, so every reach check compares bare.
+const REACH_TOLERANCE: float = 0.0001
 
 const COMMAND_MOVE: String = "move"
 const COMMAND_ATTACK: String = "attack"
@@ -567,7 +571,7 @@ static func _move_actors(state: BattleState) -> void:
 			destination = _array_vector(actor.effect_state.get("evade_point"), destination)
 			desired_range = 0.0
 		var offset: Vector2 = destination - actor.position
-		if offset.length() <= desired_range:
+		if offset.length() <= maxf(desired_range, REACH_TOLERANCE):
 			if actor.order_kind == COMMAND_RETREAT and actor.position.distance_to(_objective_point(state, "exit_position")) <= BALANCE.battle_exit_radius:
 				_extract_actor(state, actor)
 				continue
@@ -580,7 +584,8 @@ static func _move_actors(state: BattleState) -> void:
 		var speed: float = actor.move_speed
 		if not actor.carrying_id.is_empty():
 			speed *= BALANCE.battle_carry_speed_fraction
-		var step: float = minf(speed * BALANCE.battle_tick_seconds, maxf(offset.length() - desired_range, 0.0))
+		# A hair inside a reach, never past a point.
+		var step: float = minf(speed * BALANCE.battle_tick_seconds, minf(offset.length(), maxf(offset.length() - desired_range + REACH_TOLERANCE, 0.0)))
 		if step > 0.0:
 			actor.facing = offset.normalized()
 			actor.position += actor.facing * step

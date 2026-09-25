@@ -8,12 +8,15 @@ const FRONT_ROW: Array[String] = ["knight", "rogue"]
 const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 ## Tick-by-tick positions from before ig-uu7.1, for squads the rule must leave alone. A legit movement
 ## change elsewhere moves these too: re-run this file on the old code and paste its printed digests.
+## ig-uu7.3 kiting changed the ranger,mage,cleric/advance digest (.agent-results/ig-uu7.3/nokite.log
+## shows all 4 old digests come back with kiting off). ig-9gf's reach fix then changed all four on
+## purpose: approaches stop inside a reach instead of parking a float32 hair outside it. With the fix
+## off, this file printed the previous four (.agent-results/ig-9gf/formation_fix_off.log).
 const UNCHANGED_DIGESTS: Dictionary = {
-	"knight,knight,ranger,mage,cleric/defend": "e27b3bf345fd0412ff2cc8ea83fc8613",
-	"knight,knight,ranger,mage,cleric/protect": "bf42e8851762e1159d98daa82c508d4e",
-	# ig-uu7.3 kiting changed this one (no front-liner, so they hop away); .agent-results/ig-uu7.3/nokite.log shows all 4 old digests come back with kiting off.
-	"ranger,mage,cleric/advance": "57a1859dc08f268e25d1c1d4c500979c",
-	"ranger,mage,cleric/stay_together": "b8da2981878054f540b2e5d27e7c35c4",
+	"knight,knight,ranger,mage,cleric/defend": "63e17ddd770cd8024451c6076ec5a466",
+	"knight,knight,ranger,mage,cleric/protect": "a737f9c6949ac597424114ec073eae52",
+	"ranger,mage,cleric/advance": "596677a44ed6a81d96d04a07ce7823ca",
+	"ranger,mage,cleric/stay_together": "e2c8f47e4ec413bd364251ee183d7eb8",
 }
 
 
