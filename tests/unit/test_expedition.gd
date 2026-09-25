@@ -36,7 +36,8 @@ func test_completed_expedition_credits_zone_stone_reward() -> void:
 	var outcome: StringName = Expedition.new().resolve(team, zone)
 
 	assert_eq(outcome, Expedition.OUTCOME_COMPLETED)
-	assert_eq(GameSession.stones, stones_before + zone.stone_reward * BALANCE.battle_pace)
+	# ig-0og.1: the legacy path pays the rate only (no route factor).
+	assert_eq(GameSession.stones, stones_before + ExpeditionOrders.stone_payout(zone, BALANCE.battle_pace, BALANCE))
 
 
 func test_retreated_expedition_credits_no_stones() -> void:

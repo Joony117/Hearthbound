@@ -2,28 +2,28 @@ Godot Engine v4.7.1.stable.official.a13da4feb - https://godotengine.org
 
 [godot_ai game_helper] registered mcp capture (debugger active=false, logger=true)
 BOT stage=early seed=1 step=5.0 game_seconds=7200
+HOUR 1 wall_s=1.8 roster=5 orders=1 ledger=14 cleared={ &"verdant_outskirts": true }
+HOUR 2 wall_s=5.0 roster=8 orders=0 ledger=29 cleared={ &"verdant_outskirts": true }
 CHECK verdant_cleared value=true pass
-CHECK heroes 5-10 value=13 MISS
-CHECK none above D value=A MISS
-CHECK one team value=2 MISS
+CHECK heroes 8-20 value=8 pass
+CHECK teams 1-2 value=1 pass
 CHECK free first producers placed value=["Farm", "House", "Lumbermill", "Mine"] pass
-CHECK no hall above level 1 value=[1, 1, 0, 0, 0] pass
-INFO ledger_records=81 (SYSTEMS: about 20 at pace 6) ledger_next_seq=82
-DEATHS seen=36 missing=23 died_records=23 unexplained=[] pass
-COST wall_s=5.3 game_s=7200 wall_s_per_game_h=2.6 battle_s=1145 battle_s_per_wall_s=216.8 mid_20h_projected_wall_s=53
-RUN roster=13 building_levels=[1, 1, 0, 0, 0] ledger=81 orders=0 jobs=0 incidents=0 stones=0 essence=20 parts=[0, 1, 0, 0, 0, 0, 0, 0] supplies={ "healing": 5, "revival": 1, "healing_masterwork": 0, "revival_masterwork": 0 } town={ "wood": 78.5833333333337, "stone": 27.4166666666669, "food": 76.8500000000036 } underpowered_sends=0 longest_order_s=1135 refusals={  }
-README seed=1 step=5.0 wall_s=5.3 game_clock_s=7200
-HERO 9a5dc3a554a61d64fce984a542939bd8 Nils Emberfell B lvl=33 power=1059 station=
-HERO 050b34bd4136469e0f07ef59f707f602 Nils Ravensworth A lvl=33 power=1444 station=
-HERO adb1d8f9b142b0422eb32ca6dae58e3e Brenna Westmarch F lvl=10 power=217 station=Lumbermill_3
-HERO 452ab916df949e940a6c4055ddae8ed4 Orla Valebrook C lvl=30 power=671 station=
-HERO 72e598cce365b3743196b8785d465fc3 Fenna Hallowick F lvl=0 power=164 station=Farm_1
-HERO 9e7078d6f9471eb6a763b0487dc0136d Ivo Fairwind B lvl=30 power=909 station=
-HERO 47c186b9919665d199c71989e1fe5e2a Quill Pinecroft B lvl=30 power=995 station=
-HERO 57d7f1ec9ebb2a891da936e8834adaf2 Lyra Fairwind F lvl=0 power=146 station=Mine_4
-HERO cd81c42467806dce3495a7f208aeace3 Dara Oakenshield F lvl=0 power=146 station=
-HERO fd1ae0f29a65bd46c5d59f37c4f011d3 Morgen Fairwind F lvl=0 power=150 station=
-HERO 714b45957226a12e94e561a4da66a0b7 Rowan Thornbury D lvl=0 power=221 station=
-HERO 57ee8459b7624ca08d2f74612896292c Fenna Fairwind D lvl=0 power=228 station=
-HERO 5a3f947d9be003b6f867af229464188b Dara Greymantle C lvl=0 power=311 station=
+CHECK no hall above level 1 value=[0, 0, 0, 0, 0] pass
+INFO ledger_records=29 (SYSTEMS: about 80) ledger_next_seq=30
+CHECK strike minutes 0 value=0.0 pass
+CHECK starvation deaths 0 value=0 pass
+TOWN pulls=8 houses=8 next_house_wood=10 homeless_peak=3 homeless=0 mood=100.0 food=68.0
+INFO casters pulled=0 fed=0 kept=0
+DEATHS seen=8 missing=0 died_records=0 unexplained=[] pass
+COST wall_s=5.0 game_s=7200 wall_s_per_game_h=2.5 battle_s=1005 battle_s_per_wall_s=199.4
+RUN roster=8 building_levels=[0, 0, 0, 0, 0] ledger=29 orders=0 jobs=0 incidents=0 stones=78 essence=0 parts=[172, 60, 0, 0, 0, 0, 0, 0] supplies={ "healing": 4, "revival": 1, "healing_masterwork": 0, "revival_masterwork": 0 } town={ "wood": 10.75, "stone": 12.5, "food": 68.0499999999982 } underpowered_sends=0 longest_order_s=525 refusals={  }
+README seed=1 step=5.0 wall_s=5.0 game_clock_s=7200
+HERO 6f3079f3ec88963a2e95da0eb151906a Nils Emberfell C lvl=30 power=748 station=
+HERO abbe587ec7deb1045440eb6e429a9df8 Nils Ravensworth A lvl=34 power=1409 station=
+HERO 3e814c6c0099a73e8f7872c32dd287f6 Brenna Westmarch F lvl=7 power=193 station=Farm_1
+HERO ca18aac9c4cebc7abb616912f991757b Vesna Valebrook F lvl=10 power=257 station=Mine_3
+HERO 56d10c4fc0ba70974fedf5a105eec11a Orla Valebrook D lvl=20 power=416 station=
+HERO aceb3783b970315c38befee2eb973916 Fenna Hallowick F lvl=0 power=164 station=Farm_1
+HERO 27ba3aca2daadf8826057767236c678f Gorath Ravensworth F lvl=0 power=146 station=Lumbermill_2
+HERO 08d835ac64085a199b8bebb39ecb1557 Ivo Fairwind B lvl=12 power=588 station=
 OUT E:/Game/tests/fixtures/stages/early/

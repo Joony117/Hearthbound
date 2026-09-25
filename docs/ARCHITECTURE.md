@@ -282,7 +282,7 @@ scene still holds, and so do rules 1, 5 and 8.
 - **Town rules are pure functions in one script under `hub/town/`,** following `ExpeditionOrders`:
   hex math, whether a hex is free, and production per tick. `GameSession` mutators call them and
   refuse there. The view only reflects the result.
-- **Production, eating and starvation run only on the live tick,** never in the offline catch-up
+- **Production, eating, starvation and the town mood run only on the live tick,** never in the offline catch-up
   (`GAME_SPEC.md` § Hard constraints). A starvation death goes through `kill_hero()` (rule 8).
 - **The halls stay unique,** so a hall's id is its type name and `building_levels` keeps its
   indexes.

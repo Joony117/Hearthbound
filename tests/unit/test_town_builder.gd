@@ -202,6 +202,35 @@ func test_every_refusal_spends_nothing_and_says_why() -> void:
 		assert_eq(GameSession.to_dict(), before, "nothing spent for %s" % str(case))
 
 
+# ig-0og.1 (ACC 2): the 1st House is free, the 2nd-10th cost house_wood_cost, then each costs house_wood_step
+# more (the 11th 30, the 20th 210). Every House on the map counts, going up or finished; moving one doesn't.
+func test_the_house_price_is_flat_to_ten_then_climbs_and_counts_every_house() -> void:
+	GameSession.town_resources["wood"] = 100000.0
+	var hexes: Array[Vector2i] = []
+	for q: int in range(-BALANCE.town_map_radius, BALANCE.town_map_radius + 1):
+		for r: int in range(-BALANCE.town_map_radius, BALANCE.town_map_radius + 1):
+			if hexes.size() < 22 and bool(GameSession.preview_place_building(TownRules.HOUSE, Vector2i(q, r))["valid"]):
+				hexes.append(Vector2i(q, r))
+	var prices: Array[int] = []
+	for index: int in 20:
+		var preview: Dictionary = GameSession.preview_place_building(TownRules.HOUSE, hexes[index])
+		prices.append(int(preview["cost"]))
+		var wood: float = GameSession.town_resources["wood"]
+		assert_true(GameSession.place_building(TownRules.HOUSE, hexes[index]), GameSession.last_action_error)
+		assert_eq(GameSession.town_resources["wood"], wood - prices[index], "the preview is what it spends")
+	assert_eq(prices, [0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 30, 50, 70, 90, 110, 130, 150, 170, 190, 210] as Array[int])
+	var houses: Array = GameSession.town_buildings.filter(func(building: Dictionary) -> bool: return building["type"] == String(TownRules.HOUSE))
+	assert_true(houses.all(func(building: Dictionary) -> bool: return building.has("build_remaining")), "all 20 are still going up, and they count")
+	GameSession._advance_clocks_in_memory(BALANCE.house_build_seconds)
+	assert_eq(int(GameSession.preview_place_building(TownRules.HOUSE, hexes[20])["cost"]), 230, "finished ones count the same")
+	var first: StringName = StringName(str(houses[0]["id"]))
+	assert_true(GameSession.move_building(first, hexes[21]), GameSession.last_action_error)
+	assert_eq(int(GameSession.preview_place_building(TownRules.HOUSE, hexes[20])["cost"]), 230, "a move doesn't change the price")
+	GameSession.town_resources["wood"] = 229.5
+	assert_false(GameSession.place_building(TownRules.HOUSE, hexes[20]))
+	assert_eq(GameSession.last_action_error, "A House costs 230 wood; you have 229.", "the refusal says the price")
+
+
 ## Five Houses spend the start wood (the first is free); without the free first Lumbermill the town could never make wood again.
 func test_the_first_lumbermill_is_free_so_houses_first_cannot_lock_the_town() -> void:
 	for q: int in 5:

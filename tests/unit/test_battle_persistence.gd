@@ -314,7 +314,8 @@ func test_a_battle_keeps_its_pace_through_a_real_save_and_a_legacy_one_is_pace_1
 	assert_eq(reloaded.pace, balance.battle_pace, "equal after the reload")
 	assert_eq(reloaded.max_seconds, zone.max_battle_seconds * balance.battle_pace)
 	var profile: Dictionary = Compare.json_round_trip(GameSession.to_dict())
-	assert_eq(_settle_as_victory(), [zone.stone_reward * balance.battle_pace, balance.battle_pace], "stones and loot rolls xP")
+	var paid: int = _victory_pay(balance.battle_pace)
+	assert_eq(_settle_as_victory(), [paid, balance.battle_pace], "stones and loot rolls xP")
 	# A battle from before the key (and inside the pace-1 bound): pace 1, pace-1 rewards.
 	var legacy: Dictionary = Compare.json_round_trip(profile)
 	var legacy_battle: Dictionary = (legacy["expedition_orders"] as Array)[0]["battle"] as Dictionary
@@ -325,7 +326,8 @@ func test_a_battle_keeps_its_pace_through_a_real_save_and_a_legacy_one_is_pace_1
 	assert_eq(BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary).pace, 1, "a legacy battle reads as pace 1")
 	GameSession.tick_expeditions(1.0)
 	assert_eq(int(GameSession.get_battle_snapshot(order_id)["pace"]), 1, "and keeps it as it advances")
-	assert_eq(_settle_as_victory(), [zone.stone_reward, 1], "stones and one loot roll")
+	paid = _victory_pay(1)
+	assert_eq(_settle_as_victory(), [paid, 1], "stones and one loot roll")
 
 
 ## ig-7sn.15 (ACC 6): five battles mid-fight, driven by frames so each holds a kept state and owed time,
@@ -384,6 +386,14 @@ func test_five_battles_mid_fight_survive_a_real_save_and_each_resumes() -> void:
 
 
 ## Lands the first order as a victory; returns [stones earned, items earned].
+## ig-0og.1: what the first order's victory pays at pace, read from the pay helper.
+func _victory_pay(pace: int) -> int:
+	var order: Dictionary = GameSession.expedition_orders[0]
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(order["zone_id"])))
+	var factor: float = ExpeditionOrders.route_pay_factor(zone, float(order["initial_duration_seconds"]), (order["hero_ids"] as Array).size(), pace)
+	return ExpeditionOrders.stone_payout(zone, pace, preload("res://balance.tres"), factor)
+
+
 func _settle_as_victory() -> Array:
 	var order: Dictionary = GameSession.expedition_orders[0]
 	(order["battle"] as Dictionary)["status"] = "victory"

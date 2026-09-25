@@ -1,6 +1,6 @@
 extends GutTest
 
-# ig-6m2.5.1: Farms make food and housed heroes who are home eat it, on the live tick only
+# ig-6m2.5.1: Farms make food and every hero eats it (ig-0og.1: housed or not, home or away), on the live tick only
 # (SYSTEMS.md § Food and starvation). Food at 0 just stays at 0 in this slice.
 # Boundary #1: town_resources.food is additive, and a save without it gets town_start_food once.
 
@@ -32,27 +32,37 @@ func test_the_first_farm_is_free_and_the_next_costs_the_table_price() -> void:
 	assert_eq(GameSession.town_resources["wood"], 1000.0 - BALANCE.farm_wood_cost, "the preview is what it spends")
 
 
-func test_housed_heroes_at_home_eat_and_nobody_else_does() -> void:
+# ig-0og.1 (ACC 3): every hero eats, wherever it is. The food-low line and the HUD rate count them all.
+func test_every_hero_eats_unhoused_away_in_a_battle_or_stranded() -> void:
 	var eaters: Array[Hero] = []
 	for index: int in 5:
 		eaters.append(_housed("H%d" % index, Vector2i(index - 2, 2)))
 	var unhoused: Hero = _add_hero("Stray")
 	GameSession.town_resources["food"] = 100.0
 	GameSession.tick_expeditions(60.0)
-	assert_almost_eq(float(GameSession.town_resources["food"]), 99.0, 0.0001, "five eat 1.0 a minute; the unhoused one eats nothing")
-	assert_false(unhoused in GameSession.food_eaters())
+	assert_almost_eq(float(GameSession.town_resources["food"]), 100.0 - 6 * BALANCE.food_per_hero_minute, 0.0001, "six eat, the unhoused one too")
+	assert_true(unhoused in GameSession.food_eaters())
 	assert_ne(GameSession.dispatch_expedition([eaters[0].instance_id], ZONE, 1, "Out"), "", GameSession.last_action_error)
 	var preset: String = GameSession.save_team_preset("", "Fighters", [eaters[1].instance_id], ZONE)
 	assert_ne(GameSession.dispatch_force([preset], ZONE, 1, {}, LOADOUT), "", GameSession.last_action_error)
 	assert_true(GameSession.clear_home(eaters[2]), GameSession.last_action_error)
-	assert_eq(GameSession.food_eaters().size(), 2, "away, in a battle and unhoused don't eat")
+	GameSession.stranded_incidents.append({"id": "incident-1", "source_order_id": "gone-source", "zone_id": ZONE, "hero_ids": [eaters[3].instance_id], "battle_snapshot": {}, "created_recovery_seconds": GameSession.rescue_clock_seconds, "paused": true, "expiry_pending": false, "active_rescue_order_id": ""})
+	assert_true(GameSession.is_hero_busy(eaters[3]), "stranded")
+	assert_eq(GameSession.food_eaters().size(), 6, "away, in a battle, unhoused and stranded all eat")
 	GameSession.town_resources["food"] = 100.0
 	GameSession._advance_clocks_in_memory(60.0)
-	assert_almost_eq(float(GameSession.town_resources["food"]), 100.0 - 2 * BALANCE.food_per_housed_hero_minute, 0.0001)
+	assert_almost_eq(float(GameSession.town_resources["food"]), 100.0 - 6 * BALANCE.food_per_hero_minute, 0.0001)
+	GameSession.stranded_incidents.clear()
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	GameSession.town_resources["food"] = TownRules.food_low_line(6, BALANCE) - 0.5
+	assert_gt(TownRules.food_low_line(6, BALANCE), TownRules.food_low_line(1, BALANCE), "the line grows with every eater")
+	GameSession.expeditions_changed.emit()
+	assert_string_starts_with((hub.get_node("%StarveText") as Label).text, "Food low: %d left, and the town eats 1.2 a minute." % floori(TownRules.food_low_line(6, BALANCE) - 0.5))
 
 
 func test_a_farm_worker_makes_food_and_food_never_goes_below_zero() -> void:
-	assert_almost_eq(float(TownRules.starve_step(0.0, 0.0, false, 1, 0, 60.0, BALANCE)["food"]), BALANCE.food_per_worker_minute, 0.0001, "one worker, one minute")
+	assert_almost_eq(float(TownRules.starve_step(0.0, 0.0, false, 1, 0, true, 60.0, BALANCE)["food"]), BALANCE.food_per_worker_minute, 0.0001, "one worker, one minute")
 	var stray: Hero = _add_hero("Stray")
 	var farm: StringName = _place(TownRules.FARM, FARM_HEX)
 	assert_false(GameSession.station_hero(stray, farm))
@@ -61,7 +71,7 @@ func test_a_farm_worker_makes_food_and_food_never_goes_below_zero() -> void:
 	assert_true(GameSession.station_hero(farmer, farm), GameSession.last_action_error)
 	GameSession.town_resources["food"] = 10.0
 	GameSession.tick_expeditions(60.0)
-	assert_almost_eq(float(GameSession.town_resources["food"]), 10.0 + BALANCE.food_per_worker_minute - BALANCE.food_per_housed_hero_minute, 0.0001, "makes 1.0, eats 0.2")
+	assert_almost_eq(float(GameSession.town_resources["food"]), 10.0 + BALANCE.food_per_worker_minute - 2 * BALANCE.food_per_hero_minute, 0.0001, "makes 1.0; the farmer and the stray eat 0.2 each")
 	var others: Array[Hero] = []
 	for index: int in 4:
 		others.append(_housed("H%d" % index, Vector2i(index + 1, 2)))
@@ -100,9 +110,11 @@ func test_the_periodic_save_fires_for_eaters_at_zero_food_and_for_a_farm() -> vo
 	assert_true(_periodic_save_wrote())
 
 
-func test_nobody_home_means_no_periodic_save() -> void:
-	_add_hero("Stray")
+# ig-0og.1: every hero eats, so any hero opens the gate; only an empty town leaves it shut.
+func test_an_empty_town_means_no_periodic_save_and_a_lone_stray_opens_it() -> void:
 	assert_false(_periodic_save_wrote(), "the gate is not always open")
+	_add_hero("Stray")
+	assert_true(_periodic_save_wrote(), "the stray eats, so its town is saved")
 
 
 # Boundary #1: through SaveService and the disk, with a partial unit of food.
@@ -157,7 +169,7 @@ func test_negative_food_loads_zero_and_bad_food_or_bad_resources_load_the_start_
 	assert_eq(GameSession.town_resources, {"wood": 0.0, "stone": 0.0, "food": BALANCE.town_start_food}, "wood keeps its 0; food is repaired")
 	_housed("Eater", Vector2i(0, 2))
 	GameSession.tick_expeditions(60.0)
-	assert_almost_eq(float(GameSession.town_resources["food"]), BALANCE.town_start_food - BALANCE.food_per_housed_hero_minute, 0.0001, "and the tick reads it")
+	assert_almost_eq(float(GameSession.town_resources["food"]), BALANCE.town_start_food - BALANCE.food_per_hero_minute, 0.0001, "and the tick reads it")
 
 
 func test_the_farm_scene_is_pickable_and_its_panel_says_food() -> void:

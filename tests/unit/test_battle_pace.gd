@@ -105,11 +105,14 @@ func test_a_battle_orders_rewards_scale_by_its_own_pace() -> void:
 		battle["status"] = "victory"
 		order["remaining_seconds"] = 0.0
 		var stones_before: int = GameSession.stones
+		# ig-0og.1: the pay helper, at the checkpoint's pace and the order's own route factor.
+		var factor: float = ExpeditionOrders.route_pay_factor(zone, float(order["initial_duration_seconds"]), (order["hero_ids"] as Array).size(), pace)
+		var paid: int = ExpeditionOrders.stone_payout(zone, pace, BALANCE, factor)
 		GameSession.tick_expeditions(0.1)
 		assert_eq(GameSession.expedition_reports.size(), 1, "pace %d: settled" % pace)
 		var report: Dictionary = GameSession.expedition_reports[0]
-		assert_eq(GameSession.stones - stones_before, zone.stone_reward * pace, "pace %d: stones" % pace)
-		assert_eq(report["stones_earned"], zone.stone_reward * pace)
+		assert_eq(GameSession.stones - stones_before, paid, "pace %d: stones" % pace)
+		assert_eq(report["stones_earned"], paid)
 		assert_eq(report["items_earned"], pace, "pace %d: P loot rolls" % pace)
 		assert_eq(GameSession.inventory.size(), pace)
 		xp.append(int(report["xp_earned"]))

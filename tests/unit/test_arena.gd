@@ -7,6 +7,8 @@ var _combat_result: CombatResult
 
 
 func before_each() -> void:
+	# ig-0og.1: every hero eats now, so the session's live tick would move the food under the profile checks.
+	GameSession.set_process(false)
 	GameSession.from_dict({"roster": []})
 	SceneRouter.reset_arena_transition_state()
 	_requested_scene = ""
@@ -14,6 +16,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	GameSession.set_process(true)
 	for action: StringName in [&"move_left", &"move_right", &"move_forward", &"move_back", &"sprint", &"attack", &"heavy_attack", &"dodge"]:
 		Input.action_release(action)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

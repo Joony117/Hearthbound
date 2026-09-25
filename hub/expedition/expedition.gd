@@ -102,7 +102,7 @@ func _resolve(
 	GameSession.add_item(loot)
 	for roll: int in range(1, BALANCE.battle_pace):
 		GameSession.add_item(roll_loot(zone, BALANCE, boss_loot_seed + roll))
-	GameSession.credit_stones(zone.stone_reward * BALANCE.battle_pace)
+	GameSession.credit_stones(ExpeditionOrders.stone_payout(zone, BALANCE.battle_pace, BALANCE))
 	GameSession.credit_team_xp(
 		team,
 		roundi(float((BALANCE.xp_per_wave * waves_resolved + zone.xp_reward) * BALANCE.battle_pace) * xp_multiplier),

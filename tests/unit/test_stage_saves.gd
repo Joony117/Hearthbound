@@ -32,12 +32,12 @@ func test_early_loads_as_its_run_log_and_reloads_as_its_round_trip() -> void:
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
 	assert_false(SaveService.load_blocked, "not blocked")
 	assert_eq(SaveService.take_load_notice(), "", "no warning")
-	assert_eq(GameSession.roster.size(), 13, "the roster")
-	assert_eq(str(GameSession.building_levels), "[1, 1, 0, 0, 0]", "the hall levels")
-	assert_eq(GameSession.ledger.size(), 81, "the Ledger")
-	assert_eq(GameSession.ledger_next_seq, 82, "nothing evicted")
+	assert_eq(GameSession.roster.size(), 8, "the roster")
+	assert_eq(str(GameSession.building_levels), "[0, 0, 0, 0, 0]", "the hall levels")
+	assert_eq(GameSession.ledger.size(), 29, "the Ledger")
+	assert_eq(GameSession.ledger_next_seq, 30, "nothing evicted")
 	assert_true(GameSession.expedition_orders.is_empty(), "saved with no order in flight")
-	assert_eq(GameSession.bond_index().size(), 0, "no bond yet: Early's Ledger has no meeting or meal")
+	assert_eq(GameSession.bond_index().size(), 0, "no bond yet: Early's battles had no moment")
 
 	# ig-85w's standard (the director's ACC 4 ruling): the second load is exactly the first load's
 	# full-precision round trip. Numbers compare by value (43 == 43.0), a float to the last bit.

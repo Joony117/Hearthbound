@@ -1,24 +1,30 @@
 extends RefCounted
 
-## ig-eek: the stage bot's play, loaded by stage_bot.gd once the autoloads exist. It plays the Early
-## stage (SYSTEMS.md § Stage saves) through public GameSession calls on the live clock, sped up, saves
-## with no order in flight, and copies save.json + ledger.jsonl into res://tests/fixtures/stages/early/.
+## ig-eek: the stage bot's play, loaded by stage_bot.gd once the autoloads exist. It plays one stage
+## (--stage=early|mid, SYSTEMS.md § Stage saves) through public GameSession calls on the live clock,
+## sped up, saves with no order in flight, and copies save.json + ledger.jsonl into
+## res://tests/fixtures/stages/<stage>/.
 ## Time passes only through tick_expeditions, STEP seconds at a time. The bot never yields a frame
 ## mid-run (GameSession._process would advance the battles too); it waits with OS.delay_msec. The
 ## one private call is _land_battle_checks, the pulse's own landing step, in _wait_for_jobs.
 ## Every order is fixed-run (1 run), so no dispatch needs a preview; a team comes home after each
 ## battle and the next pass re-forms it by power.
+## ig-0og.1: it keeps what it can house. Workplaces for the staff, then Houses while wood allows, then
+## the strongest homeless into beds; the homeless beyond the grace (less the Houses going up) are fed.
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const STEP: float = 5.0
-const EARLY_SECONDS: float = 7200.0
+## Each stage's game clock (SYSTEMS.md § Stage saves). Late is set by the Ledger cap (ig-eek.2).
+const STAGE_SECONDS: Dictionary[String, float] = {"early": 7200.0, "mid": 72000.0}
 const TEAM_SIZE: int = 5
 ## Circle, Forge, Sanctum, Training Hall, Reliquary: building_levels indices in SYSTEMS' order.
 const HALL_ORDER: Array[int] = [0, 1, 3, 2, 4]
-## Each producer gets one worker, the Farm first so food stays above zero.
+## Staffed to _workers_wanted, the Farm first so food stays above zero.
 const PRODUCERS: Array[StringName] = [TownRules.FARM, TownRules.LUMBERMILL, TownRules.MINE]
-const OUT_DIR: String = "res://tests/fixtures/stages/early/"
+const OUT_DIR: String = "res://tests/fixtures/stages/%s/"
 
+var _stage: String = "early"
+var _stage_seconds: float = 0.0
 var _clock: float = 0.0
 var _seen: Dictionary[String, bool] = {}
 var _battle_seconds: float = 0.0
@@ -27,6 +33,11 @@ var _longest_order: float = 0.0
 var _underpowered_sends: int = 0
 var _refusals: Dictionary[String, int] = {}
 var _failed: bool = false
+var _casters: Dictionary[String, bool] = {}
+var _casters_fed: int = 0
+var _pulls: int = 0
+var _strike_seconds: float = 0.0
+var _homeless_peak: int = 0
 
 
 ## The exit code: 0 when the stage saved and its death check held, 2 when that check or an order in
@@ -36,28 +47,33 @@ func run(args: PackedStringArray) -> int:
 	for arg: String in args:
 		if arg.begins_with("--seed=") and arg.get_slice("=", 1).is_valid_int():
 			seed_value = arg.get_slice("=", 1).to_int()
+		elif arg.begins_with("--stage=") and STAGE_SECONDS.has(arg.get_slice("=", 1)):
+			_stage = arg.get_slice("=", 1)
 		else:
 			push_error("stage_bot: unknown arg %s" % arg)
 			return 1
 	if FileAccess.file_exists(SaveService.SAVE_PATH) or not GameSession.roster.is_empty():
 		push_error("stage_bot: user:// already holds a save. Run it with a fresh temp APPDATA.")
 		return 1
+	_stage_seconds = STAGE_SECONDS[_stage]
 	seed(seed_value)
-	print("BOT stage=early seed=%d step=%.1f game_seconds=%.0f" % [seed_value, STEP, EARLY_SECONDS])
+	print("BOT stage=%s seed=%d step=%.1f game_seconds=%.0f" % [_stage, seed_value, STEP, _stage_seconds])
 	var started: int = Time.get_ticks_msec()
 	while true:
 		_note_roster()
-		if _clock >= EARLY_SECONDS:
+		if _clock >= _stage_seconds:
 			for order: Dictionary in GameSession.expedition_orders.duplicate():
 				GameSession.request_stop_expedition(str(order.get("id", "")))
 			if GameSession.expedition_orders.is_empty():
 				break
 		else:
 			# Stop dispatching once an order sent now could still be out at the save.
-			_play(_clock + maxf(_longest_order, 600.0) * 1.5 < EARLY_SECONDS)
+			_play(_clock + maxf(_longest_order, 600.0) * 1.5 < _stage_seconds)
 		_step()
 		if _failed:
 			return 1
+		if fmod(_clock, 3600.0) == 0.0:
+			print("HOUR %d wall_s=%.1f roster=%d orders=%d ledger=%d cleared=%s" % [roundi(_clock / 3600.0), (Time.get_ticks_msec() - started) / 1000.0, GameSession.roster.size(), GameSession.expedition_orders.size(), GameSession.ledger.size(), GameSession.cleared_zone_ids])
 	if not SaveService.save():
 		push_error("stage_bot: the final save failed: %s" % SaveService.last_write_error)
 		return 1
@@ -70,8 +86,10 @@ func run(args: PackedStringArray) -> int:
 ## One pass of the greedy order (SYSTEMS.md § Stage saves).
 func _play(dispatching: bool) -> void:
 	while GameSession.stones >= BALANCE.summon_pull_cost:
-		_ok(GameSession.summon_hero(Summon.roll(GameSession.building_levels[0]), BALANCE), "summon")
+		if _ok(GameSession.summon_hero(Summon.roll(GameSession.building_levels[0]), BALANCE), "summon"):
+			_pulls += 1
 		_note_roster()
+	_house()
 	var spare: Array[Hero] = []
 	var teams: Array[Dictionary] = _form_teams(spare)
 	_staff(spare)
@@ -104,6 +122,13 @@ func _form_teams(spare: Array[Hero]) -> Array[Dictionary]:
 		if not GameSession.is_hero_busy(hero) and hero.station == Hero.NO_STATION:
 			pool.append(hero)
 	pool.sort_custom(func(first: Hero, second: Hero) -> bool: return _power(first) > _power(second))
+	# ig-0og.1: the homeless beyond the grace, less the Houses going up, are spare, weakest first.
+	var surplus: Array[Hero] = []
+	var excess: int = GameSession.homeless_heroes().size() - BALANCE.town_mood_homeless_grace - _houses_going_up()
+	for index: int in range(pool.size() - 1, -1, -1):
+		if surplus.size() < excess and pool[index].home == Hero.NO_HOME:
+			surplus.append(pool[index])
+			pool.remove_at(index)
 	var groups: Array[Array] = []
 	var index: int = 0
 	while pool.size() - index >= TEAM_SIZE:
@@ -113,6 +138,8 @@ func _form_teams(spare: Array[Hero]) -> Array[Dictionary]:
 		groups.append(pool.duplicate())
 		index = pool.size()
 	spare.assign(pool.slice(index))
+	surplus.reverse()
+	spare.append_array(surplus)
 	var teams: Array[Dictionary] = []
 	for group_index: int in groups.size():
 		var heroes: Array[Hero] = []
@@ -131,34 +158,94 @@ func _form_teams(spare: Array[Hero]) -> Array[Dictionary]:
 	return teams
 
 
-## One worker per producer, taken from the weakest spare hero and housed first. With no empty house,
-## one goes up (the first is free), and the next spare hero fills it.
+## ig-0og.1, "keep what you can house" (SYSTEMS.md § Stage saves): the workplaces _workers_wanted needs,
+## then Houses while wood allows and beds are fewer than heroes. Free beds go first to the workers
+## _workers_wanted still needs (kept empty for _staff's weakest spare heroes: a worker needs a home),
+## then to the strongest homeless (director's ruling C, 2026-09-25).
+func _house() -> void:
+	for type: StringName in PRODUCERS:
+		var needed: int = ceili(float(_workers_wanted(type)) / TownRules.worker_slots(type, BALANCE))
+		while _count(type) < needed and _place(type):
+			pass
+	while _count(TownRules.HOUSE) * BALANCE.house_capacity < GameSession.roster.size() and _place(TownRules.HOUSE):
+		pass
+	var free_beds: int = 0
+	for building: Dictionary in GameSession.town_buildings:
+		var house_id := StringName(str(building["id"]))
+		if str(building["type"]) == String(TownRules.HOUSE) and GameSession.still_building(house_id).is_empty() and GameSession.residents_of(house_id).is_empty():
+			free_beds += 1
+	var workers_short: int = 0
+	for type: StringName in PRODUCERS:
+		workers_short += maxi(_workers_wanted(type) - _workers(type), 0)
+	var homeless: Array[Hero] = GameSession.homeless_heroes()
+	homeless.sort_custom(func(first: Hero, second: Hero) -> bool: return _power(first) > _power(second))
+	for hero: Hero in homeless.slice(0, maxi(free_beds - workers_short, 0)):
+		_ok(GameSession.assign_home(hero, StringName(_empty_house())), "assign_home")
+
+
+## Each producer staffed to _workers_wanted from the weakest spare heroes with a bed; a homeless one
+## takes a free bed first, or waits.
 func _staff(spare: Array[Hero]) -> void:
 	for type: StringName in PRODUCERS:
-		var workplace: String = _finished_building(type)
-		if workplace.is_empty() or not GameSession.workers_at(StringName(workplace)).is_empty() or spare.is_empty():
-			continue
-		var house: String = _empty_house()
-		if house.is_empty():
-			if not _house_going_up():
-				_place(TownRules.HOUSE)
-			continue
-		var worker: Hero = spare.pop_back()
-		_ok(GameSession.assign_home(worker, StringName(house)), "assign_home")
-		_ok(GameSession.station_hero(worker, StringName(workplace)), "station_hero")
+		for _slot: int in maxi(_workers_wanted(type) - _workers(type), 0):
+			var workplace: String = _open_workplace(type)
+			var worker: Hero = _bedded_worker(spare)
+			if workplace.is_empty() or worker == null:
+				break
+			_ok(GameSession.station_hero(worker, StringName(workplace)), "station_hero")
+
+
+## ig-0og.1: ceil(heroes x 0.2) farmers (a farmer makes what five eat), max(1, heroes / 5) woodcutters,
+## and the Mine's 1.
+func _workers_wanted(type: StringName) -> int:
+	var heroes: int = GameSession.roster.size()
+	if type == TownRules.FARM:
+		return ceili(heroes * BALANCE.food_per_hero_minute / BALANCE.food_per_worker_minute)
+	if type == TownRules.LUMBERMILL:
+		return maxi(1, floori(heroes / float(TEAM_SIZE)))
+	return 1
+
+
+## The weakest spare hero with a bed, or the weakest homeless one put in a free bed; null with neither.
+func _bedded_worker(spare: Array[Hero]) -> Hero:
+	for index: int in range(spare.size() - 1, -1, -1):
+		if spare[index].home != Hero.NO_HOME:
+			return spare.pop_at(index)
+	var house: String = _empty_house()
+	if spare.is_empty() or house.is_empty():
+		return null
+	var worker: Hero = spare.pop_back()
+	_ok(GameSession.assign_home(worker, StringName(house)), "assign_home")
+	return worker
 
 
 ## Spare heroes are fodder for the strongest idle team hero; then every idle team hero ranks up while
 ## the essence lasts, strongest first.
 func _feed(spare: Array[Hero], teams: Array[Dictionary]) -> void:
-	if teams.is_empty():
+	var fodders: Array[Hero] = spare.duplicate()
+	var target: Hero = null
+	if not teams.is_empty():
+		target = (teams[0]["heroes"] as Array[Hero])[0]
+	else:
+		# ig-0og.1: with every team out, only the homeless beyond the grace go, into the strongest hero
+		# at home; the rest wait for the team to come back, as before.
+		fodders.clear()
+		var excess: int = GameSession.homeless_heroes().size() - BALANCE.town_mood_homeless_grace - _houses_going_up()
+		for index: int in range(spare.size() - 1, -1, -1):
+			if fodders.size() < excess and spare[index].home == Hero.NO_HOME:
+				fodders.append(spare[index])
+		for hero: Hero in GameSession.roster:
+			if not fodders.has(hero) and not GameSession.is_hero_busy(hero) and (target == null or _power(hero) > _power(target)):
+				target = hero
+	if target == null:
 		return
-	var target: Hero = (teams[0]["heroes"] as Array[Hero])[0]
-	for fodder: Hero in spare:
+	for fodder: Hero in fodders:
+		if _casters.has(fodder.instance_id):
+			_casters_fed += 1
 		for slot: int in fodder.equipped.keys():
 			GameSession.unequip_item(fodder, slot)
 		_ok(GameSession.sacrifice_hero(fodder, target, BALANCE), "sacrifice_hero")
-	spare.clear()
+		spare.erase(fodder)
 	for team: Dictionary in teams:
 		for hero: Hero in team["heroes"] as Array[Hero]:
 			while GameSession.essence >= Hero.compute_rank_up_cost(hero, BALANCE) and GameSession.rank_up_hero(hero, BALANCE):
@@ -240,8 +327,15 @@ func _dispatch(teams: Array[Dictionary]) -> void:
 			if _team_power(heroes) >= 0.9 * zone.recommended_power and zone.recommended_power > hardest:
 				hardest = zone.recommended_power
 				zone_id = known
-		if zone_id.is_empty():
+		var underpowered: bool = zone_id.is_empty()
+		if underpowered:
 			zone_id = "verdant_outskirts"
+		# A first send to a zone has no order measured yet, so the route estimate stands in: a force
+		# zone's route alone can outlast the stage.
+		var route: float = ExpeditionOrders.force_duration_seconds(heroes, ZoneDefinition.definition_for(StringName(zone_id)), BALANCE)
+		if _clock + maxf(route, _longest_order) * 1.5 >= _stage_seconds:
+			continue
+		if underpowered:
 			_underpowered_sends += 1
 		var preset_ids: Array[String] = [str(team["id"])]
 		var order_id: String = GameSession.dispatch_force(preset_ids, zone_id, 1, {}, _loadout(heroes))
@@ -250,11 +344,13 @@ func _dispatch(teams: Array[Dictionary]) -> void:
 
 
 ## Free first producers, then one hall upgrade when affordable, the lowest level first in SYSTEMS'
-## order. Houses for workers go up in _staff.
+## order. Houses go up in _house, and come first: no hall upgrade while anyone is homeless (ig-0og.1).
 func _town() -> void:
 	for type: StringName in [TownRules.FARM, TownRules.HOUSE, TownRules.LUMBERMILL, TownRules.MINE]:
 		if not _has_building(type):
 			_place(type)
+	if not GameSession.homeless_heroes().is_empty():
+		return
 	var pick: int = -1
 	for index: int in HALL_ORDER:
 		if pick < 0 or GameSession.building_levels[index] < GameSession.building_levels[pick]:
@@ -273,6 +369,12 @@ func _step() -> void:
 			_battle_seconds += STEP
 	GameSession.tick_expeditions(STEP)
 	_clock += STEP
+	# Ruling C: the bot closes the last starvation warning on the first step it is up, as a player would.
+	if GameSession.is_starvation_stopped():
+		_ok(GameSession.acknowledge_starvation(), "acknowledge_starvation")
+	if GameSession.is_in_revolt():
+		_strike_seconds += STEP
+	_homeless_peak = maxi(_homeless_peak, GameSession.homeless_heroes().size())
 	_wait_for_jobs()
 	var live: Dictionary[String, bool] = {}
 	for order: Dictionary in GameSession.expedition_orders:
@@ -315,13 +417,36 @@ func _report(seed_value: int, wall_seconds: float) -> bool:
 	for level: int in GameSession.building_levels:
 		top_hall = maxi(top_hall, level)
 	var free_placed: bool = TownRules.FREE_FIRST.all(func(type: StringName) -> bool: return String(type) in types)
-	_check("verdant_cleared", GameSession.cleared_zone_ids.has(&"verdant_outskirts"), GameSession.cleared_zone_ids.has(&"verdant_outskirts"))
-	_check("heroes 5-10", roster.size(), roster.size() >= 5 and roster.size() <= 10)
-	_check("none above D", BALANCE.rank_names[top_rank], top_rank <= 1)
-	_check("one team", GameSession.team_presets.size(), GameSession.team_presets.size() == 1)
-	_check("free first producers placed", types, free_placed)
-	_check("no hall above level 1", GameSession.building_levels, top_hall <= 1)
-	print("INFO ledger_records=%d (SYSTEMS: about 20 at pace 6) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
+	var teams: int = GameSession.team_presets.size()
+	if _stage == "early":
+		_check("verdant_cleared", GameSession.cleared_zone_ids.has(&"verdant_outskirts"), GameSession.cleared_zone_ids.has(&"verdant_outskirts"))
+		_check("heroes 8-20", roster.size(), roster.size() >= 8 and roster.size() <= 20)
+		_check("teams 1-2", teams, teams >= 1 and teams <= 2)
+		_check("free first producers placed", types, free_placed)
+		_check("no hall above level 1", GameSession.building_levels, top_hall <= 1)
+		print("INFO ledger_records=%d (SYSTEMS: about 30) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
+	else:
+		_check("ashfall_cleared", GameSession.cleared_zone_ids.has(&"ashfall_reaches"), GameSession.cleared_zone_ids.has(&"ashfall_reaches"))
+		_check("heroes 15-30", roster.size(), roster.size() >= 15 and roster.size() <= 30)
+		var best: Array[String] = _best_team_ranks()
+		var c_or_b: int = best.count("C") + best.count("B")
+		_check("best team mostly C-B (3+ of 5)", best, best.size() == TEAM_SIZE and c_or_b >= 3)
+		_check("teams 2-4", teams, teams >= 2 and teams <= 4)
+		var halls_ok: bool = GameSession.building_levels.all(func(level: int) -> bool: return level >= 2 and level <= 3)
+		_check("halls at level 2-3", GameSession.building_levels, halls_ok)
+		var deaths: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and str(record.get("cause", "")) != "sacrifice").size()
+		var rescues: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "battle" and str(record.get("battle_kind", "")) == "rescue").size()
+		_check("a death", deaths, deaths >= 1)
+		_check("a rescue", rescues, rescues >= 1)
+		_check("a bond", GameSession.bond_index().size(), GameSession.bond_index().size() >= 1)
+		print("INFO ledger_records=%d (SYSTEMS: about 1,000) ledger_next_seq=%d" % [GameSession.ledger.size(), GameSession.ledger_next_seq])
+	# ig-0og.1: a player who houses or feeds everyone beyond the grace never strikes, and never starves.
+	var starved: int = GameSession.ledger.filter(func(record: Dictionary) -> bool: return str(record.get("kind", "")) == "died" and str(record.get("cause", "")) == "starvation").size()
+	_check("strike minutes 0", _strike_seconds / 60.0, _strike_seconds == 0.0)
+	_check("starvation deaths 0", starved, starved == 0)
+	print("TOWN pulls=%d houses=%d next_house_wood=%d homeless_peak=%d homeless=%d mood=%.1f food=%.1f" % [_pulls, _count(TownRules.HOUSE), TownRules.wood_cost(TownRules.HOUSE, GameSession.town_buildings, BALANCE), _homeless_peak, GameSession.homeless_heroes().size(), GameSession.town_mood, float(GameSession.town_resources["food"])])
+	var casters_kept: int = roster.filter(func(hero: Hero) -> bool: return _casters.has(hero.instance_id)).size()
+	print("INFO casters pulled=%d fed=%d kept=%d" % [_casters.size(), _casters_fed, casters_kept])
 	var died: Dictionary[String, bool] = {}
 	for record: Dictionary in GameSession.ledger:
 		if str(record.get("kind", "")) == "died":
@@ -338,7 +463,7 @@ func _report(seed_value: int, wall_seconds: float) -> bool:
 				unexplained.append(hero_id)
 	print("DEATHS seen=%d missing=%d died_records=%d unexplained=%s %s" % [_seen.size(), missing, died.size(), unexplained, "pass" if unexplained.is_empty() else "MISS"])
 	var game_hours: float = _clock / 3600.0
-	print("COST wall_s=%.1f game_s=%.0f wall_s_per_game_h=%.1f battle_s=%.0f battle_s_per_wall_s=%.1f mid_20h_projected_wall_s=%.0f" % [wall_seconds, _clock, wall_seconds / game_hours, _battle_seconds, _battle_seconds / wall_seconds, wall_seconds / game_hours * 20.0])
+	print("COST wall_s=%.1f game_s=%.0f wall_s_per_game_h=%.1f battle_s=%.0f battle_s_per_wall_s=%.1f" % [wall_seconds, _clock, wall_seconds / game_hours, _battle_seconds, _battle_seconds / wall_seconds])
 	print("RUN roster=%d building_levels=%s ledger=%d orders=%d jobs=%d incidents=%d stones=%d essence=%d parts=%s supplies=%s town=%s underpowered_sends=%d longest_order_s=%.0f refusals=%s" % [roster.size(), GameSession.building_levels, GameSession.ledger.size(), GameSession.expedition_orders.size(), GameSession._battle_jobs.size(), GameSession.stranded_incidents.size(), GameSession.stones, GameSession.essence, GameSession.parts, GameSession.supplies, GameSession.town_resources, _underpowered_sends, _longest_order, _refusals])
 	print("README seed=%d step=%.1f wall_s=%.1f game_clock_s=%.0f" % [seed_value, STEP, wall_seconds, _clock])
 	for hero: Hero in roster:
@@ -346,12 +471,29 @@ func _report(seed_value: int, wall_seconds: float) -> bool:
 	return unexplained.is_empty() and GameSession.expedition_orders.is_empty()
 
 
+## The rank names of the strongest saved 5-hero team by _team_power; [] with none.
+func _best_team_ranks() -> Array[String]:
+	var best: Array[Hero] = []
+	for preset: Dictionary in GameSession.team_presets:
+		var heroes: Array[Hero] = []
+		for hero_id: Variant in preset.get("hero_ids", []) as Array:
+			var hero: Hero = GameSession.hero_by_id(str(hero_id))
+			if hero != null:
+				heroes.append(hero)
+		if heroes.size() == TEAM_SIZE and (best.is_empty() or _team_power(heroes) > _team_power(best)):
+			best = heroes
+	var ranks: Array[String] = []
+	for hero: Hero in best:
+		ranks.append(BALANCE.rank_names[hero.rank])
+	return ranks
+
+
 func _check(label: String, value: Variant, passed: bool) -> void:
 	print("CHECK %s value=%s %s" % [label, value, "pass" if passed else "MISS"])
 
 
 func _copy_out() -> void:
-	var out: String = ProjectSettings.globalize_path(OUT_DIR)
+	var out: String = ProjectSettings.globalize_path(OUT_DIR % _stage)
 	DirAccess.make_dir_recursive_absolute(out)
 	for path: String in [SaveService.SAVE_PATH, SaveService.LEDGER_PATH]:
 		var error: Error = DirAccess.copy_absolute(ProjectSettings.globalize_path(path), out.path_join(path.get_file()))
@@ -363,6 +505,9 @@ func _copy_out() -> void:
 func _note_roster() -> void:
 	for hero: Hero in GameSession.roster:
 		_seen[hero.instance_id] = true
+		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
+		if definition != null and definition.caster:
+			_casters[hero.instance_id] = true
 
 
 ## Counts refused calls by name; a player would just see the message and move on.
@@ -416,10 +561,24 @@ func _has_building(type: StringName) -> bool:
 	return GameSession.town_buildings.any(func(building: Dictionary) -> bool: return str(building["type"]) == String(type))
 
 
-func _finished_building(type: StringName) -> String:
+func _count(type: StringName) -> int:
+	return GameSession.town_buildings.filter(func(building: Dictionary) -> bool: return str(building["type"]) == String(type)).size()
+
+
+func _workers(type: StringName) -> int:
+	var workers: int = 0
 	for building: Dictionary in GameSession.town_buildings:
-		if str(building["type"]) == String(type) and GameSession.still_building(StringName(str(building["id"]))).is_empty():
-			return str(building["id"])
+		if str(building["type"]) == String(type):
+			workers += GameSession.workers_at(StringName(str(building["id"]))).size()
+	return workers
+
+
+## A finished workplace of the type with a free slot, or "".
+func _open_workplace(type: StringName) -> String:
+	for building: Dictionary in GameSession.town_buildings:
+		var id := StringName(str(building["id"]))
+		if str(building["type"]) == String(type) and GameSession.still_building(id).is_empty() and GameSession.workers_at(id).size() < TownRules.worker_slots(type, BALANCE):
+			return String(id)
 	return ""
 
 
@@ -431,15 +590,15 @@ func _empty_house() -> String:
 	return ""
 
 
-func _house_going_up() -> bool:
-	return GameSession.town_buildings.any(func(building: Dictionary) -> bool: return str(building["type"]) == String(TownRules.HOUSE) and building.has("build_remaining"))
+func _houses_going_up() -> int:
+	return GameSession.town_buildings.filter(func(building: Dictionary) -> bool: return str(building["type"]) == String(TownRules.HOUSE) and building.has("build_remaining")).size()
 
 
-## The free hex nearest the town centre that place_building would take.
-func _place(type: StringName) -> void:
+## The free hex nearest the town centre that place_building would take; false when none (no wood).
+func _place(type: StringName) -> bool:
 	var hexes: Array[Vector2i] = TownRules.map_hexes(BALANCE)
 	hexes.sort_custom(func(first: Vector2i, second: Vector2i) -> bool: return TownRules.ring_distance(first) < TownRules.ring_distance(second))
 	for hex: Vector2i in hexes:
 		if bool(GameSession.preview_place_building(type, hex).get("valid", false)):
-			_ok(GameSession.place_building(type, hex), "place " + String(type))
-			return
+			return _ok(GameSession.place_building(type, hex), "place " + String(type))
+	return false

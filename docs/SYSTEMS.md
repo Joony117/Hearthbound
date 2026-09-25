@@ -1239,7 +1239,7 @@ a progression finding. It is never patched over.
 
 | Stage | Game clock | Ledger | Checks the save must pass |
 |---|---|---|---|
-| Early | 2 h | about 80 records | Verdant cleared. 8–20 heroes. 1–2 teams. The free first producers placed; no hall above level 1 |
+| Early | 2 h | about 30 records | Verdant cleared. 8–20 heroes. 1–2 teams. The free first producers placed; no hall above level 1 |
 | Mid | 20 h | about 1,000 | Ashfall cleared. 15–30 heroes; the best team mostly C–B. 2–4 teams. Halls at level 2–3. At least one death, one rescue and one bond in the Ledger |
 | Late | Until the Ledger is at its 10,000 cap and has evicted | 10,000 | Sundered Vault cleared; Fallen Citadel and Frontier March tried. 40+ heroes; the best team A–SS. Every built hall at level 5. Several bonds and dreams. 5+ deaths |
 
@@ -1248,12 +1248,21 @@ a progression finding. It is never patched over.
   plus the town records (about 20 an hour in a 30-hero town), that's about 170 hours, or less as
   income grows with the zone.
 - Early's checks come from the first bot run (seed 1: 36 pulls, 23 fed, 13 kept, 2 teams; halls
-  [1, 1, 0, 0, 0]). Early has no rank check. A third of pulls are C or better, so even the three
+  [1, 1, 0, 0, 0]). Early was remade under `ig-0og.1` (rate B, the route pay, beds and eating) on
+  seeds 1-8: every seed kept 8 heroes from 8 pulls with none fed, in 1 team, with 8 Houses (the
+  next at 10 wood), no strike and no starvation, and a Ledger of 23-30. Seed 1 is the save: 4
+  fighters (A, B, C, D) and 4 workers (2 farmers, 1 woodcutter, 1 miner), halls [0, 0, 0, 0, 0],
+  29 records, 78 stones. Every seed sits on the floor of 8. Early has no rank check. A third of pulls are C or better, so even the three
   starting pulls give one 70% of the time. A rank bound would test the seed, not the bot. The
   bot is not changed to meet a check: it pulls, feeds and fields teams the way a player does.
 - The bot plays in fixed, greedy order. Summon when stones allow. Fill 5-hero teams by power.
   Send every idle team, with suggested supplies, to the hardest unlocked zone where its power is
-  at least 90% of recommended. Spare heroes are fodder for the best ones. Equip the best gear on
+  at least 90% of recommended. Spare heroes are fodder for the best ones. Keep what you can house
+  (`ig-0og.1`): place the workplaces the staff needs (ceil(heroes x 0.2) farmers, max(1, heroes / 5)
+  woodcutters, the Mine's 1), then Houses while wood allows and beds are fewer than heroes. Free
+  beds go to the workers first (a worker needs a home), then to the strongest. The homeless beyond
+  the grace, less the Houses going up, are spare. No hall upgrade while anyone is homeless. The bot
+  closes the last starvation warning on the first step it is up, as a player would. Equip the best gear on
   the strongest heroes, and enhance up to the Forge cap. Place the free producers first, then
   upgrade halls when affordable (Circle, Forge, Sanctum, Training Hall, Reliquary). Keep food
   above zero. Rescue every stranded hero it can, and let the rest die as the rules say.
@@ -1271,7 +1280,7 @@ a progression finding. It is never patched over.
     (`ig-m6o.2.2.4`, `.5`) and the `ig-gy0.9` balance pass. The town records fill the Ledger at no
     sim cost, so Late takes about a third of the wall time. They are also what the cap evicts first.
 - The Ledger column is at `battle_pace` 6. Early's first run wrote 81 records in 2 h, and 59 were
-  summons and sacrifices. Those follow stone income, which `ig-1jw` kept per hour, so the pace
+  summons and sacrifices. The `ig-0og.1` remake wrote 29: 8 summons, no sacrifice. Those follow stone income, which `ig-1jw` kept per hour, so the pace
   cuts only the battle records. Mid's figure scales Early's rate. The pull rate itself has no
   target yet (`ig-0og`).
 
@@ -3894,7 +3903,8 @@ quick-resolve scaling only. **Never a hard gate** — let players throw units aw
 ### Timed dispatch and repeat orders (`ig-6l4`, 2026-09-22)
 
 A hero can belong to only one active order; equipped gear is committed with that hero. Distinct
-teams run concurrently without an energy system or dispatch-slot cap. Presets store stable
+teams run concurrently without an energy system or dispatch-slot cap; a town in revolt sends
+nothing (§ Town mood and revolt). Presets store stable
 hero IDs, a name, and a preferred zone. Missing members remain visible and require an explicit
 edit. Preset edits do not modify an already-dispatched team.
 
@@ -5289,6 +5299,37 @@ smallest multiple of `100` that clears the `2.5`-pull expectation with a full pu
 > chore" the way Buildings' own cost anchor asks the same question, is unfelt. · **Settled by:** a
 > played build with pricing wired in, across at least a few dozen real clears in each zone.
 
+**6. The rate and the route pay (`ig-0og.1`, 2026-09-25).** A clear pays for the route time it used,
+capped at the full reward:
+
+```
+pay = roundi(stone_reward x battle_pace x stone_reward_scale x min(1, route / matched route))
+```
+
+- `stone_reward_scale` is `0.333333`, rate B (the owner's pick): a Verdant clear at pace 6 pays 50.
+- The matched route is the route at r = 1 (team power over recommended), from the route's own
+  formula through one helper, `ExpeditionOrders.route_seconds`: ceil(base x P x ref / team size).
+  At r <= 1 the factor is 1 (a long route, full pay). Between 1 and the floor it is 1/sqrt(r). At
+  the floor it stays min/base, so the hourly rate stays flat past the floor too.
+- Both pay sites go through `ExpeditionOrders.stone_payout`. A battle order's factor comes from
+  its own `initial_duration_seconds` and `hero_ids.size()`; the legacy path pays the rate only.
+- The hub's summary shows the pay percent when it is under 100.
+
+Stones per 5-hero team per hour, rate B, pace 6 (before / after):
+
+| Zone | r = 1 | r = 4 | r = 16 |
+|---|---|---|---|
+| Verdant | 500 / 500 | 1,000 / 500 | 2,000 / 500 |
+| Ashfall | 500 / 500 | 1,000 / 500 | 2,000 / 500 |
+| Sundered | 800 / 800 | 1,600 / 800 | 3,200 / 800 |
+
+So an over-strong team in an easier zone never earns more an hour than a matched team in its own
+zone. What a stronger team still gets: harder zones pay more, fewer deaths, and more XP and loot
+an hour.
+
+> ⚠️ **PROVISIONAL** — the rule's figures assume route-bound cycles (Early's 64 s fights against
+> Verdant's 90 s floor) · **Settled by:** Mid's first run under the rule
+
 ---
 
 ## Base buildings — *Phase 2*
@@ -5725,16 +5766,22 @@ Every row below is a `balance.tres` row.
 |---|---|---|
 | `town_map_radius` | 8 hexes (217 hexes) | Room for the 7 halls, about 30 houses and a dozen workplaces |
 | `town_start_wood` | 40 | Enough for one Lumbermill and two Houses. Old saves get it once, when the key is missing |
-| `house_wood_cost` | 10 | |
+| `house_wood_cost` | 10 | Houses 2-10 (the first is free) |
+| `house_flat_count` | 10 | The last House at `house_wood_cost`. Early's roster never reaches the curve (`ig-0og.1`) |
+| `house_wood_step` | 20 | After that, each House costs this much more than the one before: 11th 30, 15th 110, 20th 210, 30th 410. Every House on the map counts, finished or going up, and nothing can be demolished, so the price only climbs. Mid lands at 26-34 heroes (town_model.py) |
 | `house_capacity` | 1 | The owner: each hero has its own house |
 | `lumbermill_wood_cost` | 20 | |
 | `lumbermill_worker_slots` | 2 | |
 | `wood_per_worker_minute` | 1.0 | Live play only, and only while the worker is home |
 
 **Pacing check.** The start stock builds one Lumbermill and two Houses, leaving 0. Two workers make
-2 wood a minute, so a new House every 5 minutes. A second Lumbermill and its two Houses cost 40,
-which is 20 minutes. After that, 4 wood a minute. Housing is bounded by the roster, so this
-stops when you run out of heroes worth keeping.
+2 wood a minute, so a new House every 5 minutes while Houses cost 10. A second Lumbermill and its
+two Houses cost 40, which is 20 minutes. After that, 4 wood a minute. Past the tenth House the
+price climbs by 20 a House while wood climbs only with the woodcutters, so the roster a town can
+house grows about linearly: roughly 3 x the woodcutter share of the roster an hour (town_model.py,
+§ Town mood and revolt).
+
+> ⚠️ **PROVISIONAL** — house_flat_count 10, house_wood_step 20 and the grace of 2 are desk numbers from town_model.py · **Settled by:** the Early remake and Mid's run (ig-eek.1).
 
 ### The first of each producer is free
 
@@ -5784,8 +5831,8 @@ Design: `GAME_SPEC.md` § Heroes eat, and can starve to death.
 
 | Row | Value | Why |
 |---|---|---|
-| `town_start_food` | 30 | Five housed heroes eat it in 30 minutes. Old saves get it once, when the key is missing |
-| `food_per_housed_hero_minute` | 0.2 | One farmer feeds five |
+| `town_start_food` | 30 | Five heroes eat it in 30 minutes. Old saves get it once, when the key is missing |
+| `food_per_hero_minute` | 0.2 | One farmer feeds five. Every hero eats (renamed from `food_per_housed_hero_minute`, `ig-0og.1`) |
 | `farm_wood_cost` | 20 | Same as a Lumbermill |
 | `farm_worker_slots` | 2 | |
 | `food_per_worker_minute` | 1.0 | Live play only, and only while the worker is home |
@@ -5795,15 +5842,15 @@ Design: `GAME_SPEC.md` § Heroes eat, and can starve to death.
 | `starve_next_death_minutes` | 10 | Minutes between later deaths |
 | `starve_last_warning_minutes` | 5 | The death clock stops this long before each death until the player acknowledges |
 
-**Who eats.** Housed heroes who are home. A hero away on an expedition or busy in a battle does
-not eat. Unhoused heroes (fighters, fodder, hall keepers without a house) never eat.
+**Who eats.** Every hero, wherever it is: housed or not, at home, away on an order or stranded
+(owner ruling 2026-09-25, `ig-0og`). Only a hero at home can starve (below).
 
 **One clock, per live tick.** Food and the clock move only in `_advance_clocks_in_memory`, never in
 the catch-up that resolves orders after the game was closed.
 
 ```
 food += production(dt)            # halved while starving
-food -= eaters * food_per_housed_hero_minute * dt_minutes
+food -= eaters * food_per_hero_minute * dt_minutes
 if food < 0:                      # demand not met: starving
     food = 0
     town_starving_seconds += dt   # unless stopped at a last warning
@@ -5823,17 +5870,19 @@ at the reset, so work does not flicker between half and full speed (tech-lead, 2
 **Deaths.** Death `n` (from 1) is due at `starve_first_death_minutes + (n - 1) *
 starve_next_death_minutes` of starving: 20, 30, 40 minutes. At `due - starve_last_warning_minutes`
 (15, 25, 35) the clock stops and the HUD asks the player to look. It runs again only after they
-acknowledge. The victim is the eater with the lowest rank, then the lowest level, then the newest
-in the roster. Its gear goes to inventory, then `GameSession.kill_hero()` removes it, so no Lost
+acknowledge. The victim is the eater at home (one `is_hero_busy` does not hold) with the lowest
+rank, then the lowest level, then the newest in the roster. With no eater at home, the clock holds
+at the next stop point, as if its warning were unanswered: the death comes once someone is home
+and the warning is acknowledged. So `kill_hero()` never runs on a hero on an order or stranded. Its gear goes to inventory, then `GameSession.kill_hero()` removes it, so no Lost
 Cache appears. Saved: `town_resources.food`, `town_starving_seconds`, and whether the current
 warning was acknowledged.
 
-**Pacing check.** Five housed heroes and no farm: food low at 20 minutes, starving at 30, the
+**Pacing check.** Five heroes and no farm: food low at 20 minutes, starving at 30, the
 first last warning at 45, and the first death at 50, but only if the player acknowledged that
 warning and still did nothing. The first Farm is free (§ The first of each producer is free).
 Later ones cost 20 wood, which is 10 minutes of two woodcutters. With production at half
-speed while starving, the way out is to unhouse heroes until the farms outrun the eating; one
-starving farmer at 0.5 food a minute still feeds two.
+speed while starving, the way out is more farms, or sacrificing heroes until the farms outrun the
+eating; one starving farmer at 0.5 food a minute still feeds two.
 
 **Starving and skill.** Starving halves the final rate, after the worker skill bonus
 (`ig-6m2.7`): `base * (1 + worker_skill_bonus_per_level * skill) * starving_work_multiplier`.
@@ -5847,7 +5896,39 @@ and the draught table in § Keepers and professions). There are four reasons:
 3. Hall upgrades are the town's link to the hero game (below). One link is enough for v1.
 4. `ig-wgj.10` and `ig-wgj.11` build on F-parts costs, so nothing has to be reworked.
 
-Food above what the town eats is a buffer: the eating goes up whenever heroes come home.
+Food above what the town eats is a buffer.
+
+### Town mood and revolt (`ig-0og.1`, owner ruling 2026-09-25)
+
+Design: `GAME_SPEC.md` § Town mood and revolt. Boundaries: `DECISIONS.md` 2026-09-25, "Every hero
+needs a bed and eats".
+
+| Row | Value | Why |
+|---|---|---|
+| `town_mood_homeless_grace` | 2 | A pull never starts the fall by itself. Covers the 60 s a House takes to build |
+| `town_mood_fall_per_homeless_minute` | 1.0 | For each homeless hero over the grace. 5 homeless reach a revolt in 33 min |
+| `town_mood_fall_max_per_minute` | 5.0 | A revolt is always at least 20 min away from full. This is the "seen coming" floor |
+| `town_mood_rise_per_minute` | 2.0 | At the grace or under. Full again 50 min after the fix |
+
+`town_mood` is one `GameSession` float, 0-100, saved; a save without it reads 100. It moves only
+on the live tick. A revolt is a mood of 0 with more than `town_mood_homeless_grace` heroes
+homeless. It is derived, never saved.
+
+**Pacing check.** 3 homeless fall 1 a minute; 5 reach a revolt from full in 33 minutes; 7 or more
+fall at the cap and reach it in 20, the fastest. From 0, the mood is back to full in 50 minutes.
+A new game's three pulls with no House leave one hero over the grace, so the mood falls 1 a minute
+until the free House is up.
+
+Desk result at rate B with the curve on (town_model.py):
+
+| Player | 2 h | 4 h | 10 h | 20 h | Pulls by 20 h |
+|---|---|---|---|---|---|
+| Keeps pace (the bot's policy) | 8-9 heroes, ~1 team | 14-15 | 19-23 | 26-34, 3.4-4 teams | ~240 |
+| Half the town on wood (worst case) | 4 | 7 | 27 | 47, 2.6 teams | ~150 |
+| Over-summons, never fixes it | 7-8 | 19-22 | 26-29 | 36-43, on strike 72-78% of the time | 36-43 |
+| Today's flat House (for contrast) | 9 | 30 | 347 | 947 | ~4,900 |
+
+> ⚠️ **PROVISIONAL** — the mood's fall (1), cap (5) and rise (2) are desk numbers from town_model.py · **Settled by:** the owner playing a mass summon. The bots house or feed everyone beyond the grace, so no run measures them.
 
 > ⚠️ **PROVISIONAL** — every row above is unfelt · **Settled by:** a played build of `ig-6m2.5`.
 > If farms beyond the minimum feel pointless, a new bead can give food a second use.

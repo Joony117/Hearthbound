@@ -1137,16 +1137,18 @@ you pulled and can lose.
   levels, panels and keepers are unchanged.
 - **You place everything else.** First the House and the Lumbermill. A stone workplace and a farm
   come in later slices.
-- **Houses.** A house holds one hero. A hero needs a house to work at a workplace. Fighters and
-  fodder need none. Hall keepers need none for now (owner ruling, 2026-09-23). A house is also
-  what makes a hero eat (below).
+- **Houses.** A house holds one hero. Every hero needs one: fighters, fodder, keepers and your town
+  body (owner ruling 2026-09-25, `ig-0og`). A pull is never refused, so a new hero arrives
+  homeless, and the homeless lower the town mood (§ Town mood and revolt). A workplace job still
+  needs a house; a hall keeper can still be stationed without one, but counts as homeless. Houses
+  2-10 cost the same; after the tenth, each costs more than the last.
 - **Work.** A workplace has worker slots, and you assign housed heroes to them. A hero has one job:
   a hall station or a workplace slot. Any hero can do any job. A worker is protected like a keeper,
   not busy: you can still send it out, and its job pauses while it is away.
 - **What the town makes, and what it pays for.**
   - Wood builds houses and workplaces. Hall upgrades cost wood and stone on top of their parts, so
     stone is the town's link to the hero game (`SYSTEMS.md` § Town builder).
-  - Food feeds housed heroes. Farms make it. In v1 it does not make draughts: they keep their parts
+  - Food feeds every hero. Farms make it. In v1 it does not make draughts: they keep their parts
     cost, so a hungry town never also cuts the supplies that rescue heroes.
   - The first of each producer (Lumbermill, Mine, Farm) is free, and so is the first House, so a
     town can never lock itself out of wood, stone or food.
@@ -1172,7 +1174,7 @@ you pulled and can lose.
 | Building costs material and time (scaffolding) | Seasons, winter and freezing: § Scope boundaries excludes weather and day/night |
 | Workplaces with worker slots | Hauling and storage distance: one shared stockpile |
 | A house for each worker | Roads as a requirement: roads are decoration |
-| A stockpile and production rates | Health, happiness and disease: § Scope boundaries excludes morale and injuries |
+| A stockpile and production rates | Health and disease: § Scope boundaries excludes injuries. The town mood is the one happiness we take (owner ruling 2026-09-25) |
 | Food as the thing to manage, and starving to death | Trade, nomads, schools, and tool or clothing chains |
 
 ### Heroes eat, and can starve to death — owner ruling 2026-09-23
@@ -1183,10 +1185,10 @@ you pulled and can lose.
 So the town is a second way to lose a hero. The rules below keep that fair: a starvation death is
 never a surprise, and never happens while you are not looking.
 
-- **Who eats.** Only housed heroes, and only while they are home. A hero away on an expedition, or
-  busy in a battle, does not eat. Fighters and fodder have no house, so they never eat.
-- **The escape hatch.** Unhousing a hero stops it eating. You can always shrink the town to fit the
-  food.
+- **Who eats.** Every hero, wherever it is: housed or not, at home, away on an order or stranded
+  (owner ruling 2026-09-25, `ig-0og`). If away heroes didn't eat, a player could keep the army
+  out, and food would never bind.
+- **The escape hatch.** Farms, or sacrifice. You can always shrink the roster to fit the food.
 - **The warning ladder.**
   1. **Food low** — under 10 minutes of eating left. The HUD shows a warning.
   2. **Starving** — food is 0. Work runs at half speed. The HUD names who dies next, and when.
@@ -1194,7 +1196,9 @@ never a surprise, and never happens while you are not looking.
      look. It does not start again until you do. Nobody starves while you are away from the keys.
   4. **A death** — one hero at a time. The first dies after 20 minutes of starving, then one every
      10 minutes while food stays at 0.
-- **Who dies first.** The lowest rank, then the lowest level, then the newest in the roster.
+- **Who dies first.** Among heroes at home, the lowest rank, then the lowest level, then the newest
+  in the roster. A hero on an order or stranded never starves; with nobody home, the clock waits at
+  the last warning.
 - **Getting out resets the clock.** Once food climbs back above the "food low" line, the town
   starts over. Between 0 and that line the clock waits, so a farm that makes a little less than the
   town eats cannot hold the danger off forever.
@@ -1213,11 +1217,40 @@ heroes now have a job, and keeping them has a price.
 "Defend the town against attack" (the old town bullet) stays later. It has no slice.
 
 **Owner rulings, 2026-09-23 (`ig-6m2`).** A house is needed for a workplace job; fighters, fodder
-and hall keepers need none. Heroes eat and can starve to death (above). Heroes have several
+and hall keepers need none (*Reversed 2026-09-25 (`ig-0og`): every hero needs a house*). Heroes eat and can starve to death (above). Heroes have several
 passions, RimWorld-style: two each, out of eight professions. The town runs only while you play.
 
 > ⚠️ **PROVISIONAL** — every town number is unfelt · **Settled by:** a played build of the first
 > slice (`ig-6m2.1`), and of the food slice (`ig-6m2.5`) for the hunger numbers.
+
+**Owner ruling, 2026-09-25 (`ig-0og`).** Housing and food are the brake on mass summoning: every
+hero needs a bed and eats, and the homeless lower the town mood until they revolt (below).
+
+### Town mood and revolt (owner ruling 2026-09-25)
+
+> "I'd go with B, and also make both housing AND food an rate limiter. I'm thinking, player has
+> the choice to mass summon, but the consequences of that is food production can't keep up,
+> resulting in mass starvation, and not enough housing will impact mood until the homeless revolt
+> and cause issues type deal" — the owner, 2026-09-25. The follow-ups, the same day: "1 D, 2 A".
+
+- **You can always pull.** A new hero arrives homeless. Every hero you keep needs a bed and eats.
+- **The town mood** is one number, 0-100. The homeless are heroes with no house, wherever they
+  are. Over a grace of 2 homeless, the mood falls for each one over; at 2 or fewer, it rises. It
+  moves only while you play, never while the game is closed. The numbers are in `SYSTEMS.md`
+  § Town mood and revolt.
+- **A revolt** is a mood of 0 with more than 2 heroes homeless. It ends the moment 2 or fewer are
+  homeless (a House, a move into a house, or a sacrifice), whatever the mood reads. The mood then
+  climbs from where it is, so if the homeless come back while it is still low, the revolt comes
+  back fast.
+- **The strike.** In revolt, no new order goes out, and a due repeat stops and comes home.
+  Rescues are exempt. An order already fighting, or already checking, finishes its leg. Workers
+  keep working, so wood keeps coming and the way out stays open. The strike kills nobody and
+  removes nothing. The strike reads the town as it was saved. So a town closed in revolt also stops its offline repeats at the first one due, and a calm town never strikes offline.
+- **The way out.** Build Houses, or sacrifice heroes. There is no new "release".
+- **The HUD** shows a mood line under the food line while the mood is under 100 or more than 2
+  are homeless: how many have no bed and when the revolt comes, the revolt itself, or the
+  recovery. Dispatch is disabled with the strike's reason.
+- **Hero moods stay separate.** Per-hero moods (`ig-m6o.2`) may feed the town mood later.
 
 ### Earlier direction, recorded 2026-08-11
 
@@ -1335,7 +1368,8 @@ leaves the list only when its step's ticket is written, and not before:
 - pets: monster pets, and pets as witnesses (§ Direction § 5; no step named yet)
 - seasons: the Winter of Names, and winter food pressure (`ig-m6o.5`, seasons only; day/night and
   weather stay out)
-- morale: moods (`ig-m6o.2`), fear and informed refusals (`ig-m6o.3`)
+- morale: moods (`ig-m6o.2`), fear and informed refusals (`ig-m6o.3`). The town mood is in (owner ruling
+  2026-09-25, `ig-0og`; § Town mood and revolt). Hero moods stay `ig-m6o.2`'s
 - dialogue: heroes' stated conditions, reasons, requests and diaries (`ig-m6o.2`, `ig-m6o.3`)
 - story/campaign: the Chronicle and the Guest's schemes (`ig-m6o.7`)
 - non-roster people: homeland populations (`ig-m6o.4`), and enemies with lasting identities

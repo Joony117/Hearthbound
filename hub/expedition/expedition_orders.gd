@@ -47,8 +47,29 @@ static func force_duration_seconds(team: Array[Hero], zone: ZoneDefinition, bala
 	if team_power <= 0.0 or scaled_zone_power <= 0.0:
 		return 0.0
 	# ig-1jw: the route is x battle_pace; the battle spawns with the same live pace.
-	var full_force_seconds: float = maxf(zone.minimum_duration_seconds * balance.battle_pace, zone.base_duration_seconds * balance.battle_pace / sqrt(team_power / scaled_zone_power))
-	return ceilf(full_force_seconds * float(zone.reference_force_size) / float(team.size()))
+	return route_seconds(zone, balance.battle_pace, team.size(), team_power / scaled_zone_power)
+
+
+## force_duration_seconds' route for a force of team_size at combat ratio r (team power / the zone's
+## scaled power) and pace. ig-0og.1: route_pay_factor reads it at r = 1, so the two can't drift.
+static func route_seconds(zone: ZoneDefinition, pace: int, team_size: int, combat_ratio: float) -> float:
+	var full_force_seconds: float = maxf(zone.minimum_duration_seconds * pace, zone.base_duration_seconds * pace / sqrt(combat_ratio))
+	return ceilf(full_force_seconds * float(zone.reference_force_size) / float(team_size))
+
+
+## ig-ncz (in ig-0og.1): a clear pays for the route time it used, capped at the full reward:
+## min(1, route / the matched route), the matched route being this force's route at r = 1.
+static func route_pay_factor(zone: ZoneDefinition, route: float, team_size: int, pace: int) -> float:
+	if zone == null or team_size <= 0 or not (route > 0.0):
+		return 1.0
+	var matched: float = route_seconds(zone, pace, team_size, 1.0)
+	return minf(1.0, route / matched) if matched > 0.0 else 1.0
+
+
+## ig-0og.1: a clear's stones, the one place the rate row (stone_reward_scale, rate B) meets the reward,
+## times route_pay_factor (1 for the legacy path, which pays the rate only).
+static func stone_payout(zone: ZoneDefinition, pace: int, balance: BalanceTable, factor: float = 1.0) -> int:
+	return roundi(zone.stone_reward * pace * balance.stone_reward_scale * factor)
 
 
 static func safety_forecast(

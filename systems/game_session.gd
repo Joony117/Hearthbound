@@ -59,6 +59,9 @@ var town_next_id: int = 1
 var town_starving_seconds: float = 0.0
 ## The last warning at the current stop point was seen, so the clock may run on to the death.
 var town_starve_acked: bool = false
+## ig-0og.1: the town mood, 0-100 (SYSTEMS.md § Town mood and revolt). The homeless move it on the live
+## tick only (TownRules.mood_step); a revolt is derived from it (TownRules.in_revolt), never saved.
+var town_mood: float = 100.0
 ## The Ledger (DECISIONS.md 2026-09-24): settled events, appended by this script's mutators through
 ## Ledger.append. The records live in SaveService's side file, not in to_dict(); the main save keeps
 ## only ledger_next_seq, the high-water mark. seq is never reused.
@@ -1080,8 +1083,9 @@ func _acknowledge_starvation_in_memory() -> void:
 
 ## The death the live tick brings when the clock reaches a due point (never offline, one per tick).
 ## Gear goes to inventory first, so kill_hero leaves no Lost Cache; kill_hero is still the only removal.
-func _starve_in_memory(eaters: Array[Hero], balance: BalanceTable) -> void:
-	var victim: Hero = hero_by_id(TownRules.starvation_victim(eaters))
+## candidates are starvation_candidates(): only a hero at home can starve (ig-0og.1).
+func _starve_in_memory(candidates: Array[Hero], balance: BalanceTable) -> void:
+	var victim: Hero = hero_by_id(TownRules.starvation_victim(candidates))
 	if victim == null:
 		return
 	for slot: int in victim.equipped.keys():
@@ -1089,13 +1093,39 @@ func _starve_in_memory(eaters: Array[Hero], balance: BalanceTable) -> void:
 	kill_hero(victim, &"", balance, "starvation")
 
 
-## The heroes who eat: housed and home. Away or in a battle, they don't; unhoused, they never do.
+## The heroes who eat: every hero, wherever it is: housed or not, home, away on an order or stranded
+## (ig-0og.1). Roster order, which starvation_victim reads.
 func food_eaters() -> Array[Hero]:
-	var eaters: Array[Hero] = []
-	for hero: Hero in roster:
-		if hero.home != Hero.NO_HOME and not is_hero_busy(hero):
-			eaters.append(hero)
-	return eaters
+	return roster.duplicate()
+
+
+## The eaters who can starve: those at home, not on an order or stranded (ig-0og.1). With none, the
+## starvation clock holds at the stop point, so kill_hero never runs on a busy hero (boundary #3).
+func starvation_candidates() -> Array[Hero]:
+	var candidates: Array[Hero] = []
+	candidates.assign(roster.filter(func(hero: Hero) -> bool: return not is_hero_busy(hero)))
+	return candidates
+
+
+## ig-0og.1: the heroes with no bed, wherever they are.
+func homeless_heroes() -> Array[Hero]:
+	var homeless: Array[Hero] = []
+	homeless.assign(roster.filter(func(hero: Hero) -> bool: return hero.home == Hero.NO_HOME))
+	return homeless
+
+
+## ig-0og.1: the one revolt check, TownRules.in_revolt on this town. The strike reads it, and so does
+## the riot (ig-0og.3).
+func is_in_revolt() -> bool:
+	return TownRules.in_revolt(town_mood, homeless_heroes().size(), preload("res://balance.tres"))
+
+
+## ig-0og.1, the strike: why no new order or repeat may go out, or "" when the town isn't in revolt.
+## Rescues never ask.
+func strike_refusal() -> String:
+	if not is_in_revolt():
+		return ""
+	return "The town is in revolt: %d heroes have no bed. House them, or sacrifice some, to send orders again." % homeless_heroes().size()
 
 
 ## The refusal every dispatch entry point shares, naming the body; "" when the party is free of it.
@@ -1349,6 +1379,10 @@ func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs:
 	var squad_cap: int = _zone_squad_cap(zone)
 	if squads.size() > squad_cap:
 		return _force_preview_error("This mission allows at most %d squads." % squad_cap, 0, zone.hero_cap, squads.size())
+	# ig-0og.1: before the forecast, so a strike spends no forecast job.
+	var strike: String = strike_refusal()
+	if not strike.is_empty():
+		return _force_preview_error(strike, 0, zone.hero_cap, squads.size())
 	var team: Array[Hero] = []
 	var seen: Dictionary[String, bool] = {}
 	for squad: Dictionary in squads:
@@ -1389,7 +1423,9 @@ func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs:
 	var error: String = ""
 	if not valid:
 		error = "Until-stopped dispatch waits for the forecast." if checking else "Until-stopped dispatch requires a Safe forecast."
-	return {"valid": valid, "error": error, "safe": safe, "checking": checking, "reason": "Checking..." if checking else str((entry.get("verdict", {}) as Dictionary).get("reason", "")), "hero_count": team.size(), "capacity": zone.hero_cap, "squad_count": squads.size(), "route_seconds": route_seconds}
+	# ig-ncz (in ig-0og.1): what a clear here pays of the full reward, for the summary.
+	var pay_percent: int = roundi(100.0 * ExpeditionOrders.route_pay_factor(zone, route_seconds, team.size(), preload("res://balance.tres").battle_pace))
+	return {"valid": valid, "error": error, "safe": safe, "checking": checking, "reason": "Checking..." if checking else str((entry.get("verdict", {}) as Dictionary).get("reason", "")), "hero_count": team.size(), "capacity": zone.hero_cap, "squad_count": squads.size(), "route_seconds": route_seconds, "pay_percent": pay_percent}
 
 
 ## The cached preview forecast for these exact inputs. A miss draws a seed, adds the entry and sends
@@ -2119,7 +2155,7 @@ func _pulse(delta_seconds: float) -> void:
 			has_expiring_incident = true
 			break
 	var farm: int = _workers_home(TownRules.FARM)
-	var starve_death: bool = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, farm, food_eaters().size(), delta_seconds, preload("res://balance.tres"))["death"]
+	var starve_death: bool = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, farm, food_eaters().size(), not starvation_candidates().is_empty(), delta_seconds, preload("res://balance.tres"))["death"]
 	# A building that finishes is saved at once: with no other clock running, the periodic save would
 	# never write it, and every reload would build it again.
 	var finishes_build: bool = town_buildings.any(func(building: Dictionary) -> bool: return _is_building(building) and float(building["build_remaining"]) <= delta_seconds)
@@ -2233,13 +2269,14 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 			building["build_remaining"] = maxf(float(building["build_remaining"]) - delta_seconds, 0.0)
 			if float(building["build_remaining"]) <= 0.0:
 				building.erase("build_remaining")
-	var eaters: Array[Hero] = food_eaters()
-	var step: Dictionary = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, _workers_home(TownRules.FARM), eaters.size(), delta_seconds, balance)
+	var candidates: Array[Hero] = starvation_candidates()
+	var step: Dictionary = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, _workers_home(TownRules.FARM), food_eaters().size(), not candidates.is_empty(), delta_seconds, balance)
 	town_resources["food"] = step["food"]
 	town_starving_seconds = step["clock"]
 	town_starve_acked = step["acked"]
 	if step["death"]:
-		_starve_in_memory(eaters, balance)
+		_starve_in_memory(candidates, balance)
+	town_mood = TownRules.mood_step(town_mood, homeless_heroes().size(), delta_seconds, balance)
 	for incident: Dictionary in stranded_incidents:
 		if not bool(incident.get("paused", true)):
 			rescue_clock_seconds += delta_seconds
@@ -2473,7 +2510,10 @@ func _settle_battle_order(order_index: int) -> void:
 	var items_earned: int = 0
 	if outcome.status == "victory" and zone != null:
 		xp_amount = roundi(float((balance.xp_per_wave * outcome.completed_waves + zone.xp_reward) * state.pace) * xp_multiplier)
-		stones_earned = zone.stone_reward * state.pace
+		# ig-0og.1: rate B, times ig-ncz's factor from this run's own route and team size.
+		var route: float = Item.float_field(order, "initial_duration_seconds", 0.0, "battle order")
+		var factor: float = ExpeditionOrders.route_pay_factor(zone, route, _string_array(order.get("hero_ids")).size(), state.pace)
+		stones_earned = ExpeditionOrders.stone_payout(zone, state.pace, balance, factor)
 		stones += stones_earned
 		var run_seed: int = Item.int_field(order, "run_seed", 0, "battle order")
 		for roll: int in state.pace:
@@ -2512,6 +2552,10 @@ func _battle_stop_reason(order: Dictionary, state: BattleState, outcome: BattleO
 ## forecast, which runs as two jobs off the settle pulse (_send_battle_checks). Only the phase is new in
 ## the save: run_seed and escrow are the repeat's own keys.
 func _begin_battle_check(order: Dictionary) -> bool:
+	# ig-0og.1: a town in revolt sends no repeat; the order stops with stopped_reason "revolt".
+	if not strike_refusal().is_empty():
+		last_action_error = "revolt"
+		return false
 	for hero_id: String in _string_array(order.get("hero_ids")):
 		if hero_by_id(hero_id) == null:
 			last_action_error = "A repeat team member is missing."
@@ -2902,6 +2946,7 @@ func to_dict() -> Dictionary:
 		"town_next_id": town_next_id,
 		"town_starving_seconds": town_starving_seconds,
 		"town_starve_acked": town_starve_acked,
+		"town_mood": town_mood,
 		"ledger_next_seq": ledger_next_seq,
 	}
 
@@ -3053,6 +3098,16 @@ func _read_starvation(data: Dictionary, balance: BalanceTable) -> void:
 		town_starving_seconds = minf(town_starving_seconds, stop)
 	elif town_starving_seconds < stop:
 		town_starve_acked = false
+	# ig-0og.1: town_mood, additive. Missing or null reads 100 (a legacy town starts calm); not a finite
+	# number reads 100 with a warning; outside 0-100 is clamped with a warning.
+	town_mood = 100.0
+	var raw_mood: Variant = data.get("town_mood")
+	if (raw_mood is int or raw_mood is float) and is_finite(float(raw_mood)):
+		town_mood = clampf(float(raw_mood), 0.0, 100.0)
+		if town_mood != float(raw_mood):
+			push_warning("town_mood %s is outside 0-100: it reads %s." % [raw_mood, town_mood])
+	elif raw_mood != null:
+		push_warning("Invalid town_mood '%s': the town reads calm (100)." % raw_mood)
 
 
 ## Additive keys (no SAVE_VERSION bump). A save without town_resources gets town_start_wood once;

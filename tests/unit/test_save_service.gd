@@ -395,6 +395,7 @@ func test_failed_completion_save_rolls_back_then_replays_the_same_seed_once() ->
 	order["remaining_seconds"] = 0.0
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
 	var expected_loot: Item = Expedition.roll_loot(zone, preload("res://balance.tres"), run_seed)
+	var pay_factor: float = ExpeditionOrders.route_pay_factor(zone, float(order["initial_duration_seconds"]), (order["hero_ids"] as Array).size(), preload("res://balance.tres").battle_pace)
 	var canonical_before: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
 	var make_directory_error: Error = DirAccess.make_dir_absolute(SaveService.TMP_PATH)
 	assert_eq(make_directory_error, OK)
@@ -424,7 +425,7 @@ func test_failed_completion_save_rolls_back_then_replays_the_same_seed_once() ->
 	assert_true(GameSession.expedition_orders.is_empty())
 	# ig-1jw: the run fought at battle_pace, so stones xP and P loot rolls (the first on run_seed).
 	var pace: int = preload("res://balance.tres").battle_pace
-	assert_eq(GameSession.stones, GameSession.STARTING_STONES + zone.stone_reward * pace)
+	assert_eq(GameSession.stones, GameSession.STARTING_STONES + ExpeditionOrders.stone_payout(zone, pace, preload("res://balance.tres"), pay_factor))
 	assert_eq(GameSession.inventory.size(), pace)
 	assert_eq(GameSession.inventory[0].def_id, expected_loot.def_id)
 	assert_eq(GameSession.inventory[0].rank, expected_loot.rank)

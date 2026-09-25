@@ -12,6 +12,9 @@ extends Resource
 # Class odds (SYSTEMS.md § Summoning, Class odds): of 300, in Summon.ARCHETYPE_DEF_IDS order.
 @export var summon_archetype_weights: Array[int] = [98, 98, 98, 3, 3]
 @export var summon_pull_cost: int = 100
+## ig-0og.1 (SYSTEMS.md § Summon Stones): the rate row, rate B. A clear's stones are stone_reward x P x
+## this x ig-ncz's route factor, through ExpeditionOrders.stone_payout.
+@export var stone_reward_scale: float = 0.333333
 @export var xp_coefficient: int = 10
 @export var xp_per_wave: int = 4
 @export var arena_move_speed: float = 5.8
@@ -185,6 +188,10 @@ extends Resource
 @export var town_map_radius: int = 8
 @export var town_start_wood: float = 40.0
 @export var house_wood_cost: int = 10
+# ig-0og.1 (SYSTEMS.md § Town mood and revolt; PROVISIONAL): the 1st House is free, the 2nd to the
+# house_flat_count-th cost house_wood_cost, and each after costs house_wood_step more than the one before.
+@export var house_flat_count: int = 10
+@export var house_wood_step: int = 20
 @export var house_capacity: int = 1
 @export var lumbermill_wood_cost: int = 20
 @export var lumbermill_worker_slots: int = 2
@@ -201,7 +208,7 @@ extends Resource
 @export var hall_upgrade_stone_per_level: int = 10
 # Farms and food (SYSTEMS.md § Food and starvation; every row PROVISIONAL).
 @export var town_start_food: float = 30.0
-@export var food_per_housed_hero_minute: float = 0.2
+@export var food_per_hero_minute: float = 0.2
 @export var farm_wood_cost: int = 20
 @export var farm_worker_slots: int = 2
 @export var food_per_worker_minute: float = 1.0
@@ -211,6 +218,12 @@ extends Resource
 @export var starve_first_death_minutes: float = 20.0
 @export var starve_next_death_minutes: float = 10.0
 @export var starve_last_warning_minutes: float = 5.0
+# Town mood (SYSTEMS.md § Town mood and revolt; PROVISIONAL): 0-100, falls with the homeless over the
+# grace, rises at or under it. Mood 0 with more than the grace homeless is a revolt (a strike).
+@export var town_mood_homeless_grace: int = 2
+@export var town_mood_fall_per_homeless_minute: float = 1.0
+@export var town_mood_fall_max_per_minute: float = 5.0
+@export var town_mood_rise_per_minute: float = 2.0
 # The Ledger (SYSTEMS.md § The Ledger; both caps PROVISIONAL).
 @export var ledger_max_records: int = 10000
 @export var battle_max_moments: int = 64

@@ -71,13 +71,16 @@ static func map_hexes(balance: BalanceTable) -> Array[Vector2i]:
 
 
 ## Wood a type costs to place; -1 for a type this slice does not know. The first of each FREE_FIRST
-## type is free, so the town can never lock itself out.
+## type is free, so the town can never lock itself out. ig-0og.1: the n-th House (every House on the
+## map counts, finished or going up) costs house_wood_cost up to house_flat_count, then house_wood_step
+## more than the one before: 11th 30, 20th 210.
 static func wood_cost(type: StringName, buildings: Array[Dictionary], balance: BalanceTable) -> int:
 	if type in FREE_FIRST and not buildings.any(func(building: Dictionary) -> bool: return building["type"] == String(type)):
 		return 0
 	match type:
 		HOUSE:
-			return balance.house_wood_cost
+			var next: int = buildings.filter(func(building: Dictionary) -> bool: return building["type"] == String(HOUSE)).size() + 1
+			return balance.house_wood_cost + balance.house_wood_step * maxi(next - balance.house_flat_count, 0)
 		LUMBERMILL:
 			return balance.lumbermill_wood_cost
 		MINE:
@@ -193,7 +196,7 @@ static func work_multiplier(starving_seconds: float, balance: BalanceTable) -> f
 
 ## "Food low" below this: food_low_warning_minutes of what the eaters eat now.
 static func food_low_line(eaters: int, balance: BalanceTable) -> float:
-	return balance.food_low_warning_minutes * eaters * balance.food_per_housed_hero_minute
+	return balance.food_low_warning_minutes * eaters * balance.food_per_hero_minute
 
 
 ## When the next starvation death is due, in starving seconds: 20, 30, 40 minutes. Which death is
@@ -213,14 +216,15 @@ static func starve_stop_seconds(starving_seconds: float, balance: BalanceTable) 
 ## One live tick of food and the starvation clock (SYSTEMS.md § Food and starvation). Demand not met:
 ## food 0 and the clock runs, capped at the stop point (at the death once acked), so no delta skips a
 ## warning and a tick brings at most one death. Food at or over the low line: fed, the clock resets.
-## In between it holds. Returns {food, clock, acked, death}.
-static func starve_step(food: float, clock: float, acked: bool, farm_workers: int, eaters: int, delta_seconds: float, balance: BalanceTable) -> Dictionary:
+## In between it holds. ig-0og.1: can_die false (no eater is at home) holds the clock at the stop point
+## even once acked, and a clock already past it stays where it is. Returns {food, clock, acked, death}.
+static func starve_step(food: float, clock: float, acked: bool, farm_workers: int, eaters: int, can_die: bool, delta_seconds: float, balance: BalanceTable) -> Dictionary:
 	var made: float = food_made(farm_workers, delta_seconds, balance) * work_multiplier(clock, balance)
-	var left: float = food + made - balance.food_per_housed_hero_minute * eaters * delta_seconds / 60.0
+	var left: float = food + made - balance.food_per_hero_minute * eaters * delta_seconds / 60.0
 	var step: Dictionary = {"food": maxf(left, 0.0), "clock": clock, "acked": acked, "death": false}
 	if left < 0.0:
 		var due: float = starve_due_seconds(clock, balance)
-		var limit: float = due if acked else due - balance.starve_last_warning_minutes * 60.0
+		var limit: float = due if acked and can_die else due - balance.starve_last_warning_minutes * 60.0
 		step["clock"] = minf(clock + delta_seconds, maxf(limit, clock))
 		if step["clock"] >= due:
 			step["death"] = true
@@ -239,3 +243,20 @@ static func starvation_victim(eaters: Array[Hero]) -> String:
 		if victim == null or hero.rank < victim.rank or (hero.rank == victim.rank and hero.level <= victim.level):
 			victim = hero
 	return "" if victim == null else victim.instance_id
+
+
+## ig-0og.1, the town mood (SYSTEMS.md § Town mood and revolt): one live step. Over the grace it falls
+## town_mood_fall_per_homeless_minute for each homeless hero over, at most town_mood_fall_max_per_minute;
+## at or under it, it rises town_mood_rise_per_minute. Always within 0-100.
+static func mood_step(mood: float, homeless: int, delta_seconds: float, balance: BalanceTable) -> float:
+	var over: int = homeless - balance.town_mood_homeless_grace
+	var per_minute: float = balance.town_mood_rise_per_minute
+	if over > 0:
+		per_minute = -minf(over * balance.town_mood_fall_per_homeless_minute, balance.town_mood_fall_max_per_minute)
+	return clampf(mood + per_minute * delta_seconds / 60.0, 0.0, 100.0)
+
+
+## A revolt: the mood is 0 and more than the grace are homeless. Derived, never saved; the strike reads
+## it (GameSession.strike_refusal) and so does the riot (ig-0og.3).
+static func in_revolt(mood: float, homeless: int, balance: BalanceTable) -> bool:
+	return mood <= 0.0 and homeless > balance.town_mood_homeless_grace

@@ -212,6 +212,11 @@ func test_the_pick_hint_is_on_screen_at_720() -> void:
 	await wait_process_frames(2)
 	var summary: RichTextLabel = hub.get_node("%DispatchSummary") as RichTextLabel
 	assert_true(summary.get_content_height() <= summary.size.y, "one team's summary fits (%d > %d)" % [summary.get_content_height(), summary.size.y])
+	# ig-0og.1: the taller summary (the ncz pay line) keeps the buttons under it on screen.
+	for button_name: String in ["DispatchSelected", "ManageTeams", "GoToHall"]:
+		var button: Control = hub.get_node("%" + button_name) as Control
+		if button.is_visible_in_tree():
+			assert_true(button.get_global_rect().end.y <= 720.0, "%s ends on screen (%d > 720)" % [button_name, button.get_global_rect().end.y])
 
 
 func _add_heroes(count: int) -> Array[Hero]:

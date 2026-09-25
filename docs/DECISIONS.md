@@ -7,6 +7,77 @@ Newest first.
 
 ---
 
+## 2026-09-25: Every hero needs a bed and eats — the town mood is one `GameSession` float, the revolt is derived, and the strike refuses before any forecast
+
+**ACCEPTED** by the director, 2026-09-25 (godot-architect role, for `ig-0og.1`; the riot is `ig-0og.3`). Owner ruling,
+2026-09-25, on the economy brake (`ig-0og`): "I'd go with B, and also make both housing AND food
+an rate limiter. I'm thinking, player has the choice to mass summon, but the consequences of that
+is food production can't keep up, resulting in mass starvation, and not enough housing will impact
+mood until the homeless revolt and cause issues type deal". The follow-ups, the same day: "1 D,
+2 A". A revolt is a strike, and a riot follows if it lasts; the last starvation warning becomes a
+dialog you must close (`ig-0og.2`). The numbers are in `SYSTEMS.md` § Town mood and revolt. This
+amends 2026-09-23, the town builder (items 5 and 11), and 2026-09-22, timed dispatch.
+
+**What moves.**
+
+1. **The town mood is `GameSession` state:** one float, `town_mood`, 0-100, saved as an additive
+   key beside `town_starving_seconds`, the same kind of state as the starvation clock. A save
+   without it reads 100. A value that is not a number warns and reads 100; one outside 0-100 is
+   clamped, with a warning. `SAVE_VERSION` is not bumped (the `P2-23` precedent). It crosses save
+   boundary #1, so it needs a real disk round-trip, a legacy-save load and a `verifier`.
+2. **Its rules are pure `TownRules` functions,** as starvation's are: `mood_step`, `in_revolt`,
+   and the House price curve in `wood_cost`. They never touch the roster or the save.
+   `GameSession`'s live tick (`_advance_clocks_in_memory`) applies the mood step beside the food
+   step. The offline catch-up (`_advance_orders_in_memory`) never moves it. The town runs only on
+   the live tick (2026-09-23, item 8), and the mood is town state.
+3. **Homeless and revolt are derived, never saved.** A homeless hero is a roster hero with no
+   `home`, wherever it is. A revolt is a mood of 0 with more than `town_mood_homeless_grace`
+   heroes homeless. One helper, `GameSession.is_in_revolt()`, answers it, and both the strike and
+   the riot read it. A revolt ends the moment the homeless fall to the grace, whatever the mood
+   reads.
+4. **The strike is a refusal in two places, both before any forecast.**
+   - `GameSession.strike_refusal()` runs in `_preview_force_data` right after the squad-cap
+     check. So a strike starts no forecast job, and it covers `dispatch_force`,
+     `dispatch_expedition` and `preview_force`.
+   - It runs first in `_begin_battle_check`, which sets `last_action_error` to "revolt". A due
+     repeat then stops on the existing path: its report is written and no escrow is spent.
+   - `dispatch_rescue` never passes through it. An order already fighting, or in "checking",
+     finishes its leg.
+   - The strike reads the town as it was saved. So a town closed in revolt stops its offline
+     repeats at the first one due, and a calm town never strikes offline.
+   - The combat seam (#4) is untouched: the simulation never reads the town (2026-09-23, item 9).
+5. **Rule 8 is unchanged.** The strike removes nobody. Starvation stays a caller of
+   `kill_hero()`, now with its victims only among heroes at home (2026-09-23, item 11, amended).
+   There is no new removal path.
+6. **The riot** (`ig-0og.3`, in its own commit) adds one more `GameSession` float,
+   `town_revolt_seconds`, the same kind of key, and reads the same revolt helper. It burns stock,
+   never heroes or buildings, so rule 8 holds there too.
+7. **Hero moods stay separate.** `ig-m6o.2.2.8`'s per-hero moods may feed the town mood later,
+   through `mood_step`'s inputs. This change adds no `Hero` field.
+8. **No fourth autoload.**
+
+**Rejected.**
+
+- *A mood per hero now.* A revolt is a town event, and one float carries it. Per-hero moods are
+  `ig-m6o.2`'s to scope.
+- *A saved revolt flag.* A revolt follows from the mood and the homeless count. A saved copy could
+  drift from them.
+- *A dispatch-slot cap* (order slots from the Training Hall, `ig-0og`'s brake (1)). The owner
+  picked the town brake, and 2026-09-22's rejection of fixed dispatch slots stands.
+- *Refusing a pull, or capping the homeless in a mutator.* The owner: "player has the choice to
+  mass summon". The cost is the mood, never a refusal.
+- *Desertion as the revolt* (a homeless hero leaves). It would be a new `kill_hero()` caller, and
+  it does not brake: pulls outrun it (`ig-0og` notes, the revolt table).
+- *Letting a hero away on an order starve.* A death on the road or in a battle would put
+  `kill_hero()` inside a live order (boundary #3).
+- *Eating only at home* (2026-09-23, item 11). A player could keep the army out, and food would
+  never bind.
+
+**Left open on purpose.** The mood rates, the grace and the House curve (`SYSTEMS.md`,
+PROVISIONAL). Whether per-hero moods feed the town mood (`ig-m6o.2.2.8`).
+
+---
+
 ## 2026-09-25: Casters shape the field — zones and walls are checkpoint-saved field objects; pathfinding is a per-state pure function, not a nav service
 
 **ACCEPTED by the director, 2026-09-25** (godot-architect role, for `ig-vl1.2`; `ig-vl1.4`, `ig-0qh`, `ig-vl1.5`). Owner
@@ -716,6 +787,13 @@ the numbers. The owner answered its four questions the same day; items 5, 11 and
 5. **A hero's house is `Hero.home`,** a placed House id, saved as the additive key `home`. A house
    holds `house_capacity` heroes, enforced by the mutator and on load. A workplace job needs a home.
    A hall keeper does not, for now (owner ruling, 2026-09-23).
+   - *Amended 2026-09-25 (`ig-0og.1`, godot-architect; owner ruling 2026-09-25):* every hero
+     needs a home: fighters, fodder, keepers and the town body. A hero without one is homeless,
+     and the homeless lower the town mood (2026-09-25, "Every hero needs a bed and eats"). That is
+     a cost, not a refusal. The mutators refuse what they refused before: a workplace job still
+     needs a home, a hall keeper can still be stationed without one, a pull is never refused, and
+     a House still holds `house_capacity`. There is no new key: homeless is derived from `home`.
+     After the tenth House, each costs more than the last (`SYSTEMS.md` § First slice).
 6. **Permadeath keeps one writer.** `home` and `station` live on the `Hero`, so a death takes them
    away. There is no building-to-hero map to clean (rule 8, and the same reasoning as 2026-09-23
    item 5). Demolishing a building, when it exists, clears its residents and workers in its own
@@ -741,6 +819,15 @@ the numbers. The owner answered its four questions the same day; items 5, 11 and
       `kill_hero()` makes no Lost Cache. Its embodied-hero and empty-roster rules apply unchanged.
     - Only housed heroes who are home eat. Away and busy heroes do not, so nothing a hero does on a
       run moves food.
+      - *Amended 2026-09-25 (`ig-0og.1`, godot-architect; owner ruling 2026-09-25):* every hero
+        eats, wherever it is: housed or not, at home, away on an order or stranded. Otherwise a
+        player could keep the army out, and food would never bind. Only a hero at home can
+        starve: the victim is picked among the eaters `is_hero_busy` does not hold, in the same
+        order (lowest rank, then lowest level, then newest). With no such hero, the clock holds
+        at the next stop point, as if its warning were unanswered. So `kill_hero()` never runs on
+        a hero on an order or stranded (boundary #3). The pure `TownRules.starve_step` takes
+        `can_die`, and `GameSession` passes it from `starvation_candidates()`, in the live tick
+        and the look-ahead alike. `kill_hero()` keeps its three callers.
     - One global clock, not one per hero. Three additive keys: `town_resources.food`,
       `town_starving_seconds` and `town_starve_acked`. The clock stops at each death's last
       warning until `acknowledge_starvation()` sets `town_starve_acked`. It resets only once food
@@ -797,7 +884,7 @@ the numbers. The owner answered its four questions the same day; items 5, 11 and
 - *Three passions.* 37.5% of heroes would have any given passion. A passion stops being special.
 - *A `calling` field kept next to `passions`.* Two fields for one idea, which drift.
 
-**Left open on purpose.** Whether a hall keeper ever needs a house (the ruling says "for now"). Stone,
+**Left open on purpose.** Whether a hall keeper ever needs a house (the ruling says "for now"). *Answered 2026-09-25 (`ig-0og.1`): an unhoused keeper counts as homeless for the town mood (item 5, amended). The stationing refusal is unchanged.* Stone,
 construction and hall-upgrade numbers now live in `SYSTEMS.md` § Town builder; they and every food
 number are set but unfelt.
 
@@ -1089,6 +1176,17 @@ reward-claim chores, fixed dispatch slots unrelated to roster depth, and a new s
 Finite orders stop on casualties/retreat/failure or a stop-after-return request. Unlimited orders
 require a worst-case attrition forecast using the actual wave ramp and retreat rule; one lucky
 clear is not proof of safety. Timing values remain explicitly provisional in `SYSTEMS.md`.
+
+*Amended 2026-09-25 (`ig-0og.1`, godot-architect; owner ruling 2026-09-25, option B at rate B):*
+there is still no dispatch-slot cap, and "fixed dispatch slots unrelated to roster depth" stays
+rejected. The brake the owner picked is the town: every hero needs a bed and eats (2026-09-25,
+"Every hero needs a bed and eats"). A town in revolt sends nothing: no new order goes out, and a
+due repeat stops with `stopped_reason` "revolt". That is a town state the player ends by housing
+or sacrificing heroes. It is not a cap and not stamina. Rescues are exempt, and an order already
+fighting or in "checking" finishes its leg. The stone pay changes by number, not by rule:
+`stone_reward_scale` and `ig-ncz`'s route factor go through one `ExpeditionOrders.stone_payout`
+helper (`SYSTEMS.md` § Summon Stones). So "rewards ... remain unchanged" above describes the move
+to timed runs, not later tuning.
 
 Stable serialized hero/item identities and schema-2 migration are required by saved presets and
 in-flight orders. Presets preserve missing members instead of silently substituting. Orders

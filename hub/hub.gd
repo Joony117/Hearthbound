@@ -141,6 +141,7 @@ var detail_refreshes: int = 0
 var _placed_picker_clears: bool = false
 ## The last Ledger seq the starvation status line has looked at, so each death is said once.
 var _starved_seen: int = 0
+var _was_in_revolt: bool = false
 
 
 func _enter_tree() -> void:
@@ -1081,7 +1082,8 @@ func _refresh_starvation() -> void:
 	var eaters: Array[Hero] = GameSession.food_eaters()
 	var clock: float = GameSession.town_starving_seconds
 	var food: float = GameSession.town_resources["food"]
-	var victim: Hero = GameSession.hero_by_id(TownRules.starvation_victim(eaters))
+	# ig-0og.1: only a hero at home can starve, so the warning names one of them.
+	var victim: Hero = GameSession.hero_by_id(TownRules.starvation_victim(GameSession.starvation_candidates()))
 	var text: String = ""
 	if clock > 0.0 and victim != null:
 		var when: String = _format_duration(TownRules.starve_due_seconds(clock, BALANCE) - clock)
@@ -1090,10 +1092,30 @@ func _refresh_starvation() -> void:
 		else:
 			text = "Starving: work runs at %d%% speed. %s starves in %s unless the town is fed." % [roundi(BALANCE.starving_work_multiplier * 100.0), victim.hero_name, when]
 	elif not eaters.is_empty() and food < TownRules.food_low_line(eaters.size(), BALANCE):
-		text = "Food low: %d left, and the town eats %.1f a minute." % [floori(food), eaters.size() * BALANCE.food_per_housed_hero_minute]
+		text = "Food low: %d left, and the town eats %.1f a minute." % [floori(food), eaters.size() * BALANCE.food_per_hero_minute]
+	var mood: String = _mood_line()
+	if not mood.is_empty():
+		text = mood if text.is_empty() else text + "\n" + mood
 	%StarveText.text = text
 	%StarveWarning.visible = not text.is_empty()
-	%StarveAck.visible = GameSession.is_starvation_stopped()
+	# ig-0og.1: with nobody home there is no one to name, so there is nothing to acknowledge yet.
+	%StarveAck.visible = GameSession.is_starvation_stopped() and victim != null
+
+
+## ig-0og.1: the town mood's line under the food line, while the mood is under 100 or more than the
+## grace are homeless; "" otherwise.
+func _mood_line() -> String:
+	var homeless: int = GameSession.homeless_heroes().size()
+	var mood: float = GameSession.town_mood
+	var grace: int = BALANCE.town_mood_homeless_grace
+	if GameSession.is_in_revolt():
+		return "Revolt: no order or repeat goes out until at most %d heroes are homeless." % grace
+	if homeless > grace:
+		var per_minute: float = minf((homeless - grace) * BALANCE.town_mood_fall_per_homeless_minute, BALANCE.town_mood_fall_max_per_minute)
+		return "%d heroes have no bed. Town mood %d: revolt in about %s." % [homeless, ceili(mood), _format_duration(mood / per_minute * 60.0)]
+	if mood < 100.0:
+		return "Town mood %d, recovering." % floori(mood)
+	return ""
 
 
 func _on_starve_ack_pressed() -> void:
@@ -2059,6 +2081,9 @@ func _refresh_dispatch_summary() -> void:
 			safe_forecast = safe_forecast and bool(entry.get("safe", false))
 			checking = checking or bool(entry.get("checking", false))
 			detail_lines.append("• %s · %d/cap %d · %s min · %s" % [str(entry.get("name", "Team")), int(entry.get("hero_count", 0)), int(entry.get("capacity", 0)), _format_duration(float(entry.get("route_seconds", 0.0))), str(entry.get("reason", ""))])
+			var pay_line: String = _pay_line(entry)
+			if not pay_line.is_empty():
+				detail_lines.append("  " + pay_line)
 		detail_lines.append("Total %d heroes / %d per-order capacity · %d squads · forecast %s (never guaranteed safe)" % [total_heroes, total_capacity, total_squads, "checking" if checking else ("safe" if safe_forecast else "not safe")])
 		_dispatch_summary.text = "\n".join(detail_lines)
 	else:
@@ -2071,6 +2096,9 @@ func _refresh_dispatch_summary() -> void:
 			"checking" if bool(preview.get("checking", false)) else ("forecast only; safety is not guaranteed" if bool(preview.get("safe", false)) else "not forecast safe"),
 			str(preview.get("reason", "")),
 		]
+		var pay_line: String = _pay_line(preview)
+		if not pay_line.is_empty():
+			_dispatch_summary.text += "\n" + pay_line
 	var keepers: String = _absent_keepers_text()
 	if not keepers.is_empty():
 		_dispatch_summary.text += "\n" + keepers
@@ -2078,6 +2106,14 @@ func _refresh_dispatch_summary() -> void:
 	_dispatch_selected.disabled = preview.is_empty() or not bool(preview.get("valid", false)) or SaveService.load_blocked
 	_combined_zone.visible = _combine_teams.button_pressed
 	%BattleSettingsToggle.text = "Battle settings · allocation per %s" % ("force/order" if _combine_teams.button_pressed else "team/order")
+
+
+## ig-ncz (in ig-0og.1): the preview's pay cut, said out loud so it never reads as a bug; "" at 100%.
+func _pay_line(preview: Dictionary) -> String:
+	var percent: int = int(preview.get("pay_percent", 100))
+	if percent >= 100:
+		return ""
+	return "Pays %d%% a clear here: this team is over-strong, so it earns the same per hour." % percent
 
 
 ## Keepers and workers can be sent out; this only says which counters stand empty and which
@@ -2280,6 +2316,11 @@ func _do_dispatch_presets(presets: Array[Dictionary], total_runs: int, combined:
 func _on_expeditions_changed() -> void:
 	_refresh_expeditions(false)
 	_refresh_practice_options()
+	# ig-0og.1: a live tick can start or end a revolt, and the Dispatch preview reads it.
+	var in_revolt: bool = GameSession.is_in_revolt()
+	if in_revolt != _was_in_revolt:
+		_was_in_revolt = in_revolt
+		_refresh_dispatch_summary()
 	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
 

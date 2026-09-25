@@ -66,7 +66,7 @@ func test_starving_halves_every_workplace_and_the_reset_restores_it() -> void:
 	for index: int in places.size():
 		workers.append(_housed("W%d" % index, Vector2i(index * 2 - 2, 2)))
 		assert_true(GameSession.station_hero(workers[index], places[index]), GameSession.last_action_error)
-	assert_almost_eq(float(TownRules.starve_step(10.0, 60.0, false, 1, 0, 60.0, BALANCE)["food"]), 10.0 + 0.5 * BALANCE.food_per_worker_minute, 0.0001, "food at half speed")
+	assert_almost_eq(float(TownRules.starve_step(10.0, 60.0, false, 1, 0, true, 60.0, BALANCE)["food"]), 10.0 + 0.5 * BALANCE.food_per_worker_minute, 0.0001, "food at half speed")
 	GameSession.town_starving_seconds = 60.0
 	GameSession.town_resources["food"] = 0.0
 	var wood: float = GameSession.town_resources["wood"]
@@ -141,14 +141,93 @@ func test_the_victim_is_lowest_rank_then_level_then_newest_and_only_an_eater() -
 	eaters = [a, b]
 	assert_eq(TownRules.starvation_victim(eaters), b.instance_id, "rank beats level")
 	assert_eq(TownRules.starvation_victim([] as Array[Hero]), "")
+	# ig-0og.1: the same order, among the heroes at home (an unhoused one is at home too).
 	var home: Hero = _housed("Home", Vector2i(0, 2), 5)
 	var away: Hero = _housed("Away", Vector2i(1, 2), 0)
 	var fighting: Hero = _housed("Fighting", Vector2i(2, 2), 0)
-	_add_hero("Stray", 0)
+	var stray: Hero = _add_hero("Stray", 1)
 	assert_ne(GameSession.dispatch_expedition([away.instance_id], ZONE, 1, "Out"), "", GameSession.last_action_error)
 	var preset: String = GameSession.save_team_preset("", "Fighters", [fighting.instance_id], ZONE)
 	assert_ne(GameSession.dispatch_force([preset], ZONE, 1, {}, LOADOUT), "", GameSession.last_action_error)
-	assert_eq(TownRules.starvation_victim(GameSession.food_eaters()), home.instance_id, "away, busy and unhoused are never picked")
+	assert_eq(GameSession.starvation_candidates(), [home, stray] as Array[Hero], "away and in a battle are never candidates")
+	assert_eq(TownRules.starvation_victim(GameSession.starvation_candidates()), stray.instance_id, "rank 1 at home before rank 5; the rank-0 fighters are out")
+
+
+# ig-0og.1 (ACC 4, boundary #3): only a hero at home starves. With every eater away the clock holds at
+# the stop point and nobody dies. The death comes once one is home and the warning is acked.
+func test_with_every_eater_away_the_clock_holds_at_the_stop_until_one_is_home_and_acked() -> void:
+	var ada: Hero = _housed("Ada", Vector2i(0, 2))
+	_strand([ada])
+	GameSession.town_resources["food"] = 0.0
+	GameSession.tick_expeditions(1.0e7)
+	assert_eq(GameSession.town_starving_seconds, STOP_1, "held at the stop")
+	assert_true(GameSession.is_starvation_stopped())
+	assert_not_null(GameSession.hero_by_id(ada.instance_id))
+	GameSession.stranded_incidents.clear()
+	GameSession.tick_expeditions(1.0e7)
+	assert_eq(GameSession.town_starving_seconds, STOP_1, "home, but not acked yet")
+	assert_not_null(GameSession.hero_by_id(ada.instance_id))
+	assert_true(GameSession.acknowledge_starvation(), GameSession.last_action_error)
+	GameSession.tick_expeditions(1.0e7)
+	assert_eq(GameSession.town_starving_seconds, DUE_1)
+	assert_null(GameSession.hero_by_id(ada.instance_id), "home and acked: she dies")
+
+
+# An ack with nobody home kills nobody: kill_hero never runs on a busy hero. The first one home is the
+# victim, even over a lower rank still stranded.
+func test_an_ack_with_nobody_home_kills_no_busy_hero_and_the_one_home_is_the_victim() -> void:
+	var ada: Hero = _housed("Ada", Vector2i(0, 2), 0)
+	var bea: Hero = _housed("Bea", Vector2i(1, 2), 5)
+	_strand([ada])
+	_strand([bea])
+	GameSession.town_resources["food"] = 0.0
+	GameSession.tick_expeditions(1.0e7)
+	assert_true(GameSession.acknowledge_starvation(), GameSession.last_action_error)
+	GameSession.tick_expeditions(1.0e7)
+	assert_eq(GameSession.town_starving_seconds, STOP_1, "acked, but nobody home: still held")
+	assert_eq(GameSession.roster.size(), 2, "no busy hero died")
+	GameSession.stranded_incidents.remove_at(1)
+	GameSession.tick_expeditions(1.0e7)
+	assert_null(GameSession.hero_by_id(bea.instance_id), "Bea came home, so Bea starves")
+	assert_not_null(GameSession.hero_by_id(ada.instance_id), "Ada, the lower rank, is still stranded")
+
+
+# Sol, ig-0og.1: at the stop with nobody home there is no one to name, so the hub offers no ack; once a
+# hero is home, the last warning names that hero and asks.
+func test_the_hub_offers_the_ack_only_once_someone_is_home_to_name() -> void:
+	var ada: Hero = _housed("Ada", Vector2i(0, 2))
+	_strand([ada])
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var text: Label = hub.get_node("%StarveText") as Label
+	var ack: Button = hub.get_node("%StarveAck") as Button
+	GameSession.town_resources["food"] = 0.0
+	GameSession.tick_expeditions(1.0e7)
+	assert_true(GameSession.is_starvation_stopped())
+	assert_false(ack.visible, "nobody home: nothing to acknowledge")
+	GameSession.stranded_incidents.clear()
+	GameSession.expeditions_changed.emit()
+	assert_eq(text.text, "Last warning: Ada starves in 5:00 unless the town is fed. The clock waits for you.")
+	assert_true(ack.visible, "Ada is home")
+
+
+# The pulse's look-ahead and the live tick agree: nobody home, no death either way; one home, the death
+# goes through the checked, saved path.
+func test_the_look_ahead_and_the_live_tick_agree_on_the_death() -> void:
+	var ada: Hero = _housed("Ada", Vector2i(0, 2))
+	_strand([ada])
+	GameSession.town_resources["food"] = 0.0
+	GameSession.town_starving_seconds = DUE_1 - 1.0
+	GameSession.town_starve_acked = true
+	assert_true(SaveService.save(), SaveService.last_write_error)
+	GameSession.tick_expeditions(1.0)
+	assert_eq(GameSession.town_starving_seconds, DUE_1 - 1.0, "held")
+	assert_not_null(GameSession.hero_by_id(ada.instance_id))
+	GameSession.stranded_incidents.clear()
+	GameSession.tick_expeditions(1.0)
+	assert_null(GameSession.hero_by_id(ada.instance_id))
+	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SaveService.SAVE_PATH)) as Dictionary
+	assert_eq((saved["roster"] as Array).size(), 0, "the look-ahead saw the death, so it was saved")
 
 
 # Boundary #3: gear to inventory first (no Lost Cache), a died record, and the body goes with it.
@@ -361,6 +440,20 @@ func _place(type: StringName, hex: Vector2i) -> StringName:
 	assert_true(GameSession.place_building(type, hex), GameSession.last_action_error)
 	GameSession.town_building(id).erase("build_remaining")
 	return id
+
+
+## A real stranded incident holding the heroes, with the capture's own checkpoint so a save validates.
+func _strand(heroes: Array[Hero]) -> void:
+	var ids: Array[String] = []
+	for hero: Hero in heroes:
+		ids.append(hero.instance_id)
+	var squad: Dictionary = {"id": "source-squad", "name": "Source", "hero_ids": ids, "stance": "stay_together", "guard_target_id": ""}
+	var state: BattleState = BattleSimulation.create_run("source", GameSession._team_snapshots(heroes, [squad]), ZoneDefinition.definition_for(StringName(ZONE)), [squad], {}, {}, 544)
+	for actor: BattleActor in state.actors:
+		if actor.hero_id in ids:
+			actor.life = BattleActor.LIFE_DOWNED
+			actor.hp = 0.0
+	GameSession.stranded_incidents.append({"id": "incident-%d" % (GameSession.stranded_incidents.size() + 1), "source_order_id": "gone-source", "zone_id": ZONE, "hero_ids": ids, "battle_snapshot": GameSession._incident_snapshot(state, ids), "created_recovery_seconds": GameSession.rescue_clock_seconds, "paused": true, "expiry_pending": false, "active_rescue_order_id": ""})
 
 
 func _hero(hero_name: String, rank: int, level: int) -> Hero:

@@ -164,7 +164,7 @@ static func _build_expeditions(content: Control) -> void:
 	_button(settings_box, "Fill suggested allocations", "SuggestedAllocations", true)
 	var summary := RichTextLabel.new()
 	_add(block, summary, "DispatchSummary", true)
-	summary.custom_minimum_size.y = 124.0
+	summary.custom_minimum_size.y = 140.0
 	_button(block, "Dispatch selected teams", "DispatchSelected", true).theme_type_variation = &"PrimaryButton"
 	_button(left, "Manage teams", "ManageTeams", true)
 	_button(left, "Go to Summoning Circle", "GoToHall", true).theme_type_variation = &"PrimaryButton"
