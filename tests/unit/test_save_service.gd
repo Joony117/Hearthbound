@@ -869,13 +869,18 @@ func _strand_and_dispatch_rescue(weak_rescuer: bool = false) -> String:
 	var rescue_order_id: String = GameSession.dispatch_rescue(str(incident["id"]), rescue_preset, loadout)
 	assert_ne(rescue_order_id, "", GameSession.last_action_error)
 	if weak_rescuer:
-		# A level-0 rescuer still wins about 1 run in 40 on a random seed (ig-qjh); at 1 HP it
-		# cannot. Each tick reloads the battle from the order, so the pin holds.
+		# ig-8f4: the rescue continues the stranding fight, so its enemies stand wherever that fight
+		# left them (a Crypto seed). Far from the downed hero, even a 1 HP rescuer (ig-qjh) carries
+		# them out unhit about 1 run in 10. Downed from the start, the rescue fails on its first tick.
 		for order: Dictionary in GameSession.expedition_orders:
 			if str(order["id"]) == rescue_order_id:
-				for actor: Variant in (order["battle"] as Dictionary)["actors"]:
+				var battle: Dictionary = (order["battle"] as Dictionary).duplicate(true)
+				for actor: Variant in battle["actors"]:
 					if str((actor as Dictionary).get("hero_id", "")) == rescuer.instance_id:
-						(actor as Dictionary)["hp"] = 1.0
+						(actor as Dictionary)["hp"] = 0.0
+						(actor as Dictionary)["life"] = BattleActor.LIFE_DOWNED
+				(battle["downed_ever_ids"] as Array).append(rescuer.instance_id)
+				order["battle"] = battle
 	return rescue_order_id
 
 
