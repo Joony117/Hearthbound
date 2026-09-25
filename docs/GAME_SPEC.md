@@ -1,6 +1,6 @@
 # Game Spec
 
-Working title: **Infinite Gacha**
+Title: **Hearthbound** (owner, 2026-09-25). The working title was *Infinite Gacha*.
 
 This is the stable reference for what the game is. If a proposed change contradicts this
 document, the document wins or the document gets amended — not silently reinterpreted.
@@ -34,7 +34,7 @@ It is a target, not a build list:
 
 ### 1. Pitch and spine
 
-*Infinite Gacha is a living-world squad RPG where every summon brings someone worth knowing,
+*Hearthbound is a living-world squad RPG where every summon brings someone worth knowing,
 every battle changes their relationships, and the town you build can rise to rescue them.*
 
 **Spine:** Summon a person → give them a home → discover whom they love and what they want →

@@ -1,4 +1,4 @@
-# Infinite Gacha — repo rules
+# Hearthbound — repo rules
 
 Godot 4.7.1 GDScript game. Global rules (`~/.claude/CLAUDE.md`) apply; this file adds what is repo-specific.
 

@@ -1,4 +1,4 @@
-# Worker rules — Infinite Gacha
+# Worker rules — Hearthbound
 
 Extends `C:\Users\Joony\.claude\WORKER-CONTRACT.md`. This file adds fields and tightens
 constraints; it removes nothing. Where the two conflict, the stricter verification requirement
