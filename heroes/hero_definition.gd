@@ -13,5 +13,6 @@ extends Resource
 @export var spd_growth: float = 0.0
 @export var crit_rate: float = 0.0
 @export var crit_dmg: float = 0.0
+@export var caster: bool = false # SYSTEMS.md § Casters: balance.caster_rank_offset scales HP, ATK and DEF.
 @export var resonance_trait_pool: Array[TraitDefinition] = [] # Unlock order keeps resonance thresholds data-only.
 @export var instructor_trait_pool: Array[TraitDefinition] = [] # Separate so instructor-only traits cannot enter resonance rewards.

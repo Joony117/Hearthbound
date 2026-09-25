@@ -55,5 +55,6 @@ base_spd = 95.0
 spd_growth = 1.1
 crit_rate = 0.05
 crit_dmg = 1.5
+caster = true
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_devotion"), SubResource("TraitDefinition_sanctuary"), SubResource("TraitDefinition_guardian_light")])
 instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_novice_prayer"), SubResource("TraitDefinition_ward"), SubResource("TraitDefinition_benediction")])

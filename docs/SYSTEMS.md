@@ -1420,24 +1420,26 @@ battlefield presence of a 3 to 4 star knight". The game has ranks, not stars, so
 at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this order:
 
 1. **Rare** (`ig-vl1.1`): 1 in 100 each from a summon. § Summoning, Class odds.
-2. **Strong, for now by stats** (`ig-vl1.3`): the row below, tuned to the presence test.
-3. **Battlefield shaping** (`ig-vl1.4`, after an ADR, `ig-vl1.2`): a few big casts a fight. Then
-   the row below is cut back, so the spells carry the presence and the stats don't.
+2. **Stats** (`ig-vl1.3`): the row below. It ships at 0, so a caster has no stat edge yet.
+3. **Battlefield shaping** (`ig-vl1.4`, after an ADR, `ig-vl1.2`): a few big casts a fight. The
+   spells carry the presence. After them, the row below is set on `ig-vl1.6`'s measure, only as
+   high as the spells leave a caster short.
 
 | Row | Value | Why |
 |---|---|---|
-| `caster_rank_offset` | 1.5 | A Mage's or Cleric's HP, ATK and DEF × 1.35^1.5 ≈ 1.57: halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks) |
+| `caster_rank_offset` | 0 | Director ruling, 2026-09-25 (`ig-vl1.3`). The presence test (below) passed no offset. An F Mage out-clears a C Knight at every offset, 0 included (263.6 s against 272.6), so no value fixes the Mage. An F Cleric fits D–C on team HP only at 0 (2359.6, between the D Knight's 2133.5 and the C Knight's 2550.2). Point 2 was 0/8 wins in every slot. The first guess, 1.5, put both casters above the R+2 Knight on their own measure. The row scales a caster's HP, ATK and DEF by 1.35^offset (one rank's step); 1.5 would be ≈ 1.57, halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks). Logs: `.agent-results/ig-vl1.3/presence_verdant.log`, `presence_1.5.log` |
 
 - It applies in `Hero.compute_final_stats`, so the sim, `quick_resolve` and team power all see it,
   and the combat seam stays one number. Enemy Mages are unchanged: enemy stats come from the wave
   budget, not ranks.
-- Cleric heals and shields read ATK, so they grow by the same 1.57.
-- `hero_power` gains less than the fight does: an F Mage at level 10 goes 207 → 264, against a
-  D Knight's 286. So dispatch time and the safety forecast's power check see a caster team as a
-  little weaker than it plays. That errs safe.
+- Cleric heals and shields read ATK, so they grow with the row.
+- Above 0, `hero_power` gains less than the fight does: at 1.5 an F Mage at level 10 goes
+  207 → 264, against a D Knight's 286. So dispatch time and the safety forecast's power check see a
+  caster team as a little weaker than it plays. That errs safe.
 - Heroes you own get it too (director: fine).
 
-**Presence, as the sim measures it.** Take the balance gate's mixed team (Knight, Ranger, Mage,
+**Presence, as the sim measures it.** `ig-vl1.3` ran this test and found it unsound; `ig-vl1.6`
+redesigns it. The test as it ran: take the balance gate's mixed team (Knight, Ranger, Mage,
 Rogue, Knight) and swap the Mage slot. Same rank and level for everyone else, seeds 1–8, the
 median of each measure (8 runs, `ig-vl1.3`: a median of four is the mean of the middle two, so one
 odd fight moves it):
@@ -1485,15 +1487,16 @@ Cleric's **Hearthward** holds a line up.
 - **At P = 6** (§ Battle pace): Rime Circle's cooldown 20 s → 120 s and its lifetime 6 s → 36 s;
   Hearthward's 25 s → 150 s and 8 s → 48 s. About one cast a wave. The per-second amounts don't
   change, so each zone's total grows ×6 with the fight.
-- **Then the stats step back.** Once zones land, re-run the presence test (above) and cut
-  `caster_rank_offset` as far as the lower bound still holds. Re-run it again after walls.
+- **Then the stats get set.** Run `ig-vl1.6`'s measure with zones in, and again with walls in
+  (`ig-vl1.5`). Set `caster_rank_offset` from it, only as high as the spells leave a caster short.
+  Until then it stays 0.
 - **Names.** Rime Circle and Hearthward passed the same web check as `ig-x8g` on 2026-09-25
   (`DECISIONS.md` 2026-09-23, item 10; evidence: `.agent-results/ig-vl1.4/name-check.log`).
   Hearthward's only hits are an FFXIV music track, which the bar doesn't count.
 
 > ⚠️ **PROVISIONAL** — every zone number is arithmetic, chosen next to Hail of Arrows, Hanging Star,
-> Prayer Circle and Wellspring; the presence test has not run with them · **Settled by:** the
-> presence test at P = 6 with zones in, before the `caster_rank_offset` cut
+> Prayer Circle and Wellspring; no presence measure has run with them · **Settled by:**
+> `ig-vl1.6`'s measure at P = 6 with zones in, before `caster_rank_offset` is set
 
 **Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
 any wall spell, so its tests place walls by hand.
@@ -1541,11 +1544,12 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
 - **Heroes only in v1,** like zones.
 
 > ⚠️ **PROVISIONAL** — every wall number is arithmetic, and the AI's placement is untested
-> against real fights · **Settled by:** the presence test at P = 6 with walls in, and a watched
+> against real fights · **Settled by:** `ig-vl1.6`'s measure at P = 6 with walls in, and a watched
 > frontier_march fight
 
-> ⚠️ **PROVISIONAL** — 1.5 is arithmetic; the presence test has never run · **Settled by:** the
-> presence test at P = 6 with the Knight's new kit, then again after the spells land
+> ⚠️ **PROVISIONAL** — 0 is the old presence test's only pass (the Cleric's), on a test `ig-vl1.3`
+> found unsound; no offset passed the Mage · **Settled by:** `ig-vl1.6`'s measure, run after zones
+> (`ig-vl1.4`) and walls (`ig-vl1.5`)
 
 ---
 

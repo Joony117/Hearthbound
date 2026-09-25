@@ -193,3 +193,4 @@ bond_points_rescued = 5
 bond_points_death_witnessed = 5
 bond_threshold = 8
 dream_fight_beside_battles = 3
+caster_rank_offset = 0.0

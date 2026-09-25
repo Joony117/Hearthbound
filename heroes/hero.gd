@@ -197,10 +197,12 @@ static func compute_final_stats(
 	var multiplier := balance.stat_multipliers[
 		clampi(hero.rank, 0, balance.stat_multipliers.size() - 1)
 	]
+	# SYSTEMS.md § Casters: a Mage or Cleric at rank R plays like a Knight at R+1 to R+2. Not SPD or crit.
+	var caster_scale: float = pow(balance.stat_multipliers[1], balance.caster_rank_offset) if definition.caster else 1.0
 	var final_stats: Dictionary[StringName, float] = {
-		STAT_HP: (definition.base_hp + definition.hp_growth * level) * multiplier,
-		STAT_ATK: (definition.base_atk + definition.atk_growth * level) * multiplier,
-		STAT_DEF: (definition.base_def + definition.def_growth * level) * multiplier,
+		STAT_HP: (definition.base_hp + definition.hp_growth * level) * multiplier * caster_scale,
+		STAT_ATK: (definition.base_atk + definition.atk_growth * level) * multiplier * caster_scale,
+		STAT_DEF: (definition.base_def + definition.def_growth * level) * multiplier * caster_scale,
 		STAT_SPD: (definition.base_spd + definition.spd_growth * level) * multiplier,
 		STAT_CRIT_RATE: definition.crit_rate,
 		STAT_CRIT_DMG: definition.crit_dmg,

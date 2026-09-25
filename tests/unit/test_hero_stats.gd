@@ -81,6 +81,43 @@ func test_rank_zero_level_zero_uses_definition_base_stats() -> void:
 	assert_eq(stats[Hero.STAT_CRIT_DMG], definition.crit_dmg)
 
 
+## ig-vl1.3: a nonzero offset drives the multiplier (the shipped one is 0, pinned below).
+func test_a_caster_gets_hp_atk_def_times_the_offset_and_a_knight_does_not() -> void:
+	var balance := BalanceTable.new()
+	balance.caster_rank_offset = 1.5
+	var scale: float = pow(balance.stat_multipliers[1], balance.caster_rank_offset)
+	for def_id: String in ["mage", "cleric"]:
+		var definition := load("res://heroes/defs/%s.tres" % def_id) as HeroDefinition
+		assert_true(definition.caster, def_id)
+		var plain := definition.duplicate() as HeroDefinition
+		plain.caster = false
+		var hero := Hero.new("Caster", 0)
+		var stats := Hero.compute_final_stats(hero, definition, balance, 10)
+		var base := Hero.compute_final_stats(hero, plain, balance, 10)
+		assert_almost_eq(stats[Hero.STAT_HP], (definition.base_hp + definition.hp_growth * 10) * scale, ERROR_MARGIN, def_id)
+		for stat: StringName in [Hero.STAT_HP, Hero.STAT_ATK, Hero.STAT_DEF]:
+			assert_almost_eq(stats[stat], base[stat] * scale, ERROR_MARGIN, "%s %s" % [def_id, stat])
+		for stat: StringName in [Hero.STAT_SPD, Hero.STAT_CRIT_RATE, Hero.STAT_CRIT_DMG]:
+			assert_eq(stats[stat], base[stat], "%s %s" % [def_id, stat])
+	var knight := load("res://heroes/defs/knight.tres") as HeroDefinition
+	assert_false(knight.caster, "knight")
+	var knight_stats := Hero.compute_final_stats(Hero.new("Knight", 0), knight, balance, 10)
+	assert_eq(knight_stats[Hero.STAT_HP], knight.base_hp + knight.hp_growth * 10, "knight HP")
+	assert_eq(knight_stats[Hero.STAT_ATK], knight.base_atk + knight.atk_growth * 10, "knight ATK")
+
+
+## ig-vl1.3 ruling: casters ship with no stat bonus (the presence test found none that fits), so a
+## caster's stats are exactly its plain definition's.
+func test_the_shipped_caster_offset_is_zero_and_changes_nothing() -> void:
+	var balance := load("res://balance.tres") as BalanceTable
+	assert_eq(balance.caster_rank_offset, 0.0)
+	var definition := load("res://heroes/defs/mage.tres") as HeroDefinition
+	var plain := definition.duplicate() as HeroDefinition
+	plain.caster = false
+	var hero := Hero.new("Mage", 2)
+	assert_eq(Hero.compute_final_stats(hero, definition, balance, 30), Hero.compute_final_stats(hero, plain, balance, 30))
+
+
 func test_team_power_sums_two_heroes() -> void:
 	var balance := BalanceTable.new()
 	var first := Hero.new("First", 0)
@@ -91,9 +128,10 @@ func test_team_power_sums_two_heroes() -> void:
 	var definitions: Array[HeroDefinition] = [knight, mage]
 	var levels: Array[int] = [1, 4]
 
+	# Knight 152.6; the B Mage's SPD 99.8 x 2.46, and its ATK + DEF + HP/10 (71.2 x 2.46) x the caster scale.
 	assert_almost_eq(
 		Hero.compute_team_power(team, definitions, levels, balance),
-		573.26,
+		152.6 + 99.8 * 2.46 + 71.2 * 2.46 * pow(balance.stat_multipliers[1], balance.caster_rank_offset),
 		ERROR_MARGIN,
 	)
 

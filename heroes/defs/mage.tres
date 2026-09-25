@@ -59,5 +59,6 @@ base_spd = 95.0
 spd_growth = 1.2
 crit_rate = 0.08
 crit_dmg = 1.65
+caster = true
 resonance_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_arcane_focus"), SubResource("TraitDefinition_overload"), SubResource("TraitDefinition_archmage")])
 instructor_trait_pool = Array[ExtResource("2_trait")]([SubResource("TraitDefinition_apprentice_rites"), SubResource("TraitDefinition_mana_burn"), SubResource("TraitDefinition_spellweaving")])

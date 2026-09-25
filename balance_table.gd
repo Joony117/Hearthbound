@@ -226,3 +226,5 @@ extends Resource
 @export var bond_points_death_witnessed: int = 5
 @export var bond_threshold: int = 8
 @export var dream_fight_beside_battles: int = 3
+# SYSTEMS.md § Casters: a Mage's or Cleric's HP, ATK and DEF x stat_multipliers[1]^this.
+@export var caster_rank_offset: float = 0.0

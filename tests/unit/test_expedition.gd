@@ -571,10 +571,11 @@ func test_lost_wave_at_or_above_team_power_kills_from_full_hp() -> void:
 	var definitions: Array[HeroDefinition] = [definition]
 	var levels: Array[int] = [balance.level_caps[hero.rank]]
 	var team_power := Hero.compute_team_power(team, definitions, levels, balance)
-	var wave := Wave.new(990.0)
+	# ATK + DEF + HP/10 = 81 takes the caster scale (ig-vl1.3); SPD 106 does not.
+	var wave := Wave.new(roundf(team_power * 5.3))
 
-	assert_almost_eq(team_power, 187.0, ERROR_MARGIN)
-	assert_almost_eq(wave.enemy_power * 0.2, 198.0, ERROR_MARGIN)
+	assert_almost_eq(team_power, 81.0 * pow(balance.stat_multipliers[1], balance.caster_rank_offset) + 106.0, ERROR_MARGIN)
+	assert_gt(wave.enemy_power * 0.2, team_power, "the wave is above the team's power")
 	seed(1)
 	var result := QuickResolve.resolve(team, wave)
 
