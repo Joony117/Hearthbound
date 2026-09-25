@@ -156,8 +156,9 @@ the single-thread run.
        `order["battle"]`.
      - A job lands on the first frame after it finishes that runs no other heavy job, one landing
        per frame, in order-list order. So it never lands on the pulse's own frame (the `ig-7sn.15`
-       rule), the periodic save's frame (`ig-7sn.10`) or a settle's refresh frame (`ig-7sn.16`, if
-       it made one). It lands only while the order still holds the
+       rule) unless that frame is itself a pulse long (below 4 fps every frame runs a pulse, and
+       the battles must still move), nor on the periodic save's frame (`ig-7sn.10`) or a settle's
+       refresh frame (`ig-7sn.16`, if it made one). It lands only while the order still holds the
        battle Dictionary the job was sent from (a command replaces it), is live, and no load came
        between (item 4's check, for live battles). A job for a paused order is dropped, as the
        owed time is today. On any other mismatch, or during a save stall, the job is dropped and
