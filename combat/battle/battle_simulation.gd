@@ -39,6 +39,7 @@ const ABILITIES: Dictionary[String, AbilityDefinition] = {
 	"mage_chain_spark": preload("res://combat/abilities/mage_chain_spark.tres"),
 	"mage_warding_glyph": preload("res://combat/abilities/mage_warding_glyph.tres"),
 	"mage_hanging_star": preload("res://combat/abilities/mage_hanging_star.tres"),
+	"mage_rime_circle": preload("res://combat/abilities/mage_rime_circle.tres"),
 	"cleric_grace": preload("res://combat/abilities/cleric_grace.tres"),
 	"cleric_mend": preload("res://combat/abilities/cleric_mend.tres"),
 	"cleric_censer_swing": preload("res://combat/abilities/cleric_censer_swing.tres"),
@@ -47,6 +48,7 @@ const ABILITIES: Dictionary[String, AbilityDefinition] = {
 	"cleric_wellspring": preload("res://combat/abilities/cleric_wellspring.tres"),
 	"cleric_prayer_circle": preload("res://combat/abilities/cleric_prayer_circle.tres"),
 	"cleric_hearthcall": preload("res://combat/abilities/cleric_hearthcall.tres"),
+	"cleric_hearthward": preload("res://combat/abilities/cleric_hearthward.tres"),
 	"general_catch_breath": preload("res://combat/abilities/general_catch_breath.tres"),
 	"general_field_dressing": preload("res://combat/abilities/general_field_dressing.tres"),
 	"general_brace": preload("res://combat/abilities/general_brace.tres"),
@@ -435,7 +437,47 @@ static func validate_snapshot(data: Dictionary) -> String:
 			for hero_id: String in hero_actors:
 				if str(hero_actors[hero_id].get("life")) == BattleActor.LIFE_EXTRACTED and not seen.has(hero_id):
 					return "Battle extracted hero actors must appear in extracted_ids."
+	var field_error: String = _validate_field_objects(data, zone, actor_ids)
+	if not field_error.is_empty():
+		return field_error
 	return _validate_objective_state(data.get("objective_state") as Dictionary, zone, pace)
+
+
+## ig-vl1.4: additive keys (a checkpoint without them has no zones), checked the way the objective state
+## is (DECISIONS.md 2026-09-25, "Casters shape the field", item 1). A skill id this build lacks is not an
+## error: BattleState.from_dict drops that object with a warning.
+static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, actor_ids: Dictionary[String, bool]) -> String:
+	if data.has("field_sequence") and not _nonnegative_integer(data.get("field_sequence")):
+		return "Battle field_sequence must be a non-negative integer."
+	if not data.has("field_objects"):
+		return ""
+	# A build never saves more than the cap, and never an id past its sequence: the next cast's id is
+	# field:<sequence + 1>, so one at or below it can't be written twice.
+	if not data.get("field_objects") is Array or (data.get("field_objects") as Array).size() > BALANCE.battle_field_object_cap:
+		return "Battle field_objects must be an Array of at most %d." % BALANCE.battle_field_object_cap
+	var sequence: int = int(data.get("field_sequence", 0))
+	var ids: Dictionary[String, bool] = {}
+	for entry: Variant in data.get("field_objects") as Array:
+		if not entry is Dictionary or (entry as Dictionary).size() != 10:
+			return "Every battle field object must be {id, kind, skill_id, owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale}."
+		var field: Dictionary = entry as Dictionary
+		for key: String in ["id", "kind", "skill_id", "owner_actor_id", "faction"]:
+			if not field.get(key) is String:
+				return "Battle field object %s must be a String." % key
+		var number: String = str(field["id"]).trim_prefix("field:")
+		if not str(field["id"]).begins_with("field:") or not number.is_valid_int() or str(number.to_int()) != number or number.to_int() < 1 or number.to_int() > sequence or ids.has(str(field["id"])):
+			return "Battle field object ids must be unique, field:<1 to field_sequence>."
+		ids[str(field["id"])] = true
+		if str(field["kind"]) != "zone" or not str(field["faction"]) in ["ally", "enemy"] or not actor_ids.has(str(field["owner_actor_id"])):
+			return "Battle field object kind, faction or owner is invalid."
+		if not _point_within_bounds(field.get("center"), zone.battle_bounds):
+			return "Battle field object centers must remain inside the authored bounds."
+		for key: String in ["radius", "remaining_seconds", "atk", "heal_scale"]:
+			if not _valid_number(field.get(key)) or float(field.get(key)) < 0.0:
+				return "Battle field object %s must be finite and non-negative." % key
+		if not (float(field["radius"]) > 0.0) or not (float(field["remaining_seconds"]) > 0.0):
+			return "Battle field object radius and remaining_seconds must be positive."
+	return ""
 
 
 static func snapshot_outcome(state: BattleState) -> BattleOutcome:
@@ -462,6 +504,7 @@ static func _tick(state: BattleState, rng: RandomNumberGenerator) -> void:
 	state.tick += 1
 	state.elapsed_seconds = minf(state.elapsed_seconds + BALANCE.battle_tick_seconds, state.max_seconds)
 	_expire_effects_and_cooldowns(state)
+	_update_field_objects(state)
 	_answer_telegraphs(state, rng)
 	_choose_intentions(state)
 	_move_actors(state)
@@ -1168,6 +1211,23 @@ static func _apply_effects(
 			"taunt":
 				if target != null and target.life == BattleActor.LIFE_ALIVE:
 					_add_status(target, str(skill.skill_id), "taunt", actor.id, float(effect["seconds"]) * pace, 0.0)
+			"zone":
+				# Its lifetime is x the pace; its per-second amounts are not (SYSTEMS.md § Casters, Zones).
+				while state.field_objects.size() >= BALANCE.battle_field_object_cap:
+					state.field_objects.remove_at(0)
+				state.field_sequence += 1
+				state.field_objects.append({
+					"id": "field:%d" % state.field_sequence,
+					"kind": "zone",
+					"skill_id": str(skill.skill_id),
+					"owner_actor_id": actor.id,
+					"faction": actor.faction,
+					"center": [point.x, point.y],
+					"radius": skill.radius_units,
+					"remaining_seconds": float(effect["seconds"]) * pace,
+					"atk": _stat(actor, "atk"),
+					"heal_scale": heal_scale,
+				})
 			"damage":
 				var multiplier: float = (float(effect["combo_multiplier"]) if combo and effect.has("combo_multiplier") else float(effect["multiplier"])) * pace
 				if effect.has("delay_seconds"):
@@ -1278,7 +1338,8 @@ static func _has_status(actor: BattleActor, kind: String) -> bool:
 	return false
 
 
-## One of the five combat stats with its strongest stat status applied.
+## One of the five combat stats with its strongest raise and its strongest cut applied. Only Rime
+## Circle's slow cuts (ig-vl1.4); with no cut lo stays 0.0, so the sum is the old one to the bit.
 static func _stat(actor: BattleActor, stat: String) -> float:
 	var base: float = 0.0
 	match stat:
@@ -1292,7 +1353,65 @@ static func _stat(actor: BattleActor, stat: String) -> float:
 			base = actor.crit_rate
 		"crit_damage":
 			base = actor.crit_damage
-	return base if actor.statuses.is_empty() else base * (1.0 + _status_value(actor, stat))
+	if actor.statuses.is_empty():
+		return base
+	var hi: float = 0.0
+	var lo: float = 0.0
+	for status: Dictionary in actor.statuses:
+		if status["kind"] == stat:
+			hi = maxf(hi, float(status["magnitude"]))
+			lo = minf(lo, float(status["magnitude"]))
+	return base * (1.0 + hi + lo)
+
+
+## ig-vl1.4 (DECISIONS.md 2026-09-25, "Casters shape the field", item 3): the one point in the tick where
+## zones act, oldest first. Each counts down as _tick_statuses does and pulses each time its time left
+## crosses a multiple of skill_status_tick_seconds: 1 s after the cast, and so on to the last as it ends.
+## A pulse lands on living actors of its side inside it, in actor order, and draws no RNG. One skill
+## lands once per actor per tick, however many of its zones overlap there.
+static func _update_field_objects(state: BattleState) -> void:
+	if state.field_objects.is_empty():
+		return
+	var period: float = BALANCE.skill_status_tick_seconds
+	var landed: Dictionary = {}
+	var kept: Array[Dictionary] = []
+	for field: Dictionary in state.field_objects:
+		var before: float = float(field["remaining_seconds"])
+		var after: float = before - BALANCE.battle_tick_seconds if before - BALANCE.battle_tick_seconds >= TICK_EPSILON else 0.0
+		field["remaining_seconds"] = after
+		if ceilf(before / period - TICK_EPSILON) > ceilf(after / period - TICK_EPSILON):
+			_pulse_zone(state, field, landed)
+		if after > 0.0:
+			kept.append(field)
+	state.field_objects = kept
+
+
+## Damage the way bleed's lands (through damage reduction and shields, no DEF), credited to the caster
+## even when it is down or gone; a heal with Grace's heal_scale from the cast; statuses of 1.5 real s.
+static func _pulse_zone(state: BattleState, field: Dictionary, landed: Dictionary) -> void:
+	var skill_id: String = str(field["skill_id"])
+	var zone: Dictionary = _effect_of(ABILITIES[skill_id], "zone")
+	var faction: String = str(field["faction"])
+	var side: String = faction if str(zone["side"]) == "allies" else ("enemy" if faction == "ally" else "ally")
+	var center: Vector2 = _array_vector(field["center"])
+	var owner: BattleActor = _actor_by_id(state, str(field["owner_actor_id"]))
+	for actor: BattleActor in state.actors:
+		if actor.faction != side or actor.life != BattleActor.LIFE_ALIVE or actor.position.distance_to(center) > float(field["radius"]):
+			continue
+		var key: String = skill_id + "|" + actor.id
+		if landed.has(key):
+			continue
+		landed[key] = true
+		for pulse: Dictionary in zone["pulse"]:
+			if actor.life != BattleActor.LIFE_ALIVE:
+				break
+			match str(pulse["type"]):
+				"damage":
+					_take_damage(state, owner if owner != null else actor, actor, float(field["atk"]) * float(pulse["multiplier"]) * (1.0 - _status_value(actor, "damage_reduction")))
+				"heal":
+					actor.hp = minf(actor.hp + float(field["atk"]) * float(pulse["multiplier"]) * float(field["heal_scale"]), actor.max_hp)
+				"status":
+					_add_status(actor, skill_id, str(pulse["status"]), str(field["owner_actor_id"]), float(pulse["seconds"]), float(pulse["magnitude"]))
 
 
 ## Counts statuses down, on the downed too (as the old guard did: a hero revived inside Stand Fast keeps
@@ -1503,6 +1622,8 @@ static func _rule_aim(state: BattleState, actor: BattleActor, skill: AbilityDefi
 		"allies_near":
 			if target != null and _living_in_radius(state, actor.faction, actor.position, skill.ai_radius).size() >= skill.ai_count:
 				return target
+		"allies_near_ally":
+			return _pressed_group_aim(state, actor, skill)
 		"enemy_on_weaker_ally":
 			# ig-uu7.2: the covered threat first: this hero's own target, in range and on a back-row ally.
 			var covered: BattleActor = _actor_by_id(state, actor.order_target_id)
@@ -1535,6 +1656,48 @@ static func _rule_aim(state: BattleState, actor: BattleActor, skill: AbilityDefi
 			if actor.hp / actor.max_hp < skill.ai_fraction:
 				return actor
 	return null
+
+
+## allies_near_ally (Hearthward, ig-vl1.4): the lowest-HP living ally within range_units with ai_count
+## living allies (itself included) within ai_radius, one of them below ai_fraction or inside an enemy
+## telegraph; ties go to actor order. With no pressed ally in reach it stops after one pass, so a ready
+## Hearthward costs a scan per tick, not a scan per ally.
+static func _pressed_group_aim(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> BattleActor:
+	var telegraphs: Array[BattleActor] = []
+	for enemy: BattleActor in state.actors:
+		if enemy.faction != actor.faction and enemy.life == BattleActor.LIFE_ALIVE and not str(enemy.effect_state.get("telegraph_kind", "")).is_empty():
+			telegraphs.append(enemy)
+	var pressed: Array[BattleActor] = []
+	for ally: BattleActor in state.actors:
+		if ally.faction == actor.faction and ally.life == BattleActor.LIFE_ALIVE and ally.position.distance_to(actor.position) <= skill.range_units + skill.ai_radius and (ally.hp / ally.max_hp < skill.ai_fraction or _inside_telegraph(telegraphs, ally.position)):
+			pressed.append(ally)
+	if pressed.is_empty():
+		return null
+	var lowest: BattleActor = null
+	var lowest_fraction: float = INF
+	for candidate: BattleActor in state.actors:
+		if candidate.faction != actor.faction or candidate.life != BattleActor.LIFE_ALIVE or not (candidate.position.distance_to(actor.position) <= skill.range_units) or not (candidate.hp / candidate.max_hp < lowest_fraction):
+			continue
+		if not _any_within(pressed, candidate.position, skill.ai_radius):
+			continue
+		if _living_in_radius(state, actor.faction, candidate.position, skill.ai_radius).size() >= skill.ai_count:
+			lowest = candidate
+			lowest_fraction = candidate.hp / candidate.max_hp
+	return lowest
+
+
+static func _inside_telegraph(telegraphs: Array[BattleActor], position: Vector2) -> bool:
+	for enemy: BattleActor in telegraphs:
+		if _in_telegraph(enemy, position):
+			return true
+	return false
+
+
+static func _any_within(actors: Array[BattleActor], center: Vector2, radius: float) -> bool:
+	for actor: BattleActor in actors:
+		if actor.position.distance_to(center) <= radius:
+			return true
+	return false
 
 
 ## One of the actor's own class abilities that heals is off cooldown and on Auto.

@@ -20,7 +20,9 @@ const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ##   the caster. "target_below": the target's HP below ai_fraction. "target_lacks_status": the
 ##   target has no ai_status.
 ## buff band: "allies_near": at least ai_count living allies within ai_radius of the caster, the
-##   caster included. "fight_on": the caster has a target in range. "enemy_on_weaker_ally": the
+##   caster included. "allies_near_ally" (Hearthward): the lowest-HP ally within range_units with
+##   ai_count living allies (itself included) within ai_radius of it, one of them below ai_fraction or
+##   inside an enemy telegraph. "fight_on": the caster has a target in range. "enemy_on_weaker_ally": the
 ##   caster's own target when it is within range_units and attacks a back-row ally (a Knight's
 ##   covered threat, ig-uu7.2), else an enemy within range_units that attacks a back-row ally or an
 ##   ally with less HP (as a fraction) than the caster.
@@ -36,14 +38,14 @@ const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ## another rule (Warding Glyph) is also picked by that rule.
 const AI_RULES: Array[String] = [
 	"always", "default", "combo", "enemies_near_target", "enemies_near_self", "target_below", "target_lacks_status",
-	"allies_near", "fight_on", "enemy_on_weaker_ally",
+	"allies_near", "allies_near_ally", "fight_on", "enemy_on_weaker_ally",
 	"ally_below_heal_below", "ally_below", "allies_below", "self_below",
 	"downed_ally", "telegraph",
 ]
 const AI_BANDS: Dictionary = {
 	"always": "attack", "default": "attack", "combo": "attack", "enemies_near_target": "attack",
 	"enemies_near_self": "attack", "target_below": "attack", "target_lacks_status": "attack",
-	"allies_near": "buff", "fight_on": "buff", "enemy_on_weaker_ally": "buff",
+	"allies_near": "buff", "allies_near_ally": "buff", "fight_on": "buff", "enemy_on_weaker_ally": "buff",
 	"ally_below_heal_below": "heal", "ally_below": "heal", "allies_below": "heal", "self_below": "heal",
 	"downed_ally": "revive", "telegraph": "",
 }
@@ -69,6 +71,12 @@ const AI_BANDS: Dictionary = {
 ## (ig-zht): straight to distance units short of the target; every other living opponent within
 ## radius_units / 2 of that line is pushed lane_push units sideways first (SYSTEMS.md § The v1 kits).
 ## taunt: the target attacks the caster for seconds.
+## zone (ig-vl1.4; DECISIONS.md 2026-09-25, "Casters shape the field"): a circle of radius_units at the
+## point for seconds. Each skill_status_tick_seconds it applies pulse, a list of damage (multiplier),
+## heal (multiplier) or status (status, magnitude, seconds) effects, to every living actor of side
+## ("opponents" or "allies") inside it: amounts are x the caster's ATK at the cast, no crit. A pulse
+## status is a timed status that doesn't tick itself; a stat status may cut its stat (magnitude down
+## to above -1: Rime Circle's slow).
 ## Heals, shields and heal-over-time from a caster with heal_bonus are that much larger.
 const EFFECT_KEYS: Dictionary = {
 	"damage": ["area", "multiplier", "combo_multiplier", "required", "count", "delay_seconds", "push"],
@@ -79,7 +87,10 @@ const EFFECT_KEYS: Dictionary = {
 	"interrupt": ["stun_seconds", "area"],
 	"move": ["to", "distance", "lane_push"],
 	"taunt": ["seconds"],
+	"zone": ["side", "seconds", "pulse"],
 }
+const ZONE_SIDES: Array[String] = ["opponents", "allies"]
+const PULSE_KEYS: Dictionary = {"damage": ["multiplier"], "heal": ["multiplier"], "status": ["status", "magnitude", "seconds"]}
 const DAMAGE_AREAS: Array[String] = ["target", "circle", "line", "around_caster", "near_target"]
 const HEAL_AREAS: Array[String] = ["target", "self", "allies_near_caster"]
 const STATUS_TARGETS: Array[String] = ["self", "target", "allies_near_caster"]
@@ -205,7 +216,42 @@ func _effect_problem(type: String, effect: Dictionary) -> String:
 		"taunt":
 			if float(effect.get("seconds", 0.0)) <= 0.0:
 				return "needs positive seconds."
+		"zone":
+			if kind != "ability" or not str(effect.get("side", "")) in ZONE_SIDES or not _positive(effect.get("seconds")) or not (radius_units > 0.0):
+				return "an ability's, with a known side, positive seconds and a radius."
+			if not effect.get("pulse") is Array or (effect["pulse"] as Array).is_empty():
+				return "needs a pulse."
+			for entry: Variant in effect["pulse"] as Array:
+				var problem: String = _pulse_problem(entry, str(effect["side"]))
+				if not problem.is_empty():
+					return problem
 	return ""
+
+
+## A zone's pulse effect: damage only on opponents, a heal only on allies.
+func _pulse_problem(entry: Variant, side: String) -> String:
+	if not entry is Dictionary or not PULSE_KEYS.has(str((entry as Dictionary).get("type", ""))):
+		return "a pulse is damage, heal or status."
+	var pulse: Dictionary = entry as Dictionary
+	var type: String = str(pulse["type"])
+	for key: Variant in pulse:
+		if key != "type" and not key in PULSE_KEYS[type]:
+			return "its %s pulse has an unknown field '%s'." % [type, key]
+	if type != "status":
+		if not _positive(pulse.get("multiplier")) or (type == "damage") != (side == "opponents"):
+			return "a pulse's %s needs a positive multiplier, damage on opponents and a heal on allies." % type
+		return ""
+	var status: String = str(pulse.get("status", ""))
+	var magnitude: Variant = pulse.get("magnitude")
+	if not status in TIMED_STATUSES or status in ["bleed", "burn", "heal_over_time"] or not _positive(pulse.get("seconds")):
+		return "a pulse status is a timed status that doesn't tick, with positive seconds."
+	if not (magnitude is float or magnitude is int) or not is_finite(float(magnitude)) or not (float(magnitude) > -1.0 if status in STAT_STATUSES else float(magnitude) >= 0.0):
+		return "a pulse status needs a finite magnitude, non-negative but for a stat's (above -1)."
+	return ""
+
+
+static func _positive(value: Variant) -> bool:
+	return (value is float or value is int) and is_finite(float(value)) and float(value) > 0.0
 
 
 ## An ability has a cooldown and the ability lock; passives and weaponskills have neither.

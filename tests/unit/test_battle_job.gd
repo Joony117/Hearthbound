@@ -35,6 +35,27 @@ func test_a_battle_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> vo
 			assert_gt(int((direct["battle"] as Dictionary)["tick"]), 0, label)
 
 
+## ig-vl1.4: zones read their skill from BattleSimulation.ABILITIES, never a load, so a battle with both
+## zones up gives the pool the main thread's bytes too.
+func test_a_battle_with_both_zones_up_matches_on_the_pool_byte_for_byte() -> void:
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"frontier_march")
+	var jobs: Array[BattleJob] = []
+	for seed: int in SEEDS:
+		var job := BattleJob.new()
+		var state: BattleState = _run_with_zones(zone, seed)
+		job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_battle(state, RUN_SECONDS, job))
+		jobs.append(job)
+	for index: int in SEEDS.size():
+		WorkerThreadPool.wait_for_task_completion(jobs[index].task_id)
+		var pooled: Dictionary = jobs[index].result
+		var direct: Dictionary = BattleJob.run_battle(_run_with_zones(zone, SEEDS[index]), RUN_SECONDS, null)
+		var label: String = "seed %d" % SEEDS[index]
+		assert_false(bool(pooled.get("cancelled", true)), label)
+		assert_true(var_to_bytes(pooled["battle"]) == var_to_bytes(direct["battle"]), "%s: pool == main thread" % label)
+		var live: Array = ((direct["battle"] as Dictionary)["field_objects"] as Array).map(func(field: Dictionary) -> String: return str(field["skill_id"]))
+		assert_true("mage_rime_circle" in live and "cleric_hearthward" in live, "%s: both zones still up at the end: %s" % [label, live])
+
+
 func test_a_forecast_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> void:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
 	var heroes: Array[Dictionary] = _heroes(5)
@@ -130,6 +151,23 @@ func test_a_load_stops_every_job_before_the_session_is_replaced() -> void:
 	assert_true(GameSession._battle_jobs.is_empty(), "no task left")
 	assert_true(job.cancelled)
 	assert_eq(job.result, {"cancelled": true})
+
+
+## 20 heroes of level 80 (their whole kits), with a Rime Circle on the first enemy and a Hearthward on
+## the first Cleric cast at tick 0: 36 s and 48 s at P = 6, so both outlast the run.
+func _run_with_zones(zone: ZoneDefinition, seed: int) -> BattleState:
+	var heroes: Array[Dictionary] = _heroes(20)
+	for hero: Dictionary in heroes:
+		hero["level"] = 80
+	var state: BattleState = BattleSimulation.create_run("order:job", heroes, zone, _squads(20), {"default_stance": "advance"}, {"healing": 0, "revival": 0}, seed)
+	var mage: BattleActor = state.actors.filter(func(actor: BattleActor) -> bool: return actor.archetype == "mage")[0]
+	var cleric: BattleActor = state.actors.filter(func(actor: BattleActor) -> bool: return actor.archetype == "cleric")[0]
+	var enemy: BattleActor = state.actors.filter(func(actor: BattleActor) -> bool: return actor.faction == "enemy")[0]
+	mage.position = enemy.position + Vector2(0.0, -6.0)
+	assert_true(BattleSimulation._use_skill(state, mage, BattleSimulation.ABILITIES["mage_rime_circle"], enemy, enemy.position))
+	cleric.ability_lock = 0.0
+	assert_true(BattleSimulation._use_skill(state, cleric, BattleSimulation.ABILITIES["cleric_hearthward"], cleric, cleric.position))
+	return state
 
 
 ## Built on the main thread, as every job's state is: the zone is already resolved.

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"cleric_hearthward"
+display_name = "Hearthward"
+kind = "ability"
+archetype = "cleric"
+cooldown_seconds = 25.0
+range_units = 6.0
+radius_units = 3.5
+ai_rule = "allies_near_ally"
+ai_count = 3
+ai_radius = 3.5
+ai_fraction = 0.7
+effects = Array[Dictionary]([{
+"type": "zone",
+"side": "allies",
+"seconds": 8.0,
+"pulse": [{
+"type": "status",
+"status": "damage_reduction",
+"magnitude": 0.2,
+"seconds": 1.5
+}, {
+"type": "heal",
+"multiplier": 0.15
+}]
+}])

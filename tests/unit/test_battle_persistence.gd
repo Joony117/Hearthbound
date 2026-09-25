@@ -170,6 +170,10 @@ func _pre_skills_shape(state: BattleState, rallied: Dictionary = {}) -> Dictiona
 	var data: Dictionary = _without_ledger_keys(state.to_dict())
 	# ig-1jw: the old build had no pace key; the test asserts the checkpoint loaded as pace 1.
 	data.erase("pace")
+	# ig-vl1.4: nor zones, and a pre-skills kit casts none.
+	assert_eq([data["field_objects"], data["field_sequence"]], [[], 0], "no zone in a pre-skills fight")
+	data.erase("field_objects")
+	data.erase("field_sequence")
 	for index: int in state.actors.size():
 		var actor: BattleActor = state.actors[index]
 		var actor_data: Dictionary = (data["actors"] as Array)[index]

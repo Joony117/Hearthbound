@@ -66,6 +66,7 @@ var _practice_state: BattleState
 var _snapshot: Dictionary = {}
 var _unit_views: Dictionary[String, BattleUnitView] = {}
 var _objective_views: Dictionary[String, Node3D] = {}
+var _field_views: Dictionary[String, MeshInstance3D] = {}
 var _selected_ids: Array[String] = []
 var _practice_names: Dictionary[String, String] = {}
 var _squad_structure_key: String = ""
@@ -535,6 +536,7 @@ func _render_snapshot(snapshot: Dictionary) -> void:
 	_update_selected_panel()
 	_update_unit_views()
 	_update_objective_views()
+	_update_field_views()
 	snapshot_rendered.emit(_snapshot.duplicate(true))
 
 
@@ -753,6 +755,44 @@ func _update_objective_views() -> void:
 		if marker_id not in seen_ids:
 			_objective_views[marker_id].queue_free()
 			_objective_views.erase(marker_id)
+
+
+## ig-vl1.4: a ring per live zone, read from the checkpoint only (DECISIONS.md 2026-09-25, "Casters shape
+## the field", item 9): frost for a zone on opponents, warm for one on allies.
+func _update_field_views() -> void:
+	var raw_fields: Variant = _snapshot.get("field_objects", [])
+	if not raw_fields is Array:
+		raw_fields = []
+	var seen_ids: Array[String] = []
+	for raw_field: Variant in raw_fields as Array:
+		if not raw_field is Dictionary:
+			continue
+		var field: Dictionary = raw_field as Dictionary
+		var field_id: String = str(field.get("id", ""))
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(field.get("skill_id", ""))) as AbilityDefinition
+		if field_id.is_empty() or skill == null:
+			continue
+		seen_ids.append(field_id)
+		var ring: MeshInstance3D = _field_views.get(field_id) as MeshInstance3D
+		if ring == null:
+			ring = MeshInstance3D.new()
+			ring.name = "Field_%s" % field_id.validate_node_name()
+			ring.mesh = TorusMesh.new()
+			ring.material_override = _new_material(Color.WHITE)
+			_field_views[field_id] = ring
+			%Objectives.add_child(ring)
+		# Set every render: a retried run reuses its ids.
+		var radius: float = maxf(float(field.get("radius", 1.0)), 0.5)
+		(ring.mesh as TorusMesh).inner_radius = radius * 0.93
+		(ring.mesh as TorusMesh).outer_radius = radius
+		var on_opponents: bool = str(BattleSimulation._effect_of(skill, "zone").get("side", "")) == "opponents"
+		(ring.material_override as StandardMaterial3D).albedo_color = Color("8fc4e8") if on_opponents else Color("e8c77a")
+		var center: Vector2 = _array_vector2(field.get("center", [0.0, 0.0]))
+		ring.position = Vector3(center.x, 0.04, center.y)
+	for field_id: String in _field_views.keys():
+		if field_id not in seen_ids:
+			_field_views[field_id].queue_free()
+			_field_views.erase(field_id)
 
 
 func _make_objective_marker(marker_id: String) -> Node3D:

@@ -183,6 +183,7 @@ starve_next_death_minutes = 10.0
 starve_last_warning_minutes = 5.0
 ledger_max_records = 10000
 battle_max_moments = 64
+battle_field_object_cap = 8
 skill_ability_lock_seconds = 1.0
 skill_combo_window_seconds = 6.0
 skill_reaction_delay_seconds = 0.2

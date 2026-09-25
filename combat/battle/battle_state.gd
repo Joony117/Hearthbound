@@ -39,6 +39,13 @@ var moments: Array[Dictionary] = []
 var moments_truncated: bool = false
 ## {hero_id: enemies that hero finished}.
 var kills: Dictionary = {}
+## Live zones, oldest first (DECISIONS.md 2026-09-25, "Casters shape the field"): {id, kind, skill_id,
+## owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale}. What one does is its
+## skill's (BattleSimulation.ABILITIES); atk and heal_scale are the caster's at the cast. Its pulses
+## fall where remaining_seconds crosses a whole pulse, so it needs no timer of its own.
+var field_objects: Array[Dictionary] = []
+## Casts so far, for the next field object's id.
+var field_sequence: int = 0
 
 
 func to_dict() -> Dictionary:
@@ -69,6 +76,8 @@ func to_dict() -> Dictionary:
 		"moments": moments.duplicate(true),
 		"moments_truncated": moments_truncated,
 		"kills": kills.duplicate(),
+		"field_objects": field_objects.duplicate(true),
+		"field_sequence": field_sequence,
 	}
 
 
@@ -124,6 +133,32 @@ static func from_dict(data: Dictionary) -> BattleState:
 		for hero_id: Variant in raw_kills as Dictionary:
 			if hero_id is String:
 				state.kills[hero_id] = int((raw_kills as Dictionary)[hero_id])
+	# Additive keys (ig-vl1.4): a checkpoint without them has no zones. BattleSimulation.validate_snapshot
+	# has checked each object's shape; one whose skill this build lacks, or that makes no zone, is dropped.
+	state.field_sequence = int(data.get("field_sequence", 0))
+	var raw_fields: Variant = data.get("field_objects")
+	if raw_fields is Array:
+		for raw_field: Variant in raw_fields as Array:
+			if not raw_field is Dictionary:
+				continue
+			var field: Dictionary = raw_field as Dictionary
+			var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(field.get("skill_id", ""))) as AbilityDefinition
+			if skill == null or BattleSimulation._effect_of(skill, "zone").is_empty():
+				push_warning("Battle field object %s has an unknown zone skill '%s'; dropped." % [field.get("id", ""), field.get("skill_id", "")])
+				continue
+			var center: Array = field.get("center", [0.0, 0.0]) as Array
+			state.field_objects.append({
+				"id": str(field.get("id", "")),
+				"kind": str(field.get("kind", "zone")),
+				"skill_id": str(field["skill_id"]),
+				"owner_actor_id": str(field.get("owner_actor_id", "")),
+				"faction": str(field.get("faction", "")),
+				"center": [float(center[0]), float(center[1])],
+				"radius": float(field.get("radius", 0.0)),
+				"remaining_seconds": float(field.get("remaining_seconds", 0.0)),
+				"atk": float(field.get("atk", 0.0)),
+				"heal_scale": float(field.get("heal_scale", 1.0)),
+			})
 	return state
 
 

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"mage_rime_circle"
+display_name = "Rime Circle"
+kind = "ability"
+archetype = "mage"
+cooldown_seconds = 20.0
+range_units = 8.0
+radius_units = 3.0
+ai_rule = "enemies_near_target"
+ai_count = 3
+ai_radius = 3.0
+ai_or_elite = true
+effects = Array[Dictionary]([{
+"type": "zone",
+"side": "opponents",
+"seconds": 6.0,
+"pulse": [{
+"type": "damage",
+"multiplier": 0.3
+}, {
+"type": "status",
+"status": "speed",
+"magnitude": -0.3,
+"seconds": 1.5
+}]
+}])

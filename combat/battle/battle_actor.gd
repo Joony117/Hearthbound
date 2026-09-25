@@ -344,9 +344,11 @@ static func _validate_skill_state(data: Dictionary) -> String:
 				return "Battle actor status %s must be a String." % key
 		if str(status["id"]).is_empty() or not str(status["kind"]) in AbilityDefinition.STATUS_KINDS:
 			return "Battle actor status id is empty or its kind is unknown."
+		# ig-vl1.4: a stat status may cut its stat (Rime Circle's slow), never to 0 or below.
+		var cut: bool = str(status["kind"]) in AbilityDefinition.STAT_STATUSES and _valid_number(status.get("magnitude")) and float(status["magnitude"]) > -1.0
 		for key: String in ["remaining", "magnitude"]:
-			if not _valid_number(status.get(key)) or float(status.get(key)) < 0.0:
-				return "Battle actor status %s must be finite and non-negative." % key
+			if not _valid_number(status.get(key)) or (float(status.get(key)) < 0.0 and not (key == "magnitude" and cut)):
+				return "Battle actor status %s must be finite and non-negative (a stat status's magnitude above -1)." % key
 		if str(status["kind"]) == "damage_reduction" and float(status["magnitude"]) > 1.0:
 			return "Battle actor damage reduction cannot exceed one."
 		var identity: String = "%s|%s" % [status["id"], status["kind"]]
