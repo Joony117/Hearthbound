@@ -157,7 +157,15 @@ static func grant_xp(hero: Hero, amount: int, balance: BalanceTable) -> void:
 		hero.xp = 0
 
 
+## ig-7sn.14: held here, since a load nothing keeps re-reads the .tres on every call. Main thread only
+## (no battle job calls it). A missing def is never cached, so it errors on every call as before.
+static var _definitions: Dictionary[StringName, HeroDefinition] = {}
+
+
 static func definition_for(p_def_id: StringName) -> HeroDefinition:
+	assert(OS.get_thread_caller_id() == OS.get_main_thread_id(), "definition_for is main-thread only (static cache)")
+	if _definitions.has(p_def_id):
+		return _definitions[p_def_id]
 	var path: String = DEF_PATH_TEMPLATE % str(p_def_id)
 	if not ResourceLoader.exists(path):
 		push_error("Missing HeroDefinition for def_id '%s' at %s." % [p_def_id, path])
@@ -165,6 +173,8 @@ static func definition_for(p_def_id: StringName) -> HeroDefinition:
 	var definition: HeroDefinition = ResourceLoader.load(path) as HeroDefinition
 	if definition == null:
 		push_error("Resource for def_id '%s' is not a HeroDefinition: %s." % [p_def_id, path])
+	else:
+		_definitions[p_def_id] = definition
 	return definition
 
 

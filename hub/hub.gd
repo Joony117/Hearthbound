@@ -177,6 +177,7 @@ func _ready() -> void:
 	GameSession.expeditions_changed.connect(_refresh_walkers)
 	GameSession.expeditions_changed.connect(_show_partner)
 	GameSession.battle_changed.connect(_on_battle_changed)
+	GameSession.preview_forecast_ready.connect(_refresh_dispatch_summary)
 	_populate_rank_filter(_roster_rank_filter)
 	_populate_rank_filter(_inventory_rank_filter)
 	_populate_archetype_filter()
@@ -2049,6 +2050,7 @@ func _refresh_dispatch_summary() -> void:
 		var total_capacity: int = 0
 		var total_squads: int = 0
 		var safe_forecast: bool = true
+		var checking: bool = false
 		var raw_previews: Variant = preview.get("orders_preview", [])
 		for entry_value: Variant in raw_previews as Array:
 			if not entry_value is Dictionary:
@@ -2058,8 +2060,9 @@ func _refresh_dispatch_summary() -> void:
 			total_capacity += int(entry.get("capacity", 0))
 			total_squads += int(entry.get("squad_count", 0))
 			safe_forecast = safe_forecast and bool(entry.get("safe", false))
+			checking = checking or bool(entry.get("checking", false))
 			detail_lines.append("• %s · %d/cap %d · %s min · %s" % [str(entry.get("name", "Team")), int(entry.get("hero_count", 0)), int(entry.get("capacity", 0)), _format_duration(float(entry.get("route_seconds", 0.0))), str(entry.get("reason", ""))])
-		detail_lines.append("Total %d heroes / %d per-order capacity · %d squads · forecast %s (never guaranteed safe)" % [total_heroes, total_capacity, total_squads, "safe" if safe_forecast else "not safe"])
+		detail_lines.append("Total %d heroes / %d per-order capacity · %d squads · forecast %s (never guaranteed safe)" % [total_heroes, total_capacity, total_squads, "checking" if checking else ("safe" if safe_forecast else "not safe")])
 		_dispatch_summary.text = "\n".join(detail_lines)
 	else:
 		_dispatch_summary.text = "%s\n%d heroes / cap %d · %d squad(s) · route minimum %s\nForecast: %s · %s" % [
@@ -2068,7 +2071,7 @@ func _refresh_dispatch_summary() -> void:
 			int(preview.get("capacity", 0)),
 			int(preview.get("squad_count", 0)),
 			_format_duration(float(preview.get("route_seconds", 0.0))),
-			"forecast only; safety is not guaranteed" if bool(preview.get("safe", false)) else "not forecast safe",
+			"checking" if bool(preview.get("checking", false)) else ("forecast only; safety is not guaranteed" if bool(preview.get("safe", false)) else "not forecast safe"),
 			str(preview.get("reason", "")),
 		]
 	var keepers: String = _absent_keepers_text()

@@ -175,7 +175,7 @@ func test_a_launch_and_a_repeat_build_the_team_snapshot_once() -> void:
 	var builds: int = GameSession.team_snapshot_builds
 	var order_id: String = _dispatch_strong_repeat(_zero_loadout(), 0)
 	assert_ne(order_id, "", GameSession.last_action_error)
-	assert_eq(GameSession.team_snapshot_builds, builds + 1, "until stopped: the preview forecast, the forecast and the run")
+	assert_eq(GameSession.team_snapshot_builds, builds + 2, "until stopped: the preview that sent the check, then the dispatch (its key and the run)")
 	# The shared snapshot starts the same run a fresh one would.
 	var order: Dictionary = GameSession.expedition_orders[0]
 	var team: Array[Hero] = []
@@ -259,6 +259,13 @@ func _dispatch_strong_repeat(loadout: Dictionary, total_runs: int = 2) -> String
 		GameSession.roster.append(hero)
 		ids.append(hero.instance_id)
 	var preset_id: String = GameSession.save_team_preset("", "Repeat Team", ids, "verdant_outskirts")
+	if total_runs == 0:
+		# ig-7sn.14: until stopped waits for the preview's forecast to land.
+		GameSession.preview_force([preset_id], "verdant_outskirts", 0, {}, loadout)
+		var deadline: int = Time.get_ticks_msec() + 60000
+		while GameSession._preview_forecasts.any(func(entry: Dictionary) -> bool: return not entry.has("verdict")) and Time.get_ticks_msec() < deadline:
+			OS.delay_msec(1)
+			GameSession._land_battle_checks()
 	return GameSession.dispatch_force([preset_id], "verdant_outskirts", total_runs, {}, loadout)
 
 

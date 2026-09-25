@@ -5,7 +5,8 @@ extends SceneTree
 ## never runs on the owner's, nor without perf_throwaway.txt in its user:// (see seed_perf.gd). Copy
 ## the seeded APPDATA first: a measure changes its save.
 ##   APPDATA="$(cygpath -w <copy>)" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --windowed -s res://tests/perf/perf_baseline.gd -- <measure> <commit>
-## Measures (the ig-7sn.2 list): pulse1, pulse5, hub, battle_citadel, battle_frontier, roster, town, load.
+## Measures (the ig-7sn.2 list): pulse1, pulse5, hub, battle_citadel, battle_frontier, roster, town, load;
+## preview (ig-7sn.14).
 ## Since ig-7sn.6: settle1, settle5 (the pulse that settles a leg, split).
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
@@ -79,6 +80,8 @@ func _run() -> void:
 			await _measure_town()
 		"load":
 			await _measure_load()
+		"preview":
+			await _measure_preview()
 		_:
 			push_error("Unknown measure '%s'." % measure)
 			quit(1)
@@ -540,6 +543,36 @@ func _measure_load() -> void:
 	_print_orders()
 
 
+## ---- 7. The dispatch preview (ig-7sn.14): GameSession.preview_force for one force at each zone's cap
+## (5 / 5 / 5 / 30 / 50 heroes in 5-hero presets), then one hub dispatch-summary refresh with those
+## presets selected, per-team (each preset previewed in its own zone) and combined (one force).
+const PREVIEW_REPS: int = 3
+
+
+func _measure_preview() -> void:
+	var hub: Node = await _open_hub()
+	var loadout: Dictionary = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
+	for zone_id: String in ZONES:
+		var presets: Array[String] = _presets(zone_id, _cap(zone_id))
+		_report("preview: preview_force %s, %d heroes" % [zone_id, _cap(zone_id)], _time(func() -> void: session.preview_force(presets, zone_id, 99, {}, loadout), PREVIEW_REPS))
+		hub._refresh_preset_lists()
+		var list: ItemList = hub._preset_dispatch_list
+		list.deselect_all()
+		for row: int in list.item_count:
+			if str((list.get_item_metadata(row) as Dictionary).get("id", "")) in presets:
+				list.select(row, false)
+		# The combined picker lists only the hub's EXPEDITION_ZONES; a zone outside it is per-team only.
+		var modes: Array[bool] = [false]
+		for row: int in hub._combined_zone.item_count:
+			if str((hub._combined_zone.get_item_metadata(row) as ZoneDefinition).zone_id) == zone_id:
+				hub._combined_zone.select(row)
+				modes.append(true)
+		for combined: bool in modes:
+			hub._combine_teams.set_pressed_no_signal(combined)
+			_report("preview: hub _refresh_dispatch_summary %s, %d heroes, %s" % [zone_id, _cap(zone_id), "combined" if combined else "per-team"], _time(hub._refresh_dispatch_summary, PREVIEW_REPS))
+		hub._combine_teams.set_pressed_no_signal(false)
+
+
 ## ---- Helpers
 
 ## Frame times (ms) from now while running() holds, prints those over 16.7 ms with their time since
@@ -566,6 +599,15 @@ func _open_hub() -> Node:
 
 ## Dispatches the first free heroes to zone_id the way the hub does: saved 5-hero presets, 99 runs.
 func _dispatch(zone_id: String, heroes: int) -> String:
+	var presets: Array[String] = _presets(zone_id, heroes)
+	var order_id: String = session.dispatch_force(presets, zone_id, 99, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0})
+	if order_id.is_empty():
+		push_error("dispatch %s (%d heroes) failed: %s" % [zone_id, heroes, session.last_action_error])
+	return order_id
+
+
+## Saves the first free heroes as 5-hero presets for zone_id; returns their ids.
+func _presets(zone_id: String, heroes: int) -> Array[String]:
 	var ids: Array[String] = []
 	for hero: Hero in session.roster:
 		if ids.size() < heroes and not session.is_hero_busy(hero) and not session.is_embodied(hero):
@@ -573,10 +615,7 @@ func _dispatch(zone_id: String, heroes: int) -> String:
 	var presets: Array[String] = []
 	for start: int in range(0, ids.size(), 5):
 		presets.append(session.save_team_preset("", "Perf %d" % session.team_presets.size(), ids.slice(start, start + 5), zone_id))
-	var order_id: String = session.dispatch_force(presets, zone_id, 99, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0})
-	if order_id.is_empty():
-		push_error("dispatch %s (%d heroes) failed: %s" % [zone_id, ids.size(), session.last_action_error])
-	return order_id
+	return presets
 
 
 func _cap(zone_id: String) -> int:

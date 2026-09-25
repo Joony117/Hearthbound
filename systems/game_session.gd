@@ -8,6 +8,8 @@ extends Node
 signal roster_changed
 signal expeditions_changed
 signal battle_changed(order_id: String)
+## ig-7sn.14: a dispatch preview's forecast landed (or its cache was dropped): refresh the preview.
+signal preview_forecast_ready
 
 ## A fresh save must afford at least one pull or the game is unplayable from boot: the roster
 ## starts empty and only a pull can fill it (docs/SYSTEMS.md, Summon Stones, 3).
@@ -99,6 +101,11 @@ var _battle_jobs: Array[BattleJob] = []
 ## ig-7sn.12: an order owing catch_up_seconds has an entry here too, with its one "catch_up" job.
 var _battle_checks: Dictionary[String, Dictionary] = {}
 var _battle_check_generation: int = 0
+## ig-7sn.14: the dispatch preview's forecasts, oldest first. Each entry holds its key (the forecast's
+## exact inputs, compared with ==), its seed, its normal and stress jobs, and once both land, its
+## verdict. Unsaved: _cancel_battle_jobs clears it; an until-stopped dispatch consumes its entry.
+var _preview_forecasts: Array[Dictionary] = []
+const PREVIEW_FORECAST_CAP: int = 16
 var _checkpoint_save_failed: bool = false
 var _checkpoint_error: String = ""
 var _command_errors: Dictionary[String, String] = {}
@@ -132,6 +139,10 @@ func _cancel_battle_jobs() -> void:
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 	_battle_jobs.clear()
 	_battle_checks.clear()
+	if not _preview_forecasts.is_empty():
+		_preview_forecasts.clear()
+		# A preview left on "Checking..." asks again, once the state being replaced is gone.
+		preview_forecast_ready.emit.call_deferred()
 
 
 ## ig-7sn.6 (DECISIONS.md 2026-09-25 "Battle sim threading", item 9): sends the repeat check, the
@@ -183,13 +194,10 @@ func _send_battle_checks() -> void:
 			check["stress" if stress else "normal"] = _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_forecast_leg(order_id + ":repeat", leg_snapshots, zone, leg_squads, leg_policies, leg_escrow, seed, stress, job))
 
 
-## Releases every finished job (the wait frees its task), then commits every check whose two jobs are
-## both in. Nothing else removes a job but _cancel_battle_jobs.
+## Releases every finished job, then commits every check whose two jobs are both in. Nothing else
+## removes a job but _cancel_battle_jobs.
 func _land_battle_checks() -> void:
-	for job: BattleJob in _battle_jobs.duplicate():
-		if WorkerThreadPool.is_task_completed(job.task_id):
-			WorkerThreadPool.wait_for_task_completion(job.task_id)
-			_battle_jobs.erase(job)
+	_release_battle_jobs()
 	var landed: Dictionary[String, int] = {}
 	# ig-7sn.12: the load's catch-ups are one round: none lands until every one is in.
 	var catch_ups: Dictionary[String, int] = {}
@@ -205,6 +213,31 @@ func _land_battle_checks() -> void:
 		landed.merge(catch_ups)
 	if not landed.is_empty():
 		_commit_profile_mutation(_land_battle_checks_in_memory.bind(landed))
+
+
+## Releases every finished job (the wait frees its task; the only other waiter is _cancel_battle_jobs),
+## then lands the preview forecasts whose two jobs are in. A preview changes no saved state, so it lands
+## without a commit, and _process runs this even while the pulse is stalled (a blocked load, a failed
+## checkpoint save), so no preview waits on "Checking..." for the stall (ig-7sn.14).
+func _release_battle_jobs() -> void:
+	for job: BattleJob in _battle_jobs.duplicate():
+		if WorkerThreadPool.is_task_completed(job.task_id):
+			WorkerThreadPool.wait_for_task_completion(job.task_id)
+			_battle_jobs.erase(job)
+	var previewed: bool = false
+	for entry: Dictionary in _preview_forecasts.duplicate():
+		if entry.has("verdict") or _battle_jobs.has(entry["normal"]) or _battle_jobs.has(entry["stress"]):
+			continue
+		previewed = true
+		var normal: Dictionary = (entry["normal"] as BattleJob).result
+		var stress: Dictionary = (entry["stress"] as BattleJob).result
+		if bool(normal.get("cancelled", true)) or bool(stress.get("cancelled", true)):
+			_preview_forecasts.erase(entry)
+			continue
+		var verdict: Dictionary = BattleSimulation.forecast_verdict(normal["leg"], stress["leg"])
+		entry["verdict"] = {"safe": bool(verdict["safe"]), "reason": str(verdict["reason"])}
+	if previewed:
+		preview_forecast_ready.emit()
 
 
 ## landed: generation by order id. Each order in its place in expedition_orders, never completion
@@ -288,6 +321,7 @@ func _end_battle_check_in_memory(order_id: String, reason: String) -> void:
 
 func _process(delta: float) -> void:
 	if SaveService.load_blocked:
+		_release_battle_jobs()
 		return
 	_expedition_pulse_accumulator += delta
 	if _expedition_pulse_accumulator < EXPEDITION_PULSE_SECONDS:
@@ -308,6 +342,7 @@ func _process(delta: float) -> void:
 					if str(order.get("backend", "legacy_v2")) == "battle_v1":
 						_notify_battle_changed(str(order.get("id", "")))
 				_notify_expeditions_changed()
+		_release_battle_jobs()
 		return
 	tick_expeditions(elapsed_seconds)
 	_periodic_save_accumulator += elapsed_seconds
@@ -1285,7 +1320,8 @@ func set_battle_paused(order_id: String, paused: bool) -> void:
 
 
 ## snapshots, when given, receives the team snapshots the forecast used, so a dispatch can reuse them.
-func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs: int, policies: Dictionary, loadout: Dictionary, snapshots: Array[Dictionary] = []) -> Dictionary:
+## forecast false skips the forecast (a fixed-run dispatch needs none): checking and safe read false.
+func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs: int, policies: Dictionary, loadout: Dictionary, snapshots: Array[Dictionary] = [], forecast: bool = true) -> Dictionary:
 	if squads.is_empty():
 		return _force_preview_error("Select at least one team preset.")
 	if total_runs < 0 or total_runs > 999:
@@ -1327,12 +1363,46 @@ func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs:
 	var route_seconds: float = ExpeditionOrders.force_duration_seconds(team, zone, preload("res://balance.tres"))
 	if route_seconds <= 0.0:
 		return _force_preview_error("The selected force cannot make progress in that zone.", team.size(), zone.hero_cap, squads.size())
-	var seed: int = _new_run_seed()
 	snapshots.assign(_team_snapshots(team, squads))
-	var forecast: Dictionary = BattleSimulation.forecast("forecast", snapshots, zone, squads, policies, _loadout_escrow(loadout), seed)
-	var safe: bool = bool(forecast.get("safe", false))
+	# ig-7sn.14: the forecast runs as jobs; until it lands the preview is "checking".
+	var entry: Dictionary = _preview_forecast(snapshots, zone, squads, policies, _loadout_escrow(loadout)) if forecast else {}
+	var checking: bool = forecast and not entry.has("verdict")
+	var safe: bool = entry.has("verdict") and bool(entry["verdict"]["safe"])
 	var valid: bool = total_runs != 0 or safe
-	return {"valid": valid, "error": "" if valid else "Until-stopped dispatch requires a Safe forecast.", "safe": safe, "reason": str(forecast.get("reason", "")), "hero_count": team.size(), "capacity": zone.hero_cap, "squad_count": squads.size(), "route_seconds": route_seconds}
+	var error: String = ""
+	if not valid:
+		error = "Until-stopped dispatch waits for the forecast." if checking else "Until-stopped dispatch requires a Safe forecast."
+	return {"valid": valid, "error": error, "safe": safe, "checking": checking, "reason": "Checking..." if checking else str((entry.get("verdict", {}) as Dictionary).get("reason", "")), "hero_count": team.size(), "capacity": zone.hero_cap, "squad_count": squads.size(), "route_seconds": route_seconds}
+
+
+## The cached preview forecast for these exact inputs. A miss draws a seed, adds the entry and sends
+## the normal and stress legs as jobs, each with its own deep copy; past the cap the oldest is dropped.
+func _preview_forecast(snapshots: Array[Dictionary], zone: ZoneDefinition, squads: Array[Dictionary], policies: Dictionary, escrow: Dictionary) -> Dictionary:
+	var key: Array = [snapshots, str(zone.zone_id), squads, policies, escrow]
+	var index: int = _preview_forecast_index(key)
+	if index >= 0:
+		return _preview_forecasts[index]
+	var seed: int = _new_run_seed()
+	var entry: Dictionary = {"key": key.duplicate(true), "seed": seed}
+	for stress: bool in [false, true]:
+		var leg_snapshots: Array[Dictionary] = snapshots.duplicate(true)
+		var leg_squads: Array[Dictionary] = squads.duplicate(true)
+		var leg_policies: Dictionary = policies.duplicate(true)
+		var leg_escrow: Dictionary = escrow.duplicate(true)
+		entry["stress" if stress else "normal"] = _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_forecast_leg("forecast", leg_snapshots, zone, leg_squads, leg_policies, leg_escrow, seed, stress, job))
+	_preview_forecasts.append(entry)
+	if _preview_forecasts.size() > PREVIEW_FORECAST_CAP:
+		var dropped: Dictionary = _preview_forecasts.pop_front()
+		(dropped["normal"] as BattleJob).cancelled = true
+		(dropped["stress"] as BattleJob).cancelled = true
+	return entry
+
+
+func _preview_forecast_index(key: Array) -> int:
+	for index: int in _preview_forecasts.size():
+		if _preview_forecasts[index]["key"] == key:
+			return index
+	return -1
 
 
 func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs: int, policies: Dictionary, loadout: Dictionary) -> String:
@@ -1340,10 +1410,10 @@ func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs
 	if SaveService.load_blocked:
 		last_action_error = SaveService.load_block_reason
 		return ""
-	# One team snapshot per launch (ig-7sn.4): the preview's forecast, this forecast and the run all use
-	# it. Nothing between them changes a hero or the ledger, and the simulation only reads snapshots.
+	# One team snapshot per launch (ig-7sn.4): the preview's forecast key and the run both use it. Nothing
+	# between them changes a hero or the ledger, and the simulation only reads snapshots.
 	var snapshots: Array[Dictionary] = []
-	var preview: Dictionary = _preview_force_data(squads, zone_id, total_runs, policies, loadout, snapshots)
+	var preview: Dictionary = _preview_force_data(squads, zone_id, total_runs, policies, loadout, snapshots, total_runs == 0)
 	if not bool(preview.get("valid", false)):
 		last_action_error = str(preview.get("error", "The force is invalid."))
 		return ""
@@ -1355,10 +1425,15 @@ func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs
 	var seed: int = _new_run_seed()
 	var escrow: Dictionary = _loadout_escrow(loadout)
 	if total_runs == 0:
-		var actual_forecast: Dictionary = BattleSimulation.forecast(order_id + ":forecast", snapshots, zone, squads, policies, escrow, seed)
-		if not bool(actual_forecast.get("safe", false)):
-			last_action_error = "Until-stopped dispatch requires a Safe forecast: %s" % str(actual_forecast.get("reason", ""))
+		# ig-7sn.14: valid means the preview's entry for these exact inputs landed Safe. The run starts
+		# from its seed (the snapshots are == its key's) and no forecast runs here. The entry is consumed,
+		# so its seed never starts a second run.
+		var index: int = _preview_forecast_index([snapshots, zone_id, squads, policies, escrow])
+		if index < 0:
+			last_action_error = "Until-stopped dispatch waits for the forecast."
 			return ""
+		seed = int(_preview_forecasts[index]["seed"])
+		_preview_forecasts.remove_at(index)
 	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, squads, policies, escrow, seed)
 	var names: PackedStringArray = []
 	for squad: Dictionary in squads:
