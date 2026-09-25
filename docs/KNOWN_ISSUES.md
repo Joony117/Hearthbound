@@ -62,6 +62,18 @@ the unsaved one in the last bit. No fork has been measured (`ig-36y`: 0 of 28; `
 **Revisit if:** a real fork is ever seen. Then store floats as their 64-bit pattern in hex. That is
 a save-schema change (boundary #1), so an ADR comes first.
 
+### With no heroes, the town mood's recovery waits for the next save
+Found by Sol in `ig-0og.1`'s review (finding 1). With an empty roster, nothing usually holds the
+periodic save open (`game_session.gd:371`): no order, no worker, no eater. The town mood still
+climbs on the live tick (`town_mood_rise_per_minute`, 2 a minute), because no heroes means none
+are homeless. So the climb isn't written until the next profile change, and a reload can show an
+older, lower mood.
+It's harmless. No heroes means no homeless, so no revolt. The next pull is a commit, and it saves
+the live mood. All that's lost is the climb since the last save, and the mood climbs again from
+there.
+**Revisit if:** anything else starts to move with an empty roster. Then the periodic save's gate
+also opens while the mood is under 100.
+
 ---
 
 ## Open questions
