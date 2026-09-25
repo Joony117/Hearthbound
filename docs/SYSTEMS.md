@@ -1233,13 +1233,18 @@ a progression finding. It is never patched over.
 
 | Stage | Game clock | Ledger | Checks the save must pass |
 |---|---|---|---|
-| Early | 2 h | about 120 records | Verdant cleared. 5–10 heroes, none above D. One team. The free first producers placed; no hall above level 1 |
-| Mid | 20 h | about 1,200 | Ashfall cleared. 15–30 heroes; the best team mostly C–B. 2–4 teams. Halls at level 2–3. At least one death, one rescue and one bond in the Ledger |
+| Early | 2 h | about 80 records | Verdant cleared. 8–20 heroes. 1–2 teams. The free first producers placed; no hall above level 1 |
+| Mid | 20 h | about 1,000 | Ashfall cleared. 15–30 heroes; the best team mostly C–B. 2–4 teams. Halls at level 2–3. At least one death, one rescue and one bond in the Ledger |
 | Late | Until the Ledger is at its 10,000 cap and has evicted | 10,000 | Sundered Vault cleared; Fallen Citadel and Frontier March tried. 40+ heroes; the best team A–SS. Every built hall at level 5. Several bonds and dreams. 5+ deaths |
 
 - Late is set by the cap, not by hours, so bond tuning sees eviction happen (meetings and meals go
-  first, then routine victories: `ig-m6o.2.2.4`'s tiers). At the guessed 60 records an hour, that is
-  about 170 hours.
+  first, then routine victories: `ig-m6o.2.2.4`'s tiers). At Early's measured 40 records an hour
+  plus the town records (about 20 an hour in a 30-hero town), that's about 170 hours, or less as
+  income grows with the zone.
+- Early's checks come from the first bot run (seed 1: 36 pulls, 23 fed, 13 kept, 2 teams; halls
+  [1, 1, 0, 0, 0]). Early has no rank check. A third of pulls are C or better, so even the three
+  starting pulls give one 70% of the time. A rank bound would test the seed, not the bot. The
+  bot is not changed to meet a check: it pulls, feeds and fields teams the way a player does.
 - The bot plays in fixed, greedy order. Summon when stones allow. Fill 5-hero teams by power.
   Send every idle team, with suggested supplies, to the hardest unlocked zone where its power is
   at least 90% of recommended. Spare heroes are fodder for the best ones. Equip the best gear on
@@ -1259,14 +1264,16 @@ a progression finding. It is never patched over.
   - `ig-eek.2`: Early and Mid remade, then Late. It waits for the meetings and meals
     (`ig-m6o.2.2.4`, `.5`) and the `ig-gy0.9` balance pass. The town records fill the Ledger at no
     sim cost, so Late takes about a third of the wall time. They are also what the cap evicts first.
-- The Ledger column is at pace 1. At `battle_pace` 6 (§ Battle pace) a battle takes about 6x as
-  long, so Early and Mid hold about a sixth as many records (about 20 and 200), and Late, set by
-  the cap, takes about 6x the game clock. Make the saves after `ig-1jw` lands.
+- The Ledger column is at `battle_pace` 6. Early's first run wrote 81 records in 2 h, and 59 were
+  summons and sacrifices. Those follow stone income, which `ig-1jw` kept per hour, so the pace
+  cuts only the battle records. Mid's figure scales Early's rate. The pull rate itself has no
+  target yet (`ig-0og`).
 
-> ⚠️ **PROVISIONAL** — the stage lengths and every check are desk guesses about what a player has
-> at 2 h, 20 h and the cap. How far a greedy bot gets is unmeasured, and Ashfall's boss is already
-> flagged unwinnable ungeared (§ The three zones) · **Settled by:** the first bot runs, then the
-> owner playing each save
+> ⚠️ **PROVISIONAL** — Early's checks rest on one seed. Mid's and Late's are still desk guesses,
+> and Early's best heroes (A and B at level 30–33) already reach Mid's "mostly C–B" at 2 h, so
+> Mid's best team will likely be above it by 20 h. Ashfall's boss is already flagged unwinnable ungeared (§ The three
+> zones) · **Settled by:** Early remade on seeds 1–8 (about 5 s of wall time each), Mid's first
+> run, `ig-0og`'s pull-rate target, then the owner playing each save
 
 ---
 
