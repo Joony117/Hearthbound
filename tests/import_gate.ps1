@@ -30,12 +30,25 @@ $env:APPDATA = [System.IO.Path]::GetTempPath()
 $warmup_output = & $godot --headless --import 2>&1
 $output = & $godot --headless --quit 2>&1
 $engine_exit = $LASTEXITCODE
+# ig-rd9: --quit never compiles a script only reached by -s or load() (harnesses, checks, the stage
+# bot), so a helper load()s every .gd under tests/ that GUT doesn't run (tests/unit/test_*.gd), found
+# by glob so a new harness is covered. One engine process for all of them, after the one above exits.
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$standalone = Get-ChildItem -Path $PSScriptRoot -Recurse -Filter *.gd |
+	Where-Object { -not ($_.Directory.Name -eq "unit" -and $_.Name -like "test_*") } |
+	ForEach-Object { "res://" + $_.FullName.Substring($root.Length + 1).Replace("\", "/") }
+$parse_output = & $godot --headless -s res://tests/gate_parse.gd -- @standalone 2>&1
+$parse_exit = $LASTEXITCODE
 $env:APPDATA = $original_appdata
 $warmup_output | ForEach-Object { $_.ToString() }
 $output | ForEach-Object { $_.ToString() }
+$parse_output | ForEach-Object { $_.ToString() }
 
-if (($output | Out-String) -match "SCRIPT ERROR|ERROR:|WARNING") {
+if ((($output + $parse_output) | Out-String) -match "SCRIPT ERROR|ERROR:|WARNING") {
 	 exit 1
+}
+if ($parse_exit -ne 0) {
+	exit 1
 }
 
 exit $engine_exit
