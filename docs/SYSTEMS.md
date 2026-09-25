@@ -1234,8 +1234,9 @@ a progression finding. It is never patched over.
 | Mid | 20 h | about 1,200 | Ashfall cleared. 15–30 heroes; the best team mostly C–B. 2–4 teams. Halls at level 2–3. At least one death, one rescue and one bond in the Ledger |
 | Late | Until the Ledger is at its 10,000 cap and has evicted | 10,000 | Sundered Vault cleared; Fallen Citadel and Frontier March tried. 40+ heroes; the best team A–SS. Every built hall at level 5. Several bonds and dreams. 5+ deaths |
 
-- Late is set by the cap, not by hours, so bond tuning sees eviction happen (routine victories go
-  first). At the guessed 60 records an hour, that is about 170 hours.
+- Late is set by the cap, not by hours, so bond tuning sees eviction happen (meetings and meals go
+  first, then routine victories: `ig-m6o.2.2.4`'s tiers). At the guessed 60 records an hour, that is
+  about 170 hours.
 - The bot plays in fixed, greedy order. Summon when stones allow. Fill 5-hero teams by power.
   Send every idle team, with suggested supplies, to the hardest unlocked zone where its power is
   at least 90% of recommended. Spare heroes are fodder for the best ones. Equip the best gear on
@@ -1246,10 +1247,15 @@ a progression finding. It is never patched over.
   offline progress for the time since it was written.
 - The bot's records per hour are not the owner's. They don't settle the Ledger's PROVISIONAL.
 - The saves are kept as files, not remade to order. Remake them on purpose only: a save schema
-  change, a bot policy change, or a balance change the director calls big. Mid's and Late's Ledgers
-  bake in who wins at build time, so a big balance change makes them stale.
-- Two beads build them: `ig-eek` (the bot and Early) and `ig-eek.1` (Mid and Late, after `ig-vl1.3`,
-  once the director has seen the projected wall time).
+  change, a bot policy change, a new Ledger record kind, or a balance change the director calls
+  big. Mid's and Late's Ledgers bake in who wins at build time, so a big balance change makes them
+  stale.
+- Three beads build them, each once the director has seen the projected wall time:
+  - `ig-eek`: the bot and Early.
+  - `ig-eek.1`: Mid, after `ig-vl1.3`.
+  - `ig-eek.2`: Early and Mid remade, then Late. It waits for the meetings and meals
+    (`ig-m6o.2.2.4`, `.5`) and the `ig-gy0.9` balance pass. The town records fill the Ledger at no
+    sim cost, so Late takes about a third of the wall time. They are also what the cap evicts first.
 - The Ledger column is at pace 1. At `battle_pace` 6 (§ Battle pace) a battle takes about 6x as
   long, so Early and Mid hold about a sixth as many records (about 20 and 200), and Late, set by
   the cap, takes about 6x the game clock. Make the saves after `ig-1jw` lands.
