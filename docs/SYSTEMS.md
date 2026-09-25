@@ -587,7 +587,7 @@ Design: `GAME_SPEC.md` § Skills. Boundaries: `DECISIONS.md` 2026-09-23, skills.
 | `skill_chain_step_timeout_seconds` | 3.0 | A chain step that cannot fire within this is skipped |
 | `skill_chain_max_steps` | 8 | Skills after the trigger, per chain |
 | `skill_status_tick_seconds` | 1.0 | Bleed, burn and heal-over-time tick once a second |
-| `skill_book_drop_chance` | 0.02 / 0.04 / 0.06 | Per clear, Verdant / Ashfall / Sundered (a `ZoneDefinition` value) |
+| `skill_book_drop_chance` | 0.02 / 0.04 / 0.06 / 0.08 / 0.10 | Per loot roll, so P rolls a victory (§ Battle pace; director 2026-09-25), Verdant / Ashfall / Sundered / Fallen Citadel / Frontier March (a `ZoneDefinition` value). The last two continue the +0.02 steps (`ig-gy0.7`, director 2026-09-25) and are as unplayed as the rest (the section's PROVISIONAL) |
 | `training_hall_teach_levels_per_level` | 5 | A hall at level `L` teaches skills up to `hero.level + 5 * L` |
 | `training_hall_teach_parts_per_unlock_level` | 3 | F parts per unlock level: a level-25 skill costs 75 |
 | `skill_book_general_share` | 0.5 | Share of book drops that are general books |
@@ -1240,8 +1240,9 @@ at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this 
 - Heroes you own get it too (director: fine).
 
 **Presence, as the sim measures it.** Take the balance gate's mixed team (Knight, Ranger, Mage,
-Rogue, Knight) and swap the Mage slot. Same rank and level for everyone else, seeds 1–4, the
-median of each measure:
+Rogue, Knight) and swap the Mage slot. Same rank and level for everyone else, seeds 1–8, the
+median of each measure (8 runs, `ig-vl1.3`: a median of four is the mean of the middle two, so one
+odd fight moves it):
 - A Mage at rank R must clear at least as fast as a Knight at R+1 in that slot, and no faster
   than a Knight at R+2.
 - A Cleric at rank R: the team's HP left at victory (downed heroes count as 0) at least that of a
