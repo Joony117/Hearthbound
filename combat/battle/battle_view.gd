@@ -511,6 +511,8 @@ func _render_snapshot(snapshot: Dictionary) -> void:
 		_status_label.text = "Rescue · %s" % status
 	elif status == "Victory" and route_remaining > 0.0:
 		_status_label.text = "Victory! Heading home · rewards in %s" % _format_time(route_remaining)
+	elif str(_snapshot.get("phase", "")) == "checking":
+		_status_label.text = "%s   ·   Checking the next run" % status
 	else:
 		_status_label.text = "%s   ·   Route minimum %s" % [status, _format_time(route_remaining)]
 	var checkpoint_error: String = str(_snapshot.get("checkpoint_error", ""))

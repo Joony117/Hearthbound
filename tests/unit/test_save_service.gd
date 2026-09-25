@@ -355,17 +355,22 @@ func test_offline_reload_completes_one_run_without_chaining_the_repeat() -> void
 	assert_eq(GameSession.expedition_orders.size(), 1)
 	assert_eq(GameSession.expedition_orders[0]["id"], order_id)
 	assert_eq(int(GameSession.expedition_orders[0]["runs_completed"]), 1)
-	assert_almost_eq(
-		float(GameSession.expedition_orders[0]["remaining_seconds"]),
-		float(GameSession.expedition_orders[0]["initial_duration_seconds"]),
-		0.001,
-	)
+	# ig-7sn.6: the load settled the leg and runs no forecast; the repeat waits in "checking".
+	assert_eq(GameSession.expedition_orders[0]["phase"], "checking")
 	var committed_bytes: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
 	_clear_session_without_saving()
 	_write_save(SaveService.SAVE_PATH, committed_bytes)
 	assert_true(SaveService.load_game())
 	assert_eq(GameSession.expedition_reports.size(), 1)
 	assert_eq(int(GameSession.expedition_orders[0]["runs_completed"]), 1)
+	assert_eq(GameSession.expedition_orders[0]["phase"], "checking")
+	_land_repeat_checks()
+	assert_eq(GameSession.expedition_orders[0]["phase"], "fighting")
+	assert_almost_eq(
+		float(GameSession.expedition_orders[0]["remaining_seconds"]),
+		float(GameSession.expedition_orders[0]["initial_duration_seconds"]),
+		0.001,
+	)
 
 
 func test_failed_completion_save_rolls_back_then_replays_the_same_seed_once() -> void:
@@ -928,3 +933,14 @@ func _assert_distinctive_state() -> void:
 	assert_eq(GameSession.parts, PARTS)
 	assert_eq(GameSession.stones, STONES)
 	assert_true(GameSession.cleared_zone_ids.has(CLEARED_ZONE_ID))
+
+
+## ig-7sn.6: a due repeat waits in "checking" until its forecast's two jobs land at a pulse. This sends
+## them and lands them (without advancing any battle).
+func _land_repeat_checks() -> void:
+	GameSession._send_battle_checks()
+	var deadline: int = Time.get_ticks_msec() + 60000
+	while not GameSession._battle_checks.is_empty() and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(1)
+		GameSession._land_battle_checks()
+	assert_true(GameSession._battle_checks.is_empty(), "the repeat checks landed")

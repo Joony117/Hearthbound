@@ -36,8 +36,9 @@ static func run_battle(state: BattleState, seconds: float, job: BattleJob) -> Di
 	return {"cancelled": false, "battle": state.to_dict()}
 
 
-## A forecast job, from create_run's inputs: BattleSimulation.forecast's Dictionary under "forecast".
-static func run_forecast(
+## A forecast job, from create_run's inputs: one of BattleSimulation.forecast's two legs under "leg".
+## BattleSimulation.forecast_verdict turns the two into forecast's Dictionary.
+static func run_forecast_leg(
 	order_id: String,
 	team_snapshots: Array[Dictionary],
 	zone: ZoneDefinition,
@@ -45,9 +46,10 @@ static func run_forecast(
 	policies: Dictionary,
 	supply_escrow: Dictionary,
 	seed: int,
+	stress: bool,
 	job: BattleJob,
 ) -> Dictionary:
-	var forecast: Dictionary = BattleSimulation.forecast(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed, job)
-	if forecast.is_empty():
+	var leg: Dictionary = BattleSimulation.forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed, stress, job)
+	if leg.is_empty():
 		return {"cancelled": true}
-	return {"cancelled": false, "forecast": forecast}
+	return {"cancelled": false, "leg": leg}

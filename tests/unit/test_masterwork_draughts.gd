@@ -199,6 +199,7 @@ func test_dispatch_repeat_and_rescue_carry_the_masterwork_stock_into_the_run() -
 	battle["supplies_remaining"] = {"healing": 1, "revival": 0, MW_HEAL: 1, MW_REVIVE: 1}
 	order["remaining_seconds"] = 0.0
 	GameSession.tick_expeditions(0.1)
+	_land_repeat_checks()
 	assert_eq(GameSession.expedition_orders.size(), 1, "the repeat leg starts: " + GameSession.last_action_error)
 	order = GameSession.expedition_orders[0]
 	assert_eq(order["escrow"], escrow)
@@ -424,3 +425,14 @@ func _load_in_the_future(saved: Dictionary) -> void:
 	file.close()
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
 	assert_false(SaveService.load_blocked, SaveService.load_block_reason)
+
+
+## ig-7sn.6: a due repeat waits in "checking" until its forecast's two jobs land at a pulse. This sends
+## them and lands them (without advancing any battle).
+func _land_repeat_checks() -> void:
+	GameSession._send_battle_checks()
+	var deadline: int = Time.get_ticks_msec() + 60000
+	while not GameSession._battle_checks.is_empty() and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(1)
+		GameSession._land_battle_checks()
+	assert_true(GameSession._battle_checks.is_empty(), "the repeat checks landed")

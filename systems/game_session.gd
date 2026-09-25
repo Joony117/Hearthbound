@@ -93,6 +93,11 @@ var _paused_battle_orders: Dictionary[String, bool] = {}
 ## Sim jobs out on WorkerThreadPool (ig-7sn.13, DECISIONS.md 2026-09-25 "Battle sim threading").
 ## Private and unsaved; nothing here is ever written by a job.
 var _battle_jobs: Array[BattleJob] = []
+## ig-7sn.6: the repeat check out for each "checking" order, by order id: its generation, the battle
+## Dictionary it was sent for, the normal and stress jobs, and what the repeat is built from (snapshots,
+## squads, zone, duration). Unsaved: a load or a rollback clears it and the pulse sends the check again.
+var _battle_checks: Dictionary[String, Dictionary] = {}
+var _battle_check_generation: int = 0
 var _checkpoint_save_failed: bool = false
 var _checkpoint_error: String = ""
 var _command_errors: Dictionary[String, String] = {}
@@ -125,6 +130,119 @@ func _cancel_battle_jobs() -> void:
 	for job: BattleJob in _battle_jobs:
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 	_battle_jobs.clear()
+	_battle_checks.clear()
+
+
+## ig-7sn.6 (DECISIONS.md 2026-09-25 "Battle sim threading", item 9): sends the repeat check, the
+## forecast's normal and stress legs as two jobs, for every "checking" order that has none out. The
+## snapshots come from the order's heroes now; each job gets its own deep copy.
+func _send_battle_checks() -> void:
+	for order: Dictionary in expedition_orders:
+		var order_id: String = str(order.get("id", ""))
+		if str(order.get("phase", "")) != "checking" or _battle_checks.has(order_id):
+			continue
+		var team: Array[Hero] = []
+		for hero_id: String in _string_array(order.get("hero_ids")):
+			var hero: Hero = hero_by_id(hero_id)
+			if hero != null:
+				team.append(hero)
+		var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(order.get("zone_id", ""))))
+		var squads: Array[Dictionary] = []
+		for raw_squad: Variant in order.get("squads") as Array:
+			if raw_squad is Dictionary:
+				squads.append((raw_squad as Dictionary).duplicate(true))
+		_battle_check_generation += 1
+		var check: Dictionary = {"generation": _battle_check_generation, "battle": order.get("battle"), "squads": squads, "zone": zone}
+		_battle_checks[order_id] = check
+		if team.size() != _string_array(order.get("hero_ids")).size() or zone == null:
+			# Nothing to check: it lands at the next pulse and stops the order.
+			check["error"] = "A repeat team member is missing."
+			continue
+		var snapshots: Array[Dictionary] = _team_snapshots(team, squads)
+		check["snapshots"] = snapshots
+		check["duration"] = ExpeditionOrders.force_duration_seconds(team, zone, preload("res://balance.tres"))
+		var policies: Dictionary = order.get("policies") as Dictionary
+		var escrow: Dictionary = order.get("escrow") as Dictionary
+		var seed: int = Item.int_field(order, "run_seed", 0, "battle order")
+		for stress: bool in [false, true]:
+			var leg_snapshots: Array[Dictionary] = snapshots.duplicate(true)
+			var leg_squads: Array[Dictionary] = squads.duplicate(true)
+			var leg_policies: Dictionary = policies.duplicate(true)
+			var leg_escrow: Dictionary = escrow.duplicate(true)
+			check["stress" if stress else "normal"] = _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_forecast_leg(order_id + ":repeat", leg_snapshots, zone, leg_squads, leg_policies, leg_escrow, seed, stress, job))
+
+
+## Releases every finished job (the wait frees its task), then commits every check whose two jobs are
+## both in. Nothing else removes a job but _cancel_battle_jobs.
+func _land_battle_checks() -> void:
+	for job: BattleJob in _battle_jobs.duplicate():
+		if WorkerThreadPool.is_task_completed(job.task_id):
+			WorkerThreadPool.wait_for_task_completion(job.task_id)
+			_battle_jobs.erase(job)
+	var landed: Dictionary[String, int] = {}
+	for order_id: String in _battle_checks:
+		var check: Dictionary = _battle_checks[order_id]
+		if not _battle_jobs.has(check.get("normal")) and not _battle_jobs.has(check.get("stress")):
+			landed[order_id] = int(check["generation"])
+	if not landed.is_empty():
+		_commit_profile_mutation(_land_battle_checks_in_memory.bind(landed))
+
+
+## landed: generation by order id. Each order in its place in expedition_orders, never completion
+## order. A check commits only onto the order it was sent for: same generation, still "checking",
+## still holding that battle Dictionary. Anything else is dropped.
+func _land_battle_checks_in_memory(landed: Dictionary[String, int]) -> void:
+	for order: Dictionary in expedition_orders.duplicate():
+		var order_id: String = str(order.get("id", ""))
+		if not landed.has(order_id) or not _battle_checks.has(order_id):
+			continue
+		var check: Dictionary = _battle_checks[order_id]
+		if int(check["generation"]) != landed[order_id]:
+			continue
+		_battle_checks.erase(order_id)
+		if str(order.get("phase", "")) != "checking" or not is_same(order.get("battle"), check["battle"]):
+			continue
+		if check.has("error"):
+			_end_battle_check_in_memory(order_id, str(check["error"]))
+			continue
+		var normal: Dictionary = (check["normal"] as BattleJob).result
+		var stress: Dictionary = (check["stress"] as BattleJob).result
+		if bool(normal.get("cancelled", true)) or bool(stress.get("cancelled", true)):
+			continue
+		if not bool(BattleSimulation.forecast_verdict(normal["leg"], stress["leg"]).get("safe", false)):
+			_end_battle_check_in_memory(order_id, "unsafe_repeat")
+			continue
+		var state: BattleState = BattleSimulation.create_run(order_id, check["snapshots"], check["zone"], check["squads"], order.get("policies") as Dictionary, order.get("escrow") as Dictionary, Item.int_field(order, "run_seed", 0, "battle order"))
+		order["battle"] = state.to_dict()
+		order["phase"] = "fighting"
+		order["initial_duration_seconds"] = check["duration"]
+		order["remaining_seconds"] = check["duration"]
+		order["incident_id"] = ""
+		_notify_battle_changed(order_id)
+	_notify_roster_changed()
+	_notify_expeditions_changed()
+
+
+## Ends a "checking" order now: refunds the escrow its repeat spent and writes reason onto that settle's
+## report (the order's newest). A check still out for it is dropped when it lands.
+func _end_battle_check_in_memory(order_id: String, reason: String) -> void:
+	var index: int = _order_index(order_id)
+	if index < 0:
+		return
+	var order: Dictionary = expedition_orders[index]
+	_refund_battle_supplies(order.get("escrow") as Dictionary)
+	for report_index: int in range(expedition_reports.size() - 1, -1, -1):
+		if str(expedition_reports[report_index].get("order_id", "")) == order_id:
+			expedition_reports[report_index]["stopped_reason"] = reason
+			break
+	var check: Dictionary = _battle_checks.get(order_id, {})
+	for leg: String in ["normal", "stress"]:
+		if check.get(leg) is BattleJob:
+			(check[leg] as BattleJob).cancelled = true
+	_battle_checks.erase(order_id)
+	expedition_orders.remove_at(index)
+	_notify_roster_changed()
+	_notify_expeditions_changed()
 
 
 func _process(delta: float) -> void:
@@ -1397,6 +1515,9 @@ func request_stop_expedition(order_id: String) -> void:
 		return
 	if bool(expedition_orders[index].get("stop_requested", false)):
 		return
+	if str(expedition_orders[index].get("phase", "")) == "checking":
+		_commit_profile_mutation(_end_battle_check_in_memory.bind(order_id, "requested"))
+		return
 	_commit_profile_mutation(_request_stop_in_memory.bind(index))
 
 
@@ -1806,6 +1927,8 @@ func tick_expeditions(delta_seconds: float) -> void:
 				break
 			continue
 		var order_id: String = str(order.get("id", ""))
+		if str(order.get("phase", "")) == "checking":
+			continue
 		var state := BattleState.from_dict(order.get("battle") as Dictionary)
 		if state.status != "active":
 			if route_due or _battle_has_no_secured_allies(state):
@@ -1846,6 +1969,9 @@ func tick_expeditions(delta_seconds: float) -> void:
 	else:
 		_advance_clocks_in_memory(delta_seconds, advanced)
 		_notify_expeditions_changed()
+	# ig-7sn.6: the repeat checks land and go out at the pulse, never inside load_game.
+	_land_battle_checks()
+	_send_battle_checks()
 
 
 func apply_offline_expedition_progress(now_unix: float) -> void:
@@ -1980,6 +2106,9 @@ func _resolve_due_orders_in_memory() -> void:
 	for order: Dictionary in expedition_orders:
 		var ready: bool = Item.float_field(order, "remaining_seconds", 0.0, "expedition order") <= 0.0
 		if str(order.get("backend", "legacy_v2")) == "battle_v1":
+			# A "checking" order is settled already; its check lands at the pulse (ig-7sn.6).
+			if str(order.get("phase", "")) == "checking":
+				continue
 			var state := BattleState.from_dict(order.get("battle") as Dictionary)
 			ready = state.status != "active" and (ready or _battle_has_no_secured_allies(state))
 		if ready:
@@ -2145,7 +2274,7 @@ func _settle_battle_order(order_index: int) -> void:
 	order["cumulative_xp"] = Item.int_field(order, "cumulative_xp", 0, "battle order") + xp_amount * secured.size()
 	order["cumulative_items"] = Item.int_field(order, "cumulative_items", 0, "battle order") + items_earned
 	var stopped_reason: String = _battle_stop_reason(order, state, outcome)
-	if stopped_reason.is_empty() and not _start_battle_repeat(order, zone):
+	if stopped_reason.is_empty() and not _begin_battle_check(order):
 		stopped_reason = last_action_error if not last_action_error.is_empty() else "unsafe_repeat"
 	_append_report(order, _hero_names(_string_array(order.get("hero_ids"))), _hero_names(outcome.stranded_hero_ids), StringName(outcome.status), stones_earned, xp_amount * secured.size(), items_earned, stopped_reason)
 	if not stopped_reason.is_empty():
@@ -2165,40 +2294,24 @@ func _battle_stop_reason(order: Dictionary, state: BattleState, outcome: BattleO
 	return ""
 
 
-func _start_battle_repeat(order: Dictionary, zone: ZoneDefinition) -> bool:
-	var team: Array[Hero] = []
+## ig-7sn.6: a due repeat spends its escrow and draws its seed now, then waits in "checking" for its
+## forecast, which runs as two jobs off the settle pulse (_send_battle_checks). Only the phase is new in
+## the save: run_seed and escrow are the repeat's own keys.
+func _begin_battle_check(order: Dictionary) -> bool:
 	for hero_id: String in _string_array(order.get("hero_ids")):
-		var hero: Hero = hero_by_id(hero_id)
-		if hero == null:
+		if hero_by_id(hero_id) == null:
 			last_action_error = "A repeat team member is missing."
 			return false
-		team.append(hero)
 	var loadout: Dictionary = order.get("loadout") as Dictionary
 	if not _loadout_spends_reserve(loadout).is_empty():
 		last_action_error = "insufficient_refill"
 		return false
-	var seed: int = _new_run_seed()
 	var escrow: Dictionary = _loadout_escrow(loadout)
-	var squads: Array[Dictionary] = []
-	for raw_squad: Variant in order.get("squads") as Array:
-		if raw_squad is Dictionary:
-			squads.append((raw_squad as Dictionary).duplicate(true))
-	var snapshots: Array[Dictionary] = _team_snapshots(team, squads)
-	var forecast: Dictionary = BattleSimulation.forecast(str(order.get("id")) + ":repeat", snapshots, zone, squads, order.get("policies") as Dictionary, escrow, seed)
-	if not bool(forecast.get("safe", false)):
-		last_action_error = "unsafe_repeat"
-		return false
 	for kind: String in BattleState.SUPPLY_KINDS:
 		supplies[kind] = int(supplies.get(kind, 0)) - int(escrow.get(kind, 0))
-	var state: BattleState = BattleSimulation.create_run(str(order.get("id")), snapshots, zone, squads, order.get("policies") as Dictionary, escrow, seed)
-	var duration: float = ExpeditionOrders.force_duration_seconds(team, zone, preload("res://balance.tres"))
-	order["run_seed"] = seed
-	order["battle"] = state.to_dict()
+	order["run_seed"] = _new_run_seed()
 	order["escrow"] = escrow
-	order["phase"] = "fighting"
-	order["initial_duration_seconds"] = duration
-	order["remaining_seconds"] = duration
-	order["incident_id"] = ""
+	order["phase"] = "checking"
 	return true
 
 
@@ -3093,7 +3206,7 @@ static func validate_saved_state(data: Dictionary, version: int) -> String:
 			for key: String in ["backend", "phase"]:
 				if not order.get(key) is String:
 					return "Battle order %s must be a String." % key
-			if str(order.get("backend")) != "battle_v1" or not str(order.get("phase")) in ["fighting", "rescuing", "returning"]:
+			if str(order.get("backend")) != "battle_v1" or not str(order.get("phase")) in ["fighting", "rescuing", "returning", "checking"]:
 				return "Battle order backend or phase is invalid."
 			if not order.get("battle") is Dictionary:
 				return "Battle order checkpoint must be a Dictionary."
@@ -3299,7 +3412,7 @@ static func _validate_saved_battle_order(order: Dictionary, order_id: String, zo
 			return "Battle checkpoint squad policy must match its order."
 	var status: String = str(battle.get("status", ""))
 	var phase: String = str(order.get("phase", ""))
-	if (phase in ["fighting", "rescuing"] and status != "active") or (phase == "returning" and status == "active"):
+	if (phase in ["fighting", "rescuing"] and status != "active") or (phase in ["returning", "checking"] and status == "active") or (phase == "checking" and kind != "normal"):
 		return "Battle phase does not match checkpoint status."
 	return ""
 

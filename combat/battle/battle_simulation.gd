@@ -252,7 +252,6 @@ static func issue_command(state: BattleState, command: Dictionary) -> Dictionary
 	return _accept_command(state)
 
 
-## job: a BattleJob when this runs as one (ig-7sn.13); a cancelled job gets {}.
 static func forecast(
 	order_id: String,
 	team_snapshots: Array[Dictionary],
@@ -261,30 +260,47 @@ static func forecast(
 	policies: Dictionary,
 	supply_escrow: Dictionary,
 	seed: int,
+) -> Dictionary:
+	var normal: Dictionary = forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed, false)
+	var stress: Dictionary = forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed, true)
+	return forecast_verdict(normal, stress)
+
+
+## One of forecast's two runs, the normal one or the stress one (enemies always crit, allies never).
+## A repeat's check sends each as its own job (ig-7sn.6). Returns {"outcome": its outcome's to_dict(),
+## "clean": won with no downing}, or {} when job was cancelled.
+static func forecast_leg(
+	order_id: String,
+	team_snapshots: Array[Dictionary],
+	zone: ZoneDefinition,
+	squads: Array[Dictionary],
+	policies: Dictionary,
+	supply_escrow: Dictionary,
+	seed: int,
+	stress: bool,
 	job: BattleJob = null,
 ) -> Dictionary:
-	var normal_state := create_run(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed)
-	if not BattleJob.advance(normal_state, zone.max_battle_seconds, job):
+	var leg_id: String = order_id
+	var leg_policies: Dictionary = policies
+	if stress:
+		leg_id = order_id + ":stress"
+		leg_policies = policies.duplicate(true)
+		leg_policies["force_enemy_crit"] = true
+		leg_policies["suppress_ally_crit"] = true
+	var state := create_run(leg_id, team_snapshots, zone, squads, leg_policies, supply_escrow, seed)
+	if not BattleJob.advance(state, zone.max_battle_seconds, job):
 		return {}
-	var normal: BattleOutcome = snapshot_outcome(normal_state)
-	var stress_policies: Dictionary = policies.duplicate(true)
-	stress_policies["force_enemy_crit"] = true
-	stress_policies["suppress_ally_crit"] = true
-	var stress_state := create_run(order_id + ":stress", team_snapshots, zone, squads, stress_policies, supply_escrow, seed)
-	if not BattleJob.advance(stress_state, zone.max_battle_seconds, job):
-		return {}
-	var stress: BattleOutcome = snapshot_outcome(stress_state)
-	var safe: bool = (
-		normal.status == "victory"
-		and stress.status == "victory"
-		and normal_state.downed_ever_ids.is_empty()
-		and stress_state.downed_ever_ids.is_empty()
-	)
+	return {"outcome": snapshot_outcome(state).to_dict(), "clean": state.status == "victory" and state.downed_ever_ids.is_empty()}
+
+
+## forecast's verdict from its two legs: safe only when both won with no downing.
+static func forecast_verdict(normal: Dictionary, stress: Dictionary) -> Dictionary:
+	var safe: bool = bool(normal["clean"]) and bool(stress["clean"])
 	return {
 		"safe": safe,
 		"reason": "Victory with no downings in normal and stress runs." if safe else "Unattended simulation did not clear both runs without a downing.",
-		"normal": normal.to_dict(),
-		"stress": stress.to_dict(),
+		"normal": normal["outcome"],
+		"stress": stress["outcome"],
 	}
 
 

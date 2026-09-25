@@ -39,16 +39,22 @@ func test_a_forecast_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> 
 	var heroes: Array[Dictionary] = _heroes(5)
 	var squads: Array[Dictionary] = _squads(5)
 	var escrow: Dictionary = {"healing": 1, "revival": 0}
+	# Each seed's normal and stress legs, all out at once (ig-7sn.6 sends a repeat's check this way).
 	var jobs: Array[BattleJob] = []
 	for seed: int in SEEDS:
-		var job := BattleJob.new()
-		job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_forecast("forecast", heroes, zone, squads, {}, escrow, seed, job))
-		jobs.append(job)
+		for stress: bool in [false, true]:
+			var job := BattleJob.new()
+			job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_forecast_leg("forecast", heroes, zone, squads, {}, escrow, seed, stress, job))
+			jobs.append(job)
 	for index: int in SEEDS.size():
-		WorkerThreadPool.wait_for_task_completion(jobs[index].task_id)
+		var normal: BattleJob = jobs[index * 2]
+		var stress: BattleJob = jobs[index * 2 + 1]
+		WorkerThreadPool.wait_for_task_completion(normal.task_id)
+		WorkerThreadPool.wait_for_task_completion(stress.task_id)
 		var direct: Dictionary = BattleSimulation.forecast("forecast", heroes, zone, squads, {}, escrow, SEEDS[index])
-		assert_false(bool(jobs[index].result.get("cancelled", true)))
-		assert_true(var_to_bytes(jobs[index].result["forecast"]) == var_to_bytes(direct), "seed %d" % SEEDS[index])
+		assert_false(bool(normal.result.get("cancelled", true)) or bool(stress.result.get("cancelled", true)))
+		var pooled: Dictionary = BattleSimulation.forecast_verdict(normal.result["leg"], stress.result["leg"])
+		assert_true(var_to_bytes(pooled) == var_to_bytes(direct), "seed %d" % SEEDS[index])
 		assert_true(direct.has("safe") and direct.has("normal") and direct.has("stress"))
 
 
