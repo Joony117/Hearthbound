@@ -5,6 +5,7 @@ extends GutTest
 
 const SIM = preload("res://combat/battle/battle_simulation.gd")
 const Compare = preload("res://tests/unit/compare.gd")
+const Session = preload("res://systems/game_session.gd")
 var RIME: AbilityDefinition = SIM.ABILITIES["mage_rime_circle"]
 var HEARTH: AbilityDefinition = SIM.ABILITIES["cleric_hearthward"]
 
@@ -234,20 +235,20 @@ func test_a_mid_zone_save_through_disk_reloads_exactly_and_fights_on_as_the_unbr
 	var legacy: Dictionary = profile.duplicate(true)
 	_battle_of(legacy).erase("field_objects")
 	_battle_of(legacy).erase("field_sequence")
-	assert_eq(GameSession.validate_saved_state(legacy, 3), "", "a checkpoint from before zones loads")
+	assert_eq(Session.validate_saved_state(legacy, 3), "", "a checkpoint from before zones loads")
 	assert_true(BattleState.from_dict(_battle_of(legacy)).field_objects.is_empty(), "with none")
 	for bad: Array in [["center", [999.0, 0.0]], ["center", [1.0]], ["radius", 0.0], ["radius", -1.0], ["remaining_seconds", 0.0], ["atk", NAN], ["kind", "wall"], ["owner_actor_id", "nobody"], ["faction", "neutral"], ["extra", 1]]:
 		var broken: Dictionary = profile.duplicate(true)
 		(_battle_of(broken)["field_objects"] as Array)[0][bad[0]] = bad[1]
-		assert_ne(GameSession.validate_saved_state(broken, 3), "", "%s %s is rejected" % bad)
+		assert_ne(Session.validate_saved_state(broken, 3), "", "%s %s is rejected" % bad)
 	# Sol: an id at or past the sequence would be cast again; more than the cap would outrun its cost bound.
 	for bad_id: String in ["field:0", "field:%d" % (int(_battle_of(profile)["field_sequence"]) + 1), "zone:1", "field:01", "field:x"]:
 		var reused: Dictionary = profile.duplicate(true)
 		(_battle_of(reused)["field_objects"] as Array)[0]["id"] = bad_id
-		assert_ne(GameSession.validate_saved_state(reused, 3), "", "id %s is rejected" % bad_id)
+		assert_ne(Session.validate_saved_state(reused, 3), "", "id %s is rejected" % bad_id)
 	var behind: Dictionary = profile.duplicate(true)
 	_battle_of(behind)["field_sequence"] = 0
-	assert_ne(GameSession.validate_saved_state(behind, 3), "", "a sequence behind its live ids is rejected")
+	assert_ne(Session.validate_saved_state(behind, 3), "", "a sequence behind its live ids is rejected")
 	var crowded: Dictionary = profile.duplicate(true)
 	var crowd: Array = _battle_of(crowded)["field_objects"] as Array
 	var template: Dictionary = crowd[0]
@@ -257,13 +258,13 @@ func test_a_mid_zone_save_through_disk_reloads_exactly_and_fights_on_as_the_unbr
 		copy["id"] = "field:%d" % (number + 1)
 		crowd.append(copy)
 	_battle_of(crowded)["field_sequence"] = crowd.size()
-	assert_ne(GameSession.validate_saved_state(crowded, 3), "", "more zones than the cap are rejected")
+	assert_ne(Session.validate_saved_state(crowded, 3), "", "more zones than the cap are rejected")
 	crowd.pop_back()
-	assert_eq(GameSession.validate_saved_state(crowded, 3), "", "the cap itself loads")
+	assert_eq(Session.validate_saved_state(crowded, 3), "", "the cap itself loads")
 	var unknown: Dictionary = profile.duplicate(true)
 	var fields: Array = _battle_of(unknown)["field_objects"] as Array
 	fields[0]["skill_id"] = "mage_meteor"
-	assert_eq(GameSession.validate_saved_state(unknown, 3), "", "an unknown skill doesn't reject the checkpoint")
+	assert_eq(Session.validate_saved_state(unknown, 3), "", "an unknown skill doesn't reject the checkpoint")
 	assert_eq(BattleState.from_dict(_battle_of(unknown)).field_objects.size(), fields.size() - 1, "it drops that zone")
 	assert_push_warning("mage_meteor")
 

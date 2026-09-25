@@ -70,6 +70,10 @@ const MAX_PACE: int = 20
 ## (1.6000000238 from 1.6) and never close. _move_actors aims this far inside a reach instead, and
 ## counts a point as reached within it, so every reach check compares bare.
 const REACH_TOLERANCE: float = 0.0001
+## ig-0qh: how far outside a wall's footprint its corners sit and a cut move stops, so a Vector2's float32
+## rounding never lands a center inside one.
+const WALL_MARGIN: float = 0.001
+const CORNER_SIGNS: Array[Vector2] = [Vector2(1.0, 1.0), Vector2(-1.0, 1.0), Vector2(-1.0, -1.0), Vector2(1.0, -1.0)]
 
 const COMMAND_MOVE: String = "move"
 const COMMAND_ATTACK: String = "attack"
@@ -458,8 +462,8 @@ static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, acto
 	var sequence: int = int(data.get("field_sequence", 0))
 	var ids: Dictionary[String, bool] = {}
 	for entry: Variant in data.get("field_objects") as Array:
-		if not entry is Dictionary or (entry as Dictionary).size() != 10:
-			return "Every battle field object must be {id, kind, skill_id, owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale}."
+		if not entry is Dictionary or (entry as Dictionary).size() != (9 if (entry as Dictionary).get("kind") == "wall" else 10):
+			return "Every battle field object must be a zone {id, kind, skill_id, owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale} or a wall {id, kind, skill_id, owner_actor_id, faction, start, end, thickness, remaining_seconds}."
 		var field: Dictionary = entry as Dictionary
 		for key: String in ["id", "kind", "skill_id", "owner_actor_id", "faction"]:
 			if not field.get(key) is String:
@@ -468,8 +472,19 @@ static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, acto
 		if not str(field["id"]).begins_with("field:") or not number.is_valid_int() or str(number.to_int()) != number or number.to_int() < 1 or number.to_int() > sequence or ids.has(str(field["id"])):
 			return "Battle field object ids must be unique, field:<1 to field_sequence>."
 		ids[str(field["id"])] = true
-		if str(field["kind"]) != "zone" or not str(field["faction"]) in ["ally", "enemy"] or not actor_ids.has(str(field["owner_actor_id"])):
+		if not str(field["kind"]) in ["zone", "wall"] or not str(field["faction"]) in ["ally", "enemy"] or not actor_ids.has(str(field["owner_actor_id"])):
 			return "Battle field object kind, faction or owner is invalid."
+		if str(field["kind"]) == "wall":
+			if not _point_within_bounds(field.get("start"), zone.battle_bounds) or not _point_within_bounds(field.get("end"), zone.battle_bounds):
+				return "Battle wall ends must remain inside the authored bounds."
+			if _array_vector(field["start"]) == _array_vector(field["end"]):
+				return "Battle wall ends must differ."
+			for key: String in ["thickness", "remaining_seconds"]:
+				if not _valid_number(field.get(key)) or not (float(field.get(key)) > 0.0):
+					return "Battle wall %s must be finite and positive." % key
+			if float(field["thickness"]) > zone.battle_bounds * 2.0:
+				return "Battle wall thickness must fit the authored bounds."
+			continue
 		if not _point_within_bounds(field.get("center"), zone.battle_bounds):
 			return "Battle field object centers must remain inside the authored bounds."
 		for key: String in ["radius", "remaining_seconds", "atk", "heal_scale"]:
@@ -633,10 +648,12 @@ static func _choose_intentions(state: BattleState) -> void:
 
 
 static func _move_actors(state: BattleState) -> void:
+	var paths: WallPaths = _wall_paths(state)
+	var walled: bool = not paths.centers.is_empty()
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.effect_state.get("stun_remaining", 0.0) > 0.0 or _has_status(actor, "root"):
 			continue
-		_apply_separation(state, actor)
+		_apply_separation(state, actor, paths)
 		if actor.order_kind.is_empty() and not actor.effect_state.get("evade_point") is Array:
 			continue
 		if actor.order_kind == COMMAND_CARRY:
@@ -659,6 +676,9 @@ static func _move_actors(state: BattleState) -> void:
 		if actor.effect_state.get("evade_point") is Array:
 			destination = _array_vector(actor.effect_state.get("evade_point"), destination)
 			desired_range = 0.0
+		if walled:
+			# A point inside a footprint is reached at its edge, so the order can end there (Sol, ig-0qh).
+			destination = _wall_goal(paths, actor.position, destination)
 		var offset: Vector2 = destination - actor.position
 		if offset.length() <= maxf(desired_range, REACH_TOLERANCE):
 			if actor.order_kind == COMMAND_RETREAT and actor.position.distance_to(_objective_point(state, "exit_position")) <= BALANCE.battle_exit_radius:
@@ -675,7 +695,20 @@ static func _move_actors(state: BattleState) -> void:
 			speed *= BALANCE.battle_carry_speed_fraction
 		# A hair inside a reach, never past a point.
 		var step: float = minf(speed * BALANCE.battle_tick_seconds, minf(offset.length(), maxf(offset.length() - desired_range + REACH_TOLERANCE, 0.0)))
-		if step > 0.0:
+		if step > 0.0 and walled:
+			# ig-0qh: toward the next corner when a wall is in the way, never past it; walled in, it holds.
+			var waypoint: Variant = _next_waypoint(paths, actor.position, destination)
+			if waypoint is Vector2:
+				var heading: Vector2 = (waypoint as Vector2) - actor.position
+				step = minf(step, heading.length())
+				if step > 0.0:
+					actor.facing = heading.normalized()
+					actor.position = _wall_cut(paths, actor.position, _clamp_to_bounds(state, actor.position + actor.facing * step))
+					if not actor.carrying_id.is_empty():
+						var carried: BattleActor = _actor_by_id(state, actor.carrying_id)
+						if carried != null:
+							carried.position = actor.position
+		elif step > 0.0:
 			actor.facing = offset.normalized()
 			actor.position += actor.facing * step
 			actor.position = _clamp_to_bounds(state, actor.position)
@@ -1178,7 +1211,7 @@ static func _apply_effects(
 						destination = _away_point(state, actor, target, float(effect.get("distance", 0.0)))
 				if not destination is Vector2:
 					return false
-				actor.position = destination as Vector2
+				actor.position = _wall_cut(_wall_paths(state), actor.position, destination as Vector2)
 				# A carried body moves with its carrier, as in _push (ig-zht).
 				if not actor.carrying_id.is_empty():
 					var carried: BattleActor = _actor_by_id(state, actor.carrying_id)
@@ -1379,7 +1412,7 @@ static func _update_field_objects(state: BattleState) -> void:
 		var before: float = float(field["remaining_seconds"])
 		var after: float = before - BALANCE.battle_tick_seconds if before - BALANCE.battle_tick_seconds >= TICK_EPSILON else 0.0
 		field["remaining_seconds"] = after
-		if ceilf(before / period - TICK_EPSILON) > ceilf(after / period - TICK_EPSILON):
+		if field["kind"] == "zone" and ceilf(before / period - TICK_EPSILON) > ceilf(after / period - TICK_EPSILON):
 			_pulse_zone(state, field, landed)
 		if after > 0.0:
 			kept.append(field)
@@ -1785,7 +1818,7 @@ static func _push(state: BattleState, target: BattleActor, direction: Vector2, f
 	if target.life != BattleActor.LIFE_ALIVE or bool(target.effect_state.get("elite", false)):
 		return
 	var away: Vector2 = _push_direction(direction, facing)
-	target.position = _clamp_to_bounds(state, target.position + away * distance)
+	target.position = _wall_cut(_wall_paths(state), target.position, _clamp_to_bounds(state, target.position + away * distance))
 	target.effect_state["hit_from"] = [away.x, away.y]
 	target.effect_state["last_push_tick"] = state.tick
 	if not target.carrying_id.is_empty():
@@ -2547,6 +2580,246 @@ class RowScan:
 	var threat: BattleActor = null
 
 
+## ig-0qh: what walking reads of the walls (DECISIONS.md 2026-09-25, "Casters shape the field", item 5),
+## derived from state.field_objects and never saved. Keyed by field_sequence and the object count: a cast
+## raises the one and an end lowers the other, so any change to the walls misses, and a fresh decode
+## (a reload, a command: ig-7sn.15) starts with none. Per state, not static (ig-7sn.13).
+class WallPaths:
+	var sequence: int = -1
+	var count: int = -1
+	var bounds: float = 20.0
+	## Per wall in cast order: its footprint's center, unit axis along the segment, half length and half
+	## width (x, y), and the box around it for the pre-test.
+	var centers := PackedVector2Array()
+	var alongs := PackedVector2Array()
+	var halves := PackedVector2Array()
+	var box_low := PackedVector2Array()
+	var box_high := PackedVector2Array()
+	## The corners a path may use (inside the bounds, in no footprint): walls in cast order, each wall's in
+	## CORNER_SIGNS order. Then, n x n, the shortest corner path's length and its first corner after the start.
+	var corners := PackedVector2Array()
+	var lengths := PackedFloat64Array()
+	var firsts := PackedInt32Array()
+
+
+## SYSTEMS.md § Casters, "Walking around walls": a footprint is the segment grown by half its thickness
+## plus half battle_separation_radius, ends included. The corner graph is shortest paths over the corners
+## that see each other, rebuilt only on a miss.
+static func _wall_paths(state: BattleState) -> WallPaths:
+	var paths: WallPaths = state.wall_paths
+	if paths != null and paths.sequence == state.field_sequence and paths.count == state.field_objects.size():
+		return paths
+	paths = WallPaths.new()
+	paths.sequence = state.field_sequence
+	paths.count = state.field_objects.size()
+	state.wall_paths = paths
+	for field: Dictionary in state.field_objects:
+		if field["kind"] != "wall":
+			continue
+		var start: Vector2 = _array_vector(field["start"])
+		var finish: Vector2 = _array_vector(field["end"])
+		var along: Vector2 = (finish - start).normalized()
+		var grow: float = float(field["thickness"]) * 0.5 + BALANCE.battle_separation_radius * 0.5
+		var half := Vector2(start.distance_to(finish) * 0.5 + grow, grow)
+		var center: Vector2 = (start + finish) * 0.5
+		var reach := Vector2(absf(along.x) * half.x + absf(along.y) * half.y, absf(along.y) * half.x + absf(along.x) * half.y)
+		paths.centers.append(center)
+		paths.alongs.append(along)
+		paths.halves.append(half)
+		paths.box_low.append(center - reach)
+		paths.box_high.append(center + reach)
+	var bounds: float = float(state.objective_state.get("bounds", 20.0))
+	paths.bounds = bounds
+	for wall: int in paths.centers.size():
+		var along: Vector2 = paths.alongs[wall]
+		var across := Vector2(-along.y, along.x)
+		var reach: Vector2 = paths.halves[wall] + Vector2(WALL_MARGIN, WALL_MARGIN)
+		for corner_sign: Vector2 in CORNER_SIGNS:
+			var corner: Vector2 = paths.centers[wall] + along * (corner_sign.x * reach.x) + across * (corner_sign.y * reach.y)
+			if absf(corner.x) <= bounds and absf(corner.y) <= bounds and _wall_containing(paths, corner) < 0:
+				paths.corners.append(corner)
+	var n: int = paths.corners.size()
+	paths.lengths.resize(n * n)
+	paths.firsts.resize(n * n)
+	for i: int in n:
+		paths.lengths[i * n + i] = 0.0
+		paths.firsts[i * n + i] = i
+		for j: int in range(i + 1, n):
+			var seen: bool = not _wall_blocked(paths, paths.corners[i], paths.corners[j])
+			paths.lengths[i * n + j] = paths.corners[i].distance_to(paths.corners[j]) if seen else INF
+			paths.lengths[j * n + i] = paths.lengths[i * n + j]
+			paths.firsts[i * n + j] = j if seen else -1
+			paths.firsts[j * n + i] = i if seen else -1
+	for via: int in n:
+		for i: int in n:
+			for j: int in n:
+				var through: float = paths.lengths[i * n + via] + paths.lengths[via * n + j]
+				if through < paths.lengths[i * n + j]:
+					paths.lengths[i * n + j] = through
+					paths.firsts[i * n + j] = paths.firsts[i * n + via]
+	return paths
+
+
+## Where the straight move from -> to first enters the wall's footprint (its open rectangle), as a
+## fraction of the move, or -1.0 if it never does (Liang-Barsky in the wall's frame, after a box pre-test).
+## A move along an edge never enters; a move from inside enters at 0.
+static func _wall_entry(paths: WallPaths, wall: int, from: Vector2, to: Vector2) -> float:
+	var low: Vector2 = paths.box_low[wall]
+	var high: Vector2 = paths.box_high[wall]
+	if maxf(from.x, to.x) <= low.x or minf(from.x, to.x) >= high.x or maxf(from.y, to.y) <= low.y or minf(from.y, to.y) >= high.y:
+		return -1.0
+	var along: Vector2 = paths.alongs[wall]
+	var half: Vector2 = paths.halves[wall]
+	var local: Vector2 = from - paths.centers[wall]
+	var move: Vector2 = to - from
+	var enter: float = 0.0
+	var leave: float = 1.0
+	for axis: int in 2:
+		var unit: Vector2 = along if axis == 0 else Vector2(-along.y, along.x)
+		var at: float = local.dot(unit)
+		var rate: float = move.dot(unit)
+		var bound: float = half.x if axis == 0 else half.y
+		if rate == 0.0:
+			if absf(at) >= bound:
+				return -1.0
+			continue
+		var first: float = (-bound - at) / rate
+		var second: float = (bound - at) / rate
+		enter = maxf(enter, minf(first, second))
+		leave = minf(leave, maxf(first, second))
+	return enter if enter < leave else -1.0
+
+
+static func _wall_blocked(paths: WallPaths, from: Vector2, to: Vector2) -> bool:
+	for wall: int in paths.centers.size():
+		if _wall_entry(paths, wall, from, to) >= 0.0:
+			return true
+	return false
+
+
+static func _in_wall(paths: WallPaths, wall: int, point: Vector2) -> bool:
+	if point.x <= paths.box_low[wall].x or point.x >= paths.box_high[wall].x or point.y <= paths.box_low[wall].y or point.y >= paths.box_high[wall].y:
+		return false
+	var local: Vector2 = point - paths.centers[wall]
+	var along: Vector2 = paths.alongs[wall]
+	return absf(local.dot(along)) < paths.halves[wall].x and absf(local.dot(Vector2(-along.y, along.x))) < paths.halves[wall].y
+
+
+## The first wall whose footprint has point strictly inside, or -1.
+static func _wall_containing(paths: WallPaths, point: Vector2) -> int:
+	for wall: int in paths.centers.size():
+		if _in_wall(paths, wall, point):
+			return wall
+	return -1
+
+
+## Which side of the wall's line point is on: 1.0, -1.0, or 0.0 on it.
+static func _wall_side(paths: WallPaths, wall: int, point: Vector2) -> float:
+	var along: Vector2 = paths.alongs[wall]
+	return signf((point - paths.centers[wall]).dot(Vector2(-along.y, along.x)))
+
+
+## point moved across the wall to just outside its long edge on side, keeping its place along it.
+static func _wall_face(paths: WallPaths, wall: int, point: Vector2, side: float) -> Vector2:
+	var along: Vector2 = paths.alongs[wall]
+	var across := Vector2(-along.y, along.x)
+	var local: Vector2 = point - paths.centers[wall]
+	return paths.centers[wall] + along * local.dot(along) + across * (side * (paths.halves[wall].y + WALL_MARGIN))
+
+
+## ig-0qh: every instant move (a push, a move skill, separation, a walk step) stops at the first footprint
+## edge it meets, WALL_MARGIN outside it. A footprint the mover already stands in doesn't stop it, so one
+## that spawned in a wall can leave.
+static func _wall_cut(paths: WallPaths, from: Vector2, to: Vector2) -> Vector2:
+	var first: float = INF
+	var hit: int = -1
+	for wall: int in paths.centers.size():
+		var enter: float = _wall_entry(paths, wall, from, to)
+		if enter >= 0.0 and enter < first and (enter > 0.0 or not _in_wall(paths, wall, from)):
+			first = enter
+			hit = wall
+	if hit < 0:
+		return to
+	# Onto the edge it crossed: the axis whose bound the entry point is nearer.
+	var along: Vector2 = paths.alongs[hit]
+	var across := Vector2(-along.y, along.x)
+	var half: Vector2 = paths.halves[hit]
+	var local: Vector2 = from + (to - from) * first - paths.centers[hit]
+	var x: float = local.dot(along)
+	var y: float = local.dot(across)
+	if half.x - absf(x) < half.y - absf(y):
+		x = (1.0 if x >= 0.0 else -1.0) * (half.x + WALL_MARGIN)
+	else:
+		y = (1.0 if y >= 0.0 else -1.0) * (half.y + WALL_MARGIN)
+	return paths.centers[hit] + along * x + across * y
+
+
+## A goal inside a footprint (a point order, an evade, the exit) moves to the long edge on the goal's side
+## (on the line: the walker's, else the wall's left); any other goal stays. When that edge point is in
+## another footprint or out of bounds, the nearest of the far edge point and the usable corners that is
+## neither wins, ties to the earlier; none: the edge point stands and the walker holds as if walled in.
+static func _wall_goal(paths: WallPaths, from: Vector2, goal: Vector2) -> Vector2:
+	var holder: int = _wall_containing(paths, goal)
+	if holder < 0:
+		return goal
+	var side: float = _wall_side(paths, holder, goal)
+	if side == 0.0:
+		side = _wall_side(paths, holder, from)
+	if side == 0.0:
+		side = 1.0
+	var face: Vector2 = _wall_face(paths, holder, goal, side)
+	var candidates := PackedVector2Array([face, _wall_face(paths, holder, goal, -side)])
+	candidates.append_array(paths.corners)
+	var best: Vector2 = face
+	var best_distance: float = INF
+	for candidate: Vector2 in candidates:
+		var distance: float = goal.distance_to(candidate)
+		if distance < best_distance and absf(candidate.x) <= paths.bounds and absf(candidate.y) <= paths.bounds and _wall_containing(paths, candidate) < 0:
+			best = candidate
+			best_distance = distance
+	return best
+
+
+## ig-0qh: where an actor at from walks this tick on its way to goal. Straight at it when no footprint is
+## in the way; else the first corner of the shortest corner path, ties to the lower corner; null when
+## walled in (it holds until a wall ends). One standing in a footprint (it spawned there) first walks out
+## across its long edge. goal is outside every footprint: _move_actors has put it through _wall_goal.
+static func _next_waypoint(paths: WallPaths, from: Vector2, goal: Vector2) -> Variant:
+	var inside: int = _wall_containing(paths, from)
+	if inside >= 0:
+		var own_side: float = _wall_side(paths, inside, from)
+		return _wall_face(paths, inside, from, own_side if own_side != 0.0 else 1.0)
+	if not _wall_blocked(paths, from, goal):
+		return goal
+	var n: int = paths.corners.size()
+	var to_corner := PackedFloat64Array()
+	var from_corner := PackedFloat64Array()
+	to_corner.resize(n)
+	from_corner.resize(n)
+	for i: int in n:
+		var corner: Vector2 = paths.corners[i]
+		to_corner[i] = from.distance_to(corner) if not _wall_blocked(paths, from, corner) else INF
+		from_corner[i] = goal.distance_to(corner) if not _wall_blocked(paths, corner, goal) else INF
+	var best: float = INF
+	var best_start: int = -1
+	var best_end: int = -1
+	for i: int in n:
+		if to_corner[i] == INF:
+			continue
+		for j: int in n:
+			var cost: float = to_corner[i] + paths.lengths[i * n + j] + from_corner[j]
+			if cost < best:
+				best = cost
+				best_start = i
+				best_end = j
+	if best_start < 0:
+		return null
+	if to_corner[best_start] > REACH_TOLERANCE:
+		return paths.corners[best_start]
+	# Standing on that corner: on to the path's next one, or the goal from the last.
+	return goal if best_start == best_end else paths.corners[paths.firsts[best_start * n + best_end]]
+
+
 ## The back row's one pass over state.actors per tick (ig-uu7.1 formation, ig-uu7.3 kiting): whether
 ## a living enemy is within the hero's contact range, its squad's living front-liners, and the
 ## nearest living enemy targeting it. Worst case: 80 actors at frontier_march 50v30.
@@ -2889,7 +3162,7 @@ static func _deployed_hero_count(state: BattleState) -> int:
 	return count
 
 
-static func _apply_separation(state: BattleState, actor: BattleActor) -> void:
+static func _apply_separation(state: BattleState, actor: BattleActor, paths: WallPaths) -> void:
 	for other: BattleActor in state.actors:
 		if other == actor or other.life != BattleActor.LIFE_ALIVE:
 			continue
@@ -2910,8 +3183,11 @@ static func _apply_separation(state: BattleState, actor: BattleActor) -> void:
 			if actor.spawn_index > other.spawn_index:
 				offset = -offset
 		if distance < BALANCE.battle_separation_radius:
-			actor.position += offset.normalized() * (BALANCE.battle_separation_radius - distance) * 0.5
-			actor.position = _clamp_to_bounds(state, actor.position)
+			if paths.centers.is_empty():
+				actor.position += offset.normalized() * (BALANCE.battle_separation_radius - distance) * 0.5
+				actor.position = _clamp_to_bounds(state, actor.position)
+			else:
+				actor.position = _wall_cut(paths, actor.position, _clamp_to_bounds(state, actor.position + offset.normalized() * (BALANCE.battle_separation_radius - distance) * 0.5))
 
 
 static func _grid_offset(index: int, count: int, spacing: float) -> Vector2:

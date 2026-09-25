@@ -39,13 +39,17 @@ var moments: Array[Dictionary] = []
 var moments_truncated: bool = false
 ## {hero_id: enemies that hero finished}.
 var kills: Dictionary = {}
-## Live zones, oldest first (DECISIONS.md 2026-09-25, "Casters shape the field"): {id, kind, skill_id,
-## owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale}. What one does is its
-## skill's (BattleSimulation.ABILITIES); atk and heal_scale are the caster's at the cast. Its pulses
-## fall where remaining_seconds crosses a whole pulse, so it needs no timer of its own.
+## Live zones and walls, oldest first (DECISIONS.md 2026-09-25, "Casters shape the field"). A zone is
+## {id, kind, skill_id, owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale}; what it
+## does is its skill's (BattleSimulation.ABILITIES); atk and heal_scale are the caster's at the cast. Its
+## pulses fall where remaining_seconds crosses a whole pulse, so it needs no timer of its own. A wall
+## (ig-0qh) is {id, kind, skill_id, owner_actor_id, faction, start, end, thickness, remaining_seconds}: a
+## segment that blocks walking for both sides and reads nothing from its skill.
 var field_objects: Array[Dictionary] = []
 ## Casts so far, for the next field object's id.
 var field_sequence: int = 0
+## Derived from the walls in field_objects, never saved: BattleSimulation._wall_paths rebuilds it on a miss.
+var wall_paths: BattleSimulation.WallPaths = null
 
 
 func to_dict() -> Dictionary:
@@ -134,7 +138,8 @@ static func from_dict(data: Dictionary) -> BattleState:
 			if hero_id is String:
 				state.kills[hero_id] = int((raw_kills as Dictionary)[hero_id])
 	# Additive keys (ig-vl1.4): a checkpoint without them has no zones. BattleSimulation.validate_snapshot
-	# has checked each object's shape; one whose skill this build lacks, or that makes no zone, is dropped.
+	# has checked each object's shape; a zone whose skill this build lacks, or that makes no zone, is
+	# dropped. A wall is kept whatever its skill: it only blocks walking (ig-0qh).
 	state.field_sequence = int(data.get("field_sequence", 0))
 	var raw_fields: Variant = data.get("field_objects")
 	if raw_fields is Array:
@@ -142,6 +147,21 @@ static func from_dict(data: Dictionary) -> BattleState:
 			if not raw_field is Dictionary:
 				continue
 			var field: Dictionary = raw_field as Dictionary
+			if str(field.get("kind", "")) == "wall":
+				var start: Array = field.get("start", [0.0, 0.0]) as Array
+				var finish: Array = field.get("end", [0.0, 0.0]) as Array
+				state.field_objects.append({
+					"id": str(field.get("id", "")),
+					"kind": "wall",
+					"skill_id": str(field.get("skill_id", "")),
+					"owner_actor_id": str(field.get("owner_actor_id", "")),
+					"faction": str(field.get("faction", "")),
+					"start": [float(start[0]), float(start[1])],
+					"end": [float(finish[0]), float(finish[1])],
+					"thickness": float(field.get("thickness", 0.0)),
+					"remaining_seconds": float(field.get("remaining_seconds", 0.0)),
+				})
+				continue
 			var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(field.get("skill_id", ""))) as AbilityDefinition
 			if skill == null or BattleSimulation._effect_of(skill, "zone").is_empty():
 				push_warning("Battle field object %s has an unknown zone skill '%s'; dropped." % [field.get("id", ""), field.get("skill_id", "")])

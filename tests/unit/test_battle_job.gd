@@ -36,8 +36,9 @@ func test_a_battle_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> vo
 
 
 ## ig-vl1.4: zones read their skill from BattleSimulation.ABILITIES, never a load, so a battle with both
-## zones up gives the pool the main thread's bytes too.
-func test_a_battle_with_both_zones_up_matches_on_the_pool_byte_for_byte() -> void:
+## zones up gives the pool the main thread's bytes too. ig-0qh: and three walls, whose corner graph each
+## state builds for itself.
+func test_a_battle_with_both_zones_and_walls_up_matches_on_the_pool_byte_for_byte() -> void:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"frontier_march")
 	var jobs: Array[BattleJob] = []
 	for seed: int in SEEDS:
@@ -54,6 +55,7 @@ func test_a_battle_with_both_zones_up_matches_on_the_pool_byte_for_byte() -> voi
 		assert_true(var_to_bytes(pooled["battle"]) == var_to_bytes(direct["battle"]), "%s: pool == main thread" % label)
 		var live: Array = ((direct["battle"] as Dictionary)["field_objects"] as Array).map(func(field: Dictionary) -> String: return str(field["skill_id"]))
 		assert_true("mage_rime_circle" in live and "cleric_hearthward" in live, "%s: both zones still up at the end: %s" % [label, live])
+		assert_eq(live.count("test_wall"), 3, "%s: and the walls" % label)
 
 
 func test_a_forecast_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> void:
@@ -154,7 +156,8 @@ func test_a_load_stops_every_job_before_the_session_is_replaced() -> void:
 
 
 ## 20 heroes of level 80 (their whole kits), with a Rime Circle on the first enemy and a Hearthward on
-## the first Cleric cast at tick 0: 36 s and 48 s at P = 6, so both outlast the run.
+## the first Cleric cast at tick 0: 36 s and 48 s at P = 6, so both outlast the run. Three walls 6 long
+## stand side by side across the middle of the armies' way, 1 apart, for 60 s.
 func _run_with_zones(zone: ZoneDefinition, seed: int) -> BattleState:
 	var heroes: Array[Dictionary] = _heroes(20)
 	for hero: Dictionary in heroes:
@@ -167,6 +170,24 @@ func _run_with_zones(zone: ZoneDefinition, seed: int) -> BattleState:
 	assert_true(BattleSimulation._use_skill(state, mage, BattleSimulation.ABILITIES["mage_rime_circle"], enemy, enemy.position))
 	cleric.ability_lock = 0.0
 	assert_true(BattleSimulation._use_skill(state, cleric, BattleSimulation.ABILITIES["cleric_hearthward"], cleric, cleric.position))
+	var camp := Vector2.ZERO
+	var foes := Vector2.ZERO
+	for actor: BattleActor in state.actors:
+		if actor.faction == "ally":
+			camp += actor.position / 20.0
+		else:
+			foes += actor.position / float(state.actors.size() - 20)
+	var way: Vector2 = (foes - camp).normalized()
+	var across := Vector2(-way.y, way.x)
+	for lane: int in [-1, 0, 1]:
+		var middle: Vector2 = (camp + foes) * 0.5 + across * (7.0 * lane)
+		state.field_sequence += 1
+		state.field_objects.append({
+			"id": "field:%d" % state.field_sequence, "kind": "wall", "skill_id": "test_wall", "owner_actor_id": mage.id, "faction": "ally",
+			"start": [(middle - across * 3.0).x, (middle - across * 3.0).y], "end": [(middle + across * 3.0).x, (middle + across * 3.0).y],
+			"thickness": 1.2, "remaining_seconds": 60.0,
+		})
+	assert_eq(BattleSimulation.validate_snapshot(state.to_dict()), "")
 	return state
 
 
