@@ -177,9 +177,9 @@ func test_a_telegraphed_bloom_pushes_from_its_marked_center() -> void:
 	assert_almost_eq(state.actors[0].position, Vector2(2.5, 0), Vector2.ONE * 0.0001)
 
 
-## Boundary #1: a fight saved mid-fight pushes after the reload as the fight that never stopped, the
-## real SaveService file reloads to the same pushes every time, the cues survive the file, a save from
-## before the cues loads, and broken cues are rejected.
+## Boundary #1: a fight saved mid-fight pushes after the reload as the fight that never stopped, from
+## the real SaveService file too (full precision; a reload lands within 1 ulp, ig-85w), the cues survive
+## the file, a save from before the cues loads, and broken cues are rejected.
 func test_a_mid_fight_save_and_reload_reproduces_the_pushes_and_legacy_saves_load() -> void:
 	GameSession.cleared_zone_ids[&"verdant_outskirts"] = true
 	var ids: Array[String] = []
@@ -212,20 +212,18 @@ func test_a_mid_fight_save_and_reload_reproduces_the_pushes_and_legacy_saves_loa
 		GameSession.tick_expeditions(1.0)
 	assert_eq(_mismatch(_where(GameSession.get_battle_snapshot(order_id)), straight), "", "the saved state pushes as the unbroken fight")
 
-	# The file's floats are 14 digits (ig-85w), which can steer a later close call off the unbroken
-	# fight, so the disk path is held to itself: the same file, loaded twice, pushes the same.
-	var runs: Array = []
-	for _load: int in 2:
-		GameSession.from_dict({"roster": []})
-		assert_true(SaveService.load_game(), SaveService.load_block_reason)
-		for _second: int in 12:
-			GameSession.tick_expeditions(1.0)
-		runs.append(_where(GameSession.get_battle_snapshot(order_id)))
-	assert_eq(_mismatch(runs[1], runs[0]), "", "the save on disk pushes the same every load")
+	# ig-85w: the file holds full-precision floats, so the disk path is held to the unbroken fight too.
+	# Within _mismatch's tolerance: the parser misrounds some 17-digit numbers by 1 ulp.
+	GameSession.from_dict({"roster": []})
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	for _second: int in 12:
+		GameSession.tick_expeditions(1.0)
+	assert_eq(_mismatch(_where(GameSession.get_battle_snapshot(order_id)), straight), "", "the save on disk pushes as the unbroken fight")
 	assert_gt(_pushes(GameSession.get_battle_snapshot(order_id)), pushes_at_save, "and it pushed after the reload")
 
 	# The cues themselves through disk: saved after the pushes, loaded back as they were.
-	var pushed: Array = _where(GameSession.get_battle_snapshot(order_id))
+	# As the file reads back: full precision, parsed.
+	var pushed: Array = _where(JSON.parse_string(JSON.stringify(GameSession.get_battle_snapshot(order_id), "", true, true)) as Dictionary)
 	_save_to_disk()
 	var profile: Dictionary = JSON.parse_string(JSON.stringify(GameSession.to_dict())) as Dictionary
 	GameSession.from_dict({"roster": []})
@@ -281,7 +279,7 @@ func _save_to_disk() -> void:
 
 func _write_save(data: Dictionary) -> void:
 	var file: FileAccess = FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
-	file.store_string(JSON.stringify(data, "	"))
+	file.store_string(JSON.stringify(data, "	", true, true))
 	file.close()
 
 
@@ -299,7 +297,8 @@ func _where(snapshot: Dictionary) -> Array:
 	return result
 
 
-## The save writes floats to 14 digits (SaveService, before ig-36y), so they match to 1e-6, not bit for bit.
+## To 1e-6: the save writes full precision, but a reload lands within 1 ulp, not bit for bit (Godot's
+## parser misrounds some 17-digit numbers, ig-85w).
 func _mismatch(got: Array, want: Array) -> String:
 	if got.size() != want.size():
 		return "%d actors, not %d" % [got.size(), want.size()]

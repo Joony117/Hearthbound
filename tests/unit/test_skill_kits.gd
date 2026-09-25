@@ -200,7 +200,7 @@ func test_hanging_star_marks_its_circle_and_lands_a_second_later() -> void:
 	assert_almost_eq(mage.skill_cooldowns["mage_hanging_star"], 40.5, 0.0001, "Arcane Flow: 45 x 0.9")
 	SIM.advance(state, 0.9)
 	assert_eq(state.actors[1].hp, 100.0, "not yet")
-	SIM.advance(state, 0.3)
+	SIM.advance(state, 0.1)  # ig-85w: the 1.0 s telegraph lands on tick 10
 	assert_eq(state.actors.slice(1).map(func(enemy: BattleActor) -> float: return enemy.hp), [75.0, 75.0, 100.0], "2.5 x ATK within 3")
 	assert_eq(str(mage.effect_state["telegraph_kind"]), "")
 
@@ -307,10 +307,28 @@ func test_an_ability_locks_the_others_for_one_second() -> void:
 	for tick: int in 9:
 		SIM._expire_effects_and_cooldowns(state)
 	assert_false(SIM._use_skill(state, knight, SIM.ABILITIES["general_brace"], knight, knight.position))
-	# Timers count down without an epsilon, like every cooldown: the lock clears on the 11th tick.
+	# ig-85w: timers are tick-exact, so the 1.0 s lock clears on tick 10.
 	SIM._expire_effects_and_cooldowns(state)
-	SIM._expire_effects_and_cooldowns(state)
+	assert_eq(knight.ability_lock, 0.0)
 	assert_true(SIM._use_skill(state, knight, SIM.ABILITIES["general_brace"], knight, knight.position))
+
+
+## ig-85w: a timer of t seconds ends on tick t / 0.1, exactly: an 8.0 s skill cooldown on tick 80 and a
+## 0.3 s stun on tick 3.
+func test_timers_end_on_the_tick_their_seconds_say() -> void:
+	var state: BattleState = _battle([_unit("hero:k", "knight", "ally", Vector2(0, -16))])
+	var knight: BattleActor = state.actors[0]
+	knight.skill_cooldowns["knight_rally"] = 8.0
+	knight.effect_state["stun_remaining"] = 0.3
+	for tick: int in range(1, 81):
+		SIM._expire_effects_and_cooldowns(state)
+		if tick == 2:
+			assert_gt(float(knight.effect_state["stun_remaining"]), 0.0, "stunned after tick 2")
+		elif tick == 3:
+			assert_eq(float(knight.effect_state["stun_remaining"]), 0.0, "the stun ends on tick 3")
+		elif tick == 79:
+			assert_gt(float(knight.skill_cooldowns["knight_rally"]), 0.0, "cooling after tick 79")
+	assert_eq(float(knight.skill_cooldowns["knight_rally"]), 0.0, "ready on tick 80")
 
 
 ## A test-only kit: 32 skills across the classes, which no save would accept; the fight must still run.
@@ -356,8 +374,9 @@ func test_a_checkpoint_with_statuses_round_trips_through_the_save_file() -> void
 	knight.ability_lock = 0.4
 	GameSession.expedition_orders[0]["battle"] = state.to_dict()
 	assert_eq(SIM.validate_snapshot(state.to_dict()), "")
-	# The save file keeps JSON's default float precision, so the reference is the battle as written.
-	var reference := BattleState.from_dict(JSON.parse_string(JSON.stringify(state.to_dict())) as Dictionary)
+	# The reference is the battle as the file reads back: full precision (ig-85w), parsed, since Godot's
+	# parser misrounds some 17-digit numbers by 1 ulp.
+	var reference := BattleState.from_dict(JSON.parse_string(JSON.stringify(state.to_dict(), "", true, true)) as Dictionary)
 	var before: String = _exact_json(reference.to_dict())
 
 	assert_true(_through_disk(GameSession.to_dict()), SaveService.load_block_reason)
@@ -366,7 +385,7 @@ func test_a_checkpoint_with_statuses_round_trips_through_the_save_file() -> void
 	assert_false(GameSession.get_battle_snapshot(order_id).is_empty())
 	SIM.advance(reference, reference.max_seconds)
 	SIM.advance(loaded, loaded.max_seconds)
-	assert_eq(_exact_json(loaded.to_dict()), _exact_json(reference.to_dict()), "and it finishes the same")
+	assert_eq(loaded.to_dict(), reference.to_dict(), "and it finishes the same, every field ==")
 	for moment: Dictionary in loaded.moments:
 		assert_true(str(moment["what"]) in ["downed", "revived", "carried"], str(moment))
 
@@ -464,7 +483,7 @@ func test_a_rogue_inside_the_circle_slips_it_and_takes_no_damage() -> void:
 	var state: BattleState = _crushing_blow_on("rogue", [])
 	var rogue: BattleActor = state.actors[0]
 	_give(rogue, ["rogue_slip"])
-	SIM.advance(state, 1.3)  # the countdown lands on tick 13
+	SIM.advance(state, 1.2)  # ig-85w: the 1.2 s countdown lands on tick 12
 	assert_gt(rogue.skill_cooldowns["rogue_slip"], 0.0)
 	assert_eq(state.actors[1].effect_state["telegraph_kind"], "", "the blow landed")
 	assert_eq(rogue.hp, 100.0, "on nobody")
@@ -485,7 +504,7 @@ func test_a_manual_counter_is_never_auto_fired() -> void:
 	var state: BattleState = _crushing_blow_on("knight", [])
 	var knight: BattleActor = state.actors[0]
 	knight.add_skill(SIM.ABILITIES["knight_buckler_blow"], "manual")
-	SIM.advance(state, 1.3)
+	SIM.advance(state, 1.2)
 	assert_eq(knight.skill_cooldowns["knight_buckler_blow"], 0.0)
 	assert_eq(state.actors[1].effect_state["telegraph_claimed_by"], "")
 	assert_lt(knight.hp, 100.0, "the blow lands")
@@ -653,7 +672,7 @@ func _through_disk(profile: Dictionary) -> bool:
 	var original_save: PackedByteArray = FileAccess.get_file_as_bytes(SaveService.SAVE_PATH)
 	var original_existed: bool = FileAccess.file_exists(SaveService.SAVE_PATH)
 	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
-	file.store_string(JSON.stringify(profile, "\t"))
+	file.store_string(JSON.stringify(profile, "\t", true, true))  # As SaveService writes it (ig-85w).
 	file.close()
 	GameSession.from_dict({"roster": []})
 	var loaded: bool = SaveService.load_game()

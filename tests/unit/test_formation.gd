@@ -19,12 +19,13 @@ const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 ## file's hand-built zone mixed with real verdant's waves and counts. The two three-hero fights changed;
 ## the party fights kept theirs (.agent-results/ig-7sn.13/formation_zone_off.log prints the previous four).
 ## ig-1jw's battle pace (HP, cooldowns and ability amounts xP) changed the same two on purpose; the party
-## fights kept theirs.
+## fights kept theirs. ig-85w's tick-exact timers (each timer ends a tick sooner) changed the same two on
+## purpose; the party fights kept theirs.
 const UNCHANGED_DIGESTS: Dictionary = {
 	"knight,knight,ranger,mage,cleric/defend": "63e17ddd770cd8024451c6076ec5a466",
 	"knight,knight,ranger,mage,cleric/protect": "a737f9c6949ac597424114ec073eae52",
-	"ranger,mage,cleric/advance": "429f29ac38473bad5fd980e2135f6495",
-	"ranger,mage,cleric/stay_together": "4b1991b10bc999e4334514da31baca41",
+	"ranger,mage,cleric/advance": "10925fbe828cda1fee2d9119b356cc2f",
+	"ranger,mage,cleric/stay_together": "d417fecde4f60c74f1364990121e0052",
 }
 
 

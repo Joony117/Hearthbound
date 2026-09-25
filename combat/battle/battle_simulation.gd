@@ -469,17 +469,23 @@ static func _tick(state: BattleState, rng: RandomNumberGenerator) -> void:
 	_evaluate_terminal(state)
 
 
+## ig-85w: every count-down (here and in _tick_statuses) takes one tick off and snaps what is left within
+## TICK_EPSILON of 0 to 0, so a timer of t seconds ends on tick t / 0.1 (ten 0.1 s steps leave 1.0 at about
+## 1e-16, which took an 11th tick). Written inline: as a helper call it cost 8% of a forecast.
 static func _expire_effects_and_cooldowns(state: BattleState) -> void:
+	var step: float = BALANCE.battle_tick_seconds
 	for actor: BattleActor in state.actors:
-		actor.attack_cooldown = maxf(actor.attack_cooldown - BALANCE.battle_tick_seconds, 0.0)
+		actor.attack_cooldown = actor.attack_cooldown - step if actor.attack_cooldown - step >= TICK_EPSILON else 0.0
 		for skill_id: String in actor.skill_cooldowns:
-			actor.skill_cooldowns[skill_id] = maxf(float(actor.skill_cooldowns[skill_id]) - BALANCE.battle_tick_seconds, 0.0)
-		actor.item_cooldown = maxf(actor.item_cooldown - BALANCE.battle_tick_seconds, 0.0)
-		actor.ability_lock = maxf(actor.ability_lock - BALANCE.battle_tick_seconds, 0.0)
+			var cooldown: float = float(actor.skill_cooldowns[skill_id])
+			actor.skill_cooldowns[skill_id] = cooldown - step if cooldown - step >= TICK_EPSILON else 0.0
+		actor.item_cooldown = actor.item_cooldown - step if actor.item_cooldown - step >= TICK_EPSILON else 0.0
+		actor.ability_lock = actor.ability_lock - step if actor.ability_lock - step >= TICK_EPSILON else 0.0
 		_tick_statuses(state, actor)
 		for key: String in ["stun_remaining", "attack_windup_remaining", "telegraph_remaining"]:
 			if actor.effect_state.has(key):
-				actor.effect_state[key] = maxf(float(actor.effect_state[key]) - BALANCE.battle_tick_seconds, 0.0)
+				var left: float = float(actor.effect_state[key])
+				actor.effect_state[key] = left - step if left - step >= TICK_EPSILON else 0.0
 		if actor.life != BattleActor.LIFE_ALIVE or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0:
 			_cancel_pending_action(actor)
 
@@ -1281,7 +1287,8 @@ static func _tick_statuses(state: BattleState, actor: BattleActor) -> void:
 	var kept: Array[Dictionary] = []
 	for status: Dictionary in actor.statuses.duplicate():
 		var before: float = float(status["remaining"])
-		var after: float = maxf(before - BALANCE.battle_tick_seconds, 0.0)
+		# ig-85w: the count-down of _expire_effects_and_cooldowns.
+		var after: float = before - BALANCE.battle_tick_seconds if before - BALANCE.battle_tick_seconds >= TICK_EPSILON else 0.0
 		status["remaining"] = after
 		var kind: String = str(status["kind"])
 		if actor.life == BattleActor.LIFE_ALIVE and kind in ["bleed", "burn", "heal_over_time"] and ceilf(before / period - TICK_EPSILON) > ceilf(after / period - TICK_EPSILON):

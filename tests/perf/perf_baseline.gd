@@ -522,7 +522,7 @@ func _measure_roster() -> void:
 		# Lambdas cannot reassign a captured local, so each stage's output goes through one dictionary.
 		var stage: Dictionary = {}
 		_report("%s: save stage GameSession.to_dict" % label, _time(func() -> void: stage["payload"] = session.to_dict(), 10))
-		_report("%s: save stage JSON.stringify" % label, _time(func() -> void: stage["text"] = JSON.stringify(stage["payload"], "\t"), 10))
+		_report("%s: save stage JSON.stringify" % label, _time(func() -> void: stage["text"] = JSON.stringify(stage["payload"], "\t", true, true), 10))
 		_report("%s: save stage JSON.parse_string" % label, _time(func() -> void: stage["parsed"] = JSON.parse_string(stage["text"]), 10))
 		_report("%s: save stage _load_refusal" % label, _time(func() -> void: saves._load_refusal(stage["parsed"] as Dictionary, saves.SAVE_VERSION), 10))
 		var disk_write: Callable = func() -> void:

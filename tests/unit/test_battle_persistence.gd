@@ -210,8 +210,9 @@ func _exact_json(value: Variant) -> String:
 	return JSON.stringify(JSON.parse_string(JSON.stringify(value, "", true, true)), "", true, true)
 
 
+## As SaveService writes it (ig-85w): full precision.
 func _json_round_trip(profile: Dictionary) -> Dictionary:
-	return JSON.parse_string(JSON.stringify(profile)) as Dictionary
+	return JSON.parse_string(JSON.stringify(profile, "", true, true)) as Dictionary
 
 
 func _first_actor_effects(profile: Dictionary) -> Dictionary:
@@ -342,7 +343,7 @@ func test_five_battles_mid_fight_survive_a_real_save_and_each_resumes() -> void:
 		var battle: Dictionary = order["battle"] as Dictionary
 		assert_eq(str(battle["status"]), "active", "mid-fight")
 		assert_gt(float(battle["elapsed_seconds"]), 0.0, "it advanced")
-		saved_battles[order["id"]] = _json_round_trip(battle)  # At the save's float precision.
+		saved_battles[order["id"]] = _json_round_trip(battle)  # As the save writes it.
 	assert_eq(saved_battles.size(), 5)
 	assert_eq(GameSession._battle_states.size(), 5, "each holds a kept state")
 	# Nothing saved reads the kept states or the owed time.
@@ -390,6 +391,77 @@ func _settle_as_victory() -> Array:
 	GameSession.tick_expeditions(0.1)
 	assert_eq(GameSession.expedition_reports.size(), 1, "settled: " + GameSession.last_action_error)
 	return [GameSession.expedition_reports[0]["stones_earned"], GameSession.expedition_reports[0]["items_earned"]]
+
+
+## ig-85w (boundary #1): a battle saved mid-fight by the real SaveService and loaded back from the file
+## is its own full-precision round trip, every field ==, no tolerance, at load and 30 s later. (Not the
+## unsaved battle's bits: Godot's parser misrounds some 17-digit numbers by 1 ulp, docs/KNOWN_ISSUES.md.)
+## _json_round_trip is fixed at full precision, so a save back at 14 digits fails here.
+func test_a_checkpoint_through_the_real_save_file_reads_back_as_its_full_precision_round_trip() -> void:
+	var ids: Array[String] = []
+	for archetype: StringName in [&"knight", &"ranger", &"mage", &"rogue", &"cleric"]:
+		var hero := Hero.new("Exact %d" % ids.size(), 0)
+		hero.def_id = archetype
+		hero.level = 1
+		hero.instance_id = "hero:exact:%d" % ids.size()
+		GameSession.roster.append(hero)
+		ids.append(hero.instance_id)
+	var preset_id: String = GameSession.save_team_preset("", "Exact", ids, "verdant_outskirts")
+	assert_ne(GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, _zero_loadout()), "", GameSession.last_action_error)
+	for step: int in 200:
+		GameSession.tick_expeditions(0.1)
+	var battle: Dictionary = GameSession.expedition_orders[0]["battle"]
+	assert_eq(str(battle["status"]), "active", "mid-fight")
+	var round_trip: Dictionary = _json_round_trip(battle)
+	var written := BattleState.from_dict(round_trip)
+	var start: int = written.tick
+	GameSession.set("_save_deferred_depth", 0)
+	var saved: bool = SaveService.save()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_true(saved, SaveService.last_write_error)
+	# Only the stamp changes, in the text itself, so the load adds no offline time.
+	var stamp := RegEx.create_from_string("\"saved_at_unix\": [^,\\n]+")
+	var text: String = FileAccess.get_file_as_string(SaveService.SAVE_PATH)
+	assert_not_null(stamp.search(text))
+	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(stamp.sub(text, "\"saved_at_unix\": %d" % int(Time.get_unix_time_from_system() + 3600.0)))
+	file.close()
+	GameSession.from_dict({"roster": []})
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	var read_back: Dictionary = GameSession.expedition_orders[0]["battle"]
+	assert_eq(_first_difference(read_back, round_trip), "", "the file reads back as the round trip, raw")
+	var loaded := BattleState.from_dict(read_back)
+	for step: int in 300:
+		BattleSimulation.advance(written, 0.1)
+		BattleSimulation.advance(loaded, 0.1)
+	assert_eq(written.tick, start + 300, "it ran on all 30 s")
+	assert_eq(_first_difference(loaded.to_dict(), written.to_dict()), "", "and runs on the same")
+
+
+## Where got first differs from want, or "". Numbers compare by value, so a reload's 43.0 is 43, but a
+## float must match to the last bit.
+static func _first_difference(got: Variant, want: Variant, path: String = "") -> String:
+	if (got is int or got is float) and (want is int or want is float):
+		return "" if float(got) == float(want) else "%s: %s, not %s" % [path, var_to_str(got), var_to_str(want)]
+	if got is Dictionary and want is Dictionary:
+		if (got as Dictionary).size() != (want as Dictionary).size():
+			return "%s: keys %s, not %s" % [path, (got as Dictionary).keys(), (want as Dictionary).keys()]
+		for key: Variant in want:
+			if not (got as Dictionary).has(key):
+				return "%s.%s: missing" % [path, key]
+			var inner: String = _first_difference(got[key], want[key], "%s.%s" % [path, key])
+			if not inner.is_empty():
+				return inner
+		return ""
+	if got is Array and want is Array:
+		if (got as Array).size() != (want as Array).size():
+			return "%s: %d items, not %d" % [path, (got as Array).size(), (want as Array).size()]
+		for index: int in (want as Array).size():
+			var inner: String = _first_difference(got[index], want[index], "%s[%d]" % [path, index])
+			if not inner.is_empty():
+				return inner
+		return ""
+	return "" if typeof(got) == typeof(want) and got == want else "%s: %s, not %s" % [path, var_to_str(got), var_to_str(want)]
 
 
 func _cover_hero(id: String, def_id: StringName) -> Hero:

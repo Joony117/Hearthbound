@@ -37,7 +37,9 @@ func save() -> bool:
 	payload["version"] = SAVE_VERSION
 	var saved_at: float = Time.get_unix_time_from_system()
 	payload["saved_at_unix"] = saved_at
-	var text: String = JSON.stringify(payload, "\t")
+	# ig-85w: full precision. A reload lands within 1 ulp of the unsaved battle, not bit for bit: Godot's
+	# parser misrounds some 17-digit numbers (docs/KNOWN_ISSUES.md).
+	var text: String = JSON.stringify(payload, "\t", true, true)
 
 	# ig-6pm: never write a file this build's own load would refuse. Checked on the text load will read
 	# (numbers as floats, names as Strings, a NaN that does not survive), not on the dict. Before the

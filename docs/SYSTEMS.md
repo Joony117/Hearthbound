@@ -19,7 +19,7 @@ existing zone power ramps and economic rewards remain authored as before.
 ### Battle clocks and commands
 
 The simulation uses fixed 0.1-second logical ticks with stable actor ordering and a saved RNG
-state. Route minimum and combat run in parallel. Success waits for both before reward
+state. A timer of t seconds ends on tick t / 0.1. Route minimum and combat run in parallel. Success waits for both before reward
 settlement; wipe creates a stranded incident. Current-run offline progress is bounded by
 mission duration and never chains repeats. Tactical pause stops only the watched combat,
 clears on leaving/reload, and does not create an income speed bonus.

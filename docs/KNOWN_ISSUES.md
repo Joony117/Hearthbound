@@ -54,6 +54,14 @@ resumes from the last good save, up to 15 s back, the same as a crash.
 **Revisit if:** a player hits it. The draft fix pauses at once and shows a lasting "can't save"
 banner on the first failed commit.
 
+### A reload is within 1 ulp, not bit-exact
+The save writes floats at full precision (`ig-85w`), but Godot 4.7.1's `JSON.parse_string` (and
+`String.to_float`) misrounds about 1 in 9 seventeen-digit numbers by 1 ulp (probe: 11,517 of
+100,000, `.agent-results/ig-85w/float_probe.log`). So a battle reloaded from disk can differ from
+the unsaved one in the last bit. No fork has been measured (`ig-36y`: 0 of 28; `ig-85w`: 30 s).
+**Revisit if:** a real fork is ever seen. Then store floats as their 64-bit pattern in hex. That is
+a save-schema change (boundary #1), so an ADR comes first.
+
 ---
 
 ## Open questions
