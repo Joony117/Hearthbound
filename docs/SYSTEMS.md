@@ -979,7 +979,9 @@ row is a `balance.tres` row except the read cost, which is a measurement.
 
 > ⚠️ **PROVISIONAL** — every number in this section is a desk guess. How often a battle is not
 > routine has never been counted, so the pace a bond forms at is unknown · **Settled by:** the
-> slice's calibration run over a real ledger, then the owner gate (`ig-m6o.2.1`)
+> owner's play over a real ledger, then the owner gate (`ig-m6o.2.1`). The stage saves can't
+> settle it: their bot fights only at 90% or more of a zone's recommended power, so its battles
+> are almost all routine (the Mid stage save: 1 hard battle in 170, `ig-eek.1`)
 
 | Row | Value | Why |
 |---|---|---|
@@ -1032,7 +1034,10 @@ responsible.
 - Milestones: X was given up for the owner; win hard fights (n / `dream_worthy_hard_victories`),
   that is, victories that are not routine (`Ledger.is_routine`) with the owner in the team.
 - Fulfilled: the count is reached. Lost: the owner is carried home, listed in a rescue battle's
-  `rescued`.
+  `rescued`. Faded: `dream_worthy_fade_battles` battles in a row with the owner in the team and no
+  hard win. Each hard win restarts the count. Without the fade, a careful team, which almost never
+  has a hard fight, would leave this dream holding the one slot for ever (the Mid stage save: 1
+  hard battle in 170, `ig-eek.1`).
 
 **Which dream a hero holds.** One pass, oldest first, one dream at a time (ADR item 6):
 - With no dream open, the first record with a formative event for this hero opens that dream.
@@ -1045,12 +1050,18 @@ responsible.
 | `dream_fight_beside_battles` | 3 | Slice 1's row, now also Watch over's counted milestone. Both count battles beside X |
 | `dream_name_victories` | 3 | Any victory at Z. The life debt's pace, three battles |
 | `dream_worthy_hard_victories` | 2 | Hard fights are rarer than battles, so two, not three |
+| `dream_worthy_fade_battles` | 30 | Be worth it's Faded end: battles in a row with the owner in the team and no hard win. About 6 team-hours at Mid's 5 battles an hour. A hard win restarts it |
+
+> ⚠️ **PROVISIONAL** — `dream_worthy_fade_battles` 30 is a desk pick from Mid's battle rate. How
+> long a real team goes without a hard win is the Bonds PROVISIONAL's unknown · **Settled by:** the
+> owner's play, as in § Bonds and dreams (the stage saves only show that the fade fires), then the
+> owner gate
 
 The catalogue is still one oldest-first read of one hero's dream (ADR item 6). Carry their name adds
 one set to that read: the order ids of the battles the owner fought in. As in slice 1, the first
-two counts include routine victories, which the Ledger evicts first at the cap, so they can shrink
-there. At the cap, a `died` record can also outlive the battle that proves the owner was there.
-The section's PROVISIONAL covers all three numbers.
+two counts and the fade's count include routine victories, which the Ledger evicts first at the
+cap, so they can shrink there. At the cap, a `died` record can also outlive the battle that proves
+the owner was there. The section's PROVISIONAL covers the first three numbers; the fade has its own.
 
 **Two dreams on meetings and meals** — *ig-m6o.2.2.10, design 2026-09-25, not built yet*. They
 read the `encounter` and `meal` records from § Encounters and shared meals, below.
