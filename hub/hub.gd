@@ -2627,6 +2627,8 @@ func _update_order_card(child: Node) -> void:
 		battle_status = "Won · heading home · rewards in %s" % _format_duration(route_minimum)
 	elif phase == "checking":
 		battle_status = "Checking the next run"
+	elif bool(snapshot.get("catching_up", false)):
+		battle_status = "Catching up"
 	var pending_error: String = checkpoint_error if not checkpoint_error.is_empty() else command_error
 	details.text = "%s · %d stones · %d items · %d XP%s%s" % ["Run %d • repeating" % (completed + 1) if total == 0 else "Run %d of %d" % [mini(completed + 1, total), total], int(order.get("cumulative_stones", 0)), int(order.get("cumulative_items", 0)), int(order.get("cumulative_xp", 0)), "\n" + battle_status if not battle_status.is_empty() else "", "\nError: " + pending_error if not pending_error.is_empty() else ""]
 	var stopping: bool = bool(order.get("stop_requested", false))

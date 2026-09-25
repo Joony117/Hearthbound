@@ -114,7 +114,9 @@ func test_a_mid_fight_disk_reload_keeps_moments_and_the_settle_writes_one_battle
 	assert_eq(str(GameSession.get_battle_snapshot(order_id)["status"]), "active", "and is still going")
 	var saved_moments: String = JSON.stringify(moments)
 	assert_true(_disk_load_after_save())
-	assert_eq(JSON.stringify(GameSession.get_battle_snapshot(order_id)["moments"]), saved_moments, "moments survive the mid-fight reload")
+	# Read from disk, before the catch-up re-serializes the battle: its numbers are JSON floats.
+	assert_eq(JSON.parse_string(JSON.stringify(GameSession.get_battle_snapshot(order_id)["moments"])), JSON.parse_string(saved_moments), "moments survive the mid-fight reload")
+	_land_catch_ups()
 	assert_eq(GameSession.ledger, [] as Array[Dictionary], "nothing is written before the settle")
 
 	for step: int in 400:
@@ -718,3 +720,14 @@ func _scripts(dir_path: String) -> Array[String]:
 
 func _zero_loadout() -> Dictionary:
 	return {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
+
+
+## ig-7sn.12: a load owes its offline battle-seconds as catch_up_seconds, run as jobs after it. This
+## sends them and lands the round (without advancing any battle).
+func _land_catch_ups() -> void:
+	GameSession._send_battle_checks()
+	var deadline: int = Time.get_ticks_msec() + 60000
+	while not GameSession._battle_checks.is_empty() and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(1)
+		GameSession._land_battle_checks()
+	assert_true(GameSession._battle_checks.is_empty(), "the catch-up landed")

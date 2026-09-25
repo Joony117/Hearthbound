@@ -351,19 +351,25 @@ func test_offline_reload_completes_one_run_without_chaining_the_repeat() -> void
 	_write_save(SaveService.SAVE_PATH, JSON.stringify(fixture).to_utf8_buffer())
 
 	assert_true(SaveService.load_game())
-	assert_eq(GameSession.expedition_reports.size(), 1)
-	assert_eq(GameSession.expedition_orders.size(), 1)
-	assert_eq(GameSession.expedition_orders[0]["id"], order_id)
-	assert_eq(int(GameSession.expedition_orders[0]["runs_completed"]), 1)
-	# ig-7sn.6: the load settled the leg and runs no forecast; the repeat waits in "checking".
-	assert_eq(GameSession.expedition_orders[0]["phase"], "checking")
+	# ig-7sn.12: the load runs no sim. The battle owes the rest of its leg, never more.
+	var battle: Dictionary = GameSession.expedition_orders[0]["battle"]
+	var rest: float = float(battle["max_seconds"]) - float(battle["elapsed_seconds"])
+	assert_eq(GameSession.expedition_reports.size(), 0)
+	assert_eq(GameSession.expedition_orders[0]["phase"], "fighting")
+	assert_almost_eq(float(GameSession.expedition_orders[0]["catch_up_seconds"]), rest, 0.001)
 	var committed_bytes: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
 	_clear_session_without_saving()
 	_write_save(SaveService.SAVE_PATH, committed_bytes)
 	assert_true(SaveService.load_game())
+	assert_almost_eq(float(GameSession.expedition_orders[0]["catch_up_seconds"]), rest, 0.001, "still capped at the leg's rest")
+	_land_repeat_checks()
 	assert_eq(GameSession.expedition_reports.size(), 1)
+	assert_eq(GameSession.expedition_orders.size(), 1)
+	assert_eq(GameSession.expedition_orders[0]["id"], order_id)
 	assert_eq(int(GameSession.expedition_orders[0]["runs_completed"]), 1)
+	# ig-7sn.6: the landing settled the leg; the repeat waits in "checking" for the next pulse.
 	assert_eq(GameSession.expedition_orders[0]["phase"], "checking")
+	assert_false(GameSession.expedition_orders[0].has("catch_up_seconds"))
 	_land_repeat_checks()
 	assert_eq(GameSession.expedition_orders[0]["phase"], "fighting")
 	assert_almost_eq(

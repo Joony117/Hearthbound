@@ -4,6 +4,7 @@ extends GutTest
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const SEEDS: Array[int] = [11, 12, 13]
+const ZONES: Array[StringName] = [&"verdant_outskirts", &"ashfall_reaches", &"sundered_vault", &"fallen_citadel", &"frontier_march"]
 ## Long enough for contact at both zones; short enough to keep the suite quick.
 const RUN_SECONDS: float = 20.0
 
@@ -56,6 +57,53 @@ func test_a_forecast_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> 
 		var pooled: Dictionary = BattleSimulation.forecast_verdict(normal.result["leg"], stress.result["leg"])
 		assert_true(var_to_bytes(pooled) == var_to_bytes(direct), "seed %d" % SEEDS[index])
 		assert_true(direct.has("safe") and direct.has("normal") and direct.has("stress"))
+
+
+## ig-7sn.12: a load's catch-up job starts from the battle as the save stores it (through JSON), built on
+## the main thread from a deep copy, and ends where the synchronous advance by the same seconds does.
+func test_a_catch_up_job_from_a_saved_battle_matches_the_advance_for_every_zone() -> void:
+	var jobs: Array[BattleJob] = []
+	var saved: Array[Dictionary] = []
+	for zone_id: StringName in ZONES:
+		var zone: ZoneDefinition = ZoneDefinition.definition_for(zone_id)
+		var battle: Dictionary = JSON.parse_string(JSON.stringify(_run(zone, zone.hero_cap, 31).to_dict()))
+		saved.append(battle)
+		var state := BattleState.from_dict(battle.duplicate(true))
+		var job := BattleJob.new()
+		job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_battle(state, RUN_SECONDS, job))
+		jobs.append(job)
+	for index: int in ZONES.size():
+		WorkerThreadPool.wait_for_task_completion(jobs[index].task_id)
+		var direct := BattleState.from_dict(saved[index])
+		BattleSimulation.advance(direct, RUN_SECONDS)
+		assert_false(bool(jobs[index].result.get("cancelled", true)))
+		assert_true(var_to_bytes(jobs[index].result["battle"]) == var_to_bytes(direct.to_dict()), str(ZONES[index]))
+
+
+## Sol's ig-7sn.12 case: seconds that are not whole chunks, a saved tick_remainder, and a battle that
+## ends partway. The job equals the main thread's chunked advance byte for byte. Against one advance()
+## call only the ended battle's leftover tick_remainder may differ; the fight itself is the same.
+func test_a_catch_up_job_ending_partway_matches_the_chunked_advance() -> void:
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
+	var started: BattleState = _run(zone, 5, 41)
+	BattleSimulation.advance(started, 0.37)
+	var battle: Dictionary = JSON.parse_string(JSON.stringify(started.to_dict()))
+	var owed: float = 180.25
+	var state := BattleState.from_dict(battle.duplicate(true))
+	var job := BattleJob.new()
+	job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_battle(state, owed, job))
+	WorkerThreadPool.wait_for_task_completion(job.task_id)
+	var chunked: Dictionary = BattleJob.run_battle(BattleState.from_dict(battle.duplicate(true)), owed, null)
+	var one_call := BattleState.from_dict(battle.duplicate(true))
+	BattleSimulation.advance(one_call, owed)
+	assert_ne(str(one_call.status), "active", "setup: the battle ends partway")
+	assert_true(var_to_bytes(job.result["battle"]) == var_to_bytes(chunked["battle"]), "job == chunked main thread")
+	var job_battle: Dictionary = (job.result["battle"] as Dictionary).duplicate(true)
+	var direct: Dictionary = one_call.to_dict()
+	gut.p("tick_remainder: chunked %s, one call %s" % [job_battle["tick_remainder"], direct["tick_remainder"]])
+	job_battle.erase("tick_remainder")
+	direct.erase("tick_remainder")
+	assert_true(var_to_bytes(job_battle) == var_to_bytes(direct), "the same fight as one advance() call")
 
 
 func test_quit_stops_every_job_within_half_a_second_and_drops_its_result() -> void:

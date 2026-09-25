@@ -78,7 +78,7 @@ func _run() -> void:
 		"town":
 			await _measure_town()
 		"load":
-			_measure_load()
+			await _measure_load()
 		_:
 			push_error("Unknown measure '%s'." % measure)
 			quit(1)
@@ -172,9 +172,10 @@ func _pulse_phases(label: String) -> void:
 
 ## ---- 1b. The pulse that settles a leg, split (ig-7sn.6). One battle or all five, 99-run orders,
 ## pulsed with the hub shown until SETTLES legs settle. Before each settling pulse, each part's work is
-## done again on the side: the repeat's forecast (its team snapshot apart), the profile to_dict (the
-## commit's snapshot), a save, and each signal's handlers. "rest" is the pulse minus those (the other
-## battles' advance, the report, the Ledger record and bond fold, the save's own to_dict).
+## done again on the side: the repeat check's team snapshot (its forecast runs as jobs since ig-7sn.6),
+## the profile to_dict (the commit's snapshot), a save, and each signal's handlers. "rest" is the pulse
+## minus those (the other battles' advance, the report, the Ledger record and bond fold, the save's own
+## to_dict, sending the check's jobs).
 const SETTLES: int = 5
 
 
@@ -205,8 +206,7 @@ func _measure_settle(count: int) -> void:
 			var rest: float = whole
 			for part: String in parts:
 				line += ", %s %.1f" % [part, parts[part]]
-				if part != "team snapshot":
-					rest -= float(parts[part])
+				rest -= float(parts[part])
 			print("%s, rest %.1f ms" % [line, rest])
 		await process_frame
 	session.set_process(true)
@@ -221,13 +221,9 @@ func _settle_parts(due: Dictionary) -> Dictionary:
 	var squads: Array[Dictionary] = []
 	for squad: Dictionary in due["squads"]:
 		squads.append(squad.duplicate(true))
-	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(due["zone_id"])))
 	var started: int = Time.get_ticks_usec()
-	var snapshots: Array[Dictionary] = session._team_snapshots(team, squads)
+	session._team_snapshots(team, squads)
 	parts["team snapshot"] = _since(started)
-	started = Time.get_ticks_usec()
-	BattleSimulation.forecast(str(due["id"]) + ":repeat", snapshots, zone, squads, due["policies"] as Dictionary, session._loadout_escrow(due["loadout"] as Dictionary), 1)
-	parts["forecast (with its snapshot)"] = _since(started) + float(parts["team snapshot"])
 	started = Time.get_ticks_usec()
 	session.to_dict()
 	parts["profile to_dict"] = _since(started)
@@ -501,7 +497,8 @@ func _measure_town() -> void:
 	_report("town: show_buildings with the graph forced to rebuild (occupancy scan and walker replan)", graph)
 
 
-## ---- 6. The load: offline catch-up of all five battles after a long close.
+## ---- 6. The load after a long close with all five battles out. The load owes their catch-up; it
+## runs as jobs after (ig-7sn.12), timed here from the load until its round lands.
 
 func _measure_load() -> void:
 	for zone_id: String in ZONES:
@@ -517,6 +514,8 @@ func _measure_load() -> void:
 	var started_plain: int = Time.get_ticks_usec()
 	saves.load_game()
 	print("load: load_game, no time away: %.1f ms" % _since(started_plain))
+	# The control for the frames below: the same watch after a load that owes next to nothing.
+	await _frames_after_load("1.5 s from the no-time-away load", started_plain, func() -> bool: return _since(started_plain) < 1500.0)
 	var file := FileAccess.open("user://save.json", FileAccess.READ)
 	var text: String = file.get_as_text()
 	file.close()
@@ -527,11 +526,37 @@ func _measure_load() -> void:
 	file.close()
 	var started_away: int = Time.get_ticks_usec()
 	saves.load_game()
-	print("load: load_game after %.0f h away (offline catch-up of every battle, then its save): %.1f ms, load_blocked %s" % [hours, _since(started_away), saves.load_blocked])
+	print("load: load_game after %.0f h away (owes every battle's catch-up, then its save): %.1f ms, load_blocked %s" % [hours, _since(started_away), saves.load_blocked])
+	var owing: Callable = func() -> bool: return session.expedition_orders.any(func(order: Dictionary) -> bool: return order.has("catch_up_seconds"))
+	var frames: Array[float] = await _frames_after_load("until the catch-up landed (the last is the landing)", started_away, owing)
+	# The last frame holds the round's commit, a settle pulse (the Dispatched battles row, ig-7sn.6).
+	var landing: float = 0.0
+	if not frames.is_empty():
+		landing = frames.pop_back()
+	var worst: float = 0.0
+	for frame: float in frames:
+		worst = maxf(worst, frame)
+	print("load: catch-up landed %.1f s after the load began, %d frames, worst frame while it ran %.1f ms, landing frame %.1f ms" % [_since(started_away) / 1000.0, frames.size() + 1, worst, landing])
 	_print_orders()
 
 
 ## ---- Helpers
+
+## Frame times (ms) from now while running() holds, prints those over 16.7 ms with their time since
+## started (usec), the load's start.
+func _frames_after_load(label: String, started: int, running: Callable) -> Array[float]:
+	var frames: Array[float] = []
+	var slow: Array[String] = []
+	var last: int = Time.get_ticks_usec()
+	while running.call() and _since(started) < 600000.0:
+		await process_frame
+		frames.append(_since(last))
+		last = Time.get_ticks_usec()
+		if frames.back() > 16.7:
+			slow.append("%.1f ms at %.2f s" % [frames.back(), _since(started) / 1000.0])
+	print("load: %s, frames over 16.7 ms: %s" % [label, ", ".join(slow)])
+	return frames
+
 
 func _open_hub() -> Node:
 	change_scene_to_file("res://hub/hub.tscn")

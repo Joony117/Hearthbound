@@ -262,6 +262,7 @@ func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_read
 	GameSession.from_dict({"roster": []})
 	assert_true(GameSession.get_battle_snapshot(order_id).is_empty())
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	_land_catch_ups()
 	assert_eq(_knight_cover(GameSession.to_dict()), ["hero:m"], "equal after the reload")
 	var profile: Dictionary = _json_round_trip(GameSession.to_dict())
 	# A battle from before the key: it loads as [] and advances.
@@ -540,3 +541,14 @@ func _add_force(hero_count: int, squad_count: int, zone_id: String, prefix: Stri
 
 func _zero_loadout() -> Dictionary:
 	return {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
+
+
+## ig-7sn.12: a load owes its offline battle-seconds as catch_up_seconds, run as jobs after it. This
+## sends them and lands the round (without advancing any battle).
+func _land_catch_ups() -> void:
+	GameSession._send_battle_checks()
+	var deadline: int = Time.get_ticks_msec() + 60000
+	while not GameSession._battle_checks.is_empty() and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(1)
+		GameSession._land_battle_checks()
+	assert_true(GameSession._battle_checks.is_empty(), "the catch-up landed")

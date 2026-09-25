@@ -96,6 +96,7 @@ var _battle_jobs: Array[BattleJob] = []
 ## ig-7sn.6: the repeat check out for each "checking" order, by order id: its generation, the battle
 ## Dictionary it was sent for, the normal and stress jobs, and what the repeat is built from (snapshots,
 ## squads, zone, duration). Unsaved: a load or a rollback clears it and the pulse sends the check again.
+## ig-7sn.12: an order owing catch_up_seconds has an entry here too, with its one "catch_up" job.
 var _battle_checks: Dictionary[String, Dictionary] = {}
 var _battle_check_generation: int = 0
 var _checkpoint_save_failed: bool = false
@@ -139,7 +140,17 @@ func _cancel_battle_jobs() -> void:
 func _send_battle_checks() -> void:
 	for order: Dictionary in expedition_orders:
 		var order_id: String = str(order.get("id", ""))
-		if str(order.get("phase", "")) != "checking" or _battle_checks.has(order_id):
+		if _battle_checks.has(order_id):
+			continue
+		var owed: float = _catch_up_seconds(order)
+		if owed > 0.0:
+			# ig-7sn.12: the offline catch-up, advanced in the job's chunks from the battle as saved. The
+			# state is built here, on the main thread, from its own deep copy.
+			var state := BattleState.from_dict((order.get("battle") as Dictionary).duplicate(true))
+			_battle_check_generation += 1
+			_battle_checks[order_id] = {"generation": _battle_check_generation, "battle": order.get("battle"), "catch_up": _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_battle(state, owed, job))}
+			continue
+		if str(order.get("phase", "")) != "checking":
 			continue
 		var team: Array[Hero] = []
 		for hero_id: String in _string_array(order.get("hero_ids")):
@@ -180,10 +191,18 @@ func _land_battle_checks() -> void:
 			WorkerThreadPool.wait_for_task_completion(job.task_id)
 			_battle_jobs.erase(job)
 	var landed: Dictionary[String, int] = {}
+	# ig-7sn.12: the load's catch-ups are one round: none lands until every one is in.
+	var catch_ups: Dictionary[String, int] = {}
+	var round_in: bool = true
 	for order_id: String in _battle_checks:
 		var check: Dictionary = _battle_checks[order_id]
-		if not _battle_jobs.has(check.get("normal")) and not _battle_jobs.has(check.get("stress")):
+		if check.has("catch_up"):
+			catch_ups[order_id] = int(check["generation"])
+			round_in = round_in and not _battle_jobs.has(check["catch_up"])
+		elif not _battle_jobs.has(check.get("normal")) and not _battle_jobs.has(check.get("stress")):
 			landed[order_id] = int(check["generation"])
+	if round_in:
+		landed.merge(catch_ups)
 	if not landed.is_empty():
 		_commit_profile_mutation(_land_battle_checks_in_memory.bind(landed))
 
@@ -192,6 +211,7 @@ func _land_battle_checks() -> void:
 ## order. A check commits only onto the order it was sent for: same generation, still "checking",
 ## still holding that battle Dictionary. Anything else is dropped.
 func _land_battle_checks_in_memory(landed: Dictionary[String, int]) -> void:
+	var caught_up: bool = false
 	for order: Dictionary in expedition_orders.duplicate():
 		var order_id: String = str(order.get("id", ""))
 		if not landed.has(order_id) or not _battle_checks.has(order_id):
@@ -200,6 +220,21 @@ func _land_battle_checks_in_memory(landed: Dictionary[String, int]) -> void:
 		if int(check["generation"]) != landed[order_id]:
 			continue
 		_battle_checks.erase(order_id)
+		if check.has("catch_up"):
+			# ig-7sn.12: what the offline advance did at load before, now with the job's battle.
+			var result: Dictionary = (check["catch_up"] as BattleJob).result
+			if _catch_up_seconds(order) <= 0.0 or not is_same(order.get("battle"), check["battle"]) or bool(result.get("cancelled", true)):
+				continue
+			var state := BattleState.from_dict(result["battle"] as Dictionary)
+			order["battle"] = result["battle"]
+			order.erase("catch_up_seconds")
+			if state.status != "active":
+				order["phase"] = "returning"
+				if _battle_has_no_secured_allies(state):
+					_capture_stranded_incident(order, state)
+			caught_up = true
+			_notify_battle_changed(order_id)
+			continue
 		if str(order.get("phase", "")) != "checking" or not is_same(order.get("battle"), check["battle"]):
 			continue
 		if check.has("error"):
@@ -219,6 +254,12 @@ func _land_battle_checks_in_memory(landed: Dictionary[String, int]) -> void:
 		order["remaining_seconds"] = check["duration"]
 		order["incident_id"] = ""
 		_notify_battle_changed(order_id)
+	# An entry whose order is gone lands with nothing to commit onto.
+	for order_id: String in landed:
+		if _battle_checks.has(order_id) and int(_battle_checks[order_id]["generation"]) == landed[order_id]:
+			_battle_checks.erase(order_id)
+	if caught_up:
+		_resolve_due_orders_in_memory()
 	_notify_roster_changed()
 	_notify_expeditions_changed()
 
@@ -1209,6 +1250,7 @@ func get_battle_snapshot(order_id: String) -> Dictionary:
 	snapshot["route_remaining_seconds"] = maxf(Item.float_field(order, "remaining_seconds", 0.0, "expedition order"), 0.0)
 	snapshot["team_name"] = str(order.get("team_name", ""))
 	snapshot["paused"] = _paused_battle_orders.has(order_id)
+	snapshot["catching_up"] = _catch_up_seconds(order) > 0.0
 	snapshot["last_command_error"] = str(_command_errors.get(order_id, order.get("last_command_error", "")))
 	snapshot["checkpoint_error"] = _checkpoint_error if _checkpoint_save_failed else str(order.get("checkpoint_error", ""))
 	return snapshot
@@ -1220,6 +1262,9 @@ func issue_battle_command(order_id: String, command: Dictionary) -> Dictionary:
 		return {"accepted": false, "error": "That battle no longer exists.", "sequence": 0}
 	if _checkpoint_save_failed:
 		return {"accepted": false, "error": _checkpoint_error, "sequence": Item.int_field(expedition_orders[index].get("battle") as Dictionary, "command_sequence", 0, "battle checkpoint")}
+	# ig-7sn.12: refused before the commit, whose rollback would cancel the catch-up round.
+	if _catch_up_seconds(expedition_orders[index]) > 0.0:
+		return {"accepted": false, "error": "catching_up", "sequence": Item.int_field(expedition_orders[index].get("battle") as Dictionary, "command_sequence", 0, "battle checkpoint")}
 	_pending_command_result = {}
 	if not _commit_profile_mutation(_issue_battle_command_in_memory.bind(order_id, command.duplicate(true))):
 		var rejection: String = last_action_error
@@ -1934,7 +1979,7 @@ func tick_expeditions(delta_seconds: float) -> void:
 			if route_due or _battle_has_no_secured_allies(state):
 				has_due_order = true
 				break
-		elif not _paused_battle_orders.has(order_id):
+		elif not _battle_clock_stopped(order):
 			# The advance's own step; the same result as delta_seconds whenever it is above 0.
 			var step: float = minf(delta_seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0))
 			BattleSimulation.advance(state, delta_seconds)
@@ -2027,18 +2072,21 @@ func _advance_time_in_memory(delta_seconds: float, advanced: Dictionary = {}) ->
 	_notify_expeditions_changed()
 
 
+## ig-7sn.12 (DECISIONS.md 2026-09-25 "Battle sim threading", item 8): runs no sim. An active battle owes
+## the offline seconds, capped at the rest of its leg, as catch_up_seconds; the pulse sends the job
+## and the round's landing does what the advance here did.
 func _advance_orders_in_memory(delta_seconds: float) -> void:
 	for order: Dictionary in expedition_orders:
 		order["remaining_seconds"] = maxf(Item.float_field(order, "remaining_seconds", 0.0, "expedition order") - delta_seconds, 0.0)
 		if str(order.get("backend", "legacy_v2")) == "battle_v1":
-			var state := BattleState.from_dict(order.get("battle") as Dictionary)
-			if state.status == "active":
-				BattleSimulation.advance(state, minf(delta_seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
-				order["battle"] = state.to_dict()
-				if state.status != "active":
-					order["phase"] = "returning"
-					if _battle_has_no_secured_allies(state):
-						_capture_stranded_incident(order, state)
+			var battle: Dictionary = order.get("battle") as Dictionary
+			if str(battle.get("status", "")) == "active":
+				var rest: float = maxf(Item.float_field(battle, "max_seconds", 180.0, "battle checkpoint") - Item.float_field(battle, "elapsed_seconds", 0.0, "battle checkpoint"), 0.0)
+				# Whole microseconds: the value survives the save's JSON exactly, so a reloaded catch-up
+				# runs the same seconds. Under the sim's TICK_EPSILON, it never changes a tick count.
+				var owed: float = roundi(minf(_catch_up_seconds(order) + delta_seconds, rest) * 1000000.0) / 1000000.0
+				if owed > 0.0:
+					order["catch_up_seconds"] = owed
 	_resolve_due_orders_in_memory()
 	_notify_roster_changed()
 	_notify_expeditions_changed()
@@ -2050,7 +2098,7 @@ func _advance_orders_in_memory(delta_seconds: float) -> void:
 func _advance_clocks_in_memory(delta_seconds: float, advanced: Dictionary = {}) -> void:
 	for order: Dictionary in expedition_orders:
 		order["remaining_seconds"] = maxf(Item.float_field(order, "remaining_seconds", 0.0, "expedition order") - delta_seconds, 0.0)
-		if str(order.get("backend", "legacy_v2")) == "battle_v1" and not _paused_battle_orders.has(str(order.get("id", ""))):
+		if str(order.get("backend", "legacy_v2")) == "battle_v1" and not _battle_clock_stopped(order):
 			var ahead: Array = advanced.get(str(order.get("id", "")), [])
 			var taken: bool = not ahead.is_empty() and is_same(ahead[0], order.get("battle"))
 			var state: BattleState = ahead[1] as BattleState if taken else BattleState.from_dict(order.get("battle") as Dictionary)
@@ -2116,6 +2164,17 @@ func _resolve_due_orders_in_memory() -> void:
 	due_orders.sort_custom(_due_order_before)
 	for due_order: Dictionary in due_orders:
 		_complete_order_in_memory(str(due_order.get("id", "")))
+
+
+## Offline battle-seconds the order still owes (ig-7sn.12). from_dict drops a bad value.
+static func _catch_up_seconds(order: Dictionary) -> float:
+	return Item.float_field(order, "catch_up_seconds", 0.0, "expedition order")
+
+
+## A player's tactical pause, or a catch-up still owed: either stops the battle's clock. They are kept
+## apart so un-pausing (the battle view does it on leave) never frees an order mid catch-up.
+func _battle_clock_stopped(order: Dictionary) -> bool:
+	return _paused_battle_orders.has(str(order.get("id", ""))) or _catch_up_seconds(order) > 0.0
 
 
 func _battle_has_no_secured_allies(state: BattleState) -> bool:
@@ -2751,7 +2810,16 @@ func from_dict(data: Dictionary) -> void:
 			team_presets.append((entry as Dictionary).duplicate(true))
 	for entry: Variant in _array_field(data, "expedition_orders"):
 		if entry is Dictionary:
-			expedition_orders.append((entry as Dictionary).duplicate(true))
+			var order: Dictionary = (entry as Dictionary).duplicate(true)
+			# ig-7sn.12: optional; missing is 0, and a bad value loads as 0. Only an active battle can
+			# owe: one already over (a settled or "checking" leg) must never be caught up and settled again.
+			if order.has("catch_up_seconds"):
+				var owed: Variant = order["catch_up_seconds"]
+				var battle: Variant = order.get("battle")
+				if not (owed is int or owed is float) or not is_finite(float(owed)) or float(owed) < 0.0 or not battle is Dictionary or str((battle as Dictionary).get("status", "")) != "active":
+					push_warning("Expedition order catch_up_seconds '%s' is invalid; it loads as 0." % str(owed))
+					order.erase("catch_up_seconds")
+			expedition_orders.append(order)
 	for entry: Variant in _array_field(data, "expedition_reports"):
 		if entry is Dictionary:
 			expedition_reports.append((entry as Dictionary).duplicate(true))
