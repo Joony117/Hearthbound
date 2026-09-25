@@ -832,7 +832,7 @@ an selected enemy", "immune to cc while in motion", knocking aside enemies in be
 - **Charge is instant in the sim, like every move today** (Turncoat Cut, Slip, Dust Roll). The
   Knight lands on the cast tick, so nothing can stun, root, taunt or push it mid-dash: that is
   the owner's immunity, with no timer and no saved state. The watched view draws the dash over
-  0.4 s (designed, not built: `ig-n7b`; today it draws the normal move glide). If it reads as a
+  0.4 s (`ig-n7b`). If it reads as a
   teleport when played, a timed dash with a real immunity window is the fallback (saved state,
   boundary #1).
 - **The line.** Straight from the Knight to the target as it stands at the cast. The Knight ends

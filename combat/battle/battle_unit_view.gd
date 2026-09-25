@@ -52,6 +52,9 @@ const HALO_COLOR: Color = Color("fff1c4")
 const HALO_ARCHETYPES: Array[String] = ["cleric"]
 # Bone-local, from the head bone (model y 1.24) to just above the head top (2.16).
 const HALO_OFFSET: Vector3 = Vector3(0.0, 1.0, 0.0)
+# The sim lands a Charge on its cast tick; the view draws the dash over this (SYSTEMS.md § The v1 kits, ig-n7b).
+const CHARGE_DASH_SECONDS: float = 0.4
+const CHARGE_SKILL_ID: String = "knight_charge"
 
 static var _bar_back_material: StandardMaterial3D = _bar_material(BAR_BACK_COLOR)
 static var _bar_chip_material: StandardMaterial3D = _bar_material(BAR_CHIP_COLOR)
@@ -152,6 +155,8 @@ var _placed: bool = false
 var _glide_from: Vector3 = Vector3.ZERO
 var _glide_seconds: float = 0.0
 var _glide_elapsed: float = 0.0
+# A Charge dash in flight: later renders move its end, not its start or length.
+var _dashing: bool = false
 # A hit inside a multi-tick render reacts at its own tick, not the moment the render lands.
 var _pending_reaction: Dictionary = {}
 var _reaction_remaining: float = 0.0
@@ -193,6 +198,7 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 	var hit_from: Variant = _effects.get("hit_from")
 	var away: Vector2 = _vector2(hit_from) if hit_from is Array else -facing
 	_hit_away = Vector3(away.x, 0.0, away.y).normalized()
+	var charged: bool = skill_tick > _last_skill_tick and str(_effects.get("last_skill_id", "")) == CHARGE_SKILL_ID
 	var reaction: Dictionary = {
 		"hit": was_hit,
 		"skill": _last_skill_tick >= 0 and skill_tick > _last_skill_tick,
@@ -219,14 +225,17 @@ func set_actor(actor: Dictionary, is_selected: bool, glide_seconds: float = 0.0,
 	_attack_cooldown = attack_cooldown
 	selected = is_selected
 	var destination: Vector3 = _world_position(actor.get("position", [0.0, 0.0]))
+	_dashing = _dashing and _glide_elapsed < _glide_seconds
 	if not _placed or glide_seconds <= 0.0:
 		_glide_from = destination
 		_glide_seconds = 0.0
 		position = destination
-	elif destination != target_position:
+		_dashing = false
+	elif charged or (destination != target_position and not _dashing):
 		_glide_from = position
-		_glide_seconds = glide_seconds
+		_glide_seconds = CHARGE_DASH_SECONDS if charged else glide_seconds
 		_glide_elapsed = 0.0
+		_dashing = charged
 	target_position = destination
 	_placed = true
 	# +Z along the facing: KayKit models look down their own +Z.

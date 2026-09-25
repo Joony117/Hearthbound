@@ -332,6 +332,52 @@ func test_zero_glide_snaps() -> void:
 	assert_eq(unit.position, Vector3(4.0, 0.0, 0.0))
 
 
+## ig-n7b: the sim lands a Charge on its cast tick; the view draws the dash over 0.4 s.
+func test_a_charge_dashes_over_0_4_s_and_a_render_mid_dash_does_not_restart_it() -> void:
+	var unit: BattleUnitView = _unit({"effect_state": {"last_skill_tick": 3, "last_skill_id": "knight_rally"}})
+	unit.set_actor(_actor({"position": [6.8, 0.0], "effect_state": {"last_skill_tick": 10, "last_skill_id": "knight_charge"}}), false, 0.25)
+	unit._process(0.2)
+	assert_almost_eq(unit.position, Vector3(3.4, 0.0, 0.0), Vector3.ONE * 0.001, "halfway at 0.2 s")
+	unit.set_actor(_actor({"position": [7.0, 0.0], "effect_state": {"last_skill_tick": 10, "last_skill_id": "knight_charge"}}), false, 0.25)
+	unit._process(0.1)
+	assert_almost_eq(unit.position, Vector3(5.25, 0.0, 0.0), Vector3.ONE * 0.001, "the same dash, to the new end")
+	unit._process(0.1 + 1.0 / 60.0)
+	assert_almost_eq(unit.position, Vector3(7.0, 0.0, 0.0), Vector3.ONE * 0.001, "landed by 0.4 s and a frame")
+	unit.set_actor(_actor({"position": [8.0, 0.0], "effect_state": {"last_skill_tick": 10, "last_skill_id": "knight_charge"}}), false, 0.25)
+	unit._process(0.125)
+	assert_almost_eq(unit.position, Vector3(7.5, 0.0, 0.0), Vector3.ONE * 0.001, "then the normal glide")
+
+	var slip: BattleUnitView = _unit({"archetype": "rogue"})
+	slip.set_actor(_actor({"archetype": "rogue", "position": [4.0, 0.0], "effect_state": {"last_skill_tick": 10, "last_skill_id": "rogue_slip"}}), false, 0.25)
+	slip._process(0.125)
+	assert_almost_eq(slip.position, Vector3(2.0, 0.0, 0.0), Vector3.ONE * 0.001, "every other move keeps the render's glide")
+
+
+func test_a_watched_battle_draws_a_charge_over_0_4_s_and_its_lane_push_as_before() -> void:
+	SceneRouter.clear_battle_payload()
+	var view: BattleView = (load("res://combat/battle/battle_view.tscn") as PackedScene).instantiate() as BattleView
+	add_child_autofree(view)
+	var snapshots: Array[Dictionary] = [{"hero_id": "k", "squad_id": "s", "archetype": "knight", "faction": "ally", "hp": 100.0, "atk": 10.0, "defense": 0.0, "speed": 100.0, "crit_rate": 0.0, "crit_damage": 1.5, "position": [0.0, 0.0]}]
+	for enemy: Array in [["e:target", [8.0, 0.0]], ["e:near", [9.0, 1.0]], ["e:lane", [4.0, 0.3]]]:
+		snapshots.append({"id": enemy[0], "squad_id": "", "archetype": "knight", "faction": "enemy", "hp": 100.0, "atk": 10.0, "defense": 0.0, "speed": 100.0, "crit_rate": 0.0, "crit_damage": 1.5, "position": enemy[1]})
+	var state: BattleState = BattleSimulation.create_run("n7b:1", snapshots, ZoneDefinition.definition_for(&"verdant_outskirts"), [{"id": "s", "name": "S", "hero_ids": ["k"], "stance": "stay_together", "guard_target_id": ""}], {"auto_battle": false}, {"healing": 0, "revival": 0}, 7, "rescue", 1)
+	view._render_snapshot(state.to_dict())
+	var knight: BattleActor = state.actors[0]
+	var target: BattleActor = state.actors[1]
+	state.tick += 1
+	assert_true(BattleSimulation._use_skill(state, knight, BattleSimulation.ABILITIES["knight_charge"], target, target.position))
+	view._render_snapshot(state.to_dict())
+	var drawn: BattleUnitView = view._unit_views[knight.id]
+	var landing := Vector3(knight.position.x, 0.0, knight.position.y)
+	drawn._process(0.2)
+	assert_almost_eq(drawn.position, landing * 0.5, Vector3.ONE * 0.001, "between its start and its landing at 0.2 s")
+	drawn._process(0.2 + 1.0 / 60.0)
+	assert_almost_eq(drawn.position, landing, Vector3.ONE * 0.001, "at the landing by 0.4 s and a frame")
+	var pushed: BattleUnitView = view._unit_views["e:lane"]
+	assert_eq(int(state.actors[3].effect_state["last_push_tick"]), state.tick, "the lane enemy was pushed")
+	assert_eq(pushed._glide_seconds, BattleView.BATTLE_PULSE_SECONDS, "a lane push keeps today's glide")
+
+
 func test_delayed_reaction_waits_then_flinches_and_a_delayed_kill_tips_over_after_it() -> void:
 	var unit: BattleUnitView = _unit({"hp": 20.0, "effect_state": {"last_hit_tick": 1, "last_crit_tick": 0}})
 	unit.set_actor(_actor({"hp": 19.0, "effect_state": {"last_hit_tick": 2, "last_crit_tick": 2}}), false, 0.25, 0.1)
