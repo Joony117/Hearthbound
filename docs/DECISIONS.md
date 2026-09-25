@@ -109,8 +109,11 @@ for 100+ hours at the guessed 60 records an hour.
      `GameSession`, the ledger's owner. It was moved, not copied: `GameSession` holds it as an
      unsaved field, and the hub and `_team_snapshots` (`ig-uu7.4`) read that one index, so one
      rebuild or fold per ledger change serves both. The key is unchanged (array identity plus
-     `ledger_next_seq`). The rules stay in `Bonds`; `GameSession` only holds and calls. ARCHITECTURE
-     rule 1 holds: `GameSession` never reads hub.gd.
+     `ledger_next_seq`), with one guard beside it: an append made while the index is out of step
+     drops the index. Without it, appends after a rolled-back append could bring `ledger_next_seq`
+     level with the index again while it still held the dropped records. The rules stay in
+     `Bonds`; `GameSession` only holds and calls. ARCHITECTURE rule 1 holds: `GameSession` never
+     reads hub.gd.
 4. **Never per frame.** Today the ledger changes only when a battle settles or a hero is summoned,
    ranked up or dies, so a rebuild follows one of those.
 5. **The budget, and the trigger to change.** The 39 ms was one hero's bond and dream, not an

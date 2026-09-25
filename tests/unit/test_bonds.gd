@@ -433,32 +433,38 @@ func test_a_rescuer_from_outside_the_team_is_the_rescued_heros_partner() -> void
 	_assert_same_answers([B, C])
 
 
-func test_the_hub_builds_the_index_once_per_ledger_change() -> void:
+func test_the_index_rebuilds_only_on_a_load_or_a_dropped_append() -> void:
 	_hero(A, "Ada")
 	_hero(B, "Bea")
 	_hero(C, "Cal")
 	for _index: int in 2:
 		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
 	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var builds: int = GameSession.bond_builds
 	var hub: Node3D = _hub()
-	assert_eq(hub.bond_builds, 1, "the first refresh builds it")
+	assert_eq(GameSession.bond_builds - builds, 1, "the first refresh builds it")
 	GameSession.roster_changed.emit()
 	_select(hub, "Ada")
 	for _pulse: int in 3:
 		GameSession.expeditions_changed.emit()
 	assert_true(GameSession.embody_hero(A))
-	assert_eq(hub.bond_builds, 1, "refreshes, a selection, pulses and walking rebuild nothing")
+	assert_eq(GameSession.bond_builds - builds, 1, "refreshes, a selection, pulses and walking rebuild nothing")
 	GameSession._record("battle", {"order": "order:new", "zone": ZONE, "team": [A, C], "result": "retreated", "moments": []})
 	GameSession.roster_changed.emit()
 	GameSession.expeditions_changed.emit()
-	assert_eq(hub.bond_builds, 2, "an appended record rebuilds once")
+	assert_eq(GameSession.bond_builds - builds, 1, "an appended record folds in and rebuilds nothing")
+	_assert_index_is_a_rebuild("after an append")
 	var data: Dictionary = GameSession.to_dict()
 	data["ledger"] = GameSession.ledger.duplicate(true)
 	GameSession.from_dict(data)
 	GameSession.roster_changed.emit()
 	GameSession.roster_changed.emit()
-	assert_eq(hub.bond_builds, 3, "a load (a new array) rebuilds once")
-	# A mutation that appends and rolls back: the same array, cut back, with its old next seq.
+	assert_eq(GameSession.bond_builds - builds, 2, "a load (a new array) rebuilds once")
+	# A mutation that rolls back with no append: the same array and next seq, so the index holds.
+	assert_false(GameSession._commit_profile_mutation(func() -> bool: return false))
+	GameSession.roster_changed.emit()
+	assert_eq(GameSession.bond_builds - builds, 2, "a rollback with no append rebuilds nothing")
+	# One that appends and rolls back: the same array, cut back, with its old next seq.
 	var seq: int = GameSession.ledger_next_seq
 	var mutation := func() -> bool:
 		for _index: int in 2:
@@ -467,11 +473,28 @@ func test_the_hub_builds_the_index_once_per_ledger_change() -> void:
 	assert_false(GameSession._commit_profile_mutation(mutation))
 	assert_eq(GameSession.ledger_next_seq, seq)
 	GameSession.roster_changed.emit()
-	assert_eq(hub.bond_builds, 3, "the index built before the rollback is still valid")
+	assert_eq(GameSession.bond_builds - builds, 3, "a rolled-back append rebuilds once")
 	var living: Dictionary = {A: true, B: true, C: true}
 	for id: String in living:
 		assert_eq(Bonds.bond_from(hub._bond_index(), id, living, BALANCE), Bonds.bond(GameSession.ledger, id, living, BALANCE), id)
 	assert_eq(str(Bonds.bond(GameSession.ledger, C, living, BALANCE).get("partner", "")), "", "Cal's rolled-back saves are gone")
+
+
+# No hub here: nothing asks for the index between the rollback and the appends.
+func test_appends_after_a_rolled_back_append_never_read_a_stale_index() -> void:
+	for _index: int in 2:
+		GameSession._record("battle", {"order": "order:before", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+	GameSession.bond_index()
+	var mutation := func() -> bool:
+		for _index: int in 2:
+			GameSession._record("battle", {"order": "order:gone", "zone": ZONE, "team": [A, C], "result": "victory", "moments": [_moment("revived", C, A)]})
+		return false
+	assert_false(GameSession._commit_profile_mutation(mutation))
+	# As many new records as were dropped: the next seq lines up with the kept index's again, but the
+	# index still holds the dropped ones.
+	for _index: int in 2:
+		GameSession._record("battle", {"order": "order:after", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+	_assert_index_is_a_rebuild("appends after a rollback")
 
 
 func test_a_bonded_row_shows_its_partner_and_keeps_it_while_the_partner_is_away() -> void:
@@ -610,15 +633,19 @@ func test_rebuild_and_refresh_cost_at_the_cap() -> void:
 		var started: int = Time.get_ticks_usec()
 		Bonds.index(GameSession.ledger, BALANCE)
 		runs.append(Time.get_ticks_usec() - started)
-	_print_cost("all-pairs rebuild", runs)
+	_print_cost("all-pairs rebuild (a load)", runs)
+	var builds: int = GameSession.bond_builds
 	var hub: Node3D = _hub()
 	_select(hub, "H0")
+	var folds: Array[int] = []
 	var changed: Array[int] = []
 	var quiet: Array[int] = []
 	var pulse: Array[int] = []
 	for run: int in 7:
-		GameSession._record("battle", {"order": "order:more%d" % run, "zone": ZONE, "team": _team(rng, heroes, 5), "result": "retreated", "moments": []})
 		var started: int = Time.get_ticks_usec()
+		GameSession._record("battle", {"order": "order:more%d" % run, "zone": ZONE, "team": _team(rng, heroes, 5), "result": "retreated", "moments": []})
+		folds.append(Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
 		GameSession.roster_changed.emit()
 		changed.append(Time.get_ticks_usec() - started)
 		started = Time.get_ticks_usec()
@@ -627,11 +654,111 @@ func test_rebuild_and_refresh_cost_at_the_cap() -> void:
 		started = Time.get_ticks_usec()
 		GameSession.expeditions_changed.emit()
 		pulse.append(Time.get_ticks_usec() - started)
-	_print_cost("roster refresh after a new record (one rebuild)", changed)
+	_print_cost("one record in: append, fold in, evict, fold out", folds)
+	_print_cost("roster refresh after a new record (no rebuild, one dream read)", changed)
 	_print_cost("roster refresh with no ledger change", quiet)
 	_print_cost("0.25 s pulse", pulse)
 	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
-	assert_eq(hub.bond_builds, 8, "the first build, then one per new record")
+	assert_eq(GameSession.bond_builds - builds, 1, "the first build; each new record folds in")
+
+
+## ---- ig-m6o.2.2.9: the kept index folds each record in and out instead of rebuilding
+
+func test_a_folded_index_equals_a_rebuild_after_every_append_and_eviction() -> void:
+	var heroes: Array[String] = []
+	for index: int in 8:
+		heroes.append("hero:%d" % index)
+	var refused: int = 0
+	for seed_value: int in [1, 2, 3]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_value
+		var ledger: Array[Dictionary] = []
+		var tiers: Array[int] = []
+		var folded: Dictionary = Bonds.index_state(ledger, BALANCE)
+		for seq: int in range(1, 401):
+			var made: Array = _random_record(rng, heroes, seq)
+			Ledger.append(ledger, seq, 0, made[0], made[1])
+			tiers.append(Ledger.tier(ledger.back()))
+			Bonds.fold_in(folded, ledger.back(), BALANCE)
+			if _nonempty(folded["pairs"]) != _nonempty(Bonds.index(ledger, BALANCE)):
+				fail_test("seed %d: appending seq %d" % [seed_value, seq])
+				return
+			for record: Dictionary in Ledger.evict(ledger, tiers, 20):
+				if not Bonds.fold_out(folded, record, BALANCE):
+					refused += 1
+					folded = Bonds.index_state(ledger, BALANCE)
+			if _nonempty(folded["pairs"]) != _nonempty(Bonds.index(ledger, BALANCE)):
+				fail_test("seed %d: evicting after seq %d" % [seed_value, seq])
+				return
+	# The mix has deaths of routine wins and deaths before their battle, which today's game never
+	# writes, so some take-outs are refused and rebuild; the count only shows the path ran.
+	gut.p("FOLD PROPERTY: 1,200 appends under a cap of 20, %d take-outs refused and rebuilt" % refused)
+	assert_gt(refused, 0)
+
+
+func test_the_kept_index_matches_a_rebuild_through_a_load_and_a_rollback() -> void:
+	_fill_to_cap(20)
+	var heroes: Array[String] = []
+	for index: int in 8:
+		heroes.append("hero:%d" % index)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	for step: int in 200:
+		if step == 70:
+			var data: Dictionary = GameSession.to_dict()
+			data["ledger"] = GameSession.ledger.duplicate(true)
+			GameSession.from_dict(data)
+		if step == 140:
+			var mutation := func() -> bool:
+				for _index: int in 3:
+					var dropped: Array = _random_record(rng, heroes, GameSession.ledger_next_seq)
+					GameSession._record(dropped[0], dropped[1])
+				return false
+			assert_false(GameSession._commit_profile_mutation(mutation))
+		var made: Array = _random_record(rng, heroes, GameSession.ledger_next_seq)
+		GameSession._record(made[0], made[1])
+		if _nonempty(GameSession.bond_index()) != _nonempty(Bonds.index(GameSession.ledger, BALANCE)):
+			fail_test("step %d" % step)
+			break
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+
+
+func test_an_eviction_the_fold_cannot_take_out_rebuilds() -> void:
+	_fill_to_cap(4)
+	GameSession._record("battle", {"order": "order:1", "zone": ZONE, "team": [A, B, C], "result": "stranded", "moments": []})
+	GameSession._record("died", {"hero": C, "name": "Cal", "battle_order": "order:1"})
+	GameSession._record("battle", {"order": "order:2", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+	GameSession._record("summoned", {"hero": D, "name": "Dov", "rank": 0})
+	assert_eq(int(GameSession.bond_index()[A][B]["deaths"]), 1)
+	var builds: int = GameSession.bond_builds
+	# A test tier list that evicts the death first while its battle stays.
+	GameSession._ledger_tiers = Ledger.tiers(GameSession.ledger)
+	GameSession._ledger_tiers[-3] = 0
+	GameSession._record("ranked_up", {"hero": A, "from": 0, "to": 1})
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	assert_false(GameSession.ledger.any(func(record: Dictionary) -> bool: return record["kind"] == "died"))
+	assert_eq(int(GameSession.bond_index()[A][B]["deaths"]), 0, "the death seen together went with its record")
+	assert_eq(GameSession.bond_builds - builds, 1, "the refused take-out rebuilt once")
+	_assert_index_is_a_rebuild("after the rebuild")
+
+
+func test_the_detail_panel_reads_a_dream_once_per_ledger_change() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	_select(hub, "Ada")
+	var reads: int = hub.dream_reads
+	hub._refresh_hero_detail()
+	hub._refresh_hero_detail()
+	assert_eq(hub.dream_reads, reads, "no ledger change: the kept dream")
+	GameSession._record("battle", {"order": "order:new", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+	hub._refresh_hero_detail()
+	hub._refresh_hero_detail()
+	assert_eq(hub.dream_reads, reads + 1, "an append: read once more")
+	assert_string_contains((hub.get_node("%HeroDetail") as Label).text, "Fight beside Bea again (2/3).")
 
 
 ## ---- helpers
@@ -694,6 +821,56 @@ func _mix(rng: RandomNumberGenerator, index: int, team: Array[String]) -> Dictio
 	if roll == 9:
 		fields.merge({"rescued": [team[2]], "rescuers": [team[3]]})
 	return fields
+
+
+## ig-m6o.2.2.9: one seeded record, [kind, fields], of every kind the fold reads: hard fights, saves,
+## rescues, routine wins, deaths (mostly of a battle a few records back, sometimes of none or of the
+## next one), summons and rank-ups. A battle's order is "order:<its seq>".
+func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int) -> Array:
+	var roll: int = rng.randi_range(0, 19)
+	var hero: String = heroes[rng.randi_range(0, heroes.size() - 1)]
+	if roll < 2:
+		return ["summoned", {"hero": hero, "name": "X", "rank": 0}]
+	if roll < 4:
+		return ["ranked_up", {"hero": hero, "from": 0, "to": 1}]
+	if roll < 7:
+		var died: Dictionary = {"hero": hero, "name": "X"}
+		if roll < 6:
+			died["battle_order"] = "order:%d" % (seq - rng.randi_range(-1, 6))
+		return ["died", died]
+	var team: Array[String] = _team(rng, heroes, rng.randi_range(1, 5))
+	var moments: Array = []
+	for _index: int in rng.randi_range(0, 3) if rng.randi_range(0, 1) == 0 else 0:
+		var by: String = ["enemy:goblin", "", heroes[rng.randi_range(0, heroes.size() - 1)]][rng.randi_range(0, 2)]
+		moments.append(_moment(["revived", "carried", "downed"][rng.randi_range(0, 2)], team[rng.randi_range(0, team.size() - 1)], by))
+	var fields: Dictionary = {"order": "order:%d" % seq, "zone": [ZONE, "frontier_march"][rng.randi_range(0, 1)], "team": team,
+		"result": ["victory", "victory", "retreated", "stranded"][rng.randi_range(0, 3)], "moments": moments}
+	if rng.randi_range(0, 4) == 0:
+		fields["rescued"] = [team[0]]
+		fields["rescuers"] = [heroes[rng.randi_range(0, heroes.size() - 1)], heroes[rng.randi_range(0, heroes.size() - 1)]]
+	return ["battle", fields]
+
+
+## Summons of no one on the roster up to short of the cap, straight into GameSession's ledger: they
+## score nothing, so a rebuild stays cheap. GameSession's cap is folded in when it compiles, so a
+## test cannot shrink it.
+func _fill_to_cap(short: int) -> void:
+	for seq: int in range(1, BALANCE.ledger_max_records - short + 1):
+		Ledger.append(GameSession.ledger, seq, 0, "summoned", {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+
+
+func _assert_index_is_a_rebuild(what: String) -> void:
+	assert_eq(_nonempty(GameSession.bond_index()), _nonempty(Bonds.index(GameSession.ledger, BALANCE)), what)
+
+
+## pairs without its heroes that have no pairs: a fold may keep them as {}, a rebuild never makes them.
+func _nonempty(pairs: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for hero_id: String in pairs:
+		if not (pairs[hero_id] as Dictionary).is_empty():
+			out[hero_id] = pairs[hero_id]
+	return out
 
 
 func _print_cost(what: String, runs: Array[int]) -> void:

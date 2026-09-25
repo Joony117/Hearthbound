@@ -122,14 +122,16 @@ var _moving: StringName = NO_BUILDING
 ## View state, not a tally: _refresh_partner rebuilds it from the Ledger on every roster change.
 var _partner_id: String = ""
 var _partner_line: String = ""
-## Every hero's bond (Bonds.index), kept until the ledger changes: keyed on the ledger array's
-## identity and ledger_next_seq (DECISIONS.md 2026-09-24 "Bonds stay derived", item 3). View state,
-## never saved. BALANCE is a const, so no balance change can outdate it at runtime.
-var _bonds: Dictionary = {}
+## The hub's last look at GameSession.bond_index() (DECISIONS.md 2026-09-24 "Bonds stay derived"):
+## the ledger key it saw (array identity and ledger_next_seq), and the tallies that could have been a
+## living hero's bond then, pairs-shaped, for the next look's "grew close". View state, never saved.
 var _bonds_ledger: Variant = null
 var _bonds_seq: int = -1
-## How many times _bonds was built, for tests.
-var bond_builds: int = 0
+var _bond_candidates: Dictionary = {}
+## Dreams read since the ledger last changed, {hero_id: dream}; emptied on each ledger change.
+var _dreams: Dictionary = {}
+## How many dreams were read, for tests.
+var dream_reads: int = 0
 var _order_structure_key: String = ""
 # True while the placed-building picker lists who to take out, false while it lists who to put in.
 var _placed_picker_clears: bool = false
@@ -683,7 +685,7 @@ func _bond_text(hero: Hero) -> String:
 	var bond: Dictionary = Bonds.bond_from(_bond_index(), hero.instance_id, living, BALANCE)
 	if not bond.is_empty():
 		text += "%s\n\n" % Bonds.bond_line(bond, names, GameSession.is_hero_busy(GameSession.hero_by_id(bond["partner"])))
-	var dream: Array[String] = Bonds.dream_lines(Bonds.dream(GameSession.ledger, hero.instance_id), hero.instance_id, names, BALANCE)
+	var dream: Array[String] = Bonds.dream_lines(_dream(hero.instance_id), hero.instance_id, names, BALANCE)
 	if not dream.is_empty():
 		text += "%s\n\n" % "\n".join(dream)
 	return text
@@ -737,22 +739,46 @@ func _partner_sign(hero_id: String, living: Dictionary) -> String:
 	return "" if partner.is_empty() else PARTNER_SIGN % living[partner]
 
 
-## The kept bond index, rebuilt only when the ledger array or ledger_next_seq differs from the one it
-## was built for: never per frame, and a pulse or refresh with no ledger change reuses it. A rollback
-## puts the same array back with its old ledger_next_seq, so an index built before it stays valid.
+## The hub's one way to the bond index (GameSession keeps it). A look that finds the ledger key
+## changed since the last one says the new bonds and forgets the dreams read.
 func _bond_index() -> Dictionary:
+	var pairs: Dictionary = GameSession.bond_index()
 	var ledger: Array[Dictionary] = GameSession.ledger
 	if is_same(ledger, _bonds_ledger) and GameSession.ledger_next_seq == _bonds_seq:
-		return _bonds
-	var fresh: Dictionary = Bonds.index(ledger, BALANCE)
-	# The first build and a load (a new array) say nothing: those bonds formed before this session saw them.
+		return pairs
+	# The first look and a load (a new array) say nothing: those bonds formed before this session saw them.
 	if is_same(ledger, _bonds_ledger):
-		_say_new_bonds(_bonds, fresh)
-	_bonds = fresh
+		_say_new_bonds(_bond_candidates, pairs)
+	_bond_candidates = _living_candidates(pairs)
 	_bonds_ledger = ledger
 	_bonds_seq = GameSession.ledger_next_seq
-	bond_builds += 1
-	return _bonds
+	_dreams.clear()
+	return pairs
+
+
+## Each living hero's tallies at or over the threshold toward a living hero, pairs-shaped: all the
+## last look's bond_from could pick from. The fold replaces a tally rather than changing it, so they
+## stay as they were.
+func _living_candidates(pairs: Dictionary) -> Dictionary:
+	var living: Dictionary = _roster_names()
+	var kept: Dictionary = {}
+	for id: String in living:
+		var mine: Dictionary = {}
+		for tally: Dictionary in (pairs.get(id, {}) as Dictionary).values():
+			if living.has(tally["partner"]) and tally["points"] >= BALANCE.bond_threshold:
+				mine[tally["partner"]] = tally
+		kept[id] = mine
+	return kept
+
+
+## hero_id's dream, read at most once per ledger change: the look at the index comes first, so a
+## changed ledger has already emptied the memo.
+func _dream(hero_id: String) -> Dictionary:
+	_bond_index()
+	if not _dreams.has(hero_id):
+		_dreams[hero_id] = Bonds.dream(GameSession.ledger, hero_id)
+		dream_reads += 1
+	return _dreams[hero_id]
 
 
 ## "Mara and Dunn grew close." for a new mutual pair, "Dunn grew close to Mara." for a one-way one,

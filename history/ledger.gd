@@ -28,16 +28,20 @@ static func append(ledger: Array[Dictionary], next_seq: int, time: int, kind: St
 ## find() on it, where a GDScript walk over a full ledger cost about 9 ms on every append.
 ## ponytail: one O(n) find plus remove_at per evicted record. A load after a long session evicts
 ## every record added since the last load, about 0.3 ms each at the cap; batch it (one pass that
-## picks every victim, then one rebuild) if loads ever get slow.
-static func evict(ledger: Array[Dictionary], tiers: Array[int], max_records: int) -> void:
+## picks every victim, then one rebuild) if loads ever get slow. Returns the evicted records, in
+## eviction order.
+static func evict(ledger: Array[Dictionary], tiers: Array[int], max_records: int) -> Array[Dictionary]:
+	var evicted: Array[Dictionary] = []
 	while ledger.size() > max_records:
 		var index: int = -1
 		for tier_index: int in TIER_BY_KIND.size() + 1:
 			index = tiers.find(tier_index)
 			if index >= 0:
 				break
+		evicted.append(ledger[index])
 		ledger.remove_at(index)
 		tiers.remove_at(index)
+	return evicted
 
 
 ## tier() of every record, for evict().

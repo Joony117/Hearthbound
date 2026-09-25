@@ -64,6 +64,14 @@ var ledger: Array[Dictionary] = []
 var ledger_next_seq: int = 1
 ## Ledger.tier() of each record, index for index with ledger, for Ledger.evict().
 var _ledger_tiers: Array[int] = []
+## The kept bond index (DECISIONS.md 2026-09-24 "Bonds stay derived", items 3 and 5), one for every
+## reader: Bonds.index_state() of ledger, folded as records come and go. Unsaved, never in to_dict().
+## It mirrors the array _bond_ledger (or null) at ledger_next_seq _bond_seq; anything else rebuilds.
+var _bond_state: Dictionary = {}
+var _bond_ledger: Variant = null
+var _bond_seq: int = -1
+## How many times the bond index was rebuilt, for tests.
+var bond_builds: int = 0
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
@@ -2672,8 +2680,15 @@ func _read_ledger(data: Dictionary) -> void:
 ## Appends one Ledger record, stamped now. Outside a profile mutation nothing can roll it back, so it
 ## evicts at once; inside one, _commit_profile_mutation evicts after the commit.
 func _record(kind: String, fields: Dictionary) -> void:
+	var in_step: bool = _bond_in_step()
 	ledger_next_seq = Ledger.append(ledger, ledger_next_seq, int(Time.get_unix_time_from_system()), kind, fields)
 	_ledger_tiers.append(Ledger.tier(ledger.back()))
+	if in_step:
+		Bonds.fold_in(_bond_state, ledger.back(), preload("res://balance.tres"))
+		_bond_seq = ledger_next_seq
+	else:
+		# A rollback puts seqs back, so an index out of step could look in step after this append.
+		_bond_ledger = null
 	if _ledger_hold_depth == 0:
 		_evict_ledger()
 
@@ -2681,7 +2696,25 @@ func _record(kind: String, fields: Dictionary) -> void:
 func _evict_ledger() -> void:
 	if _ledger_tiers.size() != ledger.size():
 		_ledger_tiers = Ledger.tiers(ledger)
-	Ledger.evict(ledger, _ledger_tiers, preload("res://balance.tres").ledger_max_records)
+	for record: Dictionary in Ledger.evict(ledger, _ledger_tiers, preload("res://balance.tres").ledger_max_records):
+		if _bond_in_step() and not Bonds.fold_out(_bond_state, record, preload("res://balance.tres")):
+			_bond_ledger = null
+
+
+## Every hero's bond tallies (Bonds.index() of the ledger) for Bonds.bond_from; callers never change
+## it. An append folds in and an eviction folds out; a load (a new array) or a rollback that dropped an
+## append rebuilds once, on the next ask.
+func bond_index() -> Dictionary:
+	if not _bond_in_step():
+		_bond_state = Bonds.index_state(ledger, preload("res://balance.tres"))
+		_bond_ledger = ledger
+		_bond_seq = ledger_next_seq
+		bond_builds += 1
+	return _bond_state["pairs"]
+
+
+func _bond_in_step() -> bool:
+	return is_same(ledger, _bond_ledger) and ledger_next_seq == _bond_seq
 
 
 ## One battle record per settled battle; team is every allied actor in the fight, downed or not
