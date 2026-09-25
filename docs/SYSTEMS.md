@@ -1422,12 +1422,12 @@ at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this 
 1. **Rare** (`ig-vl1.1`): 1 in 100 each from a summon. § Summoning, Class odds.
 2. **Stats** (`ig-vl1.3`): the row below. It ships at 0, so a caster has no stat edge yet.
 3. **Battlefield shaping** (`ig-vl1.4`, after an ADR, `ig-vl1.2`): a few big casts a fight. The
-   spells carry the presence. After them, the row below is set on `ig-vl1.6`'s measure, only as
-   high as the spells leave a caster short.
+   spells carry the presence. The row below is set on the presence measure after zones and re-set
+   after walls, only as high as the spells leave a caster short.
 
 | Row | Value | Why |
 |---|---|---|
-| `caster_rank_offset` | 0 | Director ruling, 2026-09-25 (`ig-vl1.3`). The presence test (below) passed no offset. An F Mage out-clears a C Knight at every offset, 0 included (263.6 s against 272.6), so no value fixes the Mage. An F Cleric fits D–C on team HP only at 0 (2359.6, between the D Knight's 2133.5 and the C Knight's 2550.2). Point 2 was 0/8 wins in every slot. The first guess, 1.5, put both casters above the R+2 Knight on their own measure. The row scales a caster's HP, ATK and DEF by 1.35^offset (one rank's step); 1.5 would be ≈ 1.57, halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks). Logs: `.agent-results/ig-vl1.3/presence_verdant.log`, `presence_1.5.log` |
+| `caster_rank_offset` | 0 | Director ruling, 2026-09-25 (`ig-vl1.3`). `ig-vl1.3`'s presence test passed no offset. An F Mage out-clears a C Knight at every offset, 0 included (263.6 s against 272.6), so no value fixes the Mage. An F Cleric fits D–C on team HP only at 0 (2359.6, between the D Knight's 2133.5 and the C Knight's 2550.2). Point 2 was 0/8 wins in every slot. The first guess, 1.5, put both casters above the R+2 Knight on their own measure. The row scales a caster's HP, ATK and DEF by 1.35^offset (one rank's step); 1.5 would be ≈ 1.57, halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks). Logs: `.agent-results/ig-vl1.3/presence_verdant.log`, `presence_1.5.log` |
 
 - It applies in `Hero.compute_final_stats`, so the sim, `quick_resolve` and team power all see it,
   and the combat seam stays one number. Enemy Mages are unchanged: enemy stats come from the wave
@@ -1438,19 +1438,26 @@ at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this 
   caster team as a little weaker than it plays. That errs safe.
 - Heroes you own get it too (director: fine).
 
-**Presence, as the sim measures it.** `ig-vl1.3` ran this test and found it unsound; `ig-vl1.6`
-redesigns it. The test as it ran: take the balance gate's mixed team (Knight, Ranger, Mage,
-Rogue, Knight) and swap the Mage slot. Same rank and level for everyone else, seeds 1–8, the
-median of each measure (8 runs, `ig-vl1.3`: a median of four is the mean of the middle two, so one
-odd fight moves it):
-- A Mage at rank R must clear at least as fast as a Knight at R+1 in that slot, and no faster
-  than a Knight at R+2.
-- A Cleric at rank R: the team's HP left at victory (downed heroes count as 0) at least that of a
-  Knight at R+1 in the slot, and no more than a Knight at R+2's.
-- Checked at two points: F level 1 at Verdant (the Knight at D, then C), and C level 30 at
-  Sundered (the Knight at B, then A).
-- Measured at `battle_pace` 6 and with Charge and Ground Slam in the Knight's kit (`ig-1jw` and
-  `ig-zht` first), since both move the Knight.
+**Presence, as the sim measures it** (`ig-vl1.6`). Presence is the hardest fight the team still
+wins. `ig-vl1.3`'s test judged a Mage on clear time and a Cleric on team HP, each against a Knight,
+which tanks; it passed no offset.
+- Take the balance gate's mixed team (Knight, Ranger, Mage, Rogue, Knight) and fill the Mage slot.
+  Everyone else is at the point's rank and level. Bare supplies, seeds 1–8.
+- Scale the zone's enemy power by m: every enemy's HP, ATK and DEF, with the zone's own roster and
+  count. For each seed, find the largest m the team still wins, to within about 1%. The slot's
+  **break** is the median of the eight; the run prints the seeds' min and max beside it.
+- A caster at rank R passes when its break lands between a Knight at R+1's in the slot and a Knight
+  at R+2's. Its Knight-rank equivalent, R+1 + ln(break / break at R+1) / ln(break at R+2 / break at
+  R+1), says how far off it is.
+- Two points: F level 1 at Verdant (Knights at D and C) and B level 30 at Ashfall Reaches (Knights
+  at A and S). Both teams start at about 87% of the zone's recommended power (784 of 900; 4,205 of
+  4,800), and the run prints each point's team power against its RP.
+- Clear time and team HP at m = 1 are still printed. They show the caster's role and aren't judged.
+- Measured at `battle_pace` 6 with the Knight's full kit.
+
+> ⚠️ **PROVISIONAL** — the second point and the search range are arithmetic · **Settled by:** the
+> first run at offset 0: the R+1 to R+2 gap resolves at both points, and the losses are defeats,
+> not timeouts
 
 **The spells (`ig-vl1.4`).** Each caster gets one or two
 spells with long cooldowns and a big footprint on the field. At P = 6, one or two casts a wave.
@@ -1487,9 +1494,17 @@ Cleric's **Hearthward** holds a line up.
 - **At P = 6** (§ Battle pace): Rime Circle's cooldown 20 s → 120 s and its lifetime 6 s → 36 s;
   Hearthward's 25 s → 150 s and 8 s → 48 s. About one cast a wave. The per-second amounts don't
   change, so each zone's total grows ×6 with the fight.
-- **Then the stats get set.** Run `ig-vl1.6`'s measure with zones in, and again with walls in
-  (`ig-vl1.5`). Set `caster_rank_offset` from it, only as high as the spells leave a caster short.
-  Until then it stays 0.
+- **Then the stats get set** (director, 2026-09-25). With zones in (`ig-vl1.4`), run the presence
+  measure and set `caster_rank_offset` to the smallest value ≥ 0 at which both casters pass at both
+  points. With walls in (`ig-vl1.5`), run it again and re-set the offset, likely lower. Until zones
+  land it stays 0. Why not wait for walls: they wait on pathfinding (`ig-0qh`), and the owner asked
+  for strong casters.
+  - Never below 0. A caster above R+2 at offset 0 has a spell that is too strong, so the spell's
+    numbers are cut, not the row.
+  - One row for both casters. If no single offset fits both, the spell of the caster that misses
+    is tuned. Class identity lives in the spells, so there is no second row.
+  - Raising the offset raises the spells too: zone amounts read the caster's ATK. The measure takes
+    the whole caster, so it still picks right.
 - **Names.** Rime Circle and Hearthward passed the same web check as `ig-x8g` on 2026-09-25
   (`DECISIONS.md` 2026-09-23, item 10; evidence: `.agent-results/ig-vl1.4/name-check.log`).
   Hearthward's only hits are an FFXIV music track, which the bar doesn't count.
