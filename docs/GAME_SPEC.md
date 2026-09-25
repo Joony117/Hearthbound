@@ -1239,7 +1239,7 @@ hero needs a bed and eats, and the homeless lower the town mood until they revol
   moves only while you play, never while the game is closed. The numbers are in `SYSTEMS.md`
   § Town mood and revolt.
 - **A revolt** is a mood of 0 with more than 2 heroes homeless. It ends the moment 2 or fewer are
-  homeless (a House, a move into a house, or a sacrifice), whatever the mood reads. The mood then
+  homeless (a hero moves into a House, or is sacrificed or dies), whatever the mood reads. The mood then
   climbs from where it is, so if the homeless come back while it is still low, the revolt comes
   back fast.
 - **The strike.** In revolt, no new order goes out, and a due repeat stops and comes home.
@@ -1369,7 +1369,7 @@ leaves the list only when its step's ticket is written, and not before:
 - seasons: the Winter of Names, and winter food pressure (`ig-m6o.5`, seasons only; day/night and
   weather stay out)
 - morale: moods (`ig-m6o.2`), fear and informed refusals (`ig-m6o.3`). The town mood is in (owner ruling
-  2026-09-25, `ig-0og`; § Town mood and revolt). Hero moods stay `ig-m6o.2`'s
+  2026-09-25, `ig-0og`; § Town mood and revolt). Hero moods stay `ig-m6o.2`'s.
 - dialogue: heroes' stated conditions, reasons, requests and diaries (`ig-m6o.2`, `ig-m6o.3`)
 - story/campaign: the Chronicle and the Guest's schemes (`ig-m6o.7`)
 - non-roster people: homeland populations (`ig-m6o.4`), and enemies with lasting identities
