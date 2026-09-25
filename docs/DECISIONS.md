@@ -7,6 +7,161 @@ Newest first.
 
 ---
 
+## 2026-09-25: Casters shape the field — zones and walls are checkpoint-saved field objects; pathfinding is a per-state pure function, not a nav service
+
+**ACCEPTED by the director, 2026-09-25** (godot-architect role, for `ig-vl1.2`; `ig-vl1.4`, `ig-0qh`, `ig-vl1.5`). Owner
+ruling, 2026-09-24: casters are "rare but battlefield shaping"; the first shapes are zones and
+walls, "we're eventually going to need pathfinding anyways". Build order: zones (no pathfinding
+needed), then pathfinding, then walls. Numbers (radius, length, durations, the object cap) are
+`game-designer`'s, after this entry. Amends nothing; extends the skills ADR (2026-09-23) and must
+keep fitting the battle-sim-threading entry directly below.
+
+**Decision.**
+
+1. `BattleState` gains `field_objects` (Array of Dictionaries) and `field_sequence` (int, for
+   deterministic ids), both additive optional keys — missing means empty/zero, `SIMULATION_VERSION`
+   stays 1 (the objective-state/`P2-23` precedent). An object holds `id`, `kind` (`"zone"` or
+   `"wall"`), `skill_id`, `owner_actor_id`, `faction`, geometry (zone: center + radius; wall:
+   segment endpoints + thickness), `remaining_seconds` and its pulse timer. What it *does* is read
+   from `BattleSimulation.ABILITIES[skill_id]` — the skills ADR's const dict of already-loaded
+   `AbilityDefinition`s, not a `ResourceLoader.load()` by id — so a worker thread never repeats the
+   `ZoneDefinition`-by-id bug the threading entry below just called out. An unknown `skill_id`
+   drops the object with `push_warning` (the `ability_auto` migration precedent). Bad geometry or
+   an out-of-bounds object rejects the checkpoint, checked the way objective-state fields are
+   checked today (`_valid_point`, `_point_within_bounds`, `_valid_number`) — **not** the marker
+   validator's exact-match-to-the-authored-zone shape, since a field object has no authored
+   counterpart to match; it is cast at runtime.
+2. The closed set of effect primitives (2026-09-23) grows by one: **zone**, an area over time that
+   applies existing primitives (status, heal, damage, shield) to actors inside it, by faction.
+   **Wall** is not a primitive the effect picker applies to a target; it is a shape the movement
+   code consults. v1 walls block movement only — not attacks, not line of sight — for both
+   factions.
+3. Field objects update at one fixed point in `_tick`, in `field_sequence` (creation) order, and
+   apply to actors in actor order. Zone pulses draw no RNG (no crit).
+4. A cap on live field objects per battle (a `SYSTEMS.md` number, `game-designer`'s) bounds the
+   cost; the oldest ends first when a new one would exceed it.
+5. Pathfinding is per-state pure data: no `NavigationServer`, no scene tree, no RNG, fixed
+   tie-breaks, and it costs nothing while no wall is up (a segment-vs-wall test gates it). v1 picks
+   a visibility graph over the inflated wall corners, with the next waypoint recomputed each tick
+   as a pure function of `(position, destination, walls)`. The corner-to-corner graph itself may be
+   a derived, per-state, unsaved cache keyed only by the current wall set — rebuilt when a wall is
+   added or ends, or lazily after a reload — because it is a pure function of the checkpoint, so a
+   cache hit and a fresh recompute agree and reload/worker copies stay identical; nothing about the
+   cache is saved or order-dependent, and only actor-to-corner and destination-to-corner visibility
+   plus a small Dijkstra run per actor per tick. Unlike a rebuilt grid, nothing here can desync
+   across a reload or a worker-thread copy: the cache is disposable, never read from or written to
+   the checkpoint, and a miss just recomputes the same graph the walls already imply. If walled in with no
+   path, the actor holds until a wall ends.
+6. Charge's dash, knockback and separation stop at a wall instead of crossing it. A wall dropped
+   onto an actor already standing on it pushes the actor out perpendicular to the segment, toward
+   the side the actor was already on when the wall was cast (a fixed, deterministic rule — never
+   RNG, never simulation order).
+7. The forecast sees zones and walls for free (same sim, seam #4). `ExpeditionOrders.safety_forecast`
+   and `QuickResolve`/`legacy_v2` stay skill-blind — zones and walls are skill effects, not a new
+   exception to the skills ADR's item 2. Enemy kits may reuse the same primitives later.
+8. Field objects and pathfinding live per-`BattleState`, no static scratch data, matching the
+   2026-09-25 threading entry directly below.
+9. `BattleView` draws field objects read from the checkpoint, view-only (rule 1); it never derives
+   or owns field-object state.
+
+**Rejected.**
+
+- **`NavigationServer2D`/`NavigationAgent2D`.** Global engine-owned server state: not per-`BattleState`
+  data, not reproducible identically from a saved checkpoint or off the main thread — the same
+  reason the threading entry below keeps the job touching no `Node`, autoload or shared `Resource`.
+- **A script or subclass per zone/wall shape.** The skills ADR's closed-set-of-primitives reason;
+  a registry of per-spell behaviors is the same anti-pattern the combat seam already refuses for
+  `resolve()` itself.
+- **Walls authored as permanent terrain on `ZoneDefinition`.** The owner asked for caster-placed,
+  timed, per-battle walls, not authored zone terrain — that would put runtime state (rules 2–3) on
+  a Definition Resource.
+- **`AStarGrid2D` as the v1 default.** Left open, not rejected outright: it is a live object that
+  must be rebuilt deterministically on every wall change and every reload, more moving parts than
+  a pure per-tick function. Revisit only under a measured budget miss (2026-09-24 performance ADR,
+  item 1: no structure goes in without one).
+
+**Left open on purpose.** The object cap and all geometry/duration numbers (`game-designer`,
+after this entry). Whether enemy kits pick up zone/wall in v1 or later. `AStarGrid2D` as a
+fallback if the visibility graph measures over budget once walls ship.
+
+---
+
+## 2026-09-25: Battle sim threading — per-order jobs on WorkerThreadPool, round-committed catch-up, and a settle-time "checking" phase for the repeat forecast
+
+**ACCEPTED by the director, 2026-09-25** (godot-architect role, for `ig-7sn.13`; `ig-7sn.12`, `ig-7sn.6`). Amends the
+2026-09-24 "Performance: budgets..." entry's item 5, which required this decision before the sim
+was threaded. Owner/director ruling (`ig-7sn.13`): yes to threads for the battle sim, no for the
+UI; nothing touches `GameSession`, the save or the scene tree from a thread; results identical to
+the single-thread run.
+
+**Decision.**
+
+1. A job runs on `WorkerThreadPool.add_task`, owns a deep-copied `BattleState` (or `create_run`'s
+   inputs: snapshots, squads, policies, escrow, seed), advances in fixed 5-battle-second chunks,
+   returns plain data, and touches no `Node`, autoload, signal, `Hero`, `GameSession` or
+   `SaveService`. **Not yet true as coded:** `advance()`'s `_update_objectives` calls
+   `ZoneDefinition.definition_for()` → `ResourceLoader.load()` by `zone_id` internally
+   (`combat/battle/battle_simulation.gd:735, 890`) rather than using a reference the caller holds —
+   `create_run()` takes `zone: ZoneDefinition` (:92) but `BattleState` only stores `zone_id`, a
+   `String` (:105). A job as specified still calls `ResourceLoader.load()` itself, from a worker
+   thread, every tick. Godot 4.7's thread-safety docs warn against loading the same Resource from
+   multiple threads at once; the cache doc describes reuse of a cached instance but does not say
+   that a main-thread preload first makes concurrent `load()` calls safe. `BattleState` must carry
+   the resolved `ZoneDefinition` (set once in `create_run`) so a worker never calls
+   `ResourceLoader`. Required before item 5 is satisfied. The same goes for `validate_snapshot`,
+   which loads the zone by id too (`battle_simulation.gd:296-298`, director 2026-09-25): a job
+   never builds or validates a `BattleState` from a Dictionary itself. The main thread builds it,
+   or hands the check the zone it resolved.
+2. The six static scratch vars (`_cover_victims`, `_cover_claims`, `_cover_nearby` at
+   `battle_simulation.gd:2209-2211`; `_row_front`, `_row_contact`, `_row_threat` at :2266-2268)
+   become locals or per-state fields first. Two concurrent jobs sharing static state is a
+   correctness bug, not a perf one.
+3. One job function, callable directly by the main thread too, with a GUT test comparing
+   `to_dict()` byte for byte across both call paths, several seeds, `frontier_march` and
+   `fallen_citadel` included — satisfies item 5's test requirement.
+4. Results commit on the main thread only, at the pulse, each order in its fixed place, never
+   completion order. Battle-dictionary identity alone is not enough: `remaining_seconds`, pause
+   state and repeat/settlement fields mutate on the order in place without replacing that
+   Dictionary, so a landing job must also check the order is still in the phase and generation it
+   was dispatched under, not identity alone.
+5. Cancellation: a shared flag checked between chunks; on quit and before `load_game`'s
+   `from_dict`, `GameSession` sets it and waits for outstanding tasks (bounded to one chunk).
+   Cancelled results are dropped.
+6. The job table is a private, unsaved `GameSession` field, the same shape as the existing
+   `_paused_battle_orders` (`systems/game_session.gd:92`). No fourth autoload.
+7. The live 0.25 s pulse stays on the main thread in this change. Moving it is a later bead under
+   `ig-7sn`, measured first — not `ig-7sn.11`, which is the Town frames bead.
+8. `ig-7sn.12` (load catch-up): `apply_offline_expedition_progress` does no sim work; it sets an
+   additive order key `catch_up_seconds` (missing = 0, bad value → 0 with `push_warning`,
+   `SAVE_VERSION` unchanged, the `P2-23` precedent). The first pulse sends one job per owed order;
+   the order sits in the existing paused-skip set (`_paused_battle_orders`) until its job lands. A
+   round commits only once every job in it has landed, through today's
+   `_resolve_due_orders_in_memory` order — never completion order. An interrupted catch-up resumes
+   from the same saved state, so it ends at the same `to_dict()` as an uninterrupted one.
+9. `ig-7sn.6` (settle forecast): confirmed against `systems/game_session.gd:2143-2177` —
+   `_start_battle_repeat` already draws one seed, calls `forecast()` with it, and, only if safe,
+   calls `create_run()` with that *same* seed and `order_id`. Reusing the check's seed for the
+   landed run in the new "checking" phase is not a new risk; it is today's synchronous behavior,
+   made async. At settle, a due repeat spends escrow, draws the seed, builds snapshots, sets phase
+   `"checking"` with the existing `run_seed`/`escrow` keys, and sends the forecast as two parallel
+   jobs (normal, stress). A `"checking"` order is excluded from `_resolve_due_orders_in_memory`
+   (else a reload double-settles). Landing: safe → `create_run` with that seed/snapshots, phase
+   `"fighting"`; unsafe → refund escrow, stop with `unsafe_repeat` on that settle's report. The
+   in-progress forecast lives only in the unsaved job table; the order's saved fields are all
+   additive or reused, not new save keys.
+
+**Rejected.**
+
+- **`QuickResolve` for offline legs.** Changes outcomes, and the skills ADR (2026-09-23, item 2)
+  already limits `QuickResolve` to `legacy_v2` orders.
+- **A blocking, time-sliced load screen.** ~40 s wait at pace 6 for no gain over the background job.
+- **A main-thread background slice.** Frontier catch-up (~150 s) would eat the frame budget the
+  dispatched-battles row already misses (`SYSTEMS.md` § Performance budgets).
+- **Threading one battle's own ticks.** Serial by nature; a thread moves the wall time off the
+  main thread but cannot shorten one battle.
+
+---
+
 ## 2026-09-24: Performance: budgets at each scene's worst case; threads only for measured pure-data work
 
 **ACCEPTED by the director, 2026-09-24** (godot-architect role, for `ig-7sn.1`). The owner asked:
@@ -40,6 +195,7 @@ Item 0 amends a hard constraint in `GAME_SPEC.md`, which needs an entry here.
    the main-thread run; results committed on the main thread in each order's fixed place, never
    in completion order; and a test showing byte-identical `BattleState.to_dict()` checkpoints
    both ways for the same seeds. Building that amends this entry first.
+   *Amended by 2026-09-25, "Battle sim threading" (above).*
 6. **No thread touches the save** (boundary #1). `GameSession.to_dict()`, the file writes and
    the validation stay on the main thread. Preparing the text of an already detached payload is
    a candidate, but save order needs its own review first.
