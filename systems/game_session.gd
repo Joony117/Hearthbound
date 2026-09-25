@@ -72,6 +72,8 @@ var _bond_ledger: Variant = null
 var _bond_seq: int = -1
 ## How many times the bond index was rebuilt, for tests.
 var bond_builds: int = 0
+## How many times a team snapshot was built, for tests (ig-7sn.4).
+var team_snapshot_builds: int = 0
 var saved_at_unix: float = 0.0
 var last_action_error: String = ""
 
@@ -1091,7 +1093,8 @@ func set_battle_paused(order_id: String, paused: bool) -> void:
 	_notify_battle_changed(order_id)
 
 
-func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs: int, policies: Dictionary, loadout: Dictionary) -> Dictionary:
+## snapshots, when given, receives the team snapshots the forecast used, so a dispatch can reuse them.
+func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs: int, policies: Dictionary, loadout: Dictionary, snapshots: Array[Dictionary] = []) -> Dictionary:
 	if squads.is_empty():
 		return _force_preview_error("Select at least one team preset.")
 	if total_runs < 0 or total_runs > 999:
@@ -1134,7 +1137,8 @@ func _preview_force_data(squads: Array[Dictionary], zone_id: String, total_runs:
 	if route_seconds <= 0.0:
 		return _force_preview_error("The selected force cannot make progress in that zone.", team.size(), zone.hero_cap, squads.size())
 	var seed: int = _new_run_seed()
-	var forecast: Dictionary = BattleSimulation.forecast("forecast", _team_snapshots(team, squads), zone, squads, policies, _loadout_escrow(loadout), seed)
+	snapshots.assign(_team_snapshots(team, squads))
+	var forecast: Dictionary = BattleSimulation.forecast("forecast", snapshots, zone, squads, policies, _loadout_escrow(loadout), seed)
 	var safe: bool = bool(forecast.get("safe", false))
 	var valid: bool = total_runs != 0 or safe
 	return {"valid": valid, "error": "" if valid else "Until-stopped dispatch requires a Safe forecast.", "safe": safe, "reason": str(forecast.get("reason", "")), "hero_count": team.size(), "capacity": zone.hero_cap, "squad_count": squads.size(), "route_seconds": route_seconds}
@@ -1145,26 +1149,26 @@ func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs
 	if SaveService.load_blocked:
 		last_action_error = SaveService.load_block_reason
 		return ""
-	var preview: Dictionary = _preview_force_data(squads, zone_id, total_runs, policies, loadout)
+	# One team snapshot per launch (ig-7sn.4): the preview's forecast, this forecast and the run all use
+	# it. Nothing between them changes a hero or the ledger, and the simulation only reads snapshots.
+	var snapshots: Array[Dictionary] = []
+	var preview: Dictionary = _preview_force_data(squads, zone_id, total_runs, policies, loadout, snapshots)
 	if not bool(preview.get("valid", false)):
 		last_action_error = str(preview.get("error", "The force is invalid."))
 		return ""
 	var hero_ids: Array[String] = []
-	var team: Array[Hero] = []
 	for squad: Dictionary in squads:
-		for hero_id: String in _string_array(squad.get("hero_ids")):
-			hero_ids.append(hero_id)
-			team.append(hero_by_id(hero_id))
+		hero_ids.append_array(_string_array(squad.get("hero_ids")))
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(zone_id))
 	var order_id: String = Item.new_instance_id()
 	var seed: int = _new_run_seed()
 	var escrow: Dictionary = _loadout_escrow(loadout)
 	if total_runs == 0:
-		var actual_forecast: Dictionary = BattleSimulation.forecast(order_id + ":forecast", _team_snapshots(team, squads), zone, squads, policies, escrow, seed)
+		var actual_forecast: Dictionary = BattleSimulation.forecast(order_id + ":forecast", snapshots, zone, squads, policies, escrow, seed)
 		if not bool(actual_forecast.get("safe", false)):
 			last_action_error = "Until-stopped dispatch requires a Safe forecast: %s" % str(actual_forecast.get("reason", ""))
 			return ""
-	var state: BattleState = BattleSimulation.create_run(order_id, _team_snapshots(team, squads), zone, squads, policies, escrow, seed)
+	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, squads, policies, escrow, seed)
 	var names: PackedStringArray = []
 	for squad: Dictionary in squads:
 		names.append(str(squad.get("name", "Team")))
@@ -1287,6 +1291,7 @@ static func _validate_battle_policies(policies: Dictionary, deployed_hero_ids: D
 
 
 func _team_snapshots(team: Array[Hero], squads: Array[Dictionary] = []) -> Array[Dictionary]:
+	team_snapshot_builds += 1
 	var result: Array[Dictionary] = []
 	var balance: BalanceTable = preload("res://balance.tres")
 	var cover_orders: Dictionary = _cover_orders(team, balance)
@@ -2135,13 +2140,14 @@ func _start_battle_repeat(order: Dictionary, zone: ZoneDefinition) -> bool:
 	for raw_squad: Variant in order.get("squads") as Array:
 		if raw_squad is Dictionary:
 			squads.append((raw_squad as Dictionary).duplicate(true))
-	var forecast: Dictionary = BattleSimulation.forecast(str(order.get("id")) + ":repeat", _team_snapshots(team, squads), zone, squads, order.get("policies") as Dictionary, escrow, seed)
+	var snapshots: Array[Dictionary] = _team_snapshots(team, squads)
+	var forecast: Dictionary = BattleSimulation.forecast(str(order.get("id")) + ":repeat", snapshots, zone, squads, order.get("policies") as Dictionary, escrow, seed)
 	if not bool(forecast.get("safe", false)):
 		last_action_error = "unsafe_repeat"
 		return false
 	for kind: String in BattleState.SUPPLY_KINDS:
 		supplies[kind] = int(supplies.get(kind, 0)) - int(escrow.get(kind, 0))
-	var state: BattleState = BattleSimulation.create_run(str(order.get("id")), _team_snapshots(team, squads), zone, squads, order.get("policies") as Dictionary, escrow, seed)
+	var state: BattleState = BattleSimulation.create_run(str(order.get("id")), snapshots, zone, squads, order.get("policies") as Dictionary, escrow, seed)
 	var duration: float = ExpeditionOrders.force_duration_seconds(team, zone, preload("res://balance.tres"))
 	order["run_seed"] = seed
 	order["battle"] = state.to_dict()

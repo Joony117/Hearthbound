@@ -164,6 +164,35 @@ func test_offline_progress_settles_at_most_one_leg_and_does_not_spend_excess_on_
 	assert_almost_eq(float(GameSession.expedition_orders[0]["remaining_seconds"]), float(GameSession.expedition_orders[0]["initial_duration_seconds"]), 0.001)
 
 
+## ig-7sn.4: a launch or a repeat builds its team snapshot once; the forecasts and the run share it.
+func test_a_launch_and_a_repeat_build_the_team_snapshot_once() -> void:
+	var builds: int = GameSession.team_snapshot_builds
+	var order_id: String = _dispatch_strong_repeat(_zero_loadout(), 0)
+	assert_ne(order_id, "", GameSession.last_action_error)
+	assert_eq(GameSession.team_snapshot_builds, builds + 1, "until stopped: the preview forecast, the forecast and the run")
+	# The shared snapshot starts the same run a fresh one would.
+	var order: Dictionary = GameSession.expedition_orders[0]
+	var team: Array[Hero] = []
+	for hero_id: String in GameSession._string_array(order["hero_ids"]):
+		team.append(GameSession.hero_by_id(hero_id))
+	var squads: Array[Dictionary] = []
+	for squad: Dictionary in order["squads"]:
+		squads.append(squad)
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
+	var fresh: BattleState = BattleSimulation.create_run(order_id, GameSession._team_snapshots(team, squads), zone, squads, order["policies"] as Dictionary, order["escrow"] as Dictionary, int(order["run_seed"]))
+	assert_eq(order["battle"], fresh.to_dict())
+	builds = GameSession.team_snapshot_builds
+	(order["battle"] as Dictionary)["status"] = "victory"
+	order["remaining_seconds"] = 0.0
+	GameSession.tick_expeditions(0.1)
+	assert_eq(GameSession.expedition_orders.size(), 1, "the repeat leg starts: " + GameSession.last_action_error)
+	assert_eq(GameSession.team_snapshot_builds, builds + 1, "a repeat: its forecast and its run")
+	GameSession.from_dict({"roster": []})
+	builds = GameSession.team_snapshot_builds
+	assert_ne(_dispatch_strong_repeat(_zero_loadout(), 1), "", GameSession.last_action_error)
+	assert_eq(GameSession.team_snapshot_builds, builds + 1, "a set number of runs: the preview forecast and the run")
+
+
 func _dispatch_one() -> String:
 	var hero := Hero.new("Battle Tester", 0)
 	hero.def_id = &"knight"
@@ -189,7 +218,7 @@ func _add_force(hero_count: int, squad_count: int, zone_id: String) -> Array[Str
 	return preset_ids
 
 
-func _dispatch_strong_repeat(loadout: Dictionary) -> String:
+func _dispatch_strong_repeat(loadout: Dictionary, total_runs: int = 2) -> String:
 	var ids: Array[String] = []
 	for index: int in 5:
 		var hero := Hero.new("Repeat %d" % index, 7)
@@ -199,7 +228,7 @@ func _dispatch_strong_repeat(loadout: Dictionary) -> String:
 		GameSession.roster.append(hero)
 		ids.append(hero.instance_id)
 	var preset_id: String = GameSession.save_team_preset("", "Repeat Team", ids, "verdant_outskirts")
-	return GameSession.dispatch_force([preset_id], "verdant_outskirts", 2, {}, loadout)
+	return GameSession.dispatch_force([preset_id], "verdant_outskirts", total_runs, {}, loadout)
 
 
 func _zero_loadout() -> Dictionary:
