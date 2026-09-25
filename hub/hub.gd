@@ -134,6 +134,9 @@ var _dreams: Dictionary = {}
 ## How many dreams were read, for tests.
 var dream_reads: int = 0
 var _order_structure_key: String = ""
+## How many times an order card and the hero detail were refreshed, for tests (ig-7sn.3).
+var order_card_updates: int = 0
+var detail_refreshes: int = 0
 # True while the placed-building picker lists who to take out, false while it lists who to put in.
 var _placed_picker_clears: bool = false
 ## The last Ledger seq the starvation status line has looked at, so each death is said once.
@@ -156,7 +159,7 @@ func _ready() -> void:
 	GameSession.roster_changed.connect(_refresh_buildings)
 	GameSession.expeditions_changed.connect(_refresh_buildings)
 	GameSession.roster_changed.connect(_refresh_equipped)
-	GameSession.roster_changed.connect(_refresh_hero_detail)
+	# The selected hero's detail refreshes once per roster change, inside _refresh_director_ui (ig-7sn.3).
 	GameSession.roster_changed.connect(_refresh_zone_unlocks)
 	GameSession.roster_changed.connect(_refresh_director_ui)
 	GameSession.roster_changed.connect(_refresh_body)
@@ -189,7 +192,6 @@ func _ready() -> void:
 	_refresh_parts()
 	_refresh_buildings()
 	_refresh_equipped()
-	_refresh_hero_detail()
 	_populate_convert_ranks()
 	_populate_zones()
 	%ConfirmSupply.disabled = true
@@ -636,6 +638,7 @@ func _refresh_equipped() -> void:
 
 
 func _refresh_hero_detail() -> void:
+	detail_refreshes += 1
 	var hero: Hero = _selected_hero()
 	_hero_detail.text = "" if hero == null else "%s\n\n%sHistory:\n%s" % [_hero_detail_text(hero), _bond_text(hero), "\n".join(_history_lines(hero))]
 	_hero_availability.text = "Select exactly one hero." if hero == null else _hero_state_text(hero)
@@ -2281,9 +2284,12 @@ func _on_expeditions_changed() -> void:
 		_refresh_lost_caches()
 
 
-func _on_battle_changed(_order_id: String) -> void:
-	# Frequent battle pulses update live status without rebuilding order structure.
-	_update_order_cards()
+func _on_battle_changed(order_id: String) -> void:
+	# Frequent battle pulses update that order's live status without rebuilding order structure.
+	for child: Node in _order_cards.get_children():
+		if str(child.get_meta("order_id", "")) == order_id:
+			_update_order_card(child)
+			return
 
 
 func _refresh_supply_stock() -> void:
@@ -2507,7 +2513,9 @@ func _refresh_expeditions(force_rebuild: bool) -> void:
 
 
 func _rebuild_order_cards() -> void:
+	# Out of the list now, not at the frame's end: a battle_changed before then must find the new card.
 	for child: Node in _order_cards.get_children():
+		_order_cards.remove_child(child)
 		child.queue_free()
 	for order: Dictionary in GameSession.expedition_orders:
 		var panel := PanelContainer.new()
@@ -2570,55 +2578,60 @@ func _rebuild_order_cards() -> void:
 
 func _update_order_cards() -> void:
 	for child: Node in _order_cards.get_children():
-		var order: Dictionary = _order_by_id(str(child.get_meta("order_id", "")))
-		if order.is_empty():
+		_update_order_card(child)
+
+
+func _update_order_card(child: Node) -> void:
+	order_card_updates += 1
+	var order: Dictionary = _order_by_id(str(child.get_meta("order_id", "")))
+	if order.is_empty():
+		return
+	var box: VBoxContainer = child.get_node("Box") as VBoxContainer
+	var title: Label = box.get_node("Head/Title") as Label
+	var eta: Label = box.get_node("Head/ETA") as Label
+	var zone_label: Label = box.get_node("Zone") as Label
+	var progress: ProgressBar = box.get_node("Progress") as ProgressBar
+	var details: Label = box.get_node("Bottom/Details") as Label
+	var stop: Button = box.get_node("Bottom/Stop") as Button
+	var watch: Button = box.get_node("Bottom/Watch") as Button
+	title.text = str(order.get("team_name", "Unnamed team"))
+	title.tooltip_text = title.text
+	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(order.get("zone_id", ""))))
+	zone_label.text = zone.display_name if zone != null else "Missing zone"
+	var remaining: float = float(order.get("remaining_seconds", 0.0))
+	var duration: float = maxf(float(order.get("initial_duration_seconds", 1.0)), 0.001)
+	eta.text = _format_duration(remaining)
+	progress.value = clampf((duration - remaining) / duration * 100.0, 0.0, 100.0)
+	var completed: int = int(order.get("runs_completed", 0))
+	var total: int = int(order.get("total_runs", 0))
+	var snapshot: Dictionary = GameSession.get_battle_snapshot(str(order.get("id", "")))
+	var phase: String = str(snapshot.get("phase", ""))
+	var route_minimum: float = float(snapshot.get("route_remaining_seconds", remaining))
+	var alive_count: int = 0
+	var downed_count: int = 0
+	# Detached battle snapshots use a JSON-compatible Array of Dictionary actor rows.
+	for actor_value: Variant in snapshot.get("actors", []) as Array:
+		if not actor_value is Dictionary:
 			continue
-		var box: VBoxContainer = child.get_node("Box") as VBoxContainer
-		var title: Label = box.get_node("Head/Title") as Label
-		var eta: Label = box.get_node("Head/ETA") as Label
-		var zone_label: Label = box.get_node("Zone") as Label
-		var progress: ProgressBar = box.get_node("Progress") as ProgressBar
-		var details: Label = box.get_node("Bottom/Details") as Label
-		var stop: Button = box.get_node("Bottom/Stop") as Button
-		var watch: Button = box.get_node("Bottom/Watch") as Button
-		title.text = str(order.get("team_name", "Unnamed team"))
-		title.tooltip_text = title.text
-		var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(order.get("zone_id", ""))))
-		zone_label.text = zone.display_name if zone != null else "Missing zone"
-		var remaining: float = float(order.get("remaining_seconds", 0.0))
-		var duration: float = maxf(float(order.get("initial_duration_seconds", 1.0)), 0.001)
-		eta.text = _format_duration(remaining)
-		progress.value = clampf((duration - remaining) / duration * 100.0, 0.0, 100.0)
-		var completed: int = int(order.get("runs_completed", 0))
-		var total: int = int(order.get("total_runs", 0))
-		var snapshot: Dictionary = GameSession.get_battle_snapshot(str(order.get("id", "")))
-		var phase: String = str(snapshot.get("phase", ""))
-		var route_minimum: float = float(snapshot.get("route_remaining_seconds", remaining))
-		var alive_count: int = 0
-		var downed_count: int = 0
-		# Detached battle snapshots use a JSON-compatible Array of Dictionary actor rows.
-		for actor_value: Variant in snapshot.get("actors", []) as Array:
-			if not actor_value is Dictionary:
-				continue
-			var actor: Dictionary = actor_value as Dictionary
-			if str(actor.get("faction", "")) != "ally":
-				continue
-			if str(actor.get("life", "")) == BattleActor.LIFE_ALIVE:
-				alive_count += 1
-			elif str(actor.get("life", "")) == BattleActor.LIFE_DOWNED:
-				downed_count += 1
-		var checkpoint_error: String = str(snapshot.get("checkpoint_error", ""))
-		var command_error: String = str(snapshot.get("last_command_error", ""))
-		var battle_status: String = "%s · %d alive · %d downed · route min %s" % [phase.capitalize(), alive_count, downed_count, _format_duration(route_minimum)] if not phase.is_empty() else ""
-		if str(snapshot.get("status", "")) == "victory" and route_minimum > 0.0:
-			battle_status = "Won · heading home · rewards in %s" % _format_duration(route_minimum)
-		var pending_error: String = checkpoint_error if not checkpoint_error.is_empty() else command_error
-		details.text = "%s · %d stones · %d items · %d XP%s%s" % ["Run %d • repeating" % (completed + 1) if total == 0 else "Run %d of %d" % [mini(completed + 1, total), total], int(order.get("cumulative_stones", 0)), int(order.get("cumulative_items", 0)), int(order.get("cumulative_xp", 0)), "\n" + battle_status if not battle_status.is_empty() else "", "\nError: " + pending_error if not pending_error.is_empty() else ""]
-		var stopping: bool = bool(order.get("stop_requested", false))
-		stop.text = "Stopping after return" if stopping else "Stop after this run"
-		stop.disabled = stopping
-		watch.visible = phase == "fighting" or phase == "rescuing"
-		watch.text = "Command" if phase == "fighting" or phase == "rescuing" else "Watch"
+		var actor: Dictionary = actor_value as Dictionary
+		if str(actor.get("faction", "")) != "ally":
+			continue
+		if str(actor.get("life", "")) == BattleActor.LIFE_ALIVE:
+			alive_count += 1
+		elif str(actor.get("life", "")) == BattleActor.LIFE_DOWNED:
+			downed_count += 1
+	var checkpoint_error: String = str(snapshot.get("checkpoint_error", ""))
+	var command_error: String = str(snapshot.get("last_command_error", ""))
+	var battle_status: String = "%s · %d alive · %d downed · route min %s" % [phase.capitalize(), alive_count, downed_count, _format_duration(route_minimum)] if not phase.is_empty() else ""
+	if str(snapshot.get("status", "")) == "victory" and route_minimum > 0.0:
+		battle_status = "Won · heading home · rewards in %s" % _format_duration(route_minimum)
+	var pending_error: String = checkpoint_error if not checkpoint_error.is_empty() else command_error
+	details.text = "%s · %d stones · %d items · %d XP%s%s" % ["Run %d • repeating" % (completed + 1) if total == 0 else "Run %d of %d" % [mini(completed + 1, total), total], int(order.get("cumulative_stones", 0)), int(order.get("cumulative_items", 0)), int(order.get("cumulative_xp", 0)), "\n" + battle_status if not battle_status.is_empty() else "", "\nError: " + pending_error if not pending_error.is_empty() else ""]
+	var stopping: bool = bool(order.get("stop_requested", false))
+	stop.text = "Stopping after return" if stopping else "Stop after this run"
+	stop.disabled = stopping
+	watch.visible = phase == "fighting" or phase == "rescuing"
+	watch.text = "Command" if phase == "fighting" or phase == "rescuing" else "Watch"
 
 
 func _refresh_recent_returns() -> void:

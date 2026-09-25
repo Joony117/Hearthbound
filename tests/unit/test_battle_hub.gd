@@ -158,6 +158,80 @@ Won · heading home · rewards in 2:3")
 	assert_false(details.text.contains("route min"))
 
 
+## ---- ig-7sn.3: a battle pulse updates only its own card; a roster change refreshes the detail once
+
+func test_a_battle_pulse_updates_only_its_own_order_card() -> void:
+	GameSession.set_process(false)
+	var order_ids: Array[String] = []
+	for index: int in 5:
+		var hero := Hero.new("Card %d" % index, 7)
+		hero.def_id = &"knight"
+		hero.level = 80
+		GameSession.add_hero(hero)
+		order_ids.append(GameSession.dispatch_expedition([hero.instance_id], "verdant_outskirts", 1, "Card %d" % index))
+		assert_ne(order_ids.back(), "", GameSession.last_action_error)
+	var hub: Node3D = _instantiate_hub()
+	assert_eq(hub._order_cards.get_child_count(), 5)
+	for card: Node in hub._order_cards.get_children():
+		_details(card).text = "stale"
+	var updates: int = hub.order_card_updates
+	GameSession.battle_changed.emit(order_ids[2])
+	assert_eq(hub.order_card_updates, updates + 1, "one battle_changed updates one card")
+	for card: Node in hub._order_cards.get_children():
+		var own: bool = str(card.get_meta("order_id")) == order_ids[2]
+		assert_eq(_details(card).text == "stale", not own, "only order 2's card is rewritten")
+		if own:
+			assert_string_contains(_details(card).text, "Fighting · 1 alive · 0 downed", "with its live status")
+	# A roster change rebuilds every card; a battle_changed in the same frame reaches the new card.
+	var old_card: Node = hub._order_cards.get_child(0)
+	hub._refresh_expeditions(true)
+	assert_eq(hub._order_cards.get_child_count(), 5, "the old cards are out of the list at once")
+	assert_true(old_card.is_queued_for_deletion())
+	for card: Node in hub._order_cards.get_children():
+		_details(card).text = "stale"
+	updates = hub.order_card_updates
+	GameSession.battle_changed.emit(order_ids[2])
+	assert_eq(hub.order_card_updates, updates + 1, "one update after a rebuild too")
+	for card: Node in hub._order_cards.get_children():
+		assert_eq(_details(card).text == "stale", str(card.get_meta("order_id")) != order_ids[2], "the live card of order 2 is rewritten")
+	updates = hub.order_card_updates
+	GameSession.battle_changed.emit("no-such-order")
+	assert_eq(hub.order_card_updates, updates, "no card, nothing to do")
+	GameSession.expeditions_changed.emit()
+	assert_eq(hub.order_card_updates, updates + 5, "one expeditions_changed updates each card once")
+	# A quiet pulse: one battle_changed per order, then expeditions_changed. 10 updates, not 5 x 5 + 5.
+	updates = hub.order_card_updates
+	GameSession.tick_expeditions(0.25)
+	assert_eq(hub.order_card_updates, updates + 10)
+	for card: Node in hub._order_cards.get_children():
+		assert_string_contains(_details(card).text, "alive", "every card still shows its live status")
+	await wait_process_frames(1)
+	assert_false(is_instance_valid(old_card), "an old card is freed at the frame's end, not leaked")
+	GameSession.set_process(true)
+
+
+func test_a_roster_change_refreshes_the_selected_heros_detail_once() -> void:
+	var hero := Hero.new("Detail", 7)
+	hero.def_id = &"knight"
+	GameSession.add_hero(hero)
+	var hub: Node3D = _instantiate_hub()
+	assert_eq(hub.detail_refreshes, 1, "_ready refreshes it once")
+	var roster: ItemList = hub.get_node("%RosterList") as ItemList
+	for index: int in roster.item_count:
+		if roster.get_item_text(index).contains("Detail"):
+			roster.select(index)
+			roster.multi_selected.emit(index, true)
+	assert_string_contains(hub._hero_detail.text, "History:", "the hero is selected")
+	var refreshes: int = hub.detail_refreshes
+	GameSession.roster_changed.emit()
+	assert_eq(hub.detail_refreshes, refreshes + 1, "one roster change, one detail refresh")
+	assert_string_contains(hub._hero_detail.text, "History:", "and it still shows the hero")
+
+
+func _details(card: Node) -> Label:
+	return card.get_node("Box/Bottom/Details") as Label
+
+
 func _instantiate_hub() -> Node3D:
 	var scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
 	assert_not_null(scene)
