@@ -108,7 +108,8 @@ var _battle_owed: Dictionary[String, float] = {}
 var _battle_jobs: Array[BattleJob] = []
 ## ig-7sn.6: the repeat check out for each "checking" order, by order id: its generation, the battle
 ## Dictionary it was sent for, the normal and stress jobs, and what the repeat is built from (snapshots,
-## squads, zone, duration). Unsaved: a load or a rollback clears it and the pulse sends the check again.
+## squads, zone, duration). Unsaved: a load clears it and the pulse sends the check again; a rollback
+## keeps it (ig-7sn.17).
 ## ig-7sn.12: an order owing catch_up_seconds has an entry here too, with its one "catch_up" job.
 var _battle_checks: Dictionary[String, Dictionary] = {}
 var _battle_check_generation: int = 0
@@ -2690,16 +2691,8 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 		last_action_error = SaveService.load_block_reason
 		return false
 	var snapshot: Dictionary = to_dict()
-	var paused_snapshot: Dictionary[String, bool] = _paused_battle_orders.duplicate()
-	var owed_snapshot: Dictionary[String, float] = _battle_owed.duplicate()
-	var checkpoint_failed_snapshot: bool = _checkpoint_save_failed
-	var checkpoint_error_snapshot: String = _checkpoint_error
-	var command_errors_snapshot: Dictionary[String, String] = _command_errors.duplicate()
 	snapshot["version"] = SaveService.SAVE_VERSION
-	# The records are not in the snapshot: a rollback truncates this list back instead (item 8).
-	var ledger_kept: Array[Dictionary] = ledger
-	var tiers_kept: Array[int] = _ledger_tiers
-	var ledger_kept_size: int = ledger.size()
+	var kept: Dictionary = _rollback_kept()
 	_save_deferred_depth += 1
 	_notification_deferred_depth += 1
 	_ledger_hold_depth += 1
@@ -2708,21 +2701,7 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 	_save_deferred_depth -= 1
 	if mutation_result is bool and not (mutation_result as bool):
 		_ledger_hold_depth -= 1
-		_save_deferred_depth += 1
-		from_dict(snapshot)
-		ledger = ledger_kept
-		ledger.resize(ledger_kept_size)
-		_ledger_tiers = tiers_kept
-		_ledger_tiers.resize(ledger_kept_size)
-		_paused_battle_orders = paused_snapshot
-		# ig-7sn.15: a rollback is not a load; the battles keep the time they are owed.
-		_battle_owed = owed_snapshot
-		_checkpoint_save_failed = checkpoint_failed_snapshot
-		_checkpoint_error = checkpoint_error_snapshot
-		_command_errors = command_errors_snapshot
-		_save_deferred_depth -= 1
-		_notification_deferred_depth -= 1
-		_flush_deferred_notifications()
+		_roll_back(snapshot, kept)
 		if last_action_error.is_empty():
 			last_action_error = "The profile changed while the operation was being applied."
 		return false
@@ -2734,22 +2713,59 @@ func _commit_profile_mutation(mutation: Callable) -> bool:
 		_notification_deferred_depth -= 1
 		_flush_deferred_notifications()
 		return true
+	_roll_back(snapshot, kept)
+	last_action_error = SaveService.last_write_error
+	return false
+
+
+## What a rollback restores that the snapshot does not hold. The records are not in the snapshot: a
+## rollback truncates the list back instead (item 8). The checks are kept too (ig-7sn.17): every job out
+## was sent for this pre-mutation state, so each check still holding its order's battle stays current.
+func _rollback_kept() -> Dictionary:
+	var checks: Dictionary[String, Dictionary] = {}
+	var current: Array[String] = []
+	for order_id: String in _battle_checks:
+		checks[order_id] = _battle_checks[order_id].duplicate()
+		var index: int = _order_index(order_id)
+		if index >= 0 and is_same(expedition_orders[index].get("battle"), _battle_checks[order_id]["battle"]):
+			current.append(order_id)
+	return {
+		"ledger": ledger, "tiers": _ledger_tiers, "ledger_size": ledger.size(),
+		"paused": _paused_battle_orders.duplicate(), "owed": _battle_owed.duplicate(),
+		"checkpoint_failed": _checkpoint_save_failed, "checkpoint_error": _checkpoint_error,
+		"command_errors": _command_errors.duplicate(), "checks": checks, "current": current,
+	}
+
+
+## Undoes a refused or failed transaction: the snapshot by value, then what _rollback_kept kept. It is not
+## a load, so it cancels no job (the threading ADR, item 5: only quit and a load do): each check that was
+## current is re-pointed at its restored order's battle, which from_dict rebuilt with the same value.
+func _roll_back(snapshot: Dictionary, kept: Dictionary) -> void:
 	_save_deferred_depth += 1
-	from_dict(snapshot)
-	ledger = ledger_kept
-	ledger.resize(ledger_kept_size)
-	_ledger_tiers = tiers_kept
-	_ledger_tiers.resize(ledger_kept_size)
-	_paused_battle_orders = paused_snapshot
-	_battle_owed = owed_snapshot
-	_checkpoint_save_failed = checkpoint_failed_snapshot
-	_checkpoint_error = checkpoint_error_snapshot
-	_command_errors = command_errors_snapshot
+	_read_profile(snapshot)
+	ledger = kept["ledger"]
+	ledger.resize(int(kept["ledger_size"]))
+	_ledger_tiers = kept["tiers"]
+	_ledger_tiers.resize(int(kept["ledger_size"]))
+	_paused_battle_orders = kept["paused"]
+	# ig-7sn.15: the battles keep the time they are owed.
+	_battle_owed = kept["owed"]
+	_checkpoint_save_failed = bool(kept["checkpoint_failed"])
+	_checkpoint_error = str(kept["checkpoint_error"])
+	_command_errors = kept["command_errors"]
+	_battle_checks = kept["checks"]
+	for order_id: String in _battle_checks.keys():
+		# A check the mutation ended (its jobs cancelled) stays ended: a job that finished first still holds
+		# a result, which must not land. The order is checking again, so the pulse sends a fresh check.
+		if _battle_checks[order_id].values().any(func(value: Variant) -> bool: return value is BattleJob and (value as BattleJob).cancelled):
+			_battle_checks.erase(order_id)
+	for order_id: String in kept["current"]:
+		var index: int = _order_index(order_id)
+		if index >= 0 and _battle_checks.has(order_id):
+			_battle_checks[order_id]["battle"] = expedition_orders[index].get("battle")
 	_save_deferred_depth -= 1
 	_notification_deferred_depth -= 1
 	_flush_deferred_notifications()
-	last_action_error = SaveService.last_write_error
-	return false
 
 
 func _upsert_preset_in_memory(preset: Dictionary) -> void:
@@ -2890,8 +2906,13 @@ func to_dict() -> Dictionary:
 	}
 
 
+## A load: stops every sim job, then reads data (ig-7sn.17: a rollback reads without the stop).
 func from_dict(data: Dictionary) -> void:
 	_cancel_battle_jobs()
+	_read_profile(data)
+
+
+func _read_profile(data: Dictionary) -> void:
 	roster.clear()
 	inventory.clear()
 	parts.fill(0)
