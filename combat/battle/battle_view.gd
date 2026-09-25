@@ -846,6 +846,7 @@ func _update_squad_row() -> void:
 		var squad_name: String = str(squad.get("name", "Squad"))
 		button.text = "%d  %s\n%d heroes" % [((squad_index + 1) % 10), squad_name.left(13), (squad.get("hero_ids", []) as Array).size()]
 		button.custom_minimum_size = Vector2(110.0, 54.0)
+		button.focus_mode = Control.FOCUS_NONE
 		button.pressed.connect(_on_squad_button_pressed.bind(squad_index))
 		_squad_row.add_child(button)
 		button.add_theme_color_override("font_color", UI_BRASS if squad_id in _selected_squad_ids() else Color.WHITE)
@@ -1241,6 +1242,10 @@ func _build_hud() -> void:
 	%HelpButton.pressed.connect(func() -> void: _help_panel.visible = not _help_panel.visible)
 	%AutoBattle.toggled.connect(_on_auto_battle_toggled)
 	%AttackMoveButton.pressed.connect(_on_attack_move_button_pressed)
+	# ig-0oj: a clicked button would keep focus, and Space (rts_pause, also ui_accept) would press it again.
+	# The squad row's buttons come later and get the same line; the victory OK keeps its focus.
+	for control: Node in _hud.find_children("*", "BaseButton", true, false):
+		(control as BaseButton).focus_mode = Control.FOCUS_NONE
 	_build_victory_banner()
 
 
