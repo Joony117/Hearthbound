@@ -1439,8 +1439,8 @@ at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this 
 - Heroes you own get it too (director: fine).
 
 **Presence, as the sim measures it** (`ig-vl1.6`). Presence is the hardest fight the team still
-wins. `ig-vl1.3`'s test judged a Mage on clear time and a Cleric on team HP, each against a Knight,
-which tanks; it passed no offset.
+wins under the game's own rules, the clock included. `ig-vl1.3`'s test judged a Mage on clear time
+and a Cleric on team HP, each against a Knight, which tanks; it passed no offset.
 - Take the balance gate's mixed team (Knight, Ranger, Mage, Rogue, Knight) and fill the Mage slot.
   Everyone else is at the point's rank and level. Bare supplies, seeds 1–8.
 - Scale the zone's enemy power by m: every enemy's HP, ATK and DEF, with the zone's own roster and
@@ -1452,12 +1452,38 @@ which tanks; it passed no offset.
 - Two points: F level 1 at Verdant (Knights at D and C) and B level 30 at Ashfall Reaches (Knights
   at A and S). Both teams start at about 87% of the zone's recommended power (784 of 900; 4,205 of
   4,800), and the run prints each point's team power against its RP.
+- A fight is lost to a wipe or to the clock (`max_battle_seconds` × P, 1080 s at both points).
+  Point 1 loses both ways; point 2 loses mostly to the clock, because a matched B30 team takes
+  little damage (below). So point 1 leans on survival and point 2 on kill speed. A caster must pass
+  both, so no role gets a free axis. The run prints each slot's wipes and timeouts, plus a TIMEOUT
+  line when timeouts are most of its losses. Both are INFO: neither is judged.
 - Clear time and team HP at m = 1 are still printed. They show the caster's role and aren't judged.
 - Measured at `battle_pace` 6 with the Knight's full kit.
 
-> ⚠️ **PROVISIONAL** — the second point and the search range are arithmetic · **Settled by:** the
-> first run at offset 0: the R+1 to R+2 gap resolves at both points, and the losses are defeats,
-> not timeouts
+**The baseline** (`ig-vl1.6`, offset 0, before any spell; harness 8564dac, log
+`.agent-results/ig-vl1.6/presence_baseline.log`). Each cell: the break's median (seed min–max),
+then losses as wipes / timeouts, then the caster's Knight-rank equivalent.
+
+| Point | Knight at R+1 | Knight at R+2 | Mage at R | Cleric at R | Gap |
+|---|---|---|---|---|---|
+| F1 Verdant | D 1.559 (1.369–1.664), 17 / 10 | C 1.700 (1.628–1.737), 14 / 11 | F 1.477 (1.176–1.628), 23 / 3, **+0.38** | F 1.646 (1.526–1.854), 14 / 7, **+1.63** | 9.1% |
+| B30 Ashfall | A 2.938 (2.875–3.002), 6 / 31 | S 3.221 (3.068–3.274), 4 / 24 | B 2.783 (2.723–2.970), 12 / 16, **+0.41** | B 2.970 (2.938–3.035), 0 / 36, **+1.12** | 9.6% |
+
+- Both gaps resolve (over 4.4%). At offset 0 the Mage sits under R+1 at both points: it hits hard,
+  but its team falls sooner (23 of its 26 F1 losses are wipes). The Cleric is inside the band at
+  both. No offset is picked, as expected before the spells.
+- Team power against the RP, knight / knight / mage / cleric: F1 837, 909, 784, 774 of 900; B30
+  4,543, 4,942, 4,205, 4,102 of 4,800.
+- At m = 1, a team ends F1 with 39–61% of its HP and B30 with 87–92%. Damage is ATK × 100 / (100 +
+  DEF). From F1 to B30 a hero's DEF and HP grow about ×7–9, but enemy ATK grows only with the RP
+  (×5.3, Verdant to Ashfall). So a matched fight bites far less at B30 (see the finding in
+  `ig-vl1.6`).
+- Wall time: about 2 minutes a slot at F1 and 3.5–5 at B30, so about 12 minutes for each extra
+  offset in a sweep.
+
+> ⚠️ **PROVISIONAL** — two points stand in for every rank and zone, and point 2's clock-bound shape
+> comes from how little a matched B30 fight bites today · **Settled by:** the zones run (`ig-vl1.4`)
+> keeping each caster's two points within a rank of each other, and the ruling on the B30 finding
 
 **The spells (`ig-vl1.4`).** Each caster gets one or two
 spells with long cooldowns and a big footprint on the field. At P = 6, one or two casts a wave.
@@ -1505,6 +1531,13 @@ Cleric's **Hearthward** holds a line up.
     is tuned. Class identity lives in the spells, so there is no second row.
   - Raising the offset raises the spells too: zone amounts read the caster's ATK. The measure takes
     the whole caster, so it still picks right.
+  - A caster whose two points sit more than a rank apart can't be fit by the offset or by sizing
+    its spell, because both move the two points together. That goes to design as a change to what
+    the spell does. At offset 0 the Mage's points are 0.03 apart and the Cleric's 0.51.
+  - Hearthward still counts at a clock-bound point: a downed hero stops dealing damage, so keeping
+    the team up keeps its damage up (the Cleric's team had no wipes at B30, and its break beat the
+    A Knight's). It counts for less there than at point 1, so it widens the Cleric's spread. The
+    rule above watches that.
 - **Names.** Rime Circle and Hearthward passed the same web check as `ig-x8g` on 2026-09-25
   (`DECISIONS.md` 2026-09-23, item 10; evidence: `.agent-results/ig-vl1.4/name-check.log`).
   Hearthward's only hits are an FFXIV music track, which the bar doesn't count.
