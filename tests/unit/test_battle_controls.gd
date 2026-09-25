@@ -164,7 +164,6 @@ func test_manual_skill_waits_for_target_and_submits_one_ability_command() -> voi
 	var controller := _make_controller()
 	var view := _make_live_view(controller)
 	var camera: Camera3D = view.get_node("CameraRig/Camera3D") as Camera3D
-	var ally: BattleUnitView = view.get_node("Units/Unit_hero-1") as BattleUnitView
 	var enemy: BattleUnitView = view.get_node("Units/Unit_enemy-1") as BattleUnitView
 	view._selected_ids = ["hero-1"]
 	view._on_selected_command_pressed("ability")

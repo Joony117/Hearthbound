@@ -535,7 +535,6 @@ func _refresh_favorite_item_control() -> void:
 
 
 func _inventory_tooltip_text(item: Item, definition: EquipmentDefinition) -> String:
-	var forge_level: int = GameSession.building_levels[1]
 	var enhance_level: int = Item.clamped_enhance_level(item, BALANCE)
 	var enhance_cap: int = GameSession.enhance_cap(BALANCE)
 	var salvage_yield: int = GameSession.salvage_yield(item)
@@ -1859,8 +1858,6 @@ func _refresh_preset_lists() -> void:
 	_preset_selector.set_item_metadata(0, "")
 	for preset: Dictionary in GameSession.team_presets:
 		var status: String = _preset_status(preset)
-		var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(preset.get("zone_id", ""))))
-		var zone_name: String = zone.display_name if zone != null else "Missing zone"
 		_preset_dispatch_list.add_item("[%s] %s" % [status, str(preset.get("name", "Unnamed team"))])
 		var row: int = _preset_dispatch_list.item_count - 1
 		_preset_dispatch_list.set_item_metadata(row, preset)

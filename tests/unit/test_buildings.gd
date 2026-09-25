@@ -153,7 +153,6 @@ func test_rank_filter_drops_a_hidden_item_before_salvage_can_destroy_it() -> voi
 	var rank_filter: OptionButton = hub.get_node("%InventoryRankFilter") as OptionButton
 	var salvage_button: Button = hub.get_node("%Salvage") as Button
 	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
-	var status: Label = hub.get_node("%Status") as Label
 	var bulk_preview: RichTextLabel = hub.get_node("%DialogBody") as RichTextLabel
 	var parts_before: Array[int] = GameSession.parts.duplicate()
 
