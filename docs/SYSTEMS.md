@@ -182,6 +182,10 @@ Citadel and fifty for Frontier March. Enemy archetypes cycle Knight, Knight, Ran
 Rogue; they use the same signatures/passives with their own faction, cannot consume allied
 supplies, and die at zero HP. Elite marks an objective/visual role, not an extra stat bonus.
 
+> ⚠️ **PROVISIONAL** — every clear time and downing count in the next paragraph and in both
+> "Restated 2026-09-24" blocks below was measured with the ig-9gf reach bug (a unit walking to a
+> still target could stop a float32 hair outside reach and never act) · **Settled by:** ig-el4
+
 The first HP×2 / ATK×0.20 translation stranded all eight measured F-rank starter runs before
 Verdant completion. The director revised only these new enemy conversion multipliers to the
 values above. The resource-backed check verified enemy HP/ATK of 90/3.6 for five heroes and
