@@ -13,6 +13,8 @@ const ABILITIES: Dictionary[String, AbilityDefinition] = {
 	"knight_gauntlet_toss": preload("res://combat/abilities/knight_gauntlet_toss.tres"),
 	"knight_sweeping_blow": preload("res://combat/abilities/knight_sweeping_blow.tres"),
 	"knight_anvilheart": preload("res://combat/abilities/knight_anvilheart.tres"),
+	"knight_charge": preload("res://combat/abilities/knight_charge.tres"),
+	"knight_ground_slam": preload("res://combat/abilities/knight_ground_slam.tres"),
 	"rogue_blindside": preload("res://combat/abilities/rogue_blindside.tres"),
 	"rogue_flank_interrupt": preload("res://combat/abilities/rogue_flank_interrupt.tres"),
 	"rogue_quick_cut": preload("res://combat/abilities/rogue_quick_cut.tres"),
@@ -1049,7 +1051,7 @@ static func _use_skill(
 		return false
 	if actor.ability_lock > 0.0 or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0 or _has_status(actor, "silence"):
 		return false
-	if actor.position.distance_to(point) > skill.range_units:
+	if actor.position.distance_to(point) > skill.range_units or actor.position.distance_to(point) < skill.min_range_units:
 		return false
 	if _needs_enemy_target(skill) and (target == null or target.faction == actor.faction or target.life != BattleActor.LIFE_ALIVE):
 		return false
@@ -1123,10 +1125,22 @@ static func _apply_effects(
 				for receiver: BattleActor in _status_receivers(state, actor, skill, effect, target):
 					_add_status(receiver, str(skill.skill_id), kind, actor.id, float(effect["seconds"]) * (1.0 if kind == "dodge" else pace), magnitude)
 			"move":
-				var destination: Variant = _rogue_flank_position(state, actor, target) if str(effect["to"]) == "behind_target" else _away_point(state, actor, target, float(effect.get("distance", 0.0)))
+				var destination: Variant = null
+				match str(effect["to"]):
+					"behind_target":
+						destination = _rogue_flank_position(state, actor, target)
+					"charge":
+						destination = _charge(state, actor, target, skill, effect)
+					_:
+						destination = _away_point(state, actor, target, float(effect.get("distance", 0.0)))
 				if not destination is Vector2:
 					return false
 				actor.position = destination as Vector2
+				# A carried body moves with its carrier, as in _push (ig-zht).
+				if not actor.carrying_id.is_empty():
+					var carried: BattleActor = _actor_by_id(state, actor.carrying_id)
+					if carried != null:
+						carried.position = actor.position
 			"heal":
 				var healed: Array[BattleActor] = []
 				match str(effect.get("area", "target")):
@@ -1143,9 +1157,14 @@ static func _apply_effects(
 			"shield":
 				_add_status(target, str(skill.skill_id), "shield", actor.id, float(effect["seconds"]) * pace, _stat(actor, "atk") * float(effect["multiplier"]) * heal_scale * pace)
 			"interrupt":
-				if target != null and target.life == BattleActor.LIFE_ALIVE:
-					target.effect_state["stun_remaining"] = maxf(float(target.effect_state.get("stun_remaining", 0.0)), float(effect["stun_seconds"]) * pace)
-					_cancel_pending_action(target)
+				var stunned: Array[BattleActor] = []
+				if str(effect.get("area", "target")) == "around_caster":
+					stunned = _living_in_radius(state, "enemy" if actor.faction == "ally" else "ally", actor.position, skill.radius_units)
+				elif target != null and target.life == BattleActor.LIFE_ALIVE:
+					stunned.append(target)
+				for victim: BattleActor in stunned:
+					victim.effect_state["stun_remaining"] = maxf(float(victim.effect_state.get("stun_remaining", 0.0)), float(effect["stun_seconds"]) * pace)
+					_cancel_pending_action(victim)
 			"taunt":
 				if target != null and target.life == BattleActor.LIFE_ALIVE:
 					_add_status(target, str(skill.skill_id), "taunt", actor.id, float(effect["seconds"]) * pace, 0.0)
@@ -1318,7 +1337,7 @@ static func _needs_enemy_target(skill: AbilityDefinition) -> bool:
 	for effect: Dictionary in skill.effects:
 		match str(effect["type"]):
 			"move":
-				if str(effect["to"]) == "behind_target":
+				if str(effect["to"]) in ["behind_target", "charge"]:
 					return true
 			"taunt":
 				return true
@@ -1392,7 +1411,18 @@ static func _auto_cast(state: BattleState, actor: BattleActor, target: BattleAct
 				continue
 			if skill.band() != band and not (band == "revive" and skill.ai_revive_first):
 				continue
-			var aim: BattleActor = _rule_aim(state, actor, skill, target, band)
+			var aim_from: BattleActor = target
+			if skill.min_range_units > 0.0:
+				# ig-zht: a skill with a minimum range (Charge) looks at the actor's current target, near or
+				# far. It never retargets, so a Knight's cover holds. The band check repeats _use_skill's so a
+				# Knight in melee skips the rule's scan of every actor each tick.
+				aim_from = _actor_by_id(state, actor.order_target_id)
+				if aim_from == null or aim_from.faction == actor.faction or aim_from.life != BattleActor.LIFE_ALIVE:
+					continue
+				var gap: float = actor.position.distance_to(aim_from.position)
+				if gap < skill.min_range_units or gap > skill.range_units:
+					continue
+			var aim: BattleActor = _rule_aim(state, actor, skill, aim_from, band)
 			if aim == null:
 				continue
 			if actor.faction == "enemy" and not _telegraph_kind(skill).is_empty():
@@ -1431,8 +1461,14 @@ static func _pick_weaponskill(state: BattleState, actor: BattleActor, target: Ba
 
 
 ## The step before skill landed within skill_combo_window_seconds.
+## An ability follows the last ability cast (ig-zht: Ground Slam after Charge), read from the saved
+## last_skill_id and last_skill_tick, so a swing between them does not break it.
 static func _combo_ready(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> bool:
-	return skill.combo_after != &"" and actor.combo_skill == str(skill.combo_after) and (state.tick - actor.combo_tick) * BALANCE.battle_tick_seconds <= BALANCE.skill_combo_window_seconds + TICK_EPSILON
+	if skill.combo_after == &"":
+		return false
+	if skill.is_ability():
+		return str(actor.effect_state.get("last_skill_id", "")) == str(skill.combo_after) and (state.tick - int(actor.effect_state.get("last_skill_tick", 0))) * BALANCE.battle_tick_seconds <= BALANCE.skill_combo_window_seconds + TICK_EPSILON
+	return actor.combo_skill == str(skill.combo_after) and (state.tick - actor.combo_tick) * BALANCE.battle_tick_seconds <= BALANCE.skill_combo_window_seconds + TICK_EPSILON
 
 
 ## Whom the skill's AI rule (AbilityDefinition.AI_RULES) wants to cast at, or null when it does not
@@ -1448,6 +1484,10 @@ static func _rule_aim(state: BattleState, actor: BattleActor, skill: AbilityDefi
 	match skill.ai_rule:
 		"always", "fight_on":
 			return target
+		"combo":
+			# An ability combo (Ground Slam): cast around itself, so no target needed.
+			if _combo_ready(state, actor, skill):
+				return target if target != null else actor
 		"enemies_near_target":
 			if target != null and (_opponents_in_radius(state, actor.faction, target.position, skill.ai_radius) >= skill.ai_count or (skill.ai_or_elite and bool(target.effect_state.get("elite", false)))):
 				return target
@@ -1525,19 +1565,24 @@ static func _lowest_ally(state: BattleState, actor: BattleActor, skill: AbilityD
 
 ## The archetype's level-1 kit, passive first then its signature ability. A snapshot without skills
 ## or a level gets this (DECISIONS.md 2026-09-23 item 4): exactly the battle from before the v1 kits.
+## Only the first level-1 ability is the signature: the Knight's Charge and Ground Slam also open at
+## level 1 (ig-zht) and stay out.
 static func default_kit(archetype: String) -> Array[AbilityDefinition]:
 	var kit: Array[AbilityDefinition] = []
 	for kind: String in ["passive", "ability"]:
 		for skill: AbilityDefinition in ABILITIES.values():
 			if skill.archetype == archetype and skill.kind == kind and skill.unlock_level <= 1 and not skill.book_only:
 				kit.append(skill)
+				break
 	return kit
 
 
 ## An enemy's kit (SYSTEMS.md § Skills, Enemies): its class's level-1 skills (the passive, the
 ## signature and the starter weaponskill), then its enemy-only skills. No chains, no general pool.
 static func enemy_kit(archetype: String) -> Array[AbilityDefinition]:
-	var kit: Array[AbilityDefinition] = known_kit(archetype, 1)
+	# Of the level-1 abilities only the signature: enemies never Charge or Ground Slam (ig-zht).
+	var signature: AbilityDefinition = signature_for(archetype)
+	var kit: Array[AbilityDefinition] = known_kit(archetype, 1).filter(func(skill: AbilityDefinition) -> bool: return not skill.is_ability() or skill == signature)
 	for skill: AbilityDefinition in ABILITIES.values():
 		if skill.archetype == "enemy_" + archetype:
 			kit.append(skill)
@@ -1603,6 +1648,28 @@ static func _push_direction(direction: Vector2, facing: Vector2) -> Vector2:
 	if direction != Vector2.ZERO:
 		return direction.normalized()
 	return facing.normalized() if facing != Vector2.ZERO else Vector2.RIGHT
+
+
+## Charge (ig-zht, SYSTEMS.md § The v1 kits): the landing point, distance short of the target on the
+## straight line from the caster, clamped. First, every other living opponent whose center is within
+## radius_units / 2 of that line is pushed lane_push sideways to its own side (one on it: the caster's
+## right as the view draws it, sim y being its z), all read at pre-push positions; _push keeps elites
+## put. Instant: nothing can stun or push the Knight mid-dash.
+static func _charge(state: BattleState, actor: BattleActor, target: BattleActor, skill: AbilityDefinition, effect: Dictionary) -> Vector2:
+	var lane: Vector2 = target.position - actor.position
+	var direction: Vector2 = lane.normalized()
+	var right := Vector2(-direction.y, direction.x)
+	var pushes: Array = []
+	for candidate: BattleActor in state.actors:
+		if candidate == target or candidate.faction == actor.faction or candidate.life != BattleActor.LIFE_ALIVE:
+			continue
+		var offset: Vector2 = candidate.position - actor.position
+		var along: float = offset.dot(direction)
+		var side: float = offset.dot(right)
+		if along >= 0.0 and along <= lane.length() and absf(side) <= skill.radius_units * 0.5:
+			pushes.append([candidate, right if side >= 0.0 else -right])
+	_push_all(state, pushes, actor.facing, float(effect.get("lane_push", 0.0)))
+	return _clamp_to_bounds(state, target.position - direction * float(effect["distance"]))
 
 
 static func _face(actor: BattleActor, at: Vector2) -> void:

@@ -7,7 +7,7 @@ extends GutTest
 const BALANCE: BalanceTable = preload("res://balance.tres")
 const SIM = preload("res://combat/battle/battle_simulation.gd")
 const KEPT: Array[String] = [SaveService.SAVE_PATH, SaveService.LEDGER_PATH]
-const KNIGHT_1: Array[String] = ["knight_bulwark", "knight_rally", "knight_iron_cut"]
+const KNIGHT_1: Array[String] = ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_charge", "knight_ground_slam"]
 
 var _originals: Dictionary = {}
 
@@ -57,6 +57,7 @@ func test_bar_order_and_modes_survive_a_real_disk_round_trip_and_a_legacy_save_l
 	var bar: Array[Dictionary] = [
 		{"id": "knight_buckler_blow", "mode": "manual"}, {"id": "knight_follow_through", "mode": "off"},
 		{"id": "knight_iron_cut", "mode": "auto"}, {"id": "knight_rally", "mode": "off"}, {"id": "knight_bulwark", "mode": "auto"},
+		{"id": "knight_charge", "mode": "auto"}, {"id": "knight_ground_slam", "mode": "auto"},
 	]
 	assert_true(GameSession.set_skill_bar(hero, bar), GameSession.last_action_error)
 	assert_string_contains(FileAccess.get_file_as_string(SaveService.SAVE_PATH), "knight_buckler_blow")
@@ -70,8 +71,7 @@ func test_bar_order_and_modes_survive_a_real_disk_round_trip_and_a_legacy_save_l
 	FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE).store_string(JSON.stringify(payload))
 	_reload()
 	assert_false(SaveService.load_blocked, SaveService.load_block_reason)
-	var ids: Array[String] = KNIGHT_1.duplicate()
-	ids.append_array(["knight_follow_through", "knight_buckler_blow"])
+	var ids: Array[String] = ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_follow_through", "knight_buckler_blow", "knight_charge", "knight_ground_slam"]
 	assert_eq(Hero.bar_for(GameSession.roster[0], BALANCE), _bar(ids, "auto"), "the derived default")
 
 
@@ -93,6 +93,7 @@ func test_load_drops_bad_ids_and_modes_and_keeps_a_general_skill_on_any_class() 
 	assert_eq(Hero.bar_for(hero, BALANCE), [
 		{"id": "knight_iron_cut", "mode": "off"}, {"id": "general_brace", "mode": "manual"},
 		{"id": "knight_bulwark", "mode": "auto"}, {"id": "knight_rally", "mode": "auto"},
+		{"id": "knight_charge", "mode": "auto"}, {"id": "knight_ground_slam", "mode": "auto"},
 	] as Array[Dictionary])
 	var mage: Hero = Hero.from_dict({"instance_id": "hero:m", "name": "M", "level": 1, "def_id": "mage", "learned_skills": ["general_brace"], "skill_bar": [{"id": "general_brace", "mode": "off"}]})
 	assert_eq(mage.skill_bar, [{"id": "general_brace", "mode": "off"}] as Array[Dictionary], "a general skill is valid on every class")
@@ -101,7 +102,7 @@ func test_load_drops_bad_ids_and_modes_and_keeps_a_general_skill_on_any_class() 
 func test_a_hero_levelling_past_5_gains_the_level_5_skills_at_the_end_of_its_bar() -> void:
 	var hero: Hero = _knight("hero:k", 1)
 	GameSession.add_hero(hero)
-	var bar: Array[Dictionary] = [{"id": "knight_iron_cut", "mode": "manual"}, {"id": "knight_rally", "mode": "off"}, {"id": "knight_bulwark", "mode": "auto"}]
+	var bar: Array[Dictionary] = [{"id": "knight_iron_cut", "mode": "manual"}, {"id": "knight_rally", "mode": "off"}, {"id": "knight_bulwark", "mode": "auto"}, {"id": "knight_charge", "mode": "auto"}, {"id": "knight_ground_slam", "mode": "auto"}]
 	assert_true(GameSession.set_skill_bar(hero, bar))
 	hero.level = 6
 	var expected: Array[Dictionary] = bar.duplicate(true)
@@ -200,12 +201,12 @@ func test_the_skill_panel_reorders_sets_modes_and_shows_locked_skills() -> void:
 	await _click(hub, hub.get_node("%HeroSkills") as Control)
 	assert_true(panel.visible, "Skills opens the panel")
 	var rows: Node = panel.find_child("Rows", true, false)
-	assert_eq(rows.get_children().filter(func(row: Node) -> bool: return row.name.begins_with("Skill_")).map(func(row: Node) -> String: return str(row.name)), ["Skill_knight_bulwark", "Skill_knight_rally", "Skill_knight_iron_cut"])
+	assert_eq(rows.get_children().filter(func(row: Node) -> bool: return row.name.begins_with("Skill_")).map(func(row: Node) -> String: return str(row.name)), ["Skill_knight_bulwark", "Skill_knight_rally", "Skill_knight_iron_cut", "Skill_knight_charge", "Skill_knight_ground_slam"])
 	var locked: Label = rows.get_node("Locked_knight_buckler_blow") as Label
 	assert_string_contains(locked.text, "opens at level 5")
 	await _click(hub, rows.get_node("Skill_knight_bulwark/Down") as Control)
 	var hero: Hero = GameSession.roster[0]
-	assert_eq(hero.skill_bar.map(func(entry: Dictionary) -> String: return entry["id"]), ["knight_rally", "knight_bulwark", "knight_iron_cut"])
+	assert_eq(hero.skill_bar.map(func(entry: Dictionary) -> String: return entry["id"]), ["knight_rally", "knight_bulwark", "knight_iron_cut", "knight_charge", "knight_ground_slam"])
 	var mode: OptionButton = rows.get_node("Skill_knight_iron_cut/Mode") as OptionButton
 	mode.select(2)
 	mode.item_selected.emit(2)

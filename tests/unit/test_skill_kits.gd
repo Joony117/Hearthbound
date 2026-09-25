@@ -16,14 +16,15 @@ func after_each() -> void:
 
 
 func test_every_skill_validates_and_the_kits_open_by_level() -> void:
-	assert_eq(SIM.ABILITIES.size(), 47)
+	assert_eq(SIM.ABILITIES.size(), 49)
 	for skill_id: String in SIM.ABILITIES:
 		assert_eq(SIM.ABILITIES[skill_id].validate(), "", skill_id)
 		assert_eq(str(SIM.ABILITIES[skill_id].skill_id), skill_id)
 	for archetype: String in ["knight", "ranger", "mage", "rogue", "cleric"]:
 		var sizes: Array = [1, 5, 15, 25, 100].map(func(level: int) -> int: return SIM.known_kit(archetype, level).size())
-		assert_eq(sizes, [3, 5, 6, 7, 7], "%s: 3 at level 1, then one or two per tier; the book skill never" % archetype)
-	assert_eq(_ids(SIM.known_kit("knight", 5)), ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_follow_through", "knight_buckler_blow"])
+		# The Knight also opens Charge and Ground Slam at level 1 (ig-zht).
+		assert_eq(sizes, [5, 7, 8, 9, 9] if archetype == "knight" else [3, 5, 6, 7, 7], "%s: 3 at level 1, then one or two per tier; the book skill never" % archetype)
+	assert_eq(_ids(SIM.known_kit("knight", 5)), ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_follow_through", "knight_buckler_blow", "knight_charge", "knight_ground_slam"])
 
 
 ## General skills add no damage by construction, not only while they sit unused.
@@ -43,13 +44,13 @@ func test_no_general_skill_deals_damage() -> void:
 func test_a_level_snapshot_carries_its_known_kit_and_legal_learned_skills() -> void:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
 	var fresh: BattleActor = SIM._actor_from_team_snapshot(_unit("hero:a", "knight", "ally", Vector2.ZERO, {"level": 0}), 0, zone)
-	assert_eq(_kit(fresh), ["knight_bulwark", "knight_rally", "knight_iron_cut"], "level 0 has the level-1 kit")
+	assert_eq(_kit(fresh), ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_charge", "knight_ground_slam"], "level 0 has the level-1 kit")
 	var learned: Array = ["knight_anvilheart", "general_brace", "mage_hanging_star", "knight_rally", "no_such_skill"]
 	var veteran: BattleActor = SIM._actor_from_team_snapshot(_unit("hero:b", "knight", "ally", Vector2.ZERO, {"level": 15, "learned_skills": learned, "ability_auto": false}), 0, zone)
-	assert_eq(_kit(veteran), ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_follow_through", "knight_buckler_blow", "knight_gauntlet_toss", "knight_anvilheart", "general_brace"])
+	assert_eq(_kit(veteran), ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_follow_through", "knight_buckler_blow", "knight_gauntlet_toss", "knight_charge", "knight_ground_slam", "knight_anvilheart", "general_brace"])
 	assert_eq(veteran.skills[1]["mode"], "manual")
 	assert_eq(veteran.skills[2]["mode"], "auto", "a weaponskill is always on")
-	assert_eq(veteran.skill_cooldowns.keys(), ["knight_rally", "knight_buckler_blow", "knight_gauntlet_toss", "knight_anvilheart", "general_brace"])
+	assert_eq(veteran.skill_cooldowns.keys(), ["knight_rally", "knight_buckler_blow", "knight_gauntlet_toss", "knight_charge", "knight_ground_slam", "knight_anvilheart", "general_brace"])
 	var plain: BattleActor = SIM._actor_from_team_snapshot(_unit("hero:c", "knight", "ally", Vector2.ZERO), 0, zone)
 	assert_eq(_kit(plain), ["knight_bulwark", "knight_rally"], "no level, no skills: the default kit")
 

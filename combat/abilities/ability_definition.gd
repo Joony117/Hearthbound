@@ -13,7 +13,8 @@ const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ## picker's priority: revive, then heal, then buff, then attack (SYSTEMS.md § Skills).
 ## attack band:
 ##   "always": whenever it is ready. "default": a weaponskill for when no other one fits.
-##   "combo": a weaponskill right after its combo_after step.
+##   "combo": right after its combo_after step: a weaponskill after the last swing's skill, an
+##   ability after the last ability cast (Ground Slam after Charge, ig-zht).
 ##   "enemies_near_target": at least ai_count opponents within ai_radius of the target, or
 ##   (ai_or_elite) the target is elite. "enemies_near_self": ai_count opponents within ai_radius of
 ##   the caster. "target_below": the target's HP below ai_fraction. "target_lacks_status": the
@@ -62,8 +63,11 @@ const AI_BANDS: Dictionary = {
 ## "target" or "allies_near_caster". magnitude is a fraction, or for bleed, burn and
 ## heal_over_time the caster's ATK multiple per second. combo: only on a combo step.
 ## revive lands only on a downed ally target, and "stop" skips the effects after it when it does.
-## interrupt: cancels the target's pending action, and stuns it for stun_seconds (0 = no stun).
-## move: "behind_target", or "away" (distance units straight back from the target).
+## interrupt: cancels the target's pending action, and stuns it for stun_seconds (0 = no stun). area
+## "around_caster": every living opponent within radius_units of the caster instead (ig-zht).
+## move: "behind_target", "away" (distance units straight back from the target), or "charge"
+## (ig-zht): straight to distance units short of the target; every other living opponent within
+## radius_units / 2 of that line is pushed lane_push units sideways first (SYSTEMS.md § The v1 kits).
 ## taunt: the target attacks the caster for seconds.
 ## Heals, shields and heal-over-time from a caster with heal_bonus are that much larger.
 const EFFECT_KEYS: Dictionary = {
@@ -72,8 +76,8 @@ const EFFECT_KEYS: Dictionary = {
 	"shield": ["multiplier", "seconds"],
 	"status": ["target", "status", "magnitude", "seconds", "radius", "combo"],
 	"revive": ["fraction", "stop"],
-	"interrupt": ["stun_seconds"],
-	"move": ["to", "distance"],
+	"interrupt": ["stun_seconds", "area"],
+	"move": ["to", "distance", "lane_push"],
 	"taunt": ["seconds"],
 }
 const DAMAGE_AREAS: Array[String] = ["target", "circle", "line", "around_caster", "near_target"]
@@ -93,7 +97,8 @@ const PASSIVE_STATUSES: Array[String] = ["ally_near_damage_reduction", "rear_bas
 const TIMED_STATUSES: Array[String] = ["damage_reduction", "bleed", "burn", "heal_over_time", "root", "silence", "dodge", "atk", "defense", "speed", "crit_rate", "crit_damage"]
 const STATUS_KINDS: Array[String] = ["damage_reduction", "bleed", "burn", "heal_over_time", "root", "silence", "dodge", "atk", "defense", "speed", "crit_rate", "crit_damage", "shield", "taunt"]
 const STAT_STATUSES: Array[String] = ["atk", "defense", "speed", "crit_rate", "crit_damage"]
-const MOVE_TO: Array[String] = ["behind_target", "away"]
+const MOVE_TO: Array[String] = ["behind_target", "away", "charge"]
+const INTERRUPT_AREAS: Array[String] = ["target", "around_caster"]
 
 @export var skill_id: StringName = &""
 @export var display_name: String = ""
@@ -108,6 +113,8 @@ const MOVE_TO: Array[String] = ["behind_target", "away"]
 @export var combo_after: StringName = &""
 @export var cooldown_seconds: float = 0.0
 @export var range_units: float = 0.0
+## The closest its target may be (Charge, ig-zht); 0 = none.
+@export var min_range_units: float = 0.0
 ## The skill's area: circle radius, line width or aura radius.
 @export var radius_units: float = 0.0
 ## Cast without a target, it is cast on the caster at the caster's feet.
@@ -133,14 +140,16 @@ func validate() -> String:
 		return "Skill %s kind, archetype, counter_tag or ai_rule is unknown." % skill_id
 	if unlock_level < 1 or cooldown_seconds < 0.0 or range_units < 0.0 or radius_units < 0.0 or ai_count < 0 or ai_radius < 0.0 or ai_fraction < 0.0:
 		return "Skill %s has a negative number or an unlock level below 1." % skill_id
+	if min_range_units < 0.0 or min_range_units > range_units:
+		return "Skill %s: min_range_units runs from 0 to range_units." % skill_id
 	if (archetype == "general") != (tier >= 1 and tier <= 3):
 		return "Skill %s: a general skill has a tier of 1-3, and only a general skill has one." % skill_id
 	if not ai_status.is_empty() and not ai_status in STATUS_KINDS:
 		return "Skill %s ai_status is unknown." % skill_id
 	if not ai_archetype.is_empty() and not ai_archetype in ARCHETYPES:
 		return "Skill %s ai_archetype is unknown." % skill_id
-	if (kind == "weaponskill" and band() != "attack") or (kind != "weaponskill" and ai_rule in ["default", "combo"]):
-		return "Skill %s: a weaponskill needs an attack rule, and default and combo are for weaponskills." % skill_id
+	if (kind == "weaponskill" and band() != "attack") or (kind != "weaponskill" and ai_rule == "default") or (kind == "passive" and ai_rule == "combo"):
+		return "Skill %s: a weaponskill needs an attack rule, default is for weaponskills, and combo for weaponskills and abilities." % skill_id
 	if (ai_rule == "combo") != (combo_after != &""):
 		return "Skill %s: a combo rule needs combo_after, and combo_after needs the combo rule." % skill_id
 	if effects.is_empty():
@@ -186,6 +195,13 @@ func _effect_problem(type: String, effect: Dictionary) -> String:
 		"move":
 			if not str(effect.get("to", "")) in MOVE_TO:
 				return "needs a known destination."
+			if str(effect["to"]) == "charge" and not (float(effect.get("distance", 0.0)) > 0.0 and float(effect.get("lane_push", 0.0)) >= 0.0 and is_finite(float(effect.get("lane_push", 0.0)))):
+				return "a charge needs a positive distance and a non-negative, finite lane_push."
+			if effect.has("lane_push") and str(effect["to"]) != "charge":
+				return "only a charge has a lane_push."
+		"interrupt":
+			if not str(effect.get("area", "target")) in INTERRUPT_AREAS:
+				return "needs a known area."
 		"taunt":
 			if float(effect.get("seconds", 0.0)) <= 0.0:
 				return "needs positive seconds."

@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"knight_charge"
+display_name = "Charge"
+kind = "ability"
+archetype = "knight"
+cooldown_seconds = 15.0
+range_units = 12.0
+min_range_units = 4.0
+radius_units = 1.6
+ai_rule = "enemies_near_target"
+ai_count = 2
+ai_radius = 2.5
+ai_or_elite = true
+effects = Array[Dictionary]([{
+"type": "move",
+"to": "charge",
+"distance": 1.2,
+"lane_push": 1.5
+}])

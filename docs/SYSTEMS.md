@@ -832,8 +832,9 @@ an selected enemy", "immune to cc while in motion", knocking aside enemies in be
 - **Charge is instant in the sim, like every move today** (Turncoat Cut, Slip, Dust Roll). The
   Knight lands on the cast tick, so nothing can stun, root, taunt or push it mid-dash: that is
   the owner's immunity, with no timer and no saved state. The watched view draws the dash over
-  0.4 s. If it reads as a teleport when played, a timed dash with a real immunity window is the
-  fallback (saved state, boundary #1).
+  0.4 s (designed, not built: `ig-n7b`; today it draws the normal move glide). If it reads as a
+  teleport when played, a timed dash with a real immunity window is the fallback (saved state,
+  boundary #1).
 - **The line.** Straight from the Knight to the target as it stands at the cast. The Knight ends
   1.2 short of it, inside melee reach (1.6), clamped to the battlefield. Allies in the way are
   passed through, and separation sorts them out next tick.
@@ -843,12 +844,14 @@ an selected enemy", "immune to cc while in motion", knocking aside enemies in be
   RNG, all hits resolve before any push.
 - **Ground Slam** hits opponents only, never allies. Its stun is the interrupt primitive over the
   area, so it cancels a windup or telegraph like Buckler Blow does. It has no counter tag, so the
-  counter picker never spends it.
+  counter picker never spends it. With no opponent within 2.5 it doesn't fire and spends no
+  cooldown.
 - **The opener.** The AI charges its current target (§ Hero AI on auto picks it; Charge never
   retargets, so cover holds) when it is 4–12 away and the slam will hit two (another enemy
   within 2.5 of it), or it is elite. Ground Slam's rule is `combo`: it fires right after Charge,
   once the 1.0 s ability lock clears, inside the combo window. On auto the slam is only an
-  opener; by hand it fires any time. Under 4 away the Knight just walks in.
+  opener; by hand it fires any time (designed, not built: `ig-gy0.6`'s `use_skill`; today's hand
+  command fires only the signature). Under 4 away the Knight just walks in.
 - **Enemies don't get either.** Enemy Knights keep § Enemies' kit.
 - **Four small schema additions,** each inside ADR item 1's closed set: `move.to = "charge"` with a
   `lane_push` distance, an `area` on `interrupt` (`target` or `around_caster`), a
