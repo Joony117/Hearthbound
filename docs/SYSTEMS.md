@@ -1516,7 +1516,7 @@ any wall spell, so its tests place walls by hand.
 
 | Row | Value | Why |
 |---|---|---|
-| Pathfinding budget | 2 ms | What walls may add to a watched frontier_march pulse (today's sim 14.0 ms) with `battle_wall_cap` walls across both armies' paths. A miss switches the fallback the ADR names |
+| Pathfinding budget | 2 ms | What walls may add to the frame that advances a watched frontier_march (`_owe_battles`, `game_session.gd:2069`; since `ig-7sn.15` that frame runs about a pulse's worth of its sim, 14.0 ms in `ig-7sn.7`) with `battle_wall_cap` walls across both armies' paths. A miss switches the fallback the ADR names |
 
 > ⚠️ **PROVISIONAL** — 2 ms is a share of the pulse, not a measurement · **Settled by:** the
 > `ig-0qh` measure with three walls on frontier_march
