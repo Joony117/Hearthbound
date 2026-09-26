@@ -6,7 +6,7 @@
 tools/
 
 # Build output
-export/
+/export/
 *.exe
 *.pck
 *.zip
