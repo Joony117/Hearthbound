@@ -9,6 +9,9 @@ extends SceneTree
 ## preview (ig-7sn.14).
 ## Since ig-7sn.6: settle1, settle5 (the pulse that settles a leg, split).
 ## Since ig-7sn.15: pulse_split (the pulse's "other", split; each battle's decode, advance and encode by zone).
+## Since ig-vl1.5: battle_frontier_nowall is battle_frontier with every Mage's Rime Wall set to Off (the
+## same fight, no walls; ACC 7's pair). Every battle measure prints the force's Mages, the most walls up,
+## and the frame that advances the battle (_owe_battles'; the pulse's own frame advances none).
 ## Since ig-7sn.9: roster times the action with no building open and with the Forge open and a hero
 ## selected, and splits _refresh_roster and _refresh_director_ui.
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
@@ -78,6 +81,9 @@ func _run() -> void:
 		"battle_citadel":
 			await _measure_battle("fallen_citadel")
 		"battle_frontier":
+			await _measure_battle("frontier_march")
+		"battle_frontier_nowall":
+			_rime_wall_off()
 			await _measure_battle("frontier_march")
 		"roster":
 			await _measure_roster()
@@ -385,11 +391,13 @@ func _measure_battle(zone_id: String) -> void:
 	var vfx: Node = _find_script(view, "battle_vfx.gd")[0]
 	session.set_process(false)
 	var pulses: Array[float] = []
+	var advances: Array[float] = []
 	var live: Array[float] = []
 	var spawn_frames: Array[float] = []
 	var quiet_frames: Array[float] = []
-	# [live effects at the last frame's start, the pulse ms inside that frame, most particle nodes]
-	var last: Array[float] = [float(vfx.get_child_count()), 0.0, 0.0]
+	var mages: int = session.roster.filter(func(hero: Hero) -> bool: return hero.def_id == &"mage" and session.is_hero_busy(hero)).size()
+	# [live effects at the last frame's start, the pulse ms inside that frame, most particle nodes, most walls]
+	var last: Array[float] = [float(vfx.get_child_count()), 0.0, 0.0, 0.0]
 	var per_frame: Callable = func(delta: float, recording: bool) -> void:
 		# A frame's time less the pulse inside it (all its other work); an effect spawned in it if the
 		# live count went up. Warm-up frames are left out, as in the frame report.
@@ -403,18 +411,25 @@ func _measure_battle(zone_id: String) -> void:
 			last[2] = maxf(last[2], _find_class(vfx, "GPUParticles3D").size() + _find_class(vfx, "CPUParticles3D").size())
 		var started: int = Time.get_ticks_usec()
 		session._process(delta)
+		var spent: float = _since(started)
 		last[1] = 0.0
 		if session._expedition_pulse_accumulator == 0.0:
-			last[1] = _since(started)
+			last[1] = spent
 			if recording:
 				pulses.append(last[1])
+			last[3] = maxf(last[3], _walls())
+		elif recording and not session._battle_owed.has(order_id):
+			# ig-vl1.5 ACC 7: _owe_battles advanced it on this frame (an advance erases what it was owed).
+			advances.append(spent)
 	var ended: Callable = func() -> bool: return not is_instance_valid(vfx) or str(session.get_battle_snapshot(order_id).get("status", "")) != "active"
 	var frames: Array[float] = await _frames(per_frame, ended)
 	session.set_process(true)
 	var label: String = "watched %s (%d heroes)" % [zone_id, _cap(zone_id)]
 	_print_orders()
+	print("%s: %d Mages in the force, most walls up at once %d" % [label, mages, int(last[3])])
 	_report_frames("%s, until the battle ends" % label, frames)
 	_report("%s: whole pulse, sim + the view's battle_changed render" % label, pulses)
+	_report("%s: the frame that advances it (GameSession._process on _owe_battles' frame)" % label, advances)
 	_report("%s: live effects per frame (cap 40), most particle nodes %d" % [label, int(last[2])], live)
 	_report("%s: frames where the live effect count rose, less the pulse (all other work)" % label, spawn_frames)
 	_report("%s: frames where it did not, less the pulse" % label, quiet_frames)
@@ -801,6 +816,29 @@ func _active() -> int:
 		if str(battle.get("status", "")) == "active":
 			active += 1
 	return active
+
+
+## Rime Walls up across every battle's saved state (read after the pulse, outside its timing).
+func _walls() -> int:
+	var walls: int = 0
+	for battle: Dictionary in _battles():
+		for field: Dictionary in battle.get("field_objects", []):
+			walls += 1 if str(field.get("kind", "")) == "wall" else 0
+	return walls
+
+
+## ig-vl1.5 ACC 7's no-wall run: every Mage's Rime Wall set to Off through the player's own bar
+## setter, before the dispatch fixes the bar into the team snapshot.
+func _rime_wall_off() -> void:
+	for hero: Hero in session.roster:
+		var bar: Array[Dictionary] = Hero.bar_for(hero, preload("res://balance.tres"))
+		var found: bool = false
+		for entry: Dictionary in bar:
+			if entry["id"] == "mage_rime_wall":
+				entry["mode"] = "off"
+				found = true
+		if found and not session.set_skill_bar(hero, bar):
+			push_error("Rime Wall off failed for %s: %s" % [hero.hero_name, session.last_action_error])
 
 
 func _print_orders() -> void:
