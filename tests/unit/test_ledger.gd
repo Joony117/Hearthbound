@@ -84,6 +84,7 @@ func test_a_legacy_save_without_ledger_keys_loads_empty_and_reads_arrived_before
 
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	roster_list.select(0)
 	roster_list.multi_selected.emit(0, true)
@@ -399,13 +400,16 @@ func test_a_summon_whose_save_fails_shows_only_the_reason_and_memory_and_disk_ag
 	_disk_save()
 	var before: String = _profile()
 	var hub: Node3D = _hub()
+	hub._open(&"SummoningCircle")
 	var status: Label = hub.get_node("%Status") as Label
 	var summon: Button = hub.get_node("%Summon") as Button
 	_with_failing_save(summon.pressed.emit)
 	assert_string_starts_with(status.text, "Save failed")
 	assert_eq(status.text, GameSession.last_action_error)
 	assert_eq(_profile(), before, "stones, roster and Ledger rolled back")
+	hub._open(&"Forge")
 	assert_eq((hub.get_node("%RosterList") as ItemList).item_count, 1, "the pull never shows")
+	hub._open(&"SummoningCircle")
 	assert_true(_disk_load())
 	assert_eq(_profile(), before, "the disk agrees")
 	# The side file rewritten whole (the first save after a from_dict) keeps the record past the
@@ -436,6 +440,7 @@ func test_a_rank_up_whose_save_fails_shows_the_reason_and_memory_and_disk_agree(
 	_disk_save()
 	var before: String = _profile()
 	var hub: Node3D = _hub()
+	hub._open(&"Sanctum")
 	var status: Label = hub.get_node("%Status") as Label
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	roster_list.select(0)
@@ -516,6 +521,34 @@ func test_an_offline_catch_up_whose_save_fails_leaves_the_heroes_alive_on_disk()
 	assert_true(_disk_load())
 	for hero_id: String in doomed:
 		_assert_alive(hero_id)
+
+
+## ig-7sn.9: the hub keeps each hero's History lines until the ledger or the roster's names change;
+## what it keeps equals a fresh read after a new record, a sacrifice, and a rename with no record.
+func test_the_kept_history_equals_a_fresh_read_after_a_record_and_a_sacrifice() -> void:
+	var ada: Hero = _hero("Ada", "knight")
+	var bea: Hero = _hero("Bea", "knight")
+	var cal: Hero = _hero("Cal", "knight")
+	GameSession.add_hero(ada)
+	GameSession.add_hero(bea)
+	GameSession.add_hero(cal)
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	var fresh: Callable = func() -> Array[String]:
+		return Ledger.history_lines(GameSession.ledger, ada.instance_id, hub._roster_names(), BALANCE.rank_names, 10)
+	assert_eq(hub._history_lines(ada), fresh.call())
+	var before: Array[String] = hub._history_lines(ada)
+	GameSession._record("battle", {"order": "order:kept", "zone": "verdant_outskirts", "team": [ada.instance_id, bea.instance_id], "result": "retreated", "moments": []})
+	assert_ne(hub._history_lines(ada), before, "the new record shows")
+	assert_eq(hub._history_lines(ada), fresh.call(), "after a new record")
+	assert_true(GameSession.sacrifice_hero(bea, ada, BALANCE), GameSession.last_action_error)
+	assert_eq(hub._history_lines(ada), fresh.call(), "after a sacrifice")
+	cal.hero_name = "Cass"
+	GameSession._record("battle", {"order": "order:cal", "zone": "verdant_outskirts", "team": [ada.instance_id, cal.instance_id], "result": "retreated", "moments": [{"tick": 1, "what": "revived", "hero": ada.instance_id, "by": cal.instance_id}]})
+	assert_string_contains("\n".join(hub._history_lines(ada)), "revived by Cass")
+	cal.hero_name = "Cato"
+	assert_string_contains("\n".join(hub._history_lines(ada)), "revived by Cato", "a rename writes no record, and still reads again")
+	assert_eq(hub._history_lines(ada), fresh.call(), "after a rename")
 
 
 ## Runs action with the save forced to fail (a folder where the staged save goes) and returns its

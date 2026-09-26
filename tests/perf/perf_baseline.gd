@@ -9,6 +9,8 @@ extends SceneTree
 ## preview (ig-7sn.14).
 ## Since ig-7sn.6: settle1, settle5 (the pulse that settles a leg, split).
 ## Since ig-7sn.15: pulse_split (the pulse's "other", split; each battle's decode, advance and encode by zone).
+## Since ig-7sn.9: roster times the action with no building open and with the Forge open and a hero
+## selected, and splits _refresh_roster and _refresh_director_ui.
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -483,29 +485,42 @@ func _measure_roster() -> void:
 	var hub: Node = await _open_hub()
 	var hero: Hero = session.roster[0]
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	# ig-7sn.9: select the way a click does, with the Forge open (the list is SELECT_MULTI, so the hub
+	# listens to multi_selected; item_selected ran no hub handler). The selection outlives _open.
+	hub._open(&"Forge")
+	roster_list.deselect_all()
 	roster_list.select(0)
-	roster_list.item_selected.emit(0)
+	roster_list.multi_selected.emit(0, true)
 	await _wait(5)
 	for orders: int in [0, 5]:
 		for zone_id: String in ZONES.slice(session.expedition_orders.size(), orders):
 			_dispatch(zone_id, _cap(zone_id))
+		# ig-7sn.9 (c): the whole action and its handlers with no building open, then with the Forge open
+		# and the hero selected (the favorite toggle's real case).
+		for building: StringName in [&"", &"Forge"]:
+			hub._open(building)
+			await _wait(2)
+			var case: String = "roster, %d orders, %s" % [orders, "Forge open, one hero selected" if building == &"Forge" else "no building open"]
+			var whole: Array[float] = []
+			for _rep: int in 10:
+				started = Time.get_ticks_usec()
+				session.set_hero_favorite(hero, not hero.favorite)
+				whole.append(_since(started))
+				await process_frame
+			_report("%s: a roster action (set_hero_favorite), whole" % case, whole)
+			session.roster_changed.disconnect(saves.save)
+			var handlers: Array[float] = []
+			for _rep: int in 10:
+				started = Time.get_ticks_usec()
+				session.roster_changed.emit()
+				handlers.append(_since(started))
+			session.roster_changed.connect(saves.save)
+			_report("%s: roster_changed handlers (the save unhooked)" % case, handlers)
+			_report_handlers(case, session.roster_changed)
+			var shown: Hero = hub._selected_hero()
+			print("%s: the roster's selected hero %s" % [case, shown.hero_name if shown != null else "none"])
 		var label: String = "roster, %d orders" % orders
-		var whole: Array[float] = []
-		for _rep: int in 10:
-			started = Time.get_ticks_usec()
-			session.set_hero_favorite(hero, not hero.favorite)
-			whole.append(_since(started))
-			await process_frame
-		_report("%s: a roster action (set_hero_favorite), whole" % label, whole)
-		session.roster_changed.disconnect(saves.save)
-		var handlers: Array[float] = []
-		for _rep: int in 10:
-			started = Time.get_ticks_usec()
-			session.roster_changed.emit()
-			handlers.append(_since(started))
-		session.roster_changed.connect(saves.save)
-		_report("%s: roster_changed handlers (the save unhooked)" % label, handlers)
-		_report_handlers(label, session.roster_changed)
+		_roster_split(hub, label)
 		var living: Dictionary = {}
 		for member: Hero in session.roster:
 			living[member.instance_id] = member.hero_name
@@ -551,6 +566,64 @@ func _measure_roster() -> void:
 		_report("%s: SaveService.save, no new record" % label, plain)
 		_report("%s: SaveService.save that appends one Ledger record" % label, appended)
 		print("%s: save.json %d bytes, ledger.jsonl %d bytes" % [label, _bytes("user://save.json"), _bytes("user://ledger.jsonl")])
+
+
+## ig-7sn.9: _refresh_roster's parts and _refresh_director_ui's six calls, each timed on the side and
+## called straight (no gate), whatever shows. The per-row parts loop the whole roster, as
+## _refresh_hero_list does with no filter; add_item goes to a scratch list beside %RosterList.
+func _roster_split(hub: Node, label: String) -> void:
+	var living: Dictionary = hub._roster_names()
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var scratch := ItemList.new()
+	roster_list.get_parent().add_child(scratch)
+	var tooltips: Callable = func() -> void:
+		for member: Hero in session.roster:
+			hub._hero_detail_text(member)
+	var signs: Callable = func() -> void:
+		for member: Hero in session.roster:
+			hub._partner_sign(member.instance_id, living)
+	# bond_from's pick without its duplicate(true): what the copy costs across the rows.
+	var picks: Callable = func() -> void:
+		var pairs: Dictionary = session.bond_index()
+		var threshold: int = preload("res://balance.tres").bond_threshold
+		for member: Hero in session.roster:
+			var chosen: Dictionary = {}
+			for tally: Dictionary in (pairs.get(member.instance_id, {}) as Dictionary).values():
+				if not living.has(tally["partner"]) or tally["points"] < threshold:
+					continue
+				if chosen.is_empty() or Bonds._ahead(tally, chosen):
+					chosen = tally
+	var checks: Callable = func() -> void:
+		for member: Hero in session.roster:
+			session.is_hero_busy(member)
+			session.is_hero_protected(member)
+	var rows: Callable = func() -> void:
+		scratch.clear()
+		for member: Hero in session.roster:
+			scratch.add_item("[%s]  %s — %s" % [member.rank_label(preload("res://balance.tres")), member.hero_name, Summon.archetype_label_for(member.def_id)])
+			scratch.set_item_metadata(scratch.item_count - 1, member)
+	var parts: Dictionary[String, Callable] = {
+		"the per-row tooltip (_hero_detail_text), all rows": tooltips,
+		"_partner_sign, all rows": signs,
+		"bond_from's pick without its duplicate(true), all rows": picks,
+		"is_hero_busy + is_hero_protected, all rows": checks,
+		"add_item + set_item_metadata, all rows (a scratch list)": rows,
+		"_refresh_hero_option(TargetOption)": hub._refresh_hero_option.bind(hub.get_node("%TargetOption")),
+		"_refresh_practice_options": hub._refresh_practice_options,
+	}
+	for part: String in parts:
+		_report("%s: _refresh_roster part %s" % [label, part], _time(parts[part], 10))
+	scratch.free()
+	var calls: Dictionary[String, Callable] = {
+		"_refresh_preset_lists": hub._refresh_preset_lists,
+		"_refresh_preset_editor": hub._refresh_preset_editor,
+		"_refresh_recovery_team_options": hub._refresh_recovery_team_options,
+		"_refresh_practice_options": hub._refresh_practice_options,
+		"_refresh_expeditions(true)": hub._refresh_expeditions.bind(true),
+		"_refresh_hero_detail": hub._refresh_hero_detail,
+	}
+	for call: String in calls:
+		_report("%s: _refresh_director_ui call %s" % [label, call], _time(calls[call], 10))
 
 
 ## ---- 5. The full town: every figure out, then one building change.

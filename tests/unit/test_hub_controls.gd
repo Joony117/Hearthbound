@@ -56,6 +56,98 @@ func before_each() -> void:
 	GameSession.from_dict({"roster": []})
 
 
+## ig-7sn.9: while its panel is hidden, a roster change rebuilds none of the gated widgets, and the
+## open that shows it (a building, or HERO_VIEW from a walker) shows what an ungated rebuild would.
+func test_a_hidden_roster_rebuilds_nothing_and_its_open_matches_a_fresh_rebuild() -> void:
+	var keep := Hero.new("Keep Knight", 2)
+	keep.def_id = &"knight"
+	var doomed := Hero.new("Doomed Rogue", 3)
+	doomed.def_id = &"rogue"
+	var ring := Item.new(&"ring", 3)
+	doomed.equipped[EquipmentDefinition.Slot.RING] = ring
+	GameSession.add_hero(keep)
+	GameSession.add_hero(doomed)
+	GameSession.stones = BALANCE.summon_pull_cost
+	var hub: Node3D = _instantiate_hub()
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var equipped_list: ItemList = hub.get_node("%EquippedList") as ItemList
+	var hero_detail: Label = hub.get_node("%HeroDetail") as Label
+	assert_eq(roster_list.item_count, 0, "_ready leaves the hidden roster for the first open")
+	hub._open(&"Forge")
+	assert_eq(roster_list.item_count, 2)
+	roster_list.select(1)
+	roster_list.multi_selected.emit(1, true)
+	assert_eq(hub._selected_hero(), doomed)
+	assert_true(_rows(equipped_list).any(func(row: String) -> bool: return row.begins_with("Ring ")), "its ring shows")
+	hub._open(hub.NO_BUILDING)
+	var shown: Array = [_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)]
+	var refreshes: int = hub.detail_refreshes
+	assert_true(GameSession.set_hero_favorite(keep, true), GameSession.last_action_error)
+	var fresh := Hero.new("Fresh Mage", 1)
+	fresh.def_id = &"mage"
+	assert_true(GameSession.summon_hero(fresh, BALANCE), GameSession.last_action_error)
+	GameSession.kill_hero(doomed, &"verdant_outskirts", BALANCE)
+	assert_eq([_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)], shown, "hidden: nothing rebuilt")
+	assert_eq(hub.detail_refreshes, refreshes, "hidden: no detail refresh")
+	assert_null(hub._selected_hero(), "a stale roster never answers with the dead hero it still lists")
+	hub._open(&"Forge")
+	var opened: Array = [_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)]
+	hub._refresh_roster()
+	hub._refresh_equipped()
+	hub._refresh_hero_detail()
+	assert_eq(opened, [_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)], "the open equals a fresh rebuild")
+	assert_eq(roster_list.item_count, 2, "Keep and Fresh")
+	for index: int in roster_list.item_count:
+		assert_ne(roster_list.get_item_metadata(index), doomed, "the dead hero is gone")
+	assert_true(_rows(roster_list)[0].contains("★"), "Keep's favorite shows")
+	assert_true(_rows(roster_list)[1].contains("Fresh Mage"), "the summon shows")
+	assert_null(hub._selected_hero(), "the dead hero is never the selection")
+	assert_eq(equipped_list.item_count, 0, "nor is its gear shown")
+	# HERO_VIEW opened straight: its replay alone matches a fresh rebuild.
+	hub._open(hub.NO_BUILDING)
+	assert_true(GameSession.set_hero_favorite(keep, false), GameSession.last_action_error)
+	assert_true(_rows(roster_list)[0].contains("★"), "hidden: still the old row")
+	hub._open(hub.HERO_VIEW)
+	opened = [_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)]
+	hub._refresh_roster()
+	hub._refresh_equipped()
+	hub._refresh_hero_detail()
+	assert_eq(opened, [_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)], "the HERO_VIEW replay equals a fresh rebuild")
+	assert_false(_rows(roster_list)[0].contains("★"), "the replay shows the unfavorite")
+	# HERO_VIEW from a walker click, after another hidden change.
+	hub._open(hub.NO_BUILDING)
+	assert_true(GameSession.set_hero_favorite(keep, true), GameSession.last_action_error)
+	assert_false(_rows(roster_list)[0].contains("★"), "hidden: still the old row")
+	hub._open_hero(keep.instance_id)
+	opened = [_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)]
+	hub._refresh_roster()
+	hub._refresh_equipped()
+	hub._refresh_hero_detail()
+	assert_eq(opened, [_rows(roster_list), roster_list.get_selected_items(), hero_detail.text, _rows(equipped_list)], "HERO_VIEW equals a fresh rebuild")
+	assert_eq(hub._selected_hero(), keep)
+	assert_true(_rows(roster_list)[0].contains("★"), "the favorite shows")
+	assert_string_contains(hero_detail.text, "History:", "its detail shows")
+
+
+## ig-7sn.9: %SupplyStock sits outside ExpeditionsView, whose gated refresh also writes it; the hub
+## writes it at entry and on the Apothecary's open, with no pulse, and while the load is blocked too.
+func test_the_apothecary_shows_the_supply_stock_with_no_pulse_even_while_the_load_is_blocked() -> void:
+	GameSession.set_process(false)
+	for blocked: bool in [false, true]:
+		GameSession.supplies = BattleState.supplies_from({"healing": 7, "revival": 2})
+		SaveService.load_blocked = blocked
+		SaveService.load_block_reason = "Blocked for the test." if blocked else ""
+		var hub: Node3D = _instantiate_hub()
+		var stock: Label = hub.get_node("%SupplyStock") as Label
+		assert_eq(stock.text, BattleState.supplies_text(GameSession.supplies), "at entry (blocked: %s)" % blocked)
+		GameSession.supplies = BattleState.supplies_from({"healing": 4, "revival": 0})
+		hub._open(&"Apothecary")
+		assert_eq(stock.text, BattleState.supplies_text(GameSession.supplies), "on open (blocked: %s)" % blocked)
+	SaveService.load_blocked = false
+	SaveService.load_block_reason = ""
+	GameSession.set_process(true)
+
+
 func test_roster_exact_rank_signal_filters_to_only_the_selected_rank() -> void:
 	var rank_c_hero := Hero.new("C Knight", 2)
 	rank_c_hero.def_id = &"knight"
@@ -64,6 +156,7 @@ func test_roster_exact_rank_signal_filters_to_only_the_selected_rank() -> void:
 	GameSession.add_hero(rank_c_hero)
 	GameSession.add_hero(rank_b_hero)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%RosterRankFilter") as OptionButton
 	var exact_rank: CheckBox = hub.get_node("%RosterExactRank") as CheckBox
@@ -86,6 +179,7 @@ func test_roster_type_filter_signal_limits_rows_to_selected_archetype() -> void:
 	GameSession.add_hero(knight)
 	GameSession.add_hero(rogue)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var type_filter: OptionButton = hub.get_node("%RosterTypeFilter") as OptionButton
 	var knight_index: int = _option_index_for_metadata(type_filter, 0)
@@ -105,12 +199,14 @@ func test_select_all_roster_signal_selects_every_visible_row() -> void:
 	GameSession.add_hero(knight)
 	GameSession.add_hero(rogue)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var select_all: Button = hub.get_node("%SelectAllRoster") as Button
 	var status: Label = hub.get_node("%Status") as Label
 
 	select_all.pressed.emit()
 
+	assert_eq(roster_list.item_count, 2)
 	assert_eq(roster_list.get_selected_items().size(), roster_list.item_count)
 	assert_eq(status.text, "Selected %d heroes." % roster_list.item_count)
 
@@ -156,6 +252,7 @@ func test_unequip_all_signal_clears_the_selected_heros_equipment() -> void:
 	hero.equipped[9] = Item.new(&"ring", 3)
 	GameSession.add_hero(hero)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var unequip_all: Button = hub.get_node("%UnequipAll") as Button
 	var status: Label = hub.get_node("%Status") as Label
@@ -209,6 +306,7 @@ func test_dispatch_creates_timed_order_and_does_not_resolve_immediately() -> voi
 	assert_ne(preset_id, "")
 	var starting_stones: int = GameSession.stones
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"TownGate")
 	var presets: ItemList = hub.get_node("%PresetDispatchList") as ItemList
 	var dispatch: Button = hub.get_node("%DispatchSelected") as Button
 	var confirm: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
@@ -237,6 +335,7 @@ func test_bulk_dispatch_rejects_overlapping_presets_before_launch() -> void:
 	GameSession.save_team_preset("", "Alpha", [shared.instance_id, first.instance_id], "verdant_outskirts")
 	GameSession.save_team_preset("", "Beta", [shared.instance_id, second.instance_id], "verdant_outskirts")
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"TownGate")
 	var presets: ItemList = hub.get_node("%PresetDispatchList") as ItemList
 	var status: Label = hub.get_node("%Status") as Label
 
@@ -254,6 +353,7 @@ func test_roster_selection_survives_refresh_by_stable_instance_id() -> void:
 	hero.def_id = &"knight"
 	GameSession.add_hero(hero)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var roster: ItemList = hub.get_node("%RosterList") as ItemList
 	roster.select(0)
 	roster.multi_selected.emit(0, true)
@@ -315,6 +415,7 @@ func test_a_favorite_refused_while_the_load_is_blocked_stays_unticked() -> void:
 	GameSession.add_hero(hero)
 	GameSession.add_item(Item.new(&"ring", 2))
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var roster: ItemList = hub.get_node("%RosterList") as ItemList
 	var inventory: ItemList = hub.get_node("%InventoryList") as ItemList
 	roster.select(0)
@@ -370,6 +471,7 @@ func test_dispatch_confirmation_wraps_full_team_details_and_keeps_actions_visibl
 	GameSession.add_hero(hero)
 	GameSession.save_team_preset("", "The Extremely Long Verdant Vanguard Company Name", [hero.instance_id], "verdant_outskirts")
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"TownGate")
 	var presets: ItemList = hub.get_node("%PresetDispatchList") as ItemList
 	presets.select(0)
 	presets.multi_selected.emit(0, true)
@@ -429,6 +531,7 @@ func test_all_retained_reports_have_full_tooltips_and_long_order_title_is_bounde
 		"stop_requested": false,
 	})
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"TownGate")
 	var recent: ItemList = hub.get_node("%RecentReturns") as ItemList
 	assert_eq(recent.item_count, 50)
 	assert_string_contains(recent.get_item_tooltip(0), "Hero B")
@@ -577,6 +680,7 @@ func test_the_dispatch_summary_names_the_counters_a_force_leaves_empty() -> void
 	assert_true(GameSession.station_hero(mira, &"Forge"))
 	assert_ne(GameSession.save_team_preset("", "Couriers", [mira.instance_id], "verdant_outskirts"), "")
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"TownGate")
 	var presets: ItemList = hub.get_node("%PresetDispatchList") as ItemList
 	presets.select(0)
 	presets.multi_selected.emit(0, true)
@@ -843,6 +947,13 @@ func _press_key(hub: Node3D, keycode: Key) -> void:
 		key.physical_keycode = keycode
 		key.pressed = pressed
 		hub.get_viewport().push_input(key)
+
+
+func _rows(list: ItemList) -> Array[String]:
+	var rows: Array[String] = []
+	for index: int in list.item_count:
+		rows.append(list.get_item_text(index))
+	return rows
 
 
 func _instantiate_hub() -> Node3D:

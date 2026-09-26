@@ -212,11 +212,10 @@ func test_hub_recover_button_reuses_roster_selection() -> void:
 	GameSession.save_team_preset("", "Recovery Team", [hero.instance_id], "verdant_outskirts")
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
-	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var cache_list: ItemList = hub.get_node("%LostCacheList") as ItemList
 	var recover_button: Button = hub.get_node("%Recover") as Button
 	var status: Label = hub.get_node("%Status") as Label
-	roster_list.select(0)
+	hub._open(&"Reliquary")
 	cache_list.select(0)
 	seed(1)
 

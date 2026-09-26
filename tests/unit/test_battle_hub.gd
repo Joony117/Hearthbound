@@ -151,7 +151,7 @@ func test_early_victory_card_explains_the_route_clock() -> void:
 	battle["status"] = "victory"
 	GameSession.expedition_orders.append({"id": "won-order", "backend": "battle_v1", "team_name": "Winners", "zone_id": "verdant_outskirts", "hero_ids": [], "phase": "returning", "remaining_seconds": 151.0, "initial_duration_seconds": 300.0, "battle": battle})
 	var hub: Node3D = _instantiate_hub()
-	hub._refresh_expeditions(true)
+	hub._open(&"TownGate")
 	var details: Label = hub._order_cards.get_child(hub._order_cards.get_child_count() - 1).get_node("Box/Bottom/Details") as Label
 	assert_string_contains(details.text, "
 Won · heading home · rewards in 2:3")
@@ -171,6 +171,7 @@ func test_a_battle_pulse_updates_only_its_own_order_card() -> void:
 		order_ids.append(GameSession.dispatch_expedition([hero.instance_id], "verdant_outskirts", 1, "Card %d" % index))
 		assert_ne(order_ids.back(), "", GameSession.last_action_error)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"TownGate")
 	assert_eq(hub._order_cards.get_child_count(), 5)
 	for card: Node in hub._order_cards.get_children():
 		_details(card).text = "stale"
@@ -215,7 +216,9 @@ func test_a_roster_change_refreshes_the_selected_heros_detail_once() -> void:
 	hero.def_id = &"knight"
 	GameSession.add_hero(hero)
 	var hub: Node3D = _instantiate_hub()
-	assert_eq(hub.detail_refreshes, 1, "_ready refreshes it once")
+	assert_eq(hub.detail_refreshes, 0, "_ready leaves it for the first open: its panel is hidden (ig-7sn.9)")
+	hub._open(&"Forge")
+	assert_eq(hub.detail_refreshes, 1, "the first open refreshes it once")
 	var roster: ItemList = hub.get_node("%RosterList") as ItemList
 	for index: int in roster.item_count:
 		if roster.get_item_text(index).contains("Detail"):
@@ -224,8 +227,16 @@ func test_a_roster_change_refreshes_the_selected_heros_detail_once() -> void:
 	assert_string_contains(hub._hero_detail.text, "History:", "the hero is selected")
 	var refreshes: int = hub.detail_refreshes
 	GameSession.roster_changed.emit()
-	assert_eq(hub.detail_refreshes, refreshes + 1, "one roster change, one detail refresh")
+	assert_eq(hub.detail_refreshes, refreshes + 1, "one roster change, one detail refresh while the panel shows")
 	assert_string_contains(hub._hero_detail.text, "History:", "and it still shows the hero")
+	hub._open(hub.NO_BUILDING)
+	refreshes = hub.detail_refreshes
+	GameSession.roster_changed.emit()
+	GameSession.roster_changed.emit()
+	assert_eq(hub.detail_refreshes, refreshes, "none while hidden")
+	hub._open(&"Forge")
+	assert_eq(hub.detail_refreshes, refreshes + 1, "one on open")
+	assert_string_contains(hub._hero_detail.text, "History:", "still the selected hero")
 
 
 func _details(card: Node) -> Label:

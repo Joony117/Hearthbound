@@ -219,6 +219,7 @@ func test_the_hub_disables_dispatch_with_the_strike_reason_in_both_modes() -> vo
 	var heroes: Array[Hero] = _add_heroes(5, "Gate")
 	var presets: Array[String] = [_preset(heroes.slice(0, 2)), _preset(heroes.slice(2, 4))]
 	var hub: Node3D = _hub()
+	hub._open(&"TownGate")
 	var summary: RichTextLabel = hub.get_node("%DispatchSummary") as RichTextLabel
 	var dispatch: Button = hub.get_node("%DispatchSelected") as Button
 	var list: ItemList = hub.get_node("%PresetDispatchList") as ItemList
@@ -251,6 +252,7 @@ func test_a_live_tick_that_starts_the_revolt_refreshes_dispatch() -> void:
 	var heroes: Array[Hero] = _add_heroes(5, "Tick")
 	var preset: String = _preset(heroes.slice(0, 2))
 	var hub: Node3D = _hub()
+	hub._open(&"TownGate")
 	var summary: RichTextLabel = hub.get_node("%DispatchSummary") as RichTextLabel
 	var dispatch: Button = hub.get_node("%DispatchSelected") as Button
 	var list: ItemList = hub.get_node("%PresetDispatchList") as ItemList

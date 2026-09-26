@@ -17,6 +17,7 @@ func test_sacrifice_preview_matches_sanctum_bonused_payout() -> void:
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Sanctum")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var target_option: OptionButton = hub.get_node("%TargetOption") as OptionButton
 	var sacrifice_button: Button = hub.get_node("%Sacrifice") as Button
@@ -56,6 +57,7 @@ func test_batch_sacrifice_waits_for_confirm_and_sums_three_dupes() -> void:
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Sanctum")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var target_option: OptionButton = hub.get_node("%TargetOption") as OptionButton
 	var sacrifice_button: Button = hub.get_node("%Sacrifice") as Button
@@ -96,6 +98,7 @@ func test_rank_filter_drops_a_hidden_fodder_before_sacrifice_can_kill_it() -> vo
 		GameSession.add_hero(hero)
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Sanctum")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%RosterRankFilter") as OptionButton
 	var target_option: OptionButton = hub.get_node("%TargetOption") as OptionButton

@@ -332,6 +332,7 @@ func test_a_team_holding_the_body_is_not_ready_and_recovery_refuses_it_by_name()
 	var cache := LostCache.new("Lost", &"verdant_outskirts", 0)
 	GameSession.lost_caches.append(cache)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Reliquary")
 	var option: OptionButton = hub.get_node("%RecoveryTeamOption") as OptionButton
 	assert_eq(option.item_count, 1, "a free team is offered")
 	assert_true(GameSession.embody_hero(body.instance_id))

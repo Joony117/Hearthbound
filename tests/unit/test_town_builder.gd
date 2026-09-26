@@ -667,6 +667,7 @@ func test_the_lumbermill_panel_shows_away_and_the_dispatch_summary_names_it() ->
 	var workers: Array[Hero] = _staffed_lumbermill()
 	assert_ne(GameSession.save_team_preset("", "Loggers", [workers[0].instance_id], "verdant_outskirts"), "")
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"TownGate")
 	var presets: ItemList = hub.get_node("%PresetDispatchList") as ItemList
 	presets.select(0)
 	presets.multi_selected.emit(0, true)

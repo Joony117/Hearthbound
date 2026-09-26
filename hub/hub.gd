@@ -23,6 +23,19 @@ const PLACED_PANEL: StringName = &"PlacedBuildingPanel"
 ## detail. Not a building, so it is no BUILDING_PANELS key (those are the 1-7 buttons).
 const HERO_VIEW: StringName = &"Hero"
 const HERO_PANELS: Array[StringName] = [&"SharedRosterPanel", &"SelectedHeroPanel"]
+## The panel-content refreshes a roster change skips while their panel is hidden (ig-7sn.9), with the
+## panels they write (any one shown runs them), in the order _open runs the skipped ones: the roster
+## first, the hero detail last (it and %EquippedList read the roster's selection).
+const PANEL_REFRESHES: Dictionary[StringName, Array] = {
+	&"roster": [&"SharedRosterPanel"],
+	&"preset_lists": [&"TeamsView", &"ExpeditionsView"],
+	&"preset_editor": [&"TeamsView"],
+	&"practice": [&"TeamsView"],
+	&"recovery": [&"ReliquarySection"],
+	&"expeditions": [&"ExpeditionsView"],
+	&"equipped": [&"SelectedHeroPanel"],
+	&"hero_detail": [&"SelectedHeroPanel"],
+}
 const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 	preload("res://zones/defs/verdant_outskirts.tres"),
 	preload("res://zones/defs/ashfall_reaches.tres"),
@@ -132,12 +145,20 @@ var _bonds_seq: int = -1
 var _bond_candidates: Dictionary = {}
 ## Dreams read since the ledger last changed, {hero_id: dream}; emptied on each ledger change.
 var _dreams: Dictionary = {}
+## History lines read since the ledger last changed, {hero_id: [roster names then, lines]}; emptied
+## with _dreams (ig-7sn.9). The lines name heroes by the roster's names, so those are part of the key.
+var _histories: Dictionary = {}
+## _partner_signs' memo and the roster names it was read for; emptied with _dreams.
+var _signs: Dictionary = {}
+var _signs_living: Dictionary = {}
 ## How many dreams were read, for tests.
 var dream_reads: int = 0
 var _order_structure_key: String = ""
 ## How many times an order card and the hero detail were refreshed, for tests (ig-7sn.3).
 var order_card_updates: int = 0
 var detail_refreshes: int = 0
+## The PANEL_REFRESHES keys skipped while their panel was hidden; _open runs them once it shows.
+var _stale: Dictionary[StringName, bool] = {}
 # True while the placed-building picker lists who to take out, false while it lists who to put in.
 var _placed_picker_clears: bool = false
 var _was_in_revolt: bool = false
@@ -193,6 +214,7 @@ func _ready() -> void:
 	_refresh_parts()
 	_refresh_buildings()
 	_refresh_equipped()
+	_refresh_supply_stock()
 	_populate_convert_ranks()
 	_populate_zones()
 	%ConfirmSupply.disabled = true
@@ -226,6 +248,7 @@ func _connect_ui_signals() -> void:
 	%MoveBuilding.pressed.connect(_on_move_pressed)
 	_pause_menu.visibility_changed.connect(_on_pause_menu_visibility_changed)
 	_roster_list.multi_selected.connect(_on_roster_list_multi_selected)
+	_roster_list.gui_input.connect(_on_roster_list_gui_input)
 	_roster_rank_filter.item_selected.connect(_on_roster_rank_filter_item_selected)
 	_roster_exact_rank.toggled.connect(_on_roster_exact_rank_toggled)
 	_roster_type_filter.item_selected.connect(_on_roster_type_filter_item_selected)
@@ -328,7 +351,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## TargetOption (Sanctum) and the practice options (Training Hall) only show beside the roster, so
+## its gate covers them.
 func _refresh_roster() -> void:
+	if _skip_hidden(&"roster"):
+		return
 	_refresh_hero_list(_roster_list)
 	_refresh_hero_option(_target_option)
 	_refresh_practice_options()
@@ -345,6 +372,7 @@ func _refresh_hero_list(list: ItemList) -> void:
 			selected_ids.append(selected_hero.instance_id)
 	list.clear()
 	var living: Dictionary = _roster_names()
+	var signs: Dictionary = _partner_signs(living)
 	for hero: Hero in GameSession.roster:
 		if _roster_min_rank != -1 and (
 			hero.rank != _roster_min_rank if _roster_exact_rank.button_pressed else hero.rank < _roster_min_rank
@@ -366,7 +394,7 @@ func _refresh_hero_list(list: ItemList) -> void:
 		var flags: PackedStringArray = []
 		if hero.favorite:
 			flags.append("★")
-		var partner_sign: String = _partner_sign(hero.instance_id, living)
+		var partner_sign: String = signs.get(hero.instance_id, "")
 		if not partner_sign.is_empty():
 			flags.append(partner_sign)
 		if busy:
@@ -382,7 +410,6 @@ func _refresh_hero_list(list: ItemList) -> void:
 		var item_index: int = list.item_count - 1
 		visible_ids.append(hero.instance_id)
 		list.set_item_metadata(item_index, hero)
-		list.set_item_tooltip(item_index, _hero_detail_text(hero))
 		if selected_ids.has(hero.instance_id):
 			list.select(item_index, false)
 	_selected_hero_ids.clear()
@@ -610,7 +637,10 @@ func _building_level_text(building_name: String, index: int) -> String:
 	return "%s — Lv %d · Next %d %s parts · %d wood · %d stone" % [building_name, current_level, part_cost, BALANCE.rank_names[part_rank], int(preview["wood_cost"]), int(preview["stone_cost"])]
 
 
+## Gated with the hero detail: it reads the roster's selection, which is stale while the roster hides.
 func _refresh_equipped() -> void:
+	if _skip_hidden(&"equipped"):
+		return
 	var selected_slot: int = -1
 	var selected: PackedInt32Array = _equipped_list.get_selected_items()
 	if selected.size() == 1:
@@ -677,8 +707,16 @@ func _hero_state_text(hero: Hero) -> String:
 
 
 ## The Ledger's reader (SYSTEMS.md § The Ledger): newest first, at most 10 lines.
+## Read at most once per ledger change and roster names: the look at the index comes first, so a
+## changed ledger has already emptied the memo. Over 10,000 records it is most of a detail refresh.
 func _history_lines(hero: Hero) -> Array[String]:
-	return Ledger.history_lines(GameSession.ledger, hero.instance_id, _roster_names(), BALANCE.rank_names, 10)
+	_bond_index()
+	var names: Dictionary = _roster_names()
+	var kept: Array = _histories.get(hero.instance_id, [])
+	if kept.is_empty() or kept[0] != names:
+		kept = [names, Ledger.history_lines(GameSession.ledger, hero.instance_id, names, BALANCE.rank_names, 10)]
+		_histories[hero.instance_id] = kept
+	return kept[1]
 
 
 ## The bond and dream lines above History (SYSTEMS.md § Bonds and dreams, slice 1), each block
@@ -728,16 +766,31 @@ func _refresh_walkers() -> void:
 	var living: Dictionary = _roster_names()
 	var heroes: Array[Hero] = []
 	var signs: Dictionary = {}
+	var partner_signs: Dictionary = _partner_signs(living)
 	for hero: Hero in GameSession.roster:
 		if GameSession.is_hero_busy(hero):
 			continue
 		if not GameSession.is_embodied(hero):
 			heroes.append(hero)
-		var partner_sign: String = _partner_sign(hero.instance_id, living)
+		var partner_sign: String = partner_signs.get(hero.instance_id, "")
 		if not partner_sign.is_empty():
 			signs[hero.instance_id] = partner_sign
 	heroes.sort_custom(_walks_before)
 	%Town.show_walkers(heroes, signs)
+
+
+## Every living hero's _partner_sign, {hero_id: sign}, read at most once per ledger change and roster
+## names (ig-7sn.9): the roster rows and the walkers each ask for every hero on every roster change,
+## and the picks over 100 heroes' tallies were most of both. The look at the index comes first, so a
+## changed ledger has already emptied the memo.
+func _partner_signs(living: Dictionary) -> Dictionary:
+	_bond_index()
+	if _signs.size() != living.size() or _signs_living != living:
+		_signs = {}
+		for hero_id: String in living:
+			_signs[hero_id] = _partner_sign(hero_id, living)
+		_signs_living = living
+	return _signs
 
 
 ## "♥ Mara" for a hero bonded to Mara (a key of living), or "" for none. Stays while Mara is away.
@@ -760,6 +813,8 @@ func _bond_index() -> Dictionary:
 	_bonds_ledger = ledger
 	_bonds_seq = GameSession.ledger_next_seq
 	_dreams.clear()
+	_histories.clear()
+	_signs = {}
 	return pairs
 
 
@@ -895,7 +950,10 @@ func _passions_text(hero: Hero) -> String:
 	return ", ".join(PackedStringArray(hero.passions.map(func(profession: StringName) -> String: return str(profession).capitalize())))
 
 
+## Null while the roster waits on a skipped refresh (ig-7sn.9): its rows may hold a hero who has died.
 func _selected_hero() -> Hero:
+	if _stale.has(&"roster"):
+		return null
 	var selected: PackedInt32Array = _roster_list.get_selected_items()
 	if selected.size() != 1:
 		return null
@@ -1009,10 +1067,57 @@ func _open(building_id: StringName) -> void:
 	_sync_town_walk()
 	_refresh_keeper()
 	_refresh_placed_panel()
+	_refresh_stale()
+	# %SupplyStock sits outside ExpeditionsView, whose gated refresh also writes it (ig-7sn.9).
+	if _open_building == &"Apothecary":
+		_refresh_supply_stock()
 	if _open_building == &"TrainingHall" and _editing_preset_id.is_empty() and _preset_name.text.strip_edges().is_empty():
 		_preset_name.text = _next_team_name()
 	if _open_building == &"Reliquary":
 		_refresh_lost_caches()
+
+
+## True while every panel the refresh writes is hidden, and records it for _open (ig-7sn.9). It reads
+## each panel's own visible flag, which only _open sets, so a skipped refresh always meets the _open
+## that runs it.
+func _skip_hidden(refresh: StringName) -> bool:
+	for panel_name: StringName in PANEL_REFRESHES[refresh]:
+		if (get_node("%%%s" % panel_name) as Control).visible:
+			return false
+	_stale[refresh] = true
+	return true
+
+
+## Runs the skipped refreshes whose panel now shows, in PANEL_REFRESHES order: the roster first, the
+## hero detail last. The load-blocked lockout goes back on after them, as in _refresh_director_ui.
+func _refresh_stale() -> void:
+	var ran: bool = false
+	for refresh: StringName in PANEL_REFRESHES:
+		if not _stale.has(refresh):
+			continue
+		_stale.erase(refresh)
+		if _skip_hidden(refresh):
+			continue
+		ran = true
+		match refresh:
+			&"roster":
+				_refresh_roster()
+			&"preset_lists":
+				_refresh_preset_lists()
+			&"preset_editor":
+				_refresh_preset_editor()
+			&"practice":
+				_refresh_practice_options()
+			&"recovery":
+				_refresh_recovery_team_options()
+			&"expeditions":
+				_refresh_expeditions(true)
+			&"equipped":
+				_refresh_equipped()
+			&"hero_detail":
+				_refresh_hero_detail()
+	if ran and SaveService.load_blocked:
+		_disable_mutating_controls()
 
 
 ## A click on a hero in town: the roster with only that hero selected, and its detail. A roster
@@ -1519,6 +1624,21 @@ func _on_roster_list_multi_selected(_index: int, _selected: bool) -> void:
 	_refresh_preset_editor()
 
 
+## A roster row's tooltip is its hero's detail head, set on the row under the mouse only (ig-7sn.9):
+## every roster change built one per row, 100 details nobody reads. A tooltip waits about 0.5 s, so
+## the row has it before it shows; the next rebuild clears it.
+func _on_roster_list_gui_input(event: InputEvent) -> void:
+	var motion := event as InputEventMouseMotion
+	if motion == null:
+		return
+	var index: int = _roster_list.get_item_at_position(motion.position, true)
+	if index < 0 or not _roster_list.get_item_tooltip(index).is_empty():
+		return
+	var hero: Hero = _roster_list.get_item_metadata(index) as Hero
+	if hero != null:
+		_roster_list.set_item_tooltip(index, _hero_detail_text(hero))
+
+
 func _on_select_all_roster_pressed() -> void:
 	for item_index: int in _roster_list.item_count:
 		_roster_list.select(item_index, false)
@@ -1894,13 +2014,20 @@ func _show_pending_arena_result() -> bool:
 	return true
 
 
+## Each call skips while the panel it writes is hidden (ig-7sn.9); _open runs it. The lockout doesn't.
 func _refresh_director_ui() -> void:
-	_refresh_preset_lists()
-	_refresh_preset_editor()
-	_refresh_recovery_team_options()
-	_refresh_practice_options()
-	_refresh_expeditions(true)
-	_refresh_hero_detail()
+	if not _skip_hidden(&"preset_lists"):
+		_refresh_preset_lists()
+	if not _skip_hidden(&"preset_editor"):
+		_refresh_preset_editor()
+	if not _skip_hidden(&"recovery"):
+		_refresh_recovery_team_options()
+	if not _skip_hidden(&"practice"):
+		_refresh_practice_options()
+	if not _skip_hidden(&"expeditions"):
+		_refresh_expeditions(true)
+	if not _skip_hidden(&"hero_detail"):
+		_refresh_hero_detail()
 	if SaveService.load_blocked:
 		_status.text = SaveService.load_block_reason
 		_disable_mutating_controls()

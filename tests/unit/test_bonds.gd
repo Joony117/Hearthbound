@@ -502,12 +502,36 @@ func test_a_bonded_row_shows_its_partner_and_keeps_it_while_the_partner_is_away(
 		_battle_in(GameSession.ledger, [A, B, C], "victory", {"moments": [_moment("revived", A, B)]})
 	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
 	var hub: Node3D = _hub()
+	hub._open(&"Forge")
 	assert_string_contains(_row(hub, "Ada"), " · ★, ♥ Bea")
 	assert_string_contains(_row(hub, "Bea"), " · ♥ Ada")
 	assert_false(_row(hub, "Cal").contains("♥"), "an unbonded hero has no sign")
 	assert_ne(GameSession.dispatch_expedition([bea.instance_id], ZONE, 1, "Out"), "", GameSession.last_action_error)
 	assert_string_contains(_row(hub, "Ada"), "♥ Bea", "the flag stays while Bea is away")
 	assert_string_contains(_row(hub, "Bea"), " · ♥ Ada, Away", "after the heart, before Away")
+
+
+## ig-7sn.9: the hub reads every hero's sign once per ledger change and roster names, for the rows
+## and the walkers both; a new bond, and a renamed partner with no record, still reach both.
+func test_the_kept_partner_signs_follow_a_new_record_and_a_rename() -> void:
+	_hero(A, "Ada")
+	var bea: Hero = _hero(B, "Bea")
+	_hero(C, "Cal")
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	var town: TownView = hub.get_node("%Town") as TownView
+	assert_false(_row(hub, "Ada").contains("♥"), "no bond yet")
+	GameSession.roster_changed.emit()
+	assert_false(_row(hub, "Ada").contains("♥"), "a roster change with no record keeps none")
+	for _index: int in 2:
+		GameSession._record("battle", {"order": "order:ab", "zone": ZONE, "team": [A, B], "result": "victory", "moments": [_moment("revived", A, B)]})
+	GameSession.roster_changed.emit()
+	assert_string_contains(_row(hub, "Ada"), "♥ Bea", "a new record: read again")
+	assert_eq(_sign(town.walkers[A]), "♥ Bea", "the walker too")
+	bea.hero_name = "Bee"
+	GameSession.roster_changed.emit()
+	assert_string_contains(_row(hub, "Ada"), "♥ Bee", "a rename writes no record, and still reads again")
+	assert_eq(_sign(town.walkers[A]), "♥ Bee")
 
 
 func test_bonded_walkers_carry_their_partner_signs_in_town() -> void:
@@ -781,6 +805,7 @@ func test_the_detail_panel_reads_a_dream_once_per_ledger_change() -> void:
 		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
 	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
 	var hub: Node3D = _hub()
+	hub._open(&"Forge")
 	_select(hub, "Ada")
 	var reads: int = hub.dream_reads
 	hub._refresh_hero_detail()

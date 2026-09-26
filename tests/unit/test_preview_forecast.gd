@@ -176,6 +176,7 @@ func test_the_hub_summary_refreshes_when_the_forecast_lands() -> void:
 	var presets: Array[String] = _strong_team()
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"TownGate")
 	(hub.get_node("%RepeatUntilStopped") as CheckBox).button_pressed = true
 	var list: ItemList = hub.get_node("%PresetDispatchList") as ItemList
 	for row: int in list.item_count:

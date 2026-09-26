@@ -372,6 +372,7 @@ func test_saved_zone_identity_survives_option_reorder_and_completes_on_the_timer
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"TownGate")
 	var zone_option: OptionButton = hub.get_node("%ZoneOption") as OptionButton
 	var dispatch_list: ItemList = hub.get_node("%PresetDispatchList") as ItemList
 	var expedition_button: Button = hub.get_node("%DispatchSelected") as Button
@@ -417,6 +418,7 @@ func test_roster_refresh_does_not_substitute_survivors_after_selected_heroes_die
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	roster_list.select(1, false)
 	roster_list.select(3, false)
@@ -692,6 +694,7 @@ func test_hero_detail_reads_selected_hero_and_clears_on_multi_select() -> void:
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var hero_detail: Label = hub.get_node("%HeroDetail") as Label
 
@@ -736,6 +739,7 @@ func test_hub_roster_rank_filter_hides_selection_before_preset_save() -> void:
 	high_rank_hero.rank = 3
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"TrainingHall")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%RosterRankFilter") as OptionButton
 	var save_button: Button = hub.get_node("%SavePreset") as Button

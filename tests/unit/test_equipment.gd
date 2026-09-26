@@ -71,6 +71,7 @@ func test_hub_equipment_display_preserves_unequip_target_and_slot_filter() -> vo
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var inventory_slot_filter: OptionButton = hub.get_node("%InventorySlotFilter") as OptionButton
@@ -142,14 +143,35 @@ func test_hub_rows_carry_hover_detail() -> void:
 	hero.def_id = &"knight"
 	var ring := Item.new(&"ring", 3)
 	ring.enhance_level = 1
+	var other := Hero.new("Other Hero", 2)
+	other.def_id = &"mage"
 	GameSession.add_hero(hero)
+	GameSession.add_hero(other)
 	GameSession.add_item(ring)
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var hero_detail: Label = hub.get_node("%HeroDetail") as Label
 
+	# ig-7sn.9: a row carries no tooltip until hovered. GUT's output panel eats pushed mouse events, so
+	# the hover handler is called straight, at the row's position.
+	assert_eq(roster_list.get_item_tooltip(0), "", "no tooltip before a hover")
+	await wait_process_frames(1)
+	roster_list.force_update_list_size()
+	var motion := InputEventMouseMotion.new()
+	motion.position = roster_list.get_item_rect(1).get_center()
+	hub._on_roster_list_gui_input(motion)
+	assert_eq(roster_list.get_item_tooltip(1), hub._hero_detail_text(other), "the hovered row gets its detail head")
+	assert_eq(roster_list.get_item_tooltip(0), "", "the other row stays empty")
+	motion.position = Vector2(roster_list.get_item_rect(1).get_center().x, roster_list.get_item_rect(1).end.y + 40.0)
+	assert_eq(roster_list.get_item_at_position(motion.position, true), -1, "below the last row")
+	hub._on_roster_list_gui_input(motion)
+	assert_eq(roster_list.get_item_tooltip(0), "", "a hover on empty space sets nothing")
+	motion.position = roster_list.get_item_rect(0).get_center()
+	hub._on_roster_list_gui_input(motion)
+	assert_eq(roster_list.get_item_tooltip(0), hub._hero_detail_text(hero), "the hover sets the row's detail head")
 	roster_list.select(0)
 	roster_list.multi_selected.emit(0, true)
 	assert_eq(hero_detail.text, roster_list.get_item_tooltip(0) + "\n\nHistory:\nArrived before the records begin.")
