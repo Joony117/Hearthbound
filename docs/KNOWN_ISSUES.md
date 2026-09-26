@@ -163,7 +163,7 @@ Measured on throwaway folders on 2026-09-24:
   folder when it does not.
 - A delete removes the private file first. With no private file, it deletes the real one.
 
-So `%APPDATA%\Godot\app_userdata\Infinite Gacha\save.json` read from any tool is Claude's private
+So `%APPDATA%\Godot\app_userdata\Infinite Gacha\save.json` (the folder keeps the working title's name, ig-l36) read from any tool is Claude's private
 copy (an empty roster written by a GUT run on 2026-09-23), while files that only the game wrote
 (`ledger.jsonl`, the rotated logs) show through from the real folder. On 2026-09-24 that mix looked
 like "the ledger was written but the save never landed" (ig-7is). It was not a game bug: the real

@@ -10,10 +10,12 @@ config_version=5
 
 [application]
 
-config/name="Infinite Gacha"
+config/name="Hearthbound"
 config/version="0.1.0"
 run/main_scene="res://ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
+config/use_custom_user_dir=true
+config/custom_user_dir_name="Godot/app_userdata/Infinite Gacha"
 
 [autoload]
 
