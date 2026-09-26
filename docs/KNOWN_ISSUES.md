@@ -84,6 +84,19 @@ wall (placed with no wall check), can; a spawned enemy walks, so it walks out.
 **Revisit if:** anything else can place an actor inside a footprint (a teleport, a spawn point, a
 wall cast by an enemy kit). Then the idle skip walks it out first.
 
+### A legacy checkpoint's slowed enemy stays at 30%
+Found by the review of `ig-vl1.9`, which raised Rime Circle's slow from 30% to 50%. A status refresh
+takes the larger magnitude (`_add_status`, `battle_simulation.gd`: `maxf(old, new)`). For a raise
+that is the stronger one; for a cut it is the weaker, since −0.3 is larger than −0.5. So an enemy
+that a checkpoint saved with the old −0.3 Rime Circle slow keeps −0.3 each time a Rime Circle
+pulse refreshes it, and stays 30% slowed until it spends 1.5 s outside every Rime Circle. Only
+then can a new pulse land the 50%. Live play can't hit it: every Rime Circle status cast today is
+−0.5, so old and new are the same. Only a checkpoint made before the change, mid-zone, can, and
+only for that zone's life (at most 36 s at P = 6). `test_zones.gd` pins the behaviour as built.
+**Revisit if:** a second cut magnitude ships (two skills or ranks of one skill slowing by different
+amounts under one status id), or a skill's cut changes again. Then a refresh takes the strongest
+cut (the most negative magnitude) for a cut, and the larger magnitude for a raise.
+
 ---
 
 ## Open questions

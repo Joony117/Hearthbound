@@ -8,6 +8,8 @@ extends SceneTree
 ## Args (optional; the defaults are shown): --offsets=0 (a,b,..) and --points=F1_verdant,B30_ashfall.
 ## --ref=near,far,mage (ig-vl1.8) runs the Cleric row only: the two Knights' and the Mage's m come from an
 ## earlier run of the same point and offset (one of each), for a Cleric-only change.
+## --ref-mage=near,far,cleric (ig-vl1.9) is its Mage form: it runs the Mage row only, with the Knights' and
+## the Cleric's m supplied, for a Mage-only change. One of the two, never both.
 ## The zone's enemy power is scaled by m (a duplicate with recommended_power x m; every enemy's HP, ATK
 ## and DEF follow the budget). Per seed, a geometric bisection finds the largest m the team wins
 ## ("victory"; anything else is a loss). The slot's break is the median of the seeds.
@@ -41,6 +43,8 @@ func _init() -> void:
 func _run() -> void:
 	var offsets: Array[float] = [0.0]
 	var ref: Array[float] = []
+	## The row a --ref run measures: "cleric" (--ref) or "mage" (--ref-mage).
+	var ref_row: String = ""
 	var labels: Array[String] = []
 	for point: Array in POINTS:
 		labels.append(point[0])
@@ -51,7 +55,12 @@ func _run() -> void:
 				offsets.append(part.to_float())
 		elif arg.begins_with("--points="):
 			labels.assign(arg.get_slice("=", 1).split(","))
-		elif arg.begins_with("--ref="):
+		elif arg.begins_with("--ref=") or arg.begins_with("--ref-mage="):
+			if not ref_row.is_empty():
+				push_error("presence_check: --ref and --ref-mage are one flag, given once")
+				quit(1)
+				return
+			ref_row = "mage" if arg.begins_with("--ref-mage=") else "cleric"
 			for part: String in arg.get_slice("=", 1).split(","):
 				ref.append(part.to_float())
 		else:
@@ -59,7 +68,7 @@ func _run() -> void:
 			quit(1)
 			return
 	if not ref.is_empty() and (ref.size() != 3 or labels.size() != 1 or offsets.size() != 1):
-		push_error("presence_check: --ref needs near,far,mage with one point and one offset")
+		push_error("presence_check: --ref needs near,far,mage (--ref-mage near,far,cleric) with one point and one offset")
 		quit(1)
 		return
 	var game_session: Node = root.get_node("GameSession")
@@ -72,14 +81,15 @@ func _run() -> void:
 		var zone: ZoneDefinition = ZoneDefinition.definition_for(point[1] as StringName)
 		var rank: int = point[2]
 		if not ref.is_empty():
-			print("INFO ref point=%s near=%.3f far=%.3f mage=%.3f (supplied, not run)" % [point[0], ref[0], ref[1], ref[2]])
+			var other: String = "cleric" if ref_row == "mage" else "mage"
+			print("INFO ref point=%s near=%.3f far=%.3f %s=%.3f (supplied, not run)" % [point[0], ref[0], ref[1], other, ref[2]])
 		var near: Dictionary = {"m": ref[0]} if not ref.is_empty() else _slot(game_session, point, zone, "knight", rank + 1, -1.0)
 		var far: Dictionary = {"m": ref[1]} if not ref.is_empty() else _slot(game_session, point, zone, "knight", rank + 2, -1.0)
 		var gap: float = far["m"] / near["m"]
 		for offset: float in offsets:
 			_balance.caster_rank_offset = offset
-			var mage: Dictionary = {"m": ref[2]} if not ref.is_empty() else _slot(game_session, point, zone, "mage", rank, offset)
-			var cleric: Dictionary = _slot(game_session, point, zone, "cleric", rank, offset)
+			var mage: Dictionary = {"m": ref[2]} if ref_row == "cleric" else _slot(game_session, point, zone, "mage", rank, offset)
+			var cleric: Dictionary = {"m": ref[2]} if ref_row == "mage" else _slot(game_session, point, zone, "cleric", rank, offset)
 			var resolved: bool = gap >= MIN_GAP
 			print("EQUIV point=%s offset=%.2f mage=%s cleric=%s gap=%.1f%%%s" % [point[0], offset,
 				_equivalent(mage["m"], near["m"], far["m"]), _equivalent(cleric["m"], near["m"], far["m"]),

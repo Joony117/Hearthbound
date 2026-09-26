@@ -621,7 +621,7 @@ CRIT_DMG.
     speed by (1 − cut). Every enemy swings at SPD 20 (100 / 20 = 5 s, clamped to 3.0) and walks at
     the 1.5 floor (20 × 0.04 = 0.8), so a cut to SPD itself changed neither: before this, Rime
     Circle's −30% did nothing to any enemy. A raise still acts on SPD before the clamp, so Hunter's
-    Focus is unchanged.
+    Focus is unchanged. Since `ig-vl1.9` the slow is 50%: the swing ×2.0, the walk ×0.5.
 - Taunt (Gauntlet Toss) changes only whom the enemy targets.
 
 **Counters.** A counter is an ability with one tag:
@@ -810,7 +810,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Chain Spark | Weaponskill | 15 | — | 1.0×, then jumps to 2 more enemies within 3 at 0.6× | 2+ enemies within 3 | — |
 | Warding Glyph | Ability | 25 | 25 s | Range 8: shield 2.0 ATK on an ally for 6 s | an ally inside a telegraph, else an ally below 50% | `shield` |
 | Hanging Star | Ability | book | 45 s | Range 8, radius 3: 2.5× after a 1.0 s delay | 3+ enemies or an elite | — |
-| Rime Circle | Ability | 1 | 20 s | Range 8: a zone of radius 3 for 6 s. Each second, enemies inside take 0.3× and are slowed 30% (swing and walk, § Statuses) for 1.5 s | its target has 3+ enemies within 3, or is elite | — |
+| Rime Circle | Ability | 1 | 20 s | Range 8: a zone of radius 4 for 6 s. Each second, enemies inside take 0.17× and are slowed 50% (swing and walk, § Statuses) for 1.5 s (`ig-vl1.9`; was radius 3, 0.3× and 30%) | its target has 3+ enemies within 3, or is elite | — |
 | Rime Wall | Ability | 1 | 30 s | Range 8: a wall 6 long and 1.2 thick for 8 s. Blocks walking for both sides, not attacks (`ig-vl1.5`) | an enemy melee actor 3.5–6 from a back-row ally | — |
 
 **Cleric** (healer)
@@ -825,7 +825,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 | Wellspring | Ability | 15 | 12 s | Range 6: heal 0.3 ATK a second for 10 s | an ally below 70% without it | — |
 | Prayer Circle | Ability | 25 | 30 s | Heal 1.5 ATK to every ally within 4 | 3+ allies below 70% | — |
 | Hearthcall | Ability | book | 60 s | Range 4: revive a downed ally to 30% HP | a downed ally | — |
-| Hearthward | Ability | 1 | 25 s | Range 6: a zone of radius 3.5 for 8 s. Each second, allies inside get ATK +15% for 1.5 s and heal 0.1 ATK (`ig-vl1.7`; was 20% less damage and 0.15 ATK) | the lowest-HP ally in range with 3+ allies within 3.5 of it, one below 70%, inside a telegraph or targeted by an enemy (`ig-vl1.7`) | — |
+| Hearthward | Ability | 1 | 25 s | Range 6: a zone of radius 3.5 for 8 s. Each second, allies inside get ATK +20% for 1.5 s, and no heal (`ig-vl1.9`, V3; `ig-vl1.7` had ATK +15% and a heal of 0.1 ATK, and before it 20% less damage and 0.15 ATK) | the lowest-HP ally in range with 3+ allies within 3.5 of it, one below 70%, inside a telegraph or targeted by an enemy (`ig-vl1.7`) | — |
 
 The Cleric has no combo, so its level-5 slot is a second counter. Mend's 3.0 ATK is 48 HP at the
 Cleric's base ATK of 16: about a third of a base Knight.
@@ -1472,7 +1472,7 @@ at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this 
 
 | Row | Value | Why |
 |---|---|---|
-| `caster_rank_offset` | 0 | Director ruling, 2026-09-25 (`ig-vl1.3`). `ig-vl1.3`'s presence test passed no offset. An F Mage out-clears a C Knight at every offset, 0 included (263.6 s against 272.6), so no value fixes the Mage. An F Cleric fits D–C on team HP only at 0 (2359.6, between the D Knight's 2133.5 and the C Knight's 2550.2). Point 2 was 0/8 wins in every slot. The first guess, 1.5, put both casters above the R+2 Knight on their own measure. The row scales a caster's HP, ATK and DEF by 1.35^offset (one rank's step); 1.5 would be ≈ 1.57, halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks). Logs: `.agent-results/ig-vl1.3/presence_verdant.log`, `presence_1.5.log` |
+| `caster_rank_offset` | 0 | Director ruling, 2026-09-25 (`ig-vl1.3`). `ig-vl1.3`'s presence test passed no offset. An F Mage out-clears a C Knight at every offset, 0 included (263.6 s against 272.6), so no value fixes the Mage. An F Cleric fits D–C on team HP only at 0 (2359.6, between the D Knight's 2133.5 and the C Knight's 2550.2). Point 2 was 0/8 wins in every slot. The first guess, 1.5, put both casters above the R+2 Knight on their own measure. The row scales a caster's HP, ATK and DEF by 1.35^offset (one rank's step); 1.5 would be ≈ 1.57, halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks). Logs: `.agent-results/ig-vl1.3/presence_verdant.log`, `presence_1.5.log`. Picked on the whole kit in `ig-vl1.9` (the re-fit, below): 0, with Rime Circle at M2 and Hearthward at V3; all four caster points land in [+1.00, +1.53] |
 
 - It applies in `Hero.compute_final_stats`, so the sim, `quick_resolve` and team power all see it,
   and the combat seam stays one number. Enemy Mages are unchanged: enemy stats come from the wave
@@ -1554,12 +1554,13 @@ Cleric's **Hearthward** holds a line up.
   is new, so it casts in any real fight, not only once someone is hurt). That is one new AI rule;
   it is data like the others (`DECISIONS.md` 2026-09-23, item 7). The zone stays where it was cast.
 - **Amounts** use the caster's ATK the way bleed and burn do. A zone draws no RNG, so it never
-  crits. Grace's +20% applies to Hearthward's heal.
+  crits. Since `ig-vl1.9` only Rime Circle has an amount (its damage); Hearthward no longer heals,
+  so Grace doesn't touch it.
 - **The status each pulse applies lasts 1.5 s,** so it drops soon after an actor walks out.
   One skill lands once per actor per tick, however many of its zones overlap there. Two of its
   zones that pulse on different ticks each land: each deals its damage or heal, and the status
   refreshes, never stacks (`ig-vl1.4`, as built). Stat raises keep their rule: the strongest
-  applies, so Hearthward's ATK +15% and a Rogue's Venom Edge (+15%) don't add up.
+  applies, so Hearthward's ATK +20% and a Rogue's Venom Edge (+15%) don't add up (+20%).
 - **It outlasts its caster.** A zone keeps going if its caster is downed or leaves, and through
   a wave change: new enemies spawn into it.
 - **Heroes only in v1.** No enemy kit gets a zone (director default, agreed: no enemy needs one
@@ -1571,7 +1572,7 @@ Cleric's **Hearthward** holds a line up.
   (`ig-vl1.4`) and walls (`ig-vl1.5`) go in first, each measured at offset 0 (the zones run, the
   fit run and the walls run below; none picked an offset, and the walls run doesn't try). Then one pick, on the whole kit (`ig-vl1.9`):
   `caster_rank_offset` goes to the smallest value ≥ 0 at which both casters pass at both points.
-  Until then it stays 0. Why one pick, after walls: walls are the Mage's F1 defense, and F1 is
+  Picked in `ig-vl1.9`: 0 (the re-fit record below). Why one pick, after walls: walls are the Mage's F1 defense, and F1 is
   exactly the Mage's hole, so a pick before walls fits a Mage that walls then change. The offset is
   one decision, made once.
   - Never below 0. A caster above R+2 at offset 0 has a spell that is too strong, so the spell's
@@ -1662,10 +1663,8 @@ given, so V3's F1 log prints a 9.0% gap.
   offset can fit it. Then the Cleric drops the heal (V2 and V3's shape), and its ATK raise is sized
   to the offset that fit picks.
 
-> ⚠️ **PROVISIONAL** — every zone number is arithmetic, chosen next to Hail of Arrows, Hanging Star,
-> Prayer Circle and Wellspring. The fit run measured the working slow and three Hearthwards
-> (above), and no offset fits: the Mage's two points sit 0.99 apart · **Settled by:** the re-fit
-> (the Mage's slope, then Hearthward's version and size) and the one pick with walls in (`ig-vl1.9`)
+*The fit's PROVISIONAL (every zone number arithmetic; no offset fit) was settled by the re-fit
+(`ig-vl1.9`, below): both spells' numbers are now measured on the presence test, and the pick held.*
 
 **The walls run** (`ig-vl1.5`, offset 0, the fit run's harness with Rime Wall in the Mage's kit,
 log `.agent-results/ig-vl1.5/presence_walls.log`, run on the cloud's Linux engine). Measured once,
@@ -1686,6 +1685,62 @@ have no Mage, so walls can't move them. Cells as the fit run's, with its equival
   change, since `ig-vl1.8`'s log isn't on the cloud machine; its lines match `ig-vl1.8`'s record):
   8/8 win, starter_knights exact. The mixed cases have no downing now, bare or supplied (was 3 bare
   and 1 supplied), and run 8–14 s longer (252–257 s), still under the 315–472 s band (`ig-gy0.9`).
+
+**The re-fit** (`ig-vl1.9`, design by extra in the bead's notes, 2026-09-25; run on the cloud's
+Linux engine, logs `.agent-results/ig-vl1.9/`). The walls run left the Mage's two points 1.52
+apart. The rule for a fit, tightened from 1 rank to 0.5 because a no-real-change swap moved 8-seed
+medians 0.35–0.50 (the fit run's finding): each caster's two points within 0.5, and some offset o
+(≥ 0, steps of 0.25) that puts all four caster points + o inside [1, 2]; its o is the smallest
+that works. Hearthward is V3 in every row (ATK +20%, no heal). The Mage's versions add control
+one step at a time while holding Rime Circle's damage (multiplier × radius² × uptime) near 0.81,
+and are checked in order; the first feasible one is kept.
+- M0, as built (slow 30%, radius 3, 0.3×, cooldown 20 s): the walls run's row.
+- M1: slow 50% (swing ×2.0, walk ×0.5 after the clamps).
+- M2: M1, radius 3 → 4 and 0.3× → 0.17× (0.17 × 16 × 0.3 = 0.82). Placement (`ai_radius`) stays 3.
+- M3 (M2, cooldown 20 → 12 s and 0.1×) was not run: M2 was feasible.
+
+The Mage rows ran alone (`presence_check.gd --ref-mage=near,far,cleric`, the Mage form of the fit
+run's `--ref`), against the walls run's Knight m's. M1 and M2 were given the fit run's V3 Cleric m's
+(F1 1.628, B30 3.084). M0 reproduced the walls run, so it was given that run's V1 Cleric m's (1.756,
+3.068), and its Mage row matches the walls run's exactly (every seed, both points). The Cleric line
+in the table is V3. Cells as the fit run's.
+
+| Version | F1 Verdant Mage | B30 Ashfall Mage | Apart | Feasible o |
+|---|---|---|---|---|
+| M0 | F 1.445 (1.399–1.593), 24 / 1, **+0.13** | B 3.118 (2.813–3.204), 20 / 12, **+1.65** | 1.52 | none (over 0.5) |
+| M1 | F 1.461 (1.399–1.559), 24 / 4, **+0.25** | B 3.068 (2.875–3.101), 17 / 18, **+1.47** | 1.22 | none (over 0.5) |
+| M2 | F 1.559 (1.399–1.700), 20 / 4, **+1.00** | B 3.002 (2.813–3.169), 15 / 15, **+1.24** | 0.24 | 0 and 0.25 |
+| Cleric V3 | F 1.628 (1.399–1.775), 16 / 10, **+1.50** | B 3.084 (3.035–3.101), 0 / 34, **+1.53** | 0.03 | — |
+
+- **The pick: M2 at offset 0.** At 0 the four points are +1.00, +1.24, +1.50 and +1.53 (worst
+  |point − 1.5| 0.50); at 0.25 they'd be 0.28 at worst, but the rule takes the smallest o. So
+  `caster_rank_offset` stays 0, Rime Circle is M2 and Hearthward is V3.
+- **The re-run at the pick** (every row, no shortcut; `pick_full.log`) holds, bit for bit with the
+  rows above: Knights F1 D 1.559 / C 1.700 (gap 9.1%), B30 A 2.938 / S 3.221 (gap 9.6%); Mage F1
+  1.559 (**+1.00**), B30 3.002 (**+1.24**); Cleric F1 1.628 (**+1.50**), B30 3.084 (**+1.53**). The
+  harness prints `PICK offset=0.0`. The V3 Cleric with walls in measures exactly as the fit run's.
+- **The Mage's F1 point sits on R+1's line.** Its median equals the D Knight's (1.559), so +1.00 is
+  the edge of the band, not inside it with room. Any later change that costs the Mage's team F1
+  survival drops it out, and the next re-measure should expect that. The fit is inside 8-seed
+  noise: a paired bootstrap of the re-run's per-seed breaks (20,000 resamples of the 8 seeds) keeps
+  all four caster points in [1, 2] 41% of the time at o = 0 (36% at o = 0.25), and puts the Mage's
+  F1 point below 1 in 38%. A 16-seed recheck is filed as `ig-0dp`.
+- **What moved the Mage:** the slow's size did little on its own (M1: +0.12 at F1, inside the
+  noise), and the reach did the work (M2: +0.75 at F1). With the damage trimmed to hold its total,
+  B30 fell 0.23, so the slope closed from both ends. Its team still loses F1 mostly to wipes
+  (20 of 24).
+- **Balance gate** (`balance_final.log`, against `ig-vl1.5`'s): 8/8 win, starter_knights exact.
+  Supplied downings 0 in total (as before). Bare mixed downings 1 per seed, 2 in total (was 0):
+  input to `ig-gy0.9`. The mixed cases run 5–17 s longer (+8.3 and +5.4 s on seed 1, bare and
+  supplied; +16.9 and +13.9 s on seed 2; 262–269 s), still under the 315–472 s band, and their
+  hops rose 4 → 5 (seed 1) and 5 → 6 (seed 2).
+- **Save:** no saved key changed; `SIMULATION_VERSION` stays 1. A zone saves its own radius and
+  reads its pulse from the skill, so a checkpoint made mid-zone before the re-fit loads with its
+  old radius (3) and pulses the new amounts (0.17×; Hearthward's ATK +20% and no heal). The slow
+  is 50% only on an enemy not already slowed: one that carries the saved 30% slow stays at its
+  saved magnitude while a Rime Circle keeps refreshing it, since a refresh keeps the larger
+  magnitude, which for a cut is the weaker (`KNOWN_ISSUES.md`, "A legacy checkpoint's slowed enemy
+  stays at 30%"). A unit test pins both.
 
 **Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
 any wall spell, so its tests place walls by hand.
@@ -1779,10 +1834,8 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
 > against real fights · **Settled by:** `ig-vl1.6`'s measure at P = 6 with walls in, and a watched
 > frontier_march fight
 
-> ⚠️ **PROVISIONAL** — 0 is the old presence test's only pass (the Cleric's), on a test `ig-vl1.3`
-> found unsound. The zones run (`ig-vl1.4`) picked no offset: both spells need a change first
-> (`ig-vl1.7`) · **Settled by:** `ig-vl1.6`'s measure with zones and walls in, and the one pick
-> (`ig-vl1.9`)
+*`caster_rank_offset`'s PROVISIONAL (0 from an unsound test) was settled by the one pick with zones
+and walls in (`ig-vl1.9`, the re-fit above): 0, on `ig-vl1.6`'s measure.*
 
 ---
 

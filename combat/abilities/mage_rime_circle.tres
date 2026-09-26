@@ -10,7 +10,7 @@ kind = "ability"
 archetype = "mage"
 cooldown_seconds = 20.0
 range_units = 8.0
-radius_units = 3.0
+radius_units = 4.0
 ai_rule = "enemies_near_target"
 ai_count = 3
 ai_radius = 3.0
@@ -21,11 +21,11 @@ effects = Array[Dictionary]([{
 "seconds": 6.0,
 "pulse": [{
 "type": "damage",
-"multiplier": 0.3
+"multiplier": 0.17
 }, {
 "type": "status",
 "status": "speed",
-"magnitude": -0.3,
+"magnitude": -0.5,
 "seconds": 1.5
 }]
 }])

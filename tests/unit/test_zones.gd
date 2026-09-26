@@ -55,8 +55,8 @@ func test_rime_circle_pulses_each_second_on_enemies_inside_and_slows_them() -> v
 		_unit("hero:mage", "mage", "ally", Vector2(0, 0)),
 		_unit("hero:knight", "knight", "ally", Vector2(5, 1)),
 		_unit("enemy:in", "rogue", "enemy", Vector2(5, 0)),
-		_unit("enemy:edge", "rogue", "enemy", Vector2(8, 0)),
-		_unit("enemy:out", "rogue", "enemy", Vector2(8.5, 0)),
+		_unit("enemy:edge", "rogue", "enemy", Vector2(9, 0)),
+		_unit("enemy:out", "rogue", "enemy", Vector2(9.5, 0)),
 	])
 	var mage: BattleActor = state.actors[0]
 	_give(mage, ["mage_rime_circle"])
@@ -68,17 +68,17 @@ func test_rime_circle_pulses_each_second_on_enemies_inside_and_slows_them() -> v
 		SIM._update_field_objects(state)
 	assert_eq(state.actors[2].hp, 100.0, "no pulse before 1 s")
 	SIM._update_field_objects(state)
-	assert_eq(state.actors[2].hp, 97.0, "0.3 x the caster's 10 ATK, no DEF, at 1 s")
-	assert_eq(state.actors[3].hp, 97.0, "the edge counts as inside")
+	assert_almost_eq(state.actors[2].hp, 98.3, 0.000001, "0.17 x the caster's 10 ATK, no DEF, at 1 s")
+	assert_almost_eq(state.actors[3].hp, 98.3, 0.000001, "the edge (radius 4) counts as inside")
 	assert_eq(state.actors[4].hp, 100.0, "outside")
 	assert_eq(state.actors[1].hp, 100.0, "never an ally")
-	assert_almost_eq(SIM._stat(state.actors[2], "speed"), 70.0, 0.000001, "SPD -30%")
+	assert_almost_eq(SIM._stat(state.actors[2], "speed"), 50.0, 0.000001, "SPD -50%")
 	assert_eq(SIM._stat(state.actors[4], "speed"), 100.0)
 	# A downed caster's zone keeps going.
 	mage.life = BattleActor.LIFE_DOWNED
 	for tick: int in 50:
 		SIM._update_field_objects(state)
-	assert_eq(state.actors[2].hp, 82.0, "six pulses in all")
+	assert_almost_eq(state.actors[2].hp, 89.8, 0.000001, "six pulses in all")
 	assert_true(state.field_objects.is_empty(), "it ends at 6 s")
 	for tick: int in 15:
 		SIM._expire_effects_and_cooldowns(state)
@@ -88,21 +88,22 @@ func test_rime_circle_pulses_each_second_on_enemies_inside_and_slows_them() -> v
 func test_a_zone_kill_is_the_caster_s_and_a_slow_meets_a_raise() -> void:
 	var state: BattleState = _battle([
 		_unit("hero:mage", "mage", "ally", Vector2(0, 0)),
-		_unit("enemy:low", "rogue", "enemy", Vector2(5, 0), {"current_hp": 2.0}),
+		_unit("enemy:low", "rogue", "enemy", Vector2(5, 0), {"current_hp": 1.5}),
 		_unit("enemy:hasted", "rogue", "enemy", Vector2(5, 1)),
 	])
 	var enemy: BattleActor = state.actors[1]
-	SIM._add_status(state.actors[2], "test_haste", "speed", "", 10.0, 0.5)
+	SIM._add_status(state.actors[2], "test_haste", "speed", "", 10.0, 0.6)
 	assert_true(SIM._use_skill(state, state.actors[0], RIME, enemy, enemy.position, _rng()))
 	for tick: int in 10:
 		SIM._update_field_objects(state)
 	assert_eq(enemy.life, BattleActor.LIFE_DEAD)
 	assert_eq(int(state.kills.get("hero:mage", 0)), 1)
-	assert_almost_eq(SIM._stat(state.actors[2], "speed"), 120.0, 0.000001, "the strongest raise and the strongest cut both apply")
+	assert_almost_eq(SIM._stat(state.actors[2], "speed"), 110.0, 0.000001, "the strongest raise and the strongest cut both apply")
 
 
 ## ig-vl1.8 (ACC 1): a slow works after the clamps. An SPD-20 enemy swings at the 3.0 cap and walks at
-## the 1.5 floor; inside Rime Circle it swings every 3.0 / 0.7 s and walks 1.05 a second.
+## the 1.5 floor; inside Rime Circle (a 50% slow since ig-vl1.9) it swings every 3.0 / 0.5 s and walks
+## 0.75 a second.
 func test_a_slow_works_after_the_clamps_on_the_swing() -> void:
 	var state: BattleState = _battle([
 		_unit("hero:mage", "mage", "ally", Vector2(0, 0)),
@@ -128,7 +129,7 @@ func test_a_slow_works_after_the_clamps_on_the_swing() -> void:
 		if swung.size() == 2:
 			break
 	assert_eq(swung.size(), 2, "both swung")
-	assert_almost_eq(float(swung[inside.id][0]), 3.0 / 0.7, 0.000001, "inside: the 3.0 cap, then x 1 / 0.7")
+	assert_almost_eq(float(swung[inside.id][0]), 3.0 / 0.5, 0.000001, "inside: the 3.0 cap, then x 1 / 0.5")
 	assert_true(bool(swung[inside.id][1]), "still slowed when it swung")
 	assert_almost_eq(float(swung[outside.id][0]), 3.0, 0.000001, "outside: the cap")
 	assert_false(bool(swung[outside.id][1]))
@@ -152,8 +153,8 @@ func test_a_slow_works_after_the_floor_on_the_walk_in_the_open_and_round_a_wall(
 	for tick: int in 10:
 		SIM._update_field_objects(state)
 	assert_true(SIM._has_status(inside, "speed") and SIM._has_status(open, "speed") and not SIM._has_status(outside, "speed"))
-	var step: float = 1.05 * SIM.BALANCE.battle_tick_seconds
-	# Open ground (the straight branch): slowed 1.05 a second, not slowed the 1.5 floor.
+	var step: float = 0.75 * SIM.BALANCE.battle_tick_seconds
+	# Open ground (the straight branch): slowed 0.75 a second, not slowed the 1.5 floor.
 	for walker: BattleActor in [outside, open]:
 		walker.order_kind = SIM.COMMAND_MOVE
 		walker.order_point = walker.position + Vector2(10, 0)
@@ -198,9 +199,10 @@ func test_a_ranger_under_hunter_s_focus_swings_as_before() -> void:
 	assert_almost_eq(head, 100.0 / 140.0, 0.000001)
 
 
-## ig-vl1.8 (ACC 2): Hearthward's pulse is ATK +15% for 1.5 s and a heal of 0.1 ATK, with Grace; no
-## damage reduction. The strongest raise applies, so Venom Edge's +15% and Hearthward's never stack.
-func test_hearthward_heals_with_grace_and_raises_allies_atk_only() -> void:
+## ig-vl1.9 (ACC 2, V3): Hearthward's pulse is ATK +20% for 1.5 s and nothing else: no heal (Grace or
+## not), no damage reduction. The strongest raise applies, so Venom Edge's +15% and Hearthward's never
+## stack.
+func test_hearthward_raises_allies_atk_and_heals_nothing() -> void:
 	var state: BattleState = _battle([
 		_unit("hero:cleric", "cleric", "ally", Vector2(0, 0)),
 		_unit("hero:hurt", "knight", "ally", Vector2(4, 0), {"current_hp": 50.0}),
@@ -212,31 +214,32 @@ func test_hearthward_heals_with_grace_and_raises_allies_atk_only() -> void:
 	_give(cleric, ["cleric_grace", "cleric_hearthward"])
 	SIM._add_status(rogue, "rogue_venom_edge", "atk", rogue.id, 30.0, 0.15)
 	assert_true(SIM._use_skill(state, cleric, HEARTH, state.actors[1], Vector2(4, 0), _rng()))
-	assert_eq(float(state.field_objects[0]["heal_scale"]), 1.2, "Grace, taken at the cast")
 	for tick: int in 10:
 		SIM._update_field_objects(state)
-	assert_almost_eq(state.actors[1].hp, 51.2, 0.000001, "0.1 x 10 ATK x 1.2")
-	assert_almost_eq(SIM._stat(state.actors[1], "atk"), 11.5, 0.000001, "ATK +15%")
+	assert_eq(state.actors[1].hp, 50.0, "no heal, even with Grace")
+	assert_almost_eq(SIM._stat(state.actors[1], "atk"), 12.0, 0.000001, "ATK +20%")
 	assert_true(rogue.statuses.any(func(status: Dictionary) -> bool: return status["id"] == "cleric_hearthward" and status["kind"] == "atk"), "Hearthward reached the Rogue")
-	assert_almost_eq(SIM._stat(rogue, "atk"), 11.5, 0.000001, "Venom Edge inside Hearthward: x 1.15, not x 1.30")
+	assert_almost_eq(SIM._stat(rogue, "atk"), 12.0, 0.000001, "Venom Edge inside Hearthward: x 1.20, not x 1.35")
 	assert_false(SIM._has_status(state.actors[1], "damage_reduction"), "no damage reduction")
 	assert_eq(state.actors[3].hp, 50.0, "never an enemy")
 	assert_false(SIM._has_status(state.actors[3], "atk"))
 	assert_false(SIM._has_status(cleric, "atk"), "the caster stands outside it")
 
 
+## ig-vl1.9: Hearthward heals no more, so two Rime Circles show it.
 func test_overlapping_zones_of_one_skill_land_once_per_actor_per_pulse() -> void:
 	var state: BattleState = _battle([
-		_unit("hero:c1", "cleric", "ally", Vector2(0, 0)),
-		_unit("hero:c2", "cleric", "ally", Vector2(0, 1)),
-		_unit("hero:hurt", "knight", "ally", Vector2(3, 0), {"current_hp": 50.0}),
+		_unit("hero:m1", "mage", "ally", Vector2(0, 0)),
+		_unit("hero:m2", "mage", "ally", Vector2(0, 1)),
+		_unit("enemy:e", "rogue", "enemy", Vector2(3, 0)),
 	])
 	for index: int in 2:
-		_give(state.actors[index], ["cleric_hearthward"])
-		assert_true(SIM._use_skill(state, state.actors[index], HEARTH, state.actors[2], Vector2(3, 0), _rng()))
+		_give(state.actors[index], ["mage_rime_circle"])
+		assert_true(SIM._use_skill(state, state.actors[index], RIME, state.actors[2], Vector2(3, 0), _rng()))
+	assert_eq(state.field_objects.size(), 2)
 	for tick: int in 10:
 		SIM._update_field_objects(state)
-	assert_almost_eq(state.actors[2].hp, 51.0, 0.000001, "one heal, not two")
+	assert_almost_eq(state.actors[2].hp, 98.3, 0.000001, "one hit, not two")
 
 
 func test_the_ninth_zone_ends_the_oldest() -> void:
@@ -268,7 +271,7 @@ func test_at_pace_six_the_lifetime_and_cooldown_grow_and_the_pulse_does_not() ->
 	var hp: float = state.actors[1].hp
 	for tick: int in 10:
 		SIM._update_field_objects(state)
-	assert_eq(state.actors[1].hp, hp - 3.0, "0.3 x ATK a second at any pace")
+	assert_almost_eq(state.actors[1].hp, hp - 1.7, 0.000001, "0.17 x ATK a second at any pace")
 
 
 func test_hearthward_s_rule_wants_a_pressed_group_and_takes_its_lowest() -> void:
@@ -311,6 +314,51 @@ func test_hearthward_s_rule_counts_an_ally_a_living_enemy_targets() -> void:
 	assert_not_null(SIM._rule_aim(state, cleric, HEARTH, null, "buff"), "b is targeted: it casts")
 	enemy.life = BattleActor.LIFE_DEAD
 	assert_null(SIM._rule_aim(state, cleric, HEARTH, null, "buff"), "only a living enemy counts")
+
+
+## ig-vl1.9 (ACC 9): no saved key changed. A zone saves its own radius and reads its pulse from the
+## skill, so a checkpoint made mid-zone before the re-fit (Rime Circle radius 3, Hearthward with its
+## heal) loads with its old radius and pulses the new amounts: 0.17x, ATK +20% and no heal. The slow is
+## new (50%) only on an enemy not already slowed. One that carries the saved 30% keeps it: a refresh
+## takes maxf of the magnitudes, and for a cut that is the weaker one (-0.3 over -0.5). Pinned as built,
+## not as wanted (KNOWN_ISSUES, "A legacy checkpoint's slowed enemy stays at 30%").
+func test_a_legacy_mid_zone_checkpoint_loads_with_its_old_radius_and_the_new_pulse() -> void:
+	var state: BattleState = _battle([
+		_unit("hero:mage", "mage", "ally", Vector2(0, 0)),
+		_unit("hero:cleric", "cleric", "ally", Vector2(0, 2)),
+		_unit("hero:hurt", "knight", "ally", Vector2(0, 5), {"current_hp": 50.0}),
+		_unit("enemy:in", "rogue", "enemy", Vector2(5, 0)),
+		_unit("enemy:new_edge", "rogue", "enemy", Vector2(8.5, 0)),
+		_unit("enemy:was_slowed", "rogue", "enemy", Vector2(5, 1)),
+	])
+	var legacy: Dictionary = state.to_dict()
+	# The old Rime Circle's slow, saved on an enemy inside the zone with 1.2 s left.
+	(legacy["actors"] as Array)[5]["statuses"] = [{"id": "mage_rime_circle", "kind": "speed", "source": state.actors[0].id, "remaining": 1.2, "magnitude": -0.3}]
+	legacy["field_objects"] = [
+		{"id": "field:1", "kind": "zone", "skill_id": "mage_rime_circle", "owner_actor_id": state.actors[0].id, "faction": "ally", "center": [5.0, 0.0], "radius": 3.0, "remaining_seconds": 30.0, "atk": 10.0, "heal_scale": 1.0},
+		{"id": "field:2", "kind": "zone", "skill_id": "cleric_hearthward", "owner_actor_id": state.actors[1].id, "faction": "ally", "center": [0.0, 4.0], "radius": 3.5, "remaining_seconds": 40.0, "atk": 10.0, "heal_scale": 1.2},
+	]
+	legacy["field_sequence"] = 2
+	legacy = Compare.json_round_trip(legacy)
+	assert_eq(SIM.validate_snapshot(legacy), "", "the legacy checkpoint validates")
+	var loaded: BattleState = BattleState.from_dict(legacy)
+	assert_eq(loaded.field_objects.size(), 2, "both zones load")
+	assert_eq(float(loaded.field_objects[0]["radius"]), 3.0, "Rime Circle keeps its saved radius, not the skill's 4")
+	for tick: int in 10:
+		SIM._update_field_objects(loaded)
+	var inside: BattleActor = loaded.actors[3]
+	assert_almost_eq(inside.hp, 98.3, 0.000001, "the new pulse: 0.17 x the saved 10 ATK")
+	assert_almost_eq(SIM._stat(inside, "speed"), 50.0, 0.000001, "the new pulse: SPD -50%")
+	assert_eq(loaded.actors[4].hp, 100.0, "3.5 from the center: outside the saved radius 3")
+	assert_eq(loaded.actors[2].hp, 50.0, "Hearthward's new pulse heals nothing")
+	assert_almost_eq(SIM._stat(loaded.actors[2], "atk"), 12.0, 0.000001, "and raises ATK 20%")
+	var was_slowed: BattleActor = loaded.actors[5]
+	assert_almost_eq(was_slowed.hp, 98.3, 0.000001, "the already-slowed enemy took the new pulse")
+	var slows: Array = was_slowed.statuses.filter(func(status: Dictionary) -> bool: return status["id"] == "mage_rime_circle" and status["kind"] == "speed")
+	assert_eq(slows.size(), 1, "refreshed, not a second copy")
+	assert_almost_eq(float(slows[0]["remaining"]), 1.5, 0.000001, "its time refreshed to 1.5 s")
+	assert_almost_eq(float(slows[0]["magnitude"]), -0.3, 0.000001, "as built: the saved 30% stays (maxf keeps the weaker cut)")
+	assert_almost_eq(SIM._stat(was_slowed, "speed"), 70.0, 0.000001, "SPD -30%, not -50%")
 
 
 func test_a_mid_zone_save_through_disk_reloads_exactly_and_fights_on_as_the_unbroken_run() -> void:
