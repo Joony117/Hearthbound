@@ -10,6 +10,20 @@ const VALID_ARCHETYPES: Array[String] = ["knight", "ranger", "mage", "rogue", "c
 const VALID_FACTIONS: Array[String] = ["ally", "enemy"]
 const VALID_ORDERS: Array[String] = ["", "move", "attack", "attack_move", "hold", "guard", "carry", "retreat"]
 const SKILL_MODES: Array[String] = ["auto", "manual", "off"]
+# validate_dict's key lists (ig-7sn.10: constants, so a save builds none of them per actor).
+const _STRING_KEYS: Array[String] = ["id", "hero_id", "archetype", "faction", "squad_id", "life", "order_kind", "order_target_id", "carried_by_id", "carrying_id", "guard_target_id"]
+const _VECTOR_KEYS: Array[String] = ["position", "facing", "order_point"]
+const _NUMBER_KEYS: Array[String] = ["hp", "max_hp", "atk", "defense", "speed", "crit_rate", "crit_damage", "attack_range", "move_speed", "attack_cooldown", "item_cooldown"]
+const _NONNEGATIVE_KEYS: Array[String] = ["atk", "defense", "speed", "attack_range", "move_speed", "attack_cooldown", "item_cooldown"]
+const _EFFECT_NONNEGATIVE_KEYS: Array[String] = ["stun_remaining", "attack_windup_remaining", "attack_windup_total", "telegraph_radius", "telegraph_remaining", "telegraph_total"]
+const _GUARD_KEYS: Array[String] = ["guard_remaining", "guard_reduction"]
+const _EFFECT_OPTIONAL_STRING_KEYS: Array[String] = ["telegraph_skill", "last_skill_id", "telegraph_claimed_by"]
+const _EFFECT_TICK_KEYS: Array[String] = ["last_hit_tick", "last_skill_tick"]
+const _EFFECT_OPTIONAL_TICK_KEYS: Array[String] = ["last_counter_tick", "last_crit_tick", "last_push_tick"]
+const _EFFECT_STRING_KEYS: Array[String] = ["attack_target_id", "telegraph_kind"]
+const _TELEGRAPH_KINDS: Array[String] = ["", "circle", "line"]
+const _EFFECT_VECTOR_KEYS: Array[String] = ["telegraph_origin", "telegraph_point", "home_position"]
+const _EFFECT_HOP_KEYS: Array[String] = ["kite_point", "evade_point"]
 
 var id: String = ""
 var hero_id: String = ""
@@ -153,104 +167,123 @@ static func from_dict(data: Dictionary) -> BattleActor:
 
 
 static func validate_dict(data: Dictionary) -> String:
-	for key: String in ["id", "hero_id", "archetype", "faction", "squad_id", "life", "order_kind", "order_target_id", "carried_by_id", "carrying_id", "guard_target_id"]:
+	# ig-7sn.10: every save checks every actor of every battle out (hundreds at five battles), so each field
+	# is read once into a typed local and the key lists are constants. Same checks, order and messages.
+	for key: String in _STRING_KEYS:
 		if not data.get(key) is String:
 			return "Battle actor %s must be a String." % key
-	if (data.get("id") as String).is_empty():
+	if (data["id"] as String).is_empty():
 		return "Battle actor id must be non-empty."
-	if not str(data.get("archetype")) in VALID_ARCHETYPES or not str(data.get("faction")) in VALID_FACTIONS:
+	var archetype: String = data["archetype"]
+	var faction: String = data["faction"]
+	if not archetype in VALID_ARCHETYPES or not faction in VALID_FACTIONS:
 		return "Battle actor archetype or faction is invalid."
-	if not str(data.get("order_kind")) in VALID_ORDERS:
+	if not (data["order_kind"] as String) in VALID_ORDERS:
 		return "Battle actor order_kind is invalid."
-	var hero_id: String = str(data.get("hero_id"))
-	if (str(data.get("faction")) == "ally") == hero_id.is_empty():
+	var ally: bool = faction == "ally"
+	if ally == (data["hero_id"] as String).is_empty():
 		return "Allied battle actors need hero IDs and enemies must not have them."
 	if not _valid_nonnegative_integer(data.get("spawn_index")):
 		return "Battle actor spawn_index must be a non-negative integer."
-	for key: String in ["position", "facing", "order_point"]:
+	for key: String in _VECTOR_KEYS:
 		if not _valid_vector(data.get(key)):
 			return "Battle actor %s must contain two finite numbers." % key
-	for key: String in ["hp", "max_hp", "atk", "defense", "speed", "crit_rate", "crit_damage", "attack_range", "move_speed", "attack_cooldown", "item_cooldown"]:
+	for key: String in _NUMBER_KEYS:
 		if not _valid_number(data.get(key)):
 			return "Battle actor %s must be finite." % key
-	if float(data.get("max_hp")) <= 0.0 or float(data.get("hp")) < 0.0 or float(data.get("hp")) > float(data.get("max_hp")):
+	var hp: float = float(data["hp"])
+	var max_hp: float = float(data["max_hp"])
+	if max_hp <= 0.0 or hp < 0.0 or hp > max_hp:
 		return "Battle actor HP is outside its valid range."
-	for key: String in ["atk", "defense", "speed", "attack_range", "move_speed", "attack_cooldown", "item_cooldown"]:
-		if float(data.get(key)) < 0.0:
+	for key: String in _NONNEGATIVE_KEYS:
+		if float(data[key]) < 0.0:
 			return "Battle actor %s must be non-negative." % key
-	if float(data.get("crit_rate")) < 0.0 or float(data.get("crit_rate")) > 1.0 or float(data.get("crit_damage")) < 1.0:
+	var crit_rate: float = float(data["crit_rate"])
+	if crit_rate < 0.0 or crit_rate > 1.0 or float(data["crit_damage"]) < 1.0:
 		return "Battle actor critical values are invalid."
-	if not str(data.get("life")) in VALID_LIFE:
+	var life: String = data["life"]
+	if not life in VALID_LIFE:
 		return "Battle actor life is invalid."
-	if str(data.get("faction")) == "ally" and str(data.get("life")) == LIFE_DEAD:
+	if ally and life == LIFE_DEAD:
 		return "Allied battle actors cannot be dead inside a battle snapshot."
-	if str(data.get("faction")) == "enemy" and str(data.get("life")) == LIFE_DOWNED:
+	if not ally and life == LIFE_DOWNED:
 		return "Enemy battle actors cannot be downed."
-	if str(data.get("life")) == LIFE_ALIVE and float(data.get("hp")) <= 0.0:
+	if life == LIFE_ALIVE and hp <= 0.0:
 		return "Living battle actors need positive HP."
-	if str(data.get("life")) in [LIFE_DOWNED, LIFE_DEAD] and float(data.get("hp")) != 0.0:
+	if (life == LIFE_DOWNED or life == LIFE_DEAD) and hp != 0.0:
 		return "Downed and dead battle actors must have zero HP."
-	var skills_error: String = _validate_skills(data)
+	var skills_error: String = _validate_skills(data, archetype, faction)
 	if not skills_error.is_empty():
 		return skills_error
 	if not data.get("effect_state") is Dictionary:
 		return "Battle actor effect_state must be a Dictionary."
-	var effects: Dictionary = data.get("effect_state") as Dictionary
+	var effects: Dictionary = data["effect_state"]
 	if not effects.get("elite") is bool:
 		return "Battle actor elite effect flag must be a bool."
-	for key: String in ["stun_remaining", "attack_windup_remaining", "attack_windup_total", "telegraph_radius", "telegraph_remaining", "telegraph_total"]:
-		if not _valid_number(effects.get(key)) or float(effects.get(key)) < 0.0:
+	# Variant: each effect is read once and checked for its type before it is used as a number.
+	var value: Variant
+	for key: String in _EFFECT_NONNEGATIVE_KEYS:
+		value = effects.get(key)
+		if not _valid_number(value) or float(value) < 0.0:
 			return "Battle actor effect %s must be finite and non-negative." % key
 	# Optional: a checkpoint from before statuses (ig-gy0.2) carries the old guard here.
-	for key: String in ["guard_remaining", "guard_reduction"]:
-		if effects.has(key) and (not _valid_number(effects.get(key)) or float(effects.get(key)) < 0.0):
-			return "Battle actor effect %s must be finite and non-negative." % key
-	if float(effects.get("guard_reduction", 0.0)) > 1.0:
+	var guard_reduction: float = 0.0
+	for key: String in _GUARD_KEYS:
+		if effects.has(key):
+			value = effects[key]
+			if not _valid_number(value) or float(value) < 0.0:
+				return "Battle actor effect %s must be finite and non-negative." % key
+			if key == "guard_reduction":
+				guard_reduction = float(value)
+	if guard_reduction > 1.0:
 		return "Battle actor guard_reduction cannot exceed one."
-	for key: String in ["telegraph_skill", "last_skill_id", "telegraph_claimed_by"]:
-		if effects.has(key) and not effects.get(key) is String:
+	for key: String in _EFFECT_OPTIONAL_STRING_KEYS:
+		if effects.has(key) and not effects[key] is String:
 			return "Battle actor effect %s must be a String." % key
 	var status_error: String = _validate_skill_state(data)
 	if not status_error.is_empty():
 		return status_error
-	for key: String in ["last_hit_tick", "last_skill_tick"]:
+	for key: String in _EFFECT_TICK_KEYS:
 		if not _valid_nonnegative_integer(effects.get(key)):
 			return "Battle actor effect %s must be a non-negative integer." % key
-	# Optional: saves written before counters (ig-gy0.4) have no key.
-	if effects.has("last_counter_tick") and not _valid_nonnegative_integer(effects.get("last_counter_tick")):
-		return "Battle actor effect last_counter_tick must be a non-negative integer."
-	# Optional: saves written before crits were recorded have no key.
-	if effects.has("last_crit_tick") and not _valid_nonnegative_integer(effects.get("last_crit_tick")):
-		return "Battle actor effect last_crit_tick must be a non-negative integer."
-	# Optional view cues (ig-36y): saves from before knockback have neither.
-	if effects.has("last_push_tick") and not _valid_nonnegative_integer(effects.get("last_push_tick")):
-		return "Battle actor effect last_push_tick must be a non-negative integer."
-	if effects.has("hit_from") and not _valid_vector(effects.get("hit_from")):
+	# Optional: saves written before counters (ig-gy0.4), crits, or knockback's view cues (ig-36y) lack them.
+	for key: String in _EFFECT_OPTIONAL_TICK_KEYS:
+		if effects.has(key) and not _valid_nonnegative_integer(effects[key]):
+			return "Battle actor effect %s must be a non-negative integer." % key
+	if effects.has("hit_from") and not _valid_vector(effects["hit_from"]):
 		return "Battle actor effect hit_from must contain two finite numbers."
-	for key: String in ["attack_target_id", "telegraph_kind"]:
+	for key: String in _EFFECT_STRING_KEYS:
 		if not effects.get(key) is String:
 			return "Battle actor effect %s must be a String." % key
-	if not str(effects.get("telegraph_kind")) in ["", "circle", "line"]:
+	if not (effects["telegraph_kind"] as String) in _TELEGRAPH_KINDS:
 		return "Battle actor telegraph_kind is invalid."
-	for key: String in ["telegraph_origin", "telegraph_point", "home_position"]:
+	for key: String in _EFFECT_VECTOR_KEYS:
 		if not _valid_vector(effects.get(key)):
 			return "Battle actor effect %s must contain two finite numbers." % key
-	if effects.has("direct_order") and not effects.get("direct_order") is bool:
+	if effects.has("direct_order") and not effects["direct_order"] is bool:
 		return "Battle actor direct_order effect must be a bool."
-	if effects.has("carry_progress") and (not _valid_number(effects.get("carry_progress")) or float(effects.get("carry_progress")) < 0.0):
-		return "Battle actor carry_progress must be finite and non-negative."
+	if effects.has("carry_progress"):
+		value = effects["carry_progress"]
+		if not _valid_number(value) or float(value) < 0.0:
+			return "Battle actor carry_progress must be finite and non-negative."
 	# Optional: a hop in flight and the next hop's tick (ig-uu7.3), and a telegraph evade in flight.
-	for key: String in ["kite_point", "evade_point"]:
-		if effects.has(key) and not _valid_vector(effects.get(key)):
+	for key: String in _EFFECT_HOP_KEYS:
+		if effects.has(key) and not _valid_vector(effects[key]):
 			return "Battle actor effect %s must contain two finite numbers." % key
-	if effects.has("kite_ready_tick") and not _valid_nonnegative_integer(effects.get("kite_ready_tick")):
+	var hop_tick: bool = effects.has("kite_ready_tick")
+	if hop_tick and not _valid_nonnegative_integer(effects["kite_ready_tick"]):
 		return "Battle actor effect kite_ready_tick must be a non-negative integer."
 	# A hop in flight derives its start from kite_ready_tick, so one without the other is refused.
-	if effects.has("kite_point") and not effects.has("kite_ready_tick"):
+	if not hop_tick and effects.has("kite_point"):
 		return "Battle actor effect kite_point needs kite_ready_tick."
 	# Optional: a Knight's cover order (ig-uu7.4). A battle from before it has no key and reads as [].
-	if effects.has("cover_order") and not (effects.get("cover_order") is Array and (effects.get("cover_order") as Array).all(func(entry: Variant) -> bool: return entry is String)):
-		return "Battle actor effect cover_order must be an Array of Strings."
+	if effects.has("cover_order"):
+		value = effects["cover_order"]
+		if not value is Array:
+			return "Battle actor effect cover_order must be an Array of Strings."
+		for entry: Variant in value as Array:
+			if not entry is String:
+				return "Battle actor effect cover_order must be an Array of Strings."
 	return ""
 
 
@@ -285,8 +318,9 @@ func set_abilities_auto(auto: bool) -> void:
 			entry["mode"] = "auto" if auto else "manual"
 
 
-## Both shapes load: skills + skill_cooldowns, or the old ability_cooldown + ability_auto.
-static func _validate_skills(data: Dictionary) -> String:
+## Both shapes load: skills + skill_cooldowns, or the old ability_cooldown + ability_auto. archetype and
+## faction are the actor's, already checked.
+static func _validate_skills(data: Dictionary, archetype: String, faction: String) -> String:
 	if not data.has("skills"):
 		if not _valid_number(data.get("ability_cooldown")) or float(data.get("ability_cooldown")) < 0.0:
 			return "Battle actor ability_cooldown must be finite and non-negative."
@@ -295,22 +329,29 @@ static func _validate_skills(data: Dictionary) -> String:
 		return ""
 	if not data.get("skills") is Array or not data.get("skill_cooldowns") is Dictionary:
 		return "Battle actor skills must be an Array and skill_cooldowns a Dictionary."
+	# Untyped: kit_archetypes builds its pair with a ternary, which Godot returns as a plain Array.
+	var kit: Array = kit_archetypes(archetype, faction)
 	var seen: Dictionary = {}
 	var abilities: Dictionary = {}
-	for entry: Variant in data.get("skills") as Array:
-		if not entry is Dictionary or (entry as Dictionary).size() != 2 or not (entry as Dictionary).get("id") is String or not (entry as Dictionary).get("mode") is String:
+	for raw_entry: Variant in data["skills"] as Array:
+		if not raw_entry is Dictionary:
 			return "Every battle actor skill must be {id, mode} Strings."
-		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((entry as Dictionary)["id"])) as AbilityDefinition
-		if skill == null or not skill.archetype in kit_archetypes(str(data.get("archetype")), str(data.get("faction"))):
-			return "Battle actor skill %s is unknown or from another class." % str((entry as Dictionary)["id"])
-		if not str((entry as Dictionary)["mode"]) in SKILL_MODES or (skill.kind == "passive" and str((entry as Dictionary)["mode"]) != "auto"):
-			return "Battle actor skill %s mode is invalid." % str((entry as Dictionary)["id"])
+		var entry: Dictionary = raw_entry as Dictionary
+		if entry.size() != 2 or not entry.get("id") is String or not entry.get("mode") is String:
+			return "Every battle actor skill must be {id, mode} Strings."
+		var id: String = entry["id"]
+		var mode: String = entry["mode"]
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(id) as AbilityDefinition
+		if skill == null or not skill.archetype in kit:
+			return "Battle actor skill %s is unknown or from another class." % id
+		if not mode in SKILL_MODES or (skill.kind == "passive" and mode != "auto"):
+			return "Battle actor skill %s mode is invalid." % id
 		if seen.has(skill.skill_id):
 			return "Battle actor skill %s is listed twice." % str(skill.skill_id)
 		seen[skill.skill_id] = true
 		if skill.is_ability():
 			abilities[skill.skill_id] = true
-	var cooldowns: Dictionary = data.get("skill_cooldowns") as Dictionary
+	var cooldowns: Dictionary = data["skill_cooldowns"]
 	if cooldowns.size() != abilities.size():
 		return "Battle actor skill_cooldowns must hold exactly its abilities."
 	for skill_id: Variant in cooldowns:

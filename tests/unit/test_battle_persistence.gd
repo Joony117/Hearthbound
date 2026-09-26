@@ -431,11 +431,11 @@ func test_a_checkpoint_through_the_real_save_file_reads_back_as_its_full_precisi
 	GameSession.set("_save_deferred_depth", 1)
 	assert_true(saved, SaveService.last_write_error)
 	# Only the stamp changes, in the text itself, so the load adds no offline time.
-	var stamp := RegEx.create_from_string("\"saved_at_unix\": [^,\\n]+")
+	var stamp := RegEx.create_from_string("\"saved_at_unix\": ?[^,}\\n]+")
 	var text: String = FileAccess.get_file_as_string(SaveService.SAVE_PATH)
 	assert_not_null(stamp.search(text))
 	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
-	file.store_string(stamp.sub(text, "\"saved_at_unix\": %d" % int(Time.get_unix_time_from_system() + 3600.0)))
+	file.store_string(stamp.sub(text, "\"saved_at_unix\":%d" % int(Time.get_unix_time_from_system() + 3600.0)))
 	file.close()
 	GameSession.from_dict({"roster": []})
 	assert_true(SaveService.load_game(), SaveService.load_block_reason)
@@ -447,6 +447,77 @@ func test_a_checkpoint_through_the_real_save_file_reads_back_as_its_full_precisi
 		BattleSimulation.advance(loaded, 0.1)
 	assert_eq(written.tick, start + 300, "it ran on all 30 s")
 	assert_eq(Compare.first_difference(loaded.to_dict(), written.to_dict()), "", "and runs on the same")
+
+
+## ig-7sn.10 ACC 3 (boundary #1): five battles out through the compact save text (one line, keys in
+## to_dict's order) and a real reload. The file is the payload's own text; the reload is exact against its
+## full-precision round trip; each battle, run on 30 s, stays within 1e-6 of the unsaved run; and the same
+## payload in the old form (tab-indented, sorted, full precision) loads to the same state.
+func test_five_battles_through_the_compact_save_and_the_old_pretty_form() -> void:
+	var zones: Array[String] = ["verdant_outskirts", "ashfall_reaches", "sundered_vault", "fallen_citadel", "frontier_march"]
+	for zone_id: String in zones:
+		GameSession.mark_zone_cleared(StringName(zone_id))
+	for zone_id: String in zones:
+		assert_ne(GameSession.dispatch_force(_add_force(2, 1, zone_id, zone_id), zone_id, 1, {}, _zero_loadout()), "", GameSession.last_action_error)
+	for step: int in 100:
+		GameSession.tick_expeditions(0.1)
+	var unsaved: Dictionary = {}
+	for order: Dictionary in GameSession.expedition_orders:
+		assert_eq(str((order["battle"] as Dictionary)["status"]), "active", "%s mid-fight" % order["zone_id"])
+		unsaved[order["id"]] = BattleState.from_dict(order["battle"] as Dictionary)
+	assert_eq(unsaved.size(), 5)
+	var payload: Dictionary = GameSession.to_dict()
+	GameSession.set("_save_deferred_depth", 0)
+	var saved: bool = SaveService.save()
+	GameSession.set("_save_deferred_depth", 1)
+	assert_true(saved, SaveService.last_write_error)
+	payload["version"] = SaveService.SAVE_VERSION
+	payload["saved_at_unix"] = GameSession.saved_at_unix
+	var text: String = FileAccess.get_file_as_string(SaveService.SAVE_PATH)
+	assert_eq(text, JSON.stringify(payload, "", false, true), "the file is the payload's compact text")
+	assert_false(text.contains("\n") or text.contains("\t"), "one line, no indent")
+	var future: int = int(Time.get_unix_time_from_system() + 3600.0)
+	payload["saved_at_unix"] = future
+	var expected: Dictionary = Compare.json_round_trip(payload)
+	# Only the stamp changes, in the text itself, so the load adds no offline time.
+	var stamp := RegEx.create_from_string("\"saved_at_unix\":[^,}]+")
+	assert_not_null(stamp.search(text))
+	var file := FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(stamp.sub(text, "\"saved_at_unix\":%d" % future))
+	file.close()
+	assert_eq(Compare.first_difference(JSON.parse_string(FileAccess.get_file_as_string(SaveService.SAVE_PATH)), expected), "", "the file reads back as the payload's round trip")
+	GameSession.from_dict({"roster": []})
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	assert_eq(GameSession.expedition_orders.size(), 5)
+	for index: int in GameSession.expedition_orders.size():
+		var order: Dictionary = GameSession.expedition_orders[index]
+		assert_eq(Compare.first_difference(order["battle"], (expected["expedition_orders"][index] as Dictionary)["battle"]), "", "%s reloads exactly" % order["zone_id"])
+	var compact_state: String = _exact_json(GameSession.to_dict())
+	for order: Dictionary in GameSession.expedition_orders:
+		var loaded := BattleState.from_dict(order["battle"] as Dictionary)
+		var straight: BattleState = unsaved[order["id"]]
+		for step: int in 300:
+			BattleSimulation.advance(loaded, 0.1)
+			BattleSimulation.advance(straight, 0.1)
+		assert_eq(Compare.mismatch(_rows(loaded.to_dict()), _rows(straight.to_dict())), "", "%s runs on as the unsaved battle, to 1e-6" % order["zone_id"])
+	# The old form: what every save before ig-7sn.10 wrote.
+	file = FileAccess.open(SaveService.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(payload, "\t", true, true))
+	file.close()
+	GameSession.from_dict({"roster": []})
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	assert_eq(_exact_json(GameSession.to_dict()), compact_state, "the pretty form loads to the same state")
+	for index: int in GameSession.expedition_orders.size():
+		var order: Dictionary = GameSession.expedition_orders[index]
+		assert_eq(Compare.first_difference(order["battle"], (expected["expedition_orders"][index] as Dictionary)["battle"]), "", "%s reloads exactly from the old form" % order["zone_id"])
+
+
+## Rows for Compare.mismatch: each actor's id, life, tick and RNG exactly; hp and position to 1e-6.
+func _rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	for actor: Dictionary in snapshot["actors"]:
+		rows.append(["%s %s %s %d" % [snapshot["rng_state"], actor["id"], actor["life"], int(snapshot["tick"])], float(actor["hp"]), float(actor["position"][0]), float(actor["position"][1])])
+	return rows
 
 
 func _cover_hero(id: String, def_id: StringName) -> Hero:

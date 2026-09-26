@@ -223,6 +223,7 @@ func test_a_building_under_construction_gets_the_periodic_save() -> void:
 	assert_true(SaveService.save())
 	GameSession.set("_periodic_save_accumulator", GameSession.PERIODIC_SAVE_SECONDS - 0.1)
 	GameSession._process(0.25)
+	GameSession._process(0.01)  # ig-7sn.10: the periodic save runs on the frame after its pulse.
 	var left: float = GameSession.town_building(house)["build_remaining"]
 	assert_lt(left, BALANCE.house_build_seconds)
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SaveService.SAVE_PATH)) as Dictionary

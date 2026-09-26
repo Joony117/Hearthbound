@@ -98,6 +98,7 @@ func test_a_periodic_save_is_refused_and_marks_the_checkpoint_failed() -> void:
 	var kept: Dictionary = _good_save()
 	_add_bad_incident(stranded)
 	GameSession._process(GameSession.PERIODIC_SAVE_SECONDS + 0.1)
+	GameSession._process(0.01)  # ig-7sn.10: the periodic save runs on the frame after its pulse.
 	assert_push_error("Save refused")
 	assert_true(bool(GameSession.get("_checkpoint_save_failed")))
 	assert_eq(str(GameSession.get("_checkpoint_error")), REFUSED % REASON)
@@ -121,6 +122,25 @@ func test_a_non_finite_number_is_refused() -> void:
 	assert_false(SaveService.save())
 	assert_push_error("Save refused")
 	# The engine warns about a NaN in JSON.stringify once per process, so this test may or may not see it.
+	for error: Variant in get_errors():
+		if error.contains_text("NaN"):
+			error.handled = true
+	assert_string_contains(SaveService.last_write_error, "Save refused: this game state would not load (")
+	_assert_files_unchanged(kept)
+
+
+## ig-7sn.10 ACC 3: the check runs on the exact text written, compact since ig-7sn.10. A NaN actor
+## position does not survive the text, so load would refuse it: refused, and no file changes.
+func test_a_nan_actor_position_is_refused_and_writes_no_file() -> void:
+	var hero: Hero = _add_hero("Runner")
+	var preset_id: String = GameSession.save_team_preset("", "Runners", [hero.instance_id], "verdant_outskirts")
+	assert_ne(GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}), "", GameSession.last_action_error)
+	var kept: Dictionary = _good_save()
+	var battle: Dictionary = (GameSession.expedition_orders[0]["battle"] as Dictionary).duplicate(true)
+	((battle["actors"] as Array)[0] as Dictionary)["position"] = [NAN, 0.0]
+	GameSession.expedition_orders[0]["battle"] = battle
+	assert_false(SaveService.save())
+	assert_push_error("Save refused")
 	for error: Variant in get_errors():
 		if error.contains_text("NaN"):
 			error.handled = true

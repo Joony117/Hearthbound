@@ -199,6 +199,7 @@ func _periodic_save_wrote() -> bool:
 	GameSession.town_resources["wood"] = float(GameSession.town_resources["wood"]) + 7.0
 	GameSession.set("_periodic_save_accumulator", GameSession.PERIODIC_SAVE_SECONDS - 0.1)
 	GameSession._process(0.25)
+	GameSession._process(0.01)  # ig-7sn.10: the periodic save runs on the frame after its pulse.
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SaveService.SAVE_PATH)) as Dictionary
 	return float((saved["town_resources"] as Dictionary)["wood"]) == float(GameSession.town_resources["wood"])
 

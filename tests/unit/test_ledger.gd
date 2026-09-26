@@ -53,7 +53,7 @@ func test_each_writer_records_one_event_and_the_ledger_survives_a_disk_reload_by
 	var before: String = JSON.stringify(GameSession.ledger)
 	var first_text: String = _disk_save()
 	assert_false(first_text.contains("\"ledger\":"), "the main save keeps only the mark")
-	assert_string_contains(first_text, "\"ledger_next_seq\": 5")
+	assert_string_contains(first_text, "\"ledger_next_seq\":5")
 	var first_lines: String = FileAccess.get_file_as_string(SaveService.LEDGER_PATH)
 	assert_eq(first_lines.split("\n").size(), 5, "four lines, each ending in a newline")
 	assert_string_contains(first_lines.split("\n")[3], "\"seq\":4,", "one compact record per line")

@@ -67,6 +67,11 @@ const TICK_EPSILON: float = 0.000001
 ## ig-1jw: the largest pace a checkpoint may carry. Settlement rolls loot `pace` times, so a corrupt save
 ## must not name a huge one. Not a balance number: raise it if battle_pace ever goes past it.
 const MAX_PACE: int = 20
+# _validate_field_objects' key lists (ig-7sn.10: constants, so a save builds none per object).
+const _FIELD_STRING_KEYS: Array[String] = ["id", "kind", "skill_id", "owner_actor_id", "faction"]
+const _FIELD_KINDS: Array[String] = ["zone", "wall"]
+const _WALL_NUMBER_KEYS: Array[String] = ["thickness", "remaining_seconds"]
+const _ZONE_NUMBER_KEYS: Array[String] = ["radius", "remaining_seconds", "atk", "heal_scale"]
 ## ig-9gf: positions are float32, so an approach aimed exactly at a reach can park one ulp outside it
 ## (1.6000000238 from 1.6) and never close. _move_actors aims this far inside a reach instead, and
 ## counts a point as reached within it, so every reach check compares bare.
@@ -371,54 +376,58 @@ static func validate_snapshot(data: Dictionary) -> String:
 	var actor_ids: Dictionary[String, bool] = {}
 	var spawn_indices: Dictionary[int, bool] = {}
 	var hero_actors: Dictionary[String, Dictionary] = {}
-	for raw_actor: Variant in data.get("actors") as Array:
+	var actors: Array = data["actors"]
+	# ig-7sn.10: every save runs this on every actor, so the loops read each field once. After
+	# BattleActor.validate_dict, an actor's keys hold their checked types. Same checks, order and messages.
+	var bounds: float = zone.battle_bounds
+	for raw_actor: Variant in actors:
 		if not raw_actor is Dictionary:
 			return "Every battle actor must be a Dictionary."
 		var actor_data: Dictionary = raw_actor as Dictionary
 		var actor_error: String = BattleActor.validate_dict(actor_data)
 		if not actor_error.is_empty():
 			return actor_error
-		var actor_id: String = str(actor_data.get("id"))
-		var spawn_index: int = int(actor_data.get("spawn_index"))
+		var actor_id: String = actor_data["id"]
+		var spawn_index: int = int(actor_data["spawn_index"])
 		if actor_ids.has(actor_id) or spawn_indices.has(spawn_index):
 			return "Battle actor IDs and spawn indices must be unique."
-		if not _point_within_bounds(actor_data.get("position"), zone.battle_bounds) or not _point_within_bounds(actor_data.get("order_point"), zone.battle_bounds):
+		if not _valid_point_within_bounds(actor_data["position"], bounds) or not _valid_point_within_bounds(actor_data["order_point"], bounds):
 			return "Battle actor positions must remain inside the authored bounds."
-		var effects: Dictionary = actor_data.get("effect_state") as Dictionary
-		if not _point_within_bounds(effects.get("home_position"), zone.battle_bounds):
+		if not _valid_point_within_bounds((actor_data["effect_state"] as Dictionary)["home_position"], bounds):
 			return "Battle actor home positions must remain inside the authored bounds."
 		actor_ids[actor_id] = true
 		spawn_indices[spawn_index] = true
-	for raw_actor: Variant in data.get("actors") as Array:
+	var tick: int = int(data["tick"])
+	for raw_actor: Variant in actors:
 		var actor_data: Dictionary = raw_actor as Dictionary
-		var hero_id: String = str(actor_data.get("hero_id", ""))
+		var hero_id: String = actor_data["hero_id"]
 		if not hero_id.is_empty():
 			if hero_actors.has(hero_id):
 				return "Battle hero IDs must be unique."
 			hero_actors[hero_id] = actor_data
-		var carried_by_id: String = str(actor_data.get("carried_by_id", ""))
-		var carrying_id: String = str(actor_data.get("carrying_id", ""))
-		var effects: Dictionary = actor_data.get("effect_state") as Dictionary
-		if int(effects.get("last_hit_tick")) > int(data.get("tick")) or int(effects.get("last_skill_tick")) > int(data.get("tick")) or int(effects.get("last_crit_tick", 0)) > int(data.get("tick")) or int(effects.get("last_push_tick", 0)) > int(data.get("tick")):
+		var carried_by_id: String = actor_data["carried_by_id"]
+		var carrying_id: String = actor_data["carrying_id"]
+		var effects: Dictionary = actor_data["effect_state"]
+		if int(effects["last_hit_tick"]) > tick or int(effects["last_skill_tick"]) > tick or int(effects.get("last_crit_tick", 0)) > tick or int(effects.get("last_push_tick", 0)) > tick:
 			return "Battle effect timestamps cannot be ahead of the simulation tick."
 		if not carried_by_id.is_empty() and not carrying_id.is_empty():
 			return "A battle actor cannot carry and be carried simultaneously."
 		if not carried_by_id.is_empty():
-			var carrier_data: Dictionary = _raw_actor_by_id(data.get("actors") as Array, carried_by_id)
+			var carrier_data: Dictionary = _raw_actor_by_id(actors, carried_by_id)
 			if not actor_ids.has(carried_by_id) or str(carrier_data.get("carrying_id", "")) != str(actor_data.get("id")):
 				return "Battle carry links must be mutual and reference existing actors."
 			if str(actor_data.get("life")) != BattleActor.LIFE_DOWNED or str(carrier_data.get("life")) != BattleActor.LIFE_ALIVE or str(carrier_data.get("faction")) != str(actor_data.get("faction")):
 				return "Only a living same-faction actor can carry a downed actor."
 		if not carrying_id.is_empty():
-			var carried_data: Dictionary = _raw_actor_by_id(data.get("actors") as Array, carrying_id)
+			var carried_data: Dictionary = _raw_actor_by_id(actors, carrying_id)
 			if not actor_ids.has(carrying_id) or str(carried_data.get("carried_by_id", "")) != str(actor_data.get("id")):
 				return "Battle carry links must be mutual and reference existing actors."
 			if str(actor_data.get("life")) != BattleActor.LIFE_ALIVE or str(carried_data.get("life")) != BattleActor.LIFE_DOWNED or str(carried_data.get("faction")) != str(actor_data.get("faction")):
 				return "Only a living actor can carry a same-faction downed actor."
-		for reference_key: String in ["order_target_id", "guard_target_id"]:
-			var referenced_id: String = str(actor_data.get(reference_key, ""))
-			if not referenced_id.is_empty() and not actor_ids.has(referenced_id):
-				return "Battle actor references must target existing actors."
+		var order_target_id: String = actor_data["order_target_id"]
+		var guard_target_id: String = actor_data["guard_target_id"]
+		if (not order_target_id.is_empty() and not actor_ids.has(order_target_id)) or (not guard_target_id.is_empty() and not actor_ids.has(guard_target_id)):
+			return "Battle actor references must target existing actors."
 	var supplies_error: String = supplies_shape_error(data.get("supplies_remaining") as Dictionary, BALANCE.battle_supply_allocation_cap)
 	if not supplies_error.is_empty():
 		return "Battle supplies: %s" % supplies_error
@@ -469,21 +478,21 @@ static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, acto
 		if not entry is Dictionary or (entry as Dictionary).size() != (9 if (entry as Dictionary).get("kind") == "wall" else 10):
 			return "Every battle field object must be a zone {id, kind, skill_id, owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale} or a wall {id, kind, skill_id, owner_actor_id, faction, start, end, thickness, remaining_seconds}."
 		var field: Dictionary = entry as Dictionary
-		for key: String in ["id", "kind", "skill_id", "owner_actor_id", "faction"]:
+		for key: String in _FIELD_STRING_KEYS:
 			if not field.get(key) is String:
 				return "Battle field object %s must be a String." % key
 		var number: String = str(field["id"]).trim_prefix("field:")
 		if not str(field["id"]).begins_with("field:") or not number.is_valid_int() or str(number.to_int()) != number or number.to_int() < 1 or number.to_int() > sequence or ids.has(str(field["id"])):
 			return "Battle field object ids must be unique, field:<1 to field_sequence>."
 		ids[str(field["id"])] = true
-		if not str(field["kind"]) in ["zone", "wall"] or not str(field["faction"]) in ["ally", "enemy"] or not actor_ids.has(str(field["owner_actor_id"])):
+		if not str(field["kind"]) in _FIELD_KINDS or not str(field["faction"]) in BattleActor.VALID_FACTIONS or not actor_ids.has(str(field["owner_actor_id"])):
 			return "Battle field object kind, faction or owner is invalid."
 		if str(field["kind"]) == "wall":
 			if not _point_within_bounds(field.get("start"), zone.battle_bounds) or not _point_within_bounds(field.get("end"), zone.battle_bounds):
 				return "Battle wall ends must remain inside the authored bounds."
 			if _array_vector(field["start"]) == _array_vector(field["end"]):
 				return "Battle wall ends must differ."
-			for key: String in ["thickness", "remaining_seconds"]:
+			for key: String in _WALL_NUMBER_KEYS:
 				if not _valid_number(field.get(key)) or not (float(field.get(key)) > 0.0):
 					return "Battle wall %s must be finite and positive." % key
 			if float(field["thickness"]) > zone.battle_bounds * 2.0:
@@ -491,7 +500,7 @@ static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, acto
 			continue
 		if not _point_within_bounds(field.get("center"), zone.battle_bounds):
 			return "Battle field object centers must remain inside the authored bounds."
-		for key: String in ["radius", "remaining_seconds", "atk", "heal_scale"]:
+		for key: String in _ZONE_NUMBER_KEYS:
 			if not _valid_number(field.get(key)) or float(field.get(key)) < 0.0:
 				return "Battle field object %s must be finite and non-negative." % key
 		if not (float(field["radius"]) > 0.0) or not (float(field["remaining_seconds"]) > 0.0):
@@ -3431,6 +3440,13 @@ static func _valid_point(value: Variant) -> bool:
 		return false
 	var entries: Array = value as Array
 	return _valid_number(entries[0]) and _valid_number(entries[1])
+
+
+## _point_within_bounds for a point already checked as two finite numbers (ig-7sn.10: the actor loop's
+## positions, which validate_dict checked). The same Vector2, so the same verdict to the bit.
+static func _valid_point_within_bounds(entries: Array, bounds: float) -> bool:
+	var point := Vector2(float(entries[0]), float(entries[1]))
+	return absf(point.x) <= bounds + TICK_EPSILON and absf(point.y) <= bounds + TICK_EPSILON
 
 
 static func _point_within_bounds(value: Variant, bounds: float) -> bool:

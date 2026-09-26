@@ -39,7 +39,9 @@ func save() -> bool:
 	payload["saved_at_unix"] = saved_at
 	# ig-85w: full precision. A reload lands within 1 ulp of the unsaved battle, not bit for bit: Godot's
 	# parser misrounds some 17-digit numbers (docs/KNOWN_ISSUES.md).
-	var text: String = JSON.stringify(payload, "\t", true, true)
+	# ig-7sn.10: one line, keys in to_dict's order (no indent, no sort), so the text is deterministic per
+	# build and a third smaller. Load reads this and the older tab-indented, sorted saves alike.
+	var text: String = JSON.stringify(payload, "", false, true)
 
 	# ig-6pm: never write a file this build's own load would refuse. Checked on the text load will read
 	# (numbers as floats, names as Strings, a NaN that does not survive), not on the dict. Before the

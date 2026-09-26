@@ -14,6 +14,9 @@ extends SceneTree
 ## and the frame that advances the battle (_owe_battles'; the pulse's own frame advances none).
 ## Since ig-7sn.9: roster times the action with no building open and with the Forge open and a hero
 ## selected, and splits _refresh_roster and _refresh_director_ui.
+## Since ig-7sn.10: roster and pulse5 print SPLIT lines (each battle's bytes, actors by faction and life,
+## field objects and dead-enemy share; the three text forms' stringify, parse and bytes; _load_refusal by
+## battle), and pulse5 prints SAVEFRAME: the frame the periodic save ran on, and that whole frame's time.
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -113,6 +116,10 @@ func _measure_pulse(count: int) -> void:
 	_pulse_phases("%d battle(s)" % count)
 	_print_orders()
 	await _pulse_frames("pulse, %d battle(s), hub shown" % count)
+	# ig-7sn.10 (a)-(c) again, on battles 40 s in: the dead enemies of the cleared waves are in them now.
+	if count == 5:
+		_print_orders()
+		_save_split("pulse, 5 battle(s), after the frames", session.to_dict())
 
 
 ## Frames with GameSession's own _process driving the pulse, called from here so each pulse is timed.
@@ -121,19 +128,37 @@ func _pulse_frames(label: String) -> void:
 	# Keyed by the battles active when the pulse began; -1 holds the pulses that settled a leg, -2 the
 	# ones that ran the 15 s periodic save (ig-7sn.10).
 	var pulses: Dictionary[int, Array] = {}
+	# ig-7sn.10 (d): a frame whose _process ran a save (saved_at_unix moved) and no leg settled is the
+	# periodic save's, pulse frame or not. Its whole frame is the next frame's delta.
+	var saved: Dictionary = {"last": false, "lines": []}
 	var frames: Array[float] = await _frames(func(delta: float, recording: bool) -> void:
+		if saved["last"]:
+			(saved["lines"] as Array).append("%s, whole frame %.2f ms" % [(saved["lines"] as Array).pop_back(), delta * 1000.0])
+			saved["last"] = false
 		var reports: int = session.expedition_reports.size()
 		var active: int = _active()
+		var saved_at: float = session.saved_at_unix
+		var battles: Array[Dictionary] = _battles()
 		var started: int = Time.get_ticks_usec()
 		session._process(delta)
+		var process_ms: float = _since(started)
+		if recording and session.saved_at_unix != saved_at and session.expedition_reports.size() == reports:
+			var advanced: int = 0
+			var now: Array[Dictionary] = _battles()
+			for index: int in mini(battles.size(), now.size()):
+				advanced += 0 if is_same(battles[index], now[index]) else 1
+			(saved["lines"] as Array).append("SAVEFRAME %s: the periodic save's frame: pulse ran %s, battles advanced %d, %d active, _process %.2f ms" % [label, session._expedition_pulse_accumulator == 0.0, advanced, active, process_ms])
+			saved["last"] = true
 		if recording and session._expedition_pulse_accumulator == 0.0:
 			# A pulse that settles a leg (a new report) commits: roster_changed, its handlers, a save.
-			var key: int = -1 if session.expedition_reports.size() != reports else -2 if session._periodic_save_accumulator == 0.0 else active
+			var key: int = -1 if session.expedition_reports.size() != reports else -2 if session.saved_at_unix != saved_at else active
 			if not pulses.has(key):
 				pulses[key] = []
 			pulses[key].append(_since(started)))
 	session.set_process(true)
 	_report_frames(label, frames)
+	for line: String in saved["lines"]:
+		print(line)
 	var keys: Array[int] = pulses.keys()
 	keys.sort()
 	for key: int in keys:
@@ -552,9 +577,10 @@ func _measure_roster() -> void:
 		# Lambdas cannot reassign a captured local, so each stage's output goes through one dictionary.
 		var stage: Dictionary = {}
 		_report("%s: save stage GameSession.to_dict" % label, _time(func() -> void: stage["payload"] = session.to_dict(), 10))
-		_report("%s: save stage JSON.stringify" % label, _time(func() -> void: stage["text"] = JSON.stringify(stage["payload"], "\t", true, true), 10))
-		_report("%s: save stage JSON.parse_string" % label, _time(func() -> void: stage["parsed"] = JSON.parse_string(stage["text"]), 10))
+		_report("%s: save stage JSON.stringify (pre-7sn.10 pretty form)" % label, _time(func() -> void: stage["text"] = JSON.stringify(stage["payload"], "\t", true, true), 10))
+		_report("%s: save stage JSON.parse_string (pre-7sn.10 pretty form)" % label, _time(func() -> void: stage["parsed"] = JSON.parse_string(stage["text"]), 10))
 		_report("%s: save stage _load_refusal" % label, _time(func() -> void: saves._load_refusal(stage["parsed"] as Dictionary, saves.SAVE_VERSION), 10))
+		_save_split(label, stage["payload"] as Dictionary)
 		var disk_write: Callable = func() -> void:
 			var file := FileAccess.open("user://perf_disk_probe.json", FileAccess.WRITE)
 			file.store_string(stage["text"])
@@ -581,6 +607,57 @@ func _measure_roster() -> void:
 		_report("%s: SaveService.save, no new record" % label, plain)
 		_report("%s: SaveService.save that appends one Ledger record" % label, appended)
 		print("%s: save.json %d bytes, ledger.jsonl %d bytes" % [label, _bytes("user://save.json"), _bytes("user://ledger.jsonl")])
+
+
+## ig-7sn.10 (a)-(c): each battle's checkpoint (bytes, actors by faction and life, field objects, the
+## dead enemies' share), the three text forms on the same payload, and _load_refusal split by battle.
+## Bytes are UTF-8. "rest" is the whole check less each battle's validate_snapshot.
+func _save_split(label: String, payload: Dictionary) -> void:
+	for order: Dictionary in session.expedition_orders:
+		if not order.get("battle") is Dictionary:
+			continue
+		var battle: Dictionary = order["battle"] as Dictionary
+		var counts: Dictionary = {}
+		var dead_enemy_bytes: int = 0
+		for actor: Dictionary in battle.get("actors", []):
+			var key: String = "%s %s" % [actor.get("faction", "?"), actor.get("life", "?")]
+			counts[key] = int(counts.get(key, 0)) + 1
+			if actor.get("faction") == "enemy" and actor.get("life") == "dead":
+				dead_enemy_bytes += JSON.stringify(actor, "", false, true).to_utf8_buffer().size() + 1
+		var pretty: int = JSON.stringify(battle, "\t", true, true).to_utf8_buffer().size()
+		var compact: int = JSON.stringify(battle, "", false, true).to_utf8_buffer().size()
+		print("%s: SPLIT battle %s: %d actors %s, %d field objects; checkpoint %d bytes pretty, %d compact; dead enemies %d bytes compact (%.1f%% of it)" % [label, battle.get("zone_id", "?"), (battle.get("actors", []) as Array).size(), counts, (battle.get("field_objects", []) as Array).size(), pretty, compact, dead_enemy_bytes, 100.0 * dead_enemy_bytes / maxf(compact, 1.0)])
+	# Lambdas cannot reassign a captured local, so each form's text goes through one dictionary.
+	var texts: Dictionary = {}
+	var forms: Dictionary[String, Array] = {"pretty (\"\\t\", sorted)": ["\t", true], "compact sorted (\"\")": ["", true], "compact unsorted (\"\", sort_keys false)": ["", false]}
+	for form: String in forms:
+		_report("%s: SPLIT JSON.stringify, %s" % [label, form], _time(func() -> void: texts[form] = JSON.stringify(payload, forms[form][0], forms[form][1], true), 10))
+		_report("%s: SPLIT JSON.parse_string, %s" % [label, form], _time(func() -> void: texts["parsed"] = JSON.parse_string(texts[form]), 10))
+		print("%s: SPLIT bytes, %s: %d; parses back equal to the pretty form's: %s" % [label, form, (texts[form] as String).to_utf8_buffer().size(), JSON.parse_string(texts[form]) == JSON.parse_string(texts.get(forms.keys()[0], texts[form]))])
+	var parsed: Dictionary = JSON.parse_string(texts[forms.keys()[0]]) as Dictionary
+	var whole: Array[float] = _time(func() -> void: saves._load_refusal(parsed, saves.SAVE_VERSION), 10)
+	_report("%s: SPLIT _load_refusal whole" % label, whole)
+	var battle_sum: Array[float] = []
+	battle_sum.resize(whole.size())
+	battle_sum.fill(0.0)
+	var checkpoints: Array[Dictionary] = []
+	for order: Variant in parsed.get("expedition_orders", []):
+		if order is Dictionary and (order as Dictionary).get("battle") is Dictionary:
+			checkpoints.append((order as Dictionary)["battle"] as Dictionary)
+	for incident: Variant in parsed.get("stranded_incidents", []):
+		if incident is Dictionary and (incident as Dictionary).get("battle_snapshot") is Dictionary:
+			checkpoints.append((incident as Dictionary)["battle_snapshot"] as Dictionary)
+	for checkpoint: Dictionary in checkpoints:
+		var times: Array[float] = _time(func() -> void: BattleSimulation.validate_snapshot(checkpoint), 10)
+		_report("%s: SPLIT _load_refusal part validate_snapshot %s (%s)" % [label, checkpoint.get("zone_id", "?"), checkpoint.get("status", "?")], times)
+		for index: int in times.size():
+			battle_sum[index] += times[index]
+	var rest: Array[float] = []
+	for index: int in whole.size():
+		rest.append(whole[index] - battle_sum[index])
+	_report("%s: SPLIT _load_refusal part every battle's validate_snapshot" % label, battle_sum)
+	_report("%s: SPLIT _load_refusal part heroes and the rest (whole less the battles, per sample)" % label, rest)
+	_report("%s: SPLIT SaveService.save whole, 30 samples" % label, _time(saves.save, 30))
 
 
 ## ig-7sn.9: _refresh_roster's parts and _refresh_director_ui's six calls, each timed on the side and
@@ -702,8 +779,8 @@ func _measure_load() -> void:
 	var file := FileAccess.open("user://save.json", FileAccess.READ)
 	var text: String = file.get_as_text()
 	file.close()
-	var at: RegEx = RegEx.create_from_string("\"saved_at_unix\": [0-9.e+]+")
-	text = at.sub(text, "\"saved_at_unix\": %.3f" % (Time.get_unix_time_from_system() - hours * 3600.0))
+	var at: RegEx = RegEx.create_from_string("\"saved_at_unix\": ?[0-9.e+]+")
+	text = at.sub(text, "\"saved_at_unix\":%.3f" % (Time.get_unix_time_from_system() - hours * 3600.0))
 	file = FileAccess.open("user://save.json", FileAccess.WRITE)
 	file.store_string(text)
 	file.close()

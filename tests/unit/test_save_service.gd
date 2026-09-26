@@ -486,6 +486,7 @@ func test_periodic_checkpoint_failure_freezes_current_state_and_retries_without_
 	GameSession.set("_periodic_save_accumulator", GameSession.PERIODIC_SAVE_SECONDS - 0.1)
 
 	GameSession._process(0.25)
+	GameSession._process(0.01)  # ig-7sn.10: the periodic save runs on the frame after its pulse.
 
 	assert_push_error("Save failed")
 	assert_not_null(GameSession.item_by_id(durable_item.instance_id))
@@ -498,6 +499,7 @@ func test_periodic_checkpoint_failure_freezes_current_state_and_retries_without_
 	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
 	GameSession.set("_periodic_save_accumulator", GameSession.PERIODIC_SAVE_SECONDS - 0.1)
 	GameSession._process(0.25)
+	GameSession._process(0.01)  # ig-7sn.10: the periodic save runs on the frame after its pulse.
 	assert_eq(str(GameSession.get_battle_snapshot(order_id)["checkpoint_error"]), "")
 	var retried_payload: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
 	assert_eq(GameSession.validate_saved_state(retried_payload, 3), "")

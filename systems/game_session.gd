@@ -104,6 +104,8 @@ var _expeditions_notification_pending: bool = false
 var _battle_notifications_pending: Dictionary[String, bool] = {}
 var _expedition_pulse_accumulator: float = 0.0
 var _periodic_save_accumulator: float = 0.0
+## ig-7sn.10: a pulse crossed PERIODIC_SAVE_SECONDS; the next _process call runs the save. Unsaved.
+var _periodic_save_due: bool = false
 var _paused_battle_orders: Dictionary[String, bool] = {}
 ## ig-7sn.15: each battle order's last state, [the battle Dictionary it was written as or decoded from,
 ## the BattleState], by order id. Unsaved; from_dict clears it. Every writer replaces an order's battle
@@ -347,6 +349,17 @@ func _process(delta: float) -> void:
 		return
 	_expedition_pulse_accumulator += delta
 	var pulse_frame: bool = _expedition_pulse_accumulator >= EXPEDITION_PULSE_SECONDS
+	# ig-7sn.10: the periodic save a pulse made due runs on the next frame, alone: each live battle is owed
+	# the frame's time and none advances. Below 4 fps every frame is a pulse's, so there it runs at the
+	# frame's start and the pulse follows.
+	if _periodic_save_due:
+		_periodic_save_due = false
+		if not pulse_frame:
+			if not _checkpoint_save_failed:
+				_owe_battles(delta, false)
+			_periodic_save()
+			return
+		_periodic_save()
 	# No battle moves during a stall (a failed checkpoint save), nor on the pulse's own frame unless the
 	# frame is itself a pulse long (below 4 fps every frame is a pulse's, and the battles must still move).
 	if not _checkpoint_save_failed:
@@ -359,16 +372,7 @@ func _process(delta: float) -> void:
 		_periodic_save_accumulator += elapsed_seconds
 		if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 			_periodic_save_accumulator = 0.0
-			if SaveService.save():
-				var resolved_error: String = _checkpoint_error
-				_checkpoint_save_failed = false
-				_checkpoint_error = ""
-				if last_action_error == resolved_error:
-					last_action_error = ""
-				for order: Dictionary in expedition_orders:
-					if str(order.get("backend", "legacy_v2")) == "battle_v1":
-						_notify_battle_changed(str(order.get("id", "")))
-				_notify_expeditions_changed()
+			_periodic_save_due = true
 		_release_battle_jobs()
 		return
 	_pulse(elapsed_seconds)
@@ -376,14 +380,32 @@ func _process(delta: float) -> void:
 	if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 		_periodic_save_accumulator = 0.0
 		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _workers_home(TownRules.LUMBERMILL) + _workers_home(TownRules.MINE) + _workers_home(TownRules.FARM) > 0 or not food_eaters().is_empty() or not _working_keepers().is_empty() or town_buildings.any(_is_building):
-			if not SaveService.save():
-				_checkpoint_save_failed = true
-				_checkpoint_error = SaveService.last_write_error
-				last_action_error = _checkpoint_error
-				for order: Dictionary in expedition_orders:
-					if str(order.get("backend", "legacy_v2")) == "battle_v1":
-						_notify_battle_changed(str(order.get("id", "")))
-				_notify_expeditions_changed()
+			_periodic_save_due = true
+
+
+## The 15 s save a pulse made due (ig-7sn.10: on the frame after it). After a failed checkpoint it is the
+## retry: a save that lands ends the stall. Otherwise a save that fails starts one.
+func _periodic_save() -> void:
+	if _checkpoint_save_failed:
+		if SaveService.save():
+			var resolved_error: String = _checkpoint_error
+			_checkpoint_save_failed = false
+			_checkpoint_error = ""
+			if last_action_error == resolved_error:
+				last_action_error = ""
+			for order: Dictionary in expedition_orders:
+				if str(order.get("backend", "legacy_v2")) == "battle_v1":
+					_notify_battle_changed(str(order.get("id", "")))
+			_notify_expeditions_changed()
+		return
+	if not SaveService.save():
+		_checkpoint_save_failed = true
+		_checkpoint_error = SaveService.last_write_error
+		last_action_error = _checkpoint_error
+		for order: Dictionary in expedition_orders:
+			if str(order.get("backend", "legacy_v2")) == "battle_v1":
+				_notify_battle_changed(str(order.get("id", "")))
+		_notify_expeditions_changed()
 
 
 func is_save_deferred() -> bool:
