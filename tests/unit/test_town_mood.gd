@@ -199,10 +199,10 @@ func test_the_hub_says_the_fall_the_revolt_and_the_recovery() -> void:
 	assert_eq(text.text, "4 heroes have no bed. Town mood 50: revolt in about 25:00.")
 	GameSession.town_mood = 0.0
 	GameSession.expeditions_changed.emit()
-	assert_eq(text.text, "Revolt: no order or repeat goes out until at most 2 heroes are homeless.")
+	assert_eq(text.text, "Revolt: no order or repeat goes out until at most 2 heroes are homeless. Riot in 30:00.")
 	GameSession.town_resources["food"] = 1.0
 	GameSession.expeditions_changed.emit()
-	assert_eq(text.text, "Food low: 1 left, and the town eats 0.8 a minute.\nRevolt: no order or repeat goes out until at most 2 heroes are homeless.", "under the food line")
+	assert_eq(text.text, "Food low: 1 left, and the town eats 0.8 a minute.\nRevolt: no order or repeat goes out until at most 2 heroes are homeless. Riot in 30:00.", "under the food line")
 	GameSession.town_resources["food"] = 100.0
 	for hero: Hero in GameSession.roster.slice(0, 2):
 		assert_true(GameSession.assign_home(hero, _place(TownRules.HOUSE, Vector2i(GameSession.roster.find(hero), 2))), GameSession.last_action_error)
@@ -333,9 +333,10 @@ func test_no_hero_order_or_building_key_is_added() -> void:
 	var nested: Array = [state["roster"][0], state["expedition_orders"][0], state["town_buildings"][0]]
 	for data: Dictionary in nested:
 		for key: String in data.keys():
-			for word: String in ["mood", "homeless", "revolt", "pay_percent", "house_price"]:
+			for word: String in ["mood", "homeless", "revolt", "riot", "pay_percent", "house_price"]:
 				assert_false(key.contains(word), "%s in %s" % [key, str(data.keys())])
 	assert_true(state.has("town_mood"), "the one new key, top-level")
+	assert_true(state.has("town_revolt_seconds"), "ig-0og.3's, top-level too")
 
 
 func _add_heroes(count: int, prefix: String) -> Array[Hero]:

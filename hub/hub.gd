@@ -140,8 +140,6 @@ var order_card_updates: int = 0
 var detail_refreshes: int = 0
 # True while the placed-building picker lists who to take out, false while it lists who to put in.
 var _placed_picker_clears: bool = false
-## The last Ledger seq the starvation status line has looked at, so each death is said once.
-var _starved_seen: int = 0
 var _was_in_revolt: bool = false
 
 
@@ -206,9 +204,12 @@ func _ready() -> void:
 	_refresh_partner()
 	_open(NO_BUILDING)
 	_status.text = "Send a team on an expedition; downed heroes can be stranded and need rescue."
-	_starved_seen = GameSession.ledger_next_seq - 1
+	# ig-0og.3: the arena line first, and a town notice from while the hub was away joins it.
+	var arena_shown: bool = _show_pending_arena_result()
+	var notice: String = _town_notice_text(GameSession.take_town_notice())
+	if not notice.is_empty():
+		_status.text = _status.text + " " + notice if arena_shown else notice
 	_refresh_starvation()
-	_show_pending_arena_result()
 
 
 func _connect_ui_signals() -> void:
@@ -1081,17 +1082,12 @@ func _refresh_wood() -> void:
 		_wood.text += ", %d free" % empty_beds
 
 
-## The starvation ladder (ig-6m2.5.2), and "<name> starved." once per death, read off the Ledger.
+## The starvation ladder (ig-6m2.5.2), and the town notice once: "<name> starved." per death, and the
+## riot's fires (ig-0og.3).
 func _refresh_starvation() -> void:
-	var ledger: Array[Dictionary] = GameSession.ledger
-	for index: int in range(ledger.size() - 1, -1, -1):
-		var record: Dictionary = ledger[index]
-		if int(record["seq"]) <= _starved_seen:
-			break
-		if record["kind"] == "died" and record.get("cause") == "starvation":
-			_status.text = "%s starved." % record["name"]
-			break
-	_starved_seen = GameSession.ledger_next_seq - 1
+	var notice: String = _town_notice_text(GameSession.take_town_notice())
+	if not notice.is_empty():
+		_status.text = notice
 	var eaters: Array[Hero] = GameSession.food_eaters()
 	var clock: float = GameSession.town_starving_seconds
 	var food: float = GameSession.town_resources["food"]
@@ -1119,6 +1115,22 @@ func _refresh_starvation() -> void:
 		_starve_dialog.popup_centered(Vector2i(560, 0))
 
 
+## ig-0og.3: a take_town_notice() as one line, deaths first; "" when nothing happened. The fires since the
+## last take are one total, rounded down.
+static func _town_notice_text(notice: Dictionary) -> String:
+	var lines: Array[String] = []
+	for hero_name: Variant in notice.get("starved", []):
+		lines.append("%s starved." % hero_name)
+	if int(notice.get("fires", 0)) > 0:
+		var wood: int = floori(float(notice["wood"]))
+		var stone: int = floori(float(notice["stone"]))
+		if wood == 0 and stone == 0:
+			lines.append("Rioters found nothing spare to burn.")
+		else:
+			lines.append("Rioters burned %d wood and %d stone." % [wood, stone])
+	return " ".join(lines)
+
+
 ## ig-0og.1: the town mood's line under the food line, while the mood is under 100 or more than the
 ## grace are homeless; "" otherwise.
 func _mood_line() -> String:
@@ -1126,7 +1138,12 @@ func _mood_line() -> String:
 	var mood: float = GameSession.town_mood
 	var grace: int = BALANCE.town_mood_homeless_grace
 	if GameSession.is_in_revolt():
-		return "Revolt: no order or repeat goes out until at most %d heroes are homeless." % grace
+		# ig-0og.3: before the riot, when it comes; in it, when the next fire is.
+		var clock: float = GameSession.town_revolt_seconds
+		var next_fire: String = _format_duration(TownRules.riot_seconds_to_next_fire(clock, BALANCE))
+		if clock < BALANCE.town_riot_after_minutes * 60.0:
+			return "Revolt: no order or repeat goes out until at most %d heroes are homeless. Riot in %s." % [grace, next_fire]
+		return "Riot: a tenth of the spare wood and the stone burns every %d minutes (next in %s). No order goes out until at most %d heroes are homeless." % [roundi(BALANCE.town_riot_burn_minutes), next_fire, grace]
 	if homeless > grace:
 		var per_minute: float = minf((homeless - grace) * BALANCE.town_mood_fall_per_homeless_minute, BALANCE.town_mood_fall_max_per_minute)
 		return "%d heroes have no bed. Town mood %d: revolt in about %s." % [homeless, ceili(mood), _format_duration(mood / per_minute * 60.0)]
@@ -1858,10 +1875,11 @@ func _on_enter_arena_pressed() -> void:
 	SceneRouter.go_to(SceneRouter.BATTLE)
 
 
-func _show_pending_arena_result() -> void:
+## Writes the arena's result to %Status; false when there was none.
+func _show_pending_arena_result() -> bool:
 	var result: CombatResult = SceneRouter.take_arena_result()
 	if result == null:
-		return
+		return false
 	if not result.survivors.is_empty():
 		var survivor: Hero = result.survivors[0]
 		_status.text = "Arena victory: %s survived with %d/%d HP." % [
@@ -1869,10 +1887,11 @@ func _show_pending_arena_result() -> void:
 			roundi(result.hp_after[survivor]),
 			roundi(result.maximum_hp[survivor]),
 		]
-		return
+		return true
 	assert(result.dead_heroes.size() == 1)
 	# The legacy arena result is display-only, so its prototype "death" remains isolated from permadeath.
 	_status.text = "Arena defeat: %s went down. Practice only, nothing lost." % result.dead_heroes[0].hero_name
+	return true
 
 
 func _refresh_director_ui() -> void:

@@ -1246,11 +1246,18 @@ hero needs a bed and eats, and the homeless lower the town mood until they revol
 - **The strike.** In revolt, no new order goes out, and a due repeat stops and comes home.
   Rescues are exempt. An order already fighting, or already checking, finishes its leg. Workers
   keep working, so wood keeps coming and the way out stays open. The strike kills nobody and
-  removes nothing. The strike reads the town as it was saved. So a town closed in revolt also stops its offline repeats at the first one due, and a calm town never strikes offline.
+  removes nothing. The strike reads the town as it was saved. So a town closed in revolt also stops its offline repeats at the first one due, and a calm town never strikes offline. Neither the mood nor the riot clock moves while the game is closed: a town closed 29 minutes into a revolt reopens 29 minutes in.
+- **The riot** (owner ruling 2026-09-25, '1 D'). A revolt that lasts 30 minutes becomes a riot. The
+  strike goes on, and every 10 minutes the rioters burn a tenth of the spare wood and of the stone.
+  Spare wood is what is left over the next House's price, so a riot never burns the next House's
+  wood. Food, Summon Stones, buildings and heroes never burn, and a riot kills nobody. It ends with
+  the revolt, and the next revolt starts its 30 minutes fresh. Like the mood, it runs on the live
+  tick only.
 - **The way out.** Build Houses, or sacrifice heroes. There is no new "release".
 - **The HUD** shows a mood line under the food line while the mood is under 100 or more than 2
   are homeless: how many have no bed and when the revolt comes, the revolt itself, or the
-  recovery. Dispatch is disabled with the strike's reason.
+  recovery, and in revolt, when the riot comes or when the next fire is. Dispatch is disabled with
+  the strike's reason.
 - **Hero moods stay separate.** Per-hero moods (`ig-m6o.2`) may feed the town mood later.
 
 ### Earlier direction, recorded 2026-08-11

@@ -62,6 +62,13 @@ var town_starve_acked: bool = false
 ## ig-0og.1: the town mood, 0-100 (SYSTEMS.md § Town mood and revolt). The homeless move it on the live
 ## tick only (TownRules.mood_step); a revolt is derived from it (TownRules.in_revolt), never saved.
 var town_mood: float = 100.0
+## ig-0og.3: live seconds the town has been in revolt; the first live tick outside one sets it to 0. The
+## riot fires at each TownRules.riot_fires crossing. Saved; moves on the live tick only, like town_mood.
+var town_revolt_seconds: float = 0.0
+## ig-0og.3: what the town did since the hub last took it (take_town_notice): the starved heroes' names,
+## and the riot's fires with the wood and stone they burned. Unsaved: from_dict clears it, and a rollback
+## puts back its value from before the transaction (_rollback_kept), so an undone death or fire is not said.
+var _town_notice: Dictionary = _empty_town_notice()
 ## The Ledger (DECISIONS.md 2026-09-24): settled events, appended by this script's mutators through
 ## Ledger.append. The records live in SaveService's side file, not in to_dict(); the main save keeps
 ## only ledger_next_seq, the high-water mark. seq is never reused.
@@ -1091,6 +1098,7 @@ func _starve_in_memory(candidates: Array[Hero], balance: BalanceTable) -> void:
 	for slot: int in victim.equipped.keys():
 		unequip_item(victim, slot)
 	kill_hero(victim, &"", balance, "starvation")
+	(_town_notice["starved"] as Array).append(victim.hero_name)
 
 
 ## The heroes who eat: every hero, wherever it is: housed or not, home, away on an order or stranded
@@ -1118,6 +1126,33 @@ func homeless_heroes() -> Array[Hero]:
 ## the riot (ig-0og.3).
 func is_in_revolt() -> bool:
 	return TownRules.in_revolt(town_mood, homeless_heroes().size(), preload("res://balance.tres"))
+
+
+## ig-0og.3: the town's notice since the last take, and clears it (SaveService.take_load_notice's pattern),
+## so the hub says each death or fire once, after any scene change. {starved: Array of names, fires: int,
+## wood: float, stone: float}.
+func take_town_notice() -> Dictionary:
+	var notice: Dictionary = _town_notice
+	_town_notice = _empty_town_notice()
+	return notice
+
+
+static func _empty_town_notice() -> Dictionary:
+	return {"starved": [], "fires": 0, "wood": 0.0, "stone": 0.0}
+
+
+## ig-0og.3, the riot: fires burns, one after another, of the spare wood (over the next House's price)
+## and the town stone. Food, Summon Stones, buildings and heroes never burn.
+## One pass per fire, so a long step burns as its fires would one by one. A live pulse crosses one at most.
+func _riot_in_memory(fires: int, balance: BalanceTable) -> void:
+	var house_price: int = TownRules.wood_cost(TownRules.HOUSE, town_buildings, balance)
+	for _fire: int in fires:
+		var burn: Dictionary = TownRules.riot_burn(float(town_resources["wood"]), float(town_resources["stone"]), house_price, balance)
+		town_resources["wood"] = burn["wood"]
+		town_resources["stone"] = burn["stone"]
+		_town_notice["wood"] = float(_town_notice["wood"]) + float(burn["burned_wood"])
+		_town_notice["stone"] = float(_town_notice["stone"]) + float(burn["burned_stone"])
+	_town_notice["fires"] = int(_town_notice["fires"]) + fires
 
 
 ## ig-0og.1, the strike: why no new order or repeat may go out, or "" when the town isn't in revolt.
@@ -2277,6 +2312,15 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	if step["death"]:
 		_starve_in_memory(candidates, balance)
 	town_mood = TownRules.mood_step(town_mood, homeless_heroes().size(), delta_seconds, balance)
+	# ig-0og.3, the riot: the same revolt check as the strike, read after the mood step.
+	if is_in_revolt():
+		var revolt_before: float = town_revolt_seconds
+		town_revolt_seconds += delta_seconds
+		var fires: int = TownRules.riot_fires(revolt_before, town_revolt_seconds, balance)
+		if fires > 0:
+			_riot_in_memory(fires, balance)
+	else:
+		town_revolt_seconds = 0.0
 	for incident: Dictionary in stranded_incidents:
 		if not bool(incident.get("paused", true)):
 			rescue_clock_seconds += delta_seconds
@@ -2778,6 +2822,7 @@ func _rollback_kept() -> Dictionary:
 		"paused": _paused_battle_orders.duplicate(), "owed": _battle_owed.duplicate(),
 		"checkpoint_failed": _checkpoint_save_failed, "checkpoint_error": _checkpoint_error,
 		"command_errors": _command_errors.duplicate(), "checks": checks, "current": current,
+		"town_notice": _town_notice.duplicate(true),
 	}
 
 
@@ -2797,6 +2842,8 @@ func _roll_back(snapshot: Dictionary, kept: Dictionary) -> void:
 	_checkpoint_save_failed = bool(kept["checkpoint_failed"])
 	_checkpoint_error = str(kept["checkpoint_error"])
 	_command_errors = kept["command_errors"]
+	# ig-0og.3: before the flush below, or its refresh would take the undone death or fire.
+	_town_notice = kept["town_notice"]
 	_battle_checks = kept["checks"]
 	for order_id: String in _battle_checks.keys():
 		# A check the mutation ended (its jobs cancelled) stays ended: a job that finished first still holds
@@ -2947,6 +2994,7 @@ func to_dict() -> Dictionary:
 		"town_starving_seconds": town_starving_seconds,
 		"town_starve_acked": town_starve_acked,
 		"town_mood": town_mood,
+		"town_revolt_seconds": town_revolt_seconds,
 		"ledger_next_seq": ledger_next_seq,
 	}
 
@@ -2954,6 +3002,7 @@ func to_dict() -> Dictionary:
 ## A load: stops every sim job, then reads data (ig-7sn.17: a rollback reads without the stop).
 func from_dict(data: Dictionary) -> void:
 	_cancel_battle_jobs()
+	_town_notice = _empty_town_notice()
 	_read_profile(data)
 
 
@@ -3108,6 +3157,14 @@ func _read_starvation(data: Dictionary, balance: BalanceTable) -> void:
 			push_warning("town_mood %s is outside 0-100: it reads %s." % [raw_mood, town_mood])
 	elif raw_mood != null:
 		push_warning("Invalid town_mood '%s': the town reads calm (100)." % raw_mood)
+	# ig-0og.3: town_revolt_seconds, additive. Missing or null reads 0; not a finite number, or under 0,
+	# reads 0 with a warning.
+	town_revolt_seconds = 0.0
+	var raw_revolt: Variant = data.get("town_revolt_seconds")
+	if (raw_revolt is int or raw_revolt is float) and is_finite(float(raw_revolt)) and float(raw_revolt) >= 0.0:
+		town_revolt_seconds = float(raw_revolt)
+	elif raw_revolt != null:
+		push_warning("Invalid town_revolt_seconds '%s': the riot clock reads 0." % raw_revolt)
 
 
 ## Additive keys (no SAVE_VERSION bump). A save without town_resources gets town_start_wood once;

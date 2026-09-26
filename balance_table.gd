@@ -224,6 +224,12 @@ extends Resource
 @export var town_mood_fall_per_homeless_minute: float = 1.0
 @export var town_mood_fall_max_per_minute: float = 5.0
 @export var town_mood_rise_per_minute: float = 2.0
+# The riot (ig-0og.3; SYSTEMS.md § Town mood and revolt; PROVISIONAL): a revolt that lasts
+# town_riot_after_minutes burns town_riot_burn_share of the spare wood and of the stone every
+# town_riot_burn_minutes after that.
+@export var town_riot_after_minutes: float = 30.0
+@export var town_riot_burn_minutes: float = 10.0
+@export var town_riot_burn_share: float = 0.1
 # The Ledger (SYSTEMS.md § The Ledger; both caps PROVISIONAL).
 @export var ledger_max_records: int = 10000
 @export var battle_max_moments: int = 64

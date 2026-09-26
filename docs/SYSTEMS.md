@@ -5978,6 +5978,9 @@ and the draught table in § Keepers and professions). There are four reasons:
 
 Food above what the town eats is a buffer.
 
+> ⚠️ **PROVISIONAL** — every row above is unfelt · **Settled by:** a played build of `ig-6m2.5`.
+> If farms beyond the minimum feel pointless, a new bead can give food a second use.
+
 ### Town mood and revolt (`ig-0og.1`, owner ruling 2026-09-25)
 
 Design: `GAME_SPEC.md` § Town mood and revolt. Boundaries: `DECISIONS.md` 2026-09-25, "Every hero
@@ -5989,10 +5992,23 @@ needs a bed and eats".
 | `town_mood_fall_per_homeless_minute` | 1.0 | For each homeless hero over the grace. 5 homeless reach a revolt in 33 min |
 | `town_mood_fall_max_per_minute` | 5.0 | A revolt is always at least 20 min away from full. This is the "seen coming" floor |
 | `town_mood_rise_per_minute` | 2.0 | At the grace or under. Full again 50 min after the fix |
+| `town_riot_after_minutes` | 30 | A revolt strikes for 30 min before the first fire (`ig-0og.3`). With the mood's 20-minute floor, the first fire comes at least 50 min after the mood starts falling |
+| `town_riot_burn_minutes` | 10 | The time between fires |
+| `town_riot_burn_share` | 0.1 | 6 fires an hour burn about half of the spare wood and stone a riot started with. With income, spare wood settles near 100 minutes of wood income (0.9 S + 10 W = S) |
 
 `town_mood` is one `GameSession` float, 0-100, saved; a save without it reads 100. It moves only
 on the live tick. A revolt is a mood of 0 with more than `town_mood_homeless_grace` heroes
 homeless. It is derived, never saved.
+
+**The riot** (`ig-0og.3`, owner ruling "1 D"). `town_revolt_seconds` (saved; missing = 0; not a
+number or under 0 reads 0 with a warning) counts live seconds in revolt. The first live tick outside
+a revolt sets it to 0. It moves only on the live tick, like `town_mood`. A fire lands each time it
+crosses `town_riot_after_minutes` + k x `town_riot_burn_minutes` (k >= 0), so a long frame fires
+once for every crossing. A fire burns `town_riot_burn_share` of max(0, wood - the next House's price)
+and of stone. With no House yet the first is free, so all the wood is spare. Food doesn't burn
+(§ Food does not make draughts, reason 1: a second way to die would feed the first). Summon Stones
+don't burn: the over-summoner holds under 100, and the strike already stops their income. The hub's
+status line says the fires since it last looked as one total, with any "X starved.", once.
 
 **Pacing check.** 3 homeless fall 1 a minute; 5 reach a revolt from full in 33 minutes; 7 or more
 fall at the cap and reach it in 20, the fastest. From 0, the mood is back to full in 50 minutes.
@@ -6010,8 +6026,7 @@ Desk result at rate B with the curve on (town_model.py):
 
 > ⚠️ **PROVISIONAL** — the mood's fall (1), cap (5) and rise (2) are desk numbers from town_model.py · **Settled by:** the owner playing a mass summon. The bots house or feed everyone beyond the grace, so no run measures them.
 
-> ⚠️ **PROVISIONAL** — every row above is unfelt · **Settled by:** a played build of `ig-6m2.5`.
-> If farms beyond the minimum feel pointless, a new bead can give food a second use.
+> ⚠️ **PROVISIONAL** — the riot's 30 / 10 / 0.1 are desk numbers · **Settled by:** the owner playing a mass summon. The bots and Mid's run never revolt, so no run measures them.
 
 ### Stone and construction (`ig-6m2.3`)
 

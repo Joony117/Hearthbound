@@ -260,3 +260,34 @@ static func mood_step(mood: float, homeless: int, delta_seconds: float, balance:
 ## it (GameSession.strike_refusal) and so does the riot (ig-0og.3).
 static func in_revolt(mood: float, homeless: int, balance: BalanceTable) -> bool:
 	return mood <= 0.0 and homeless > balance.town_mood_homeless_grace
+
+
+## ig-0og.3, the riot (SYSTEMS.md § Town mood and revolt): the fires a revolt clock passes moving from
+## before to after. One lands at each town_riot_after_minutes + k x town_riot_burn_minutes (k >= 0), so a
+## long step fires once for every crossing it passes, and a clock resting on one never fires it twice.
+static func riot_fires(before: float, after: float, balance: BalanceTable) -> int:
+	return _riot_fires_by(after, balance) - _riot_fires_by(before, balance)
+
+
+## The seconds from a revolt clock to its next fire: the riot's start, then each burn after it.
+static func riot_seconds_to_next_fire(clock: float, balance: BalanceTable) -> float:
+	var first: float = balance.town_riot_after_minutes * 60.0
+	return first + _riot_fires_by(clock, balance) * balance.town_riot_burn_minutes * 60.0 - clock
+
+
+## One fire: town_riot_burn_share of the spare wood (over house_price, the next House's, so a riot never
+## burns that House's wood) and of the stone. Returns {wood, stone, burned_wood, burned_stone}.
+static func riot_burn(wood: float, stone: float, house_price: int, balance: BalanceTable) -> Dictionary:
+	var burned_wood: float = maxf(wood - house_price, 0.0) * balance.town_riot_burn_share
+	var burned_stone: float = maxf(stone, 0.0) * balance.town_riot_burn_share
+	return {"wood": wood - burned_wood, "stone": stone - burned_stone, "burned_wood": burned_wood, "burned_stone": burned_stone}
+
+
+static func _riot_fires_by(clock: float, balance: BalanceTable) -> int:
+	var first: float = balance.town_riot_after_minutes * 60.0
+	if clock < first:
+		return 0
+	# A burn gap of 0 or less is a bad row: one fire at the start, none after (no INF, no endless loop).
+	if balance.town_riot_burn_minutes <= 0.0:
+		return 1
+	return floori((clock - first) / (balance.town_riot_burn_minutes * 60.0)) + 1

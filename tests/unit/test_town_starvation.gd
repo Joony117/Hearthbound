@@ -264,6 +264,8 @@ func test_the_death_keeps_the_gear_writes_the_ledger_and_clears_the_body() -> vo
 
 
 # The death is a checked mutation: a save that fails undoes it whole, and the next tick tries again.
+# ig-0og.3: the rollback puts the town notice back too, so the hub never says the undone death, and says
+# the retry's once.
 func test_a_death_whose_save_fails_is_rolled_back() -> void:
 	var victim: Hero = _housed("Mira", Vector2i(0, 2))
 	var ring := Item.new(&"ring", 0)
@@ -272,15 +274,43 @@ func test_a_death_whose_save_fails_is_rolled_back() -> void:
 	GameSession.town_resources["food"] = 0.0
 	GameSession.town_starving_seconds = DUE_1 - 1.0
 	GameSession.town_starve_acked = true
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var status: Label = hub.get_node("%Status") as Label
+	status.text = "before"
 	var before: String = JSON.stringify(GameSession.to_dict(), "", true)
 	assert_eq(DirAccess.make_dir_absolute(SaveService.TMP_PATH), OK)
 	GameSession.tick_expeditions(1.0)
 	assert_push_error("Save failed")
 	assert_not_null(GameSession.hero_by_id(victim.instance_id), "alive: nothing was written")
 	assert_eq(JSON.stringify(GameSession.to_dict(), "", true), before, "gear, inventory, food, clock, acked and the Ledger all back")
+	assert_eq(GameSession.take_town_notice()["starved"], [], "the undone death is not in the notice")
+	assert_false(status.text.contains("starved"), "nor said: " + status.text)
 	assert_eq(DirAccess.remove_absolute(SaveService.TMP_PATH), OK)
 	GameSession.tick_expeditions(1.0)
 	assert_null(GameSession.hero_by_id(victim.instance_id), "the retry goes through")
+	assert_eq(status.text, "Mira starved.", "the retry's death is said")
+	status.text = "later"
+	GameSession.expeditions_changed.emit()
+	assert_eq(status.text, "later", "once")
+
+
+# ig-0og.3: a starvation while the battle view is up (no hub) is said once when the hub comes back.
+func test_a_death_during_the_battle_view_is_said_once_when_the_hub_comes_back() -> void:
+	var mira: Hero = _housed("Mira", Vector2i(0, 2), 0)
+	_housed("Sol", Vector2i(1, 2), 5)
+	GameSession.town_resources["food"] = 0.0
+	GameSession.town_starving_seconds = DUE_1 - 1.0
+	GameSession.town_starve_acked = true
+	GameSession.tick_expeditions(1.0)
+	assert_null(GameSession.hero_by_id(mira.instance_id))
+	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
+	add_child_autofree(hub)
+	var status: Label = hub.get_node("%Status") as Label
+	assert_eq(status.text, "Mira starved.")
+	status.text = "later"
+	GameSession.expeditions_changed.emit()
+	assert_eq(status.text, "later", "not again at the next refresh")
 
 
 # Rule 8: kill_hero is the only removal.
