@@ -27,6 +27,21 @@ cd /e/Game && APPDATA="$(cygpath -w "$(mktemp -d)")" ./tools/godot/Godot_v4.7.1-
 - Use the `_console` binary. The plain exe swallows stdout and always looks green.
 - The director re-runs BUILT before any commit or bead close. A worker's report is not verification.
 
+BUILT in a cloud session (Linux, ig-dpn). The SessionStart hook (`scripts/session_start.sh`) installs
+Godot 4.7.1 Linux into `tools/godot/` and bd 1.2.2, then rebuilds beads from `.beads/issues.jsonl`:
+
+```bash
+bash tests/import_gate.sh
+d="$(mktemp -d)" && XDG_DATA_HOME="$d/data" XDG_CONFIG_HOME="$d/config" XDG_CACHE_HOME="$d/cache" ./tools/godot/Godot_v4.7.1-stable_linux.x86_64 --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
+```
+
+- The temp `XDG_*` dirs are the Linux twin of the `APPDATA=` prefix. The plain Linux binary prints to stdout.
+- `tests/import_gate.sh` mirrors `import_gate.ps1` check for check. Change one, change both.
+- Beads round trip: a cloud session writes only its own bead. Before committing, run
+  `bd export -o .beads/issues.jsonl` (auto-export waits 60 s between writes), commit it with the work, and
+  push the session branch. The PC, with `git status .beads` clean: `git fetch origin <branch> && git merge FETCH_HEAD`,
+  then `bd import`. No Dolt remote.
+
 Export: `mkdir -p export && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --export-release "Windows Desktop" export/game.exe`
 (the exporter won't create the directory).
 

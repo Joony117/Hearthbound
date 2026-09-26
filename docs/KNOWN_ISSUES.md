@@ -186,6 +186,31 @@ the first. The documented command in `CLAUDE.md` carries the `mkdir -p export` f
 `tests/import_gate.ps1` cannot resolve its relative engine path (`$PSScriptRoot\..\tools\godot\`).
 The gate only runs in a checkout that already has `tools/godot/` populated. Deliberately not
 fixed with engine discovery or a `GODOT_BIN` fallback — that is speculative until there is CI.
+A cloud session is the exception: its SessionStart hook installs the Linux binary (next entry).
+
+### Two platforms: the PC is Windows, a cloud session is Linux (ig-dpn)
+- The PC runs `tests/import_gate.ps1` and the `_console.exe` with `APPDATA=`. A cloud session runs
+  `tests/import_gate.sh` and `Godot_v4.7.1-stable_linux.x86_64` with temp `XDG_DATA_HOME`,
+  `XDG_CONFIG_HOME` and `XDG_CACHE_HOME`. Both commands are in `CLAUDE.md` under BUILT.
+- On Linux, user:// is `$XDG_DATA_HOME/Godot/app_userdata/Infinite Gacha` (capital G, from the
+  custom user dir; Linux's own default would be lowercase). No real save lives in the cloud.
+- `scripts/session_start.sh` installs Godot and bd in the cloud from our own release
+  `cloud-tools-v1`, pinned by sha256. Measured on a fresh VM (2026-09-26): about 13 s with
+  `bd bootstrap`; a rerun takes 0.2 s and changes nothing.
+- Cloud proxy limits: release assets download only from repos attached to the session (so not
+  from godotengine/godot or gastownhall/beads, hence our release); GitHub goes over REST, since
+  GraphQL is limited; `git push` works only for the session's own branch. The image has no `gh`,
+  so the script falls back to `curl` against api.github.com, where the proxy adds the credentials.
+- Beads in the cloud are rebuilt from the committed `.beads/issues.jsonl` (no Dolt remote). The
+  4 bd memories are not in that export, so a cloud `bd prime` lacks them. bd's auto-export waits
+  60 s between writes, so a cloud session runs `bd export -o .beads/issues.jsonl` before it commits.
+- Windows-only, outside BUILT: the usage lines in `tests/stages/stage_bot.gd:4` and
+  `tests/perf/perf_baseline.gd:7` (APPDATA and the .exe). On Linux, swap in the XDG prefix and the
+  Linux binary.
+- A fresh clone lacks `addons/godot_ai/export/mcp_export_plugin.gd`: `.gitignore`'s unanchored
+  `export/` also ignores that folder. The editor plugin then fails to parse in the gate's warm
+  import, which is printed but not grepped, so the gate stays green. Fix on the PC (the only copy):
+  ig-0lt.
 
 ### `--headless --import` regenerates `.gd.uid` sidecars
 The gate's cache-warming pass makes Godot write a `.gd.uid` next to any script it has not indexed

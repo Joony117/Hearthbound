@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "bd prime --hook-json",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/session_start.sh\"",
             "type": "command"
           }
         ],
