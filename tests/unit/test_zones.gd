@@ -364,7 +364,7 @@ func test_a_mid_zone_save_through_disk_reloads_exactly_and_fights_on_as_the_unbr
 		var broken: Dictionary = profile.duplicate(true)
 		(_battle_of(broken)["field_objects"] as Array)[0][bad[0]] = bad[1]
 		assert_ne(Session.validate_saved_state(broken, 3), "", "%s %s is rejected" % bad)
-	# Sol: an id at or past the sequence would be cast again; more than the cap would outrun its cost bound.
+	# Sol: an id at or past the sequence would be cast again.
 	for bad_id: String in ["field:0", "field:%d" % (int(_battle_of(profile)["field_sequence"]) + 1), "zone:1", "field:01", "field:x"]:
 		var reused: Dictionary = profile.duplicate(true)
 		(_battle_of(reused)["field_objects"] as Array)[0]["id"] = bad_id
@@ -381,9 +381,9 @@ func test_a_mid_zone_save_through_disk_reloads_exactly_and_fights_on_as_the_unbr
 		copy["id"] = "field:%d" % (number + 1)
 		crowd.append(copy)
 	_battle_of(crowded)["field_sequence"] = crowd.size()
-	assert_ne(Session.validate_saved_state(crowded, 3), "", "more zones than the cap are rejected")
-	crowd.pop_back()
-	assert_eq(Session.validate_saved_state(crowded, 3), "", "the cap itself loads")
+	# ig-vl1.5 (ACC 10): over the cap is trimmed on load, oldest first, not rejected (test_rime_wall.gd).
+	assert_eq(Session.validate_saved_state(crowded, 3), "", "more zones than the cap load")
+	assert_eq(BattleState.from_dict(_battle_of(crowded)).field_objects.size(), SIM.BALANCE.battle_field_object_cap, "trimmed to the cap")
 	var unknown: Dictionary = profile.duplicate(true)
 	var fields: Array = _battle_of(unknown)["field_objects"] as Array
 	fields[0]["skill_id"] = "mage_meteor"

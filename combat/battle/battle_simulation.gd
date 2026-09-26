@@ -40,6 +40,7 @@ const ABILITIES: Dictionary[String, AbilityDefinition] = {
 	"mage_warding_glyph": preload("res://combat/abilities/mage_warding_glyph.tres"),
 	"mage_hanging_star": preload("res://combat/abilities/mage_hanging_star.tres"),
 	"mage_rime_circle": preload("res://combat/abilities/mage_rime_circle.tres"),
+	"mage_rime_wall": preload("res://combat/abilities/mage_rime_wall.tres"),
 	"cleric_grace": preload("res://combat/abilities/cleric_grace.tres"),
 	"cleric_mend": preload("res://combat/abilities/cleric_mend.tres"),
 	"cleric_censer_swing": preload("res://combat/abilities/cleric_censer_swing.tres"),
@@ -449,16 +450,19 @@ static func validate_snapshot(data: Dictionary) -> String:
 
 ## ig-vl1.4: additive keys (a checkpoint without them has no zones), checked the way the objective state
 ## is (DECISIONS.md 2026-09-25, "Casters shape the field", item 1). A skill id this build lacks is not an
-## error: BattleState.from_dict drops that object with a warning.
+## error: BattleState.from_dict drops a zone with that skill with a warning. A wall reads nothing from its
+## skill, so it is kept whatever its skill (item 1, amended by ig-vl1.5).
+## Objects over the caps are not an error either (ig-vl1.5): from_dict trims them as a cast would, so a
+## lowered cap never locks a save out.
 static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, actor_ids: Dictionary[String, bool]) -> String:
 	if data.has("field_sequence") and not _nonnegative_integer(data.get("field_sequence")):
 		return "Battle field_sequence must be a non-negative integer."
 	if not data.has("field_objects"):
 		return ""
-	# A build never saves more than the cap, and never an id past its sequence: the next cast's id is
-	# field:<sequence + 1>, so one at or below it can't be written twice.
-	if not data.get("field_objects") is Array or (data.get("field_objects") as Array).size() > BALANCE.battle_field_object_cap:
-		return "Battle field_objects must be an Array of at most %d." % BALANCE.battle_field_object_cap
+	# Never an id past its sequence: the next cast's id is field:<sequence + 1>, so one at or below it can't
+	# be written twice. The ids' uniqueness bounds the count by the sequence.
+	if not data.get("field_objects") is Array:
+		return "Battle field_objects must be an Array."
 	var sequence: int = int(data.get("field_sequence", 0))
 	var ids: Dictionary[String, bool] = {}
 	for entry: Variant in data.get("field_objects") as Array:
@@ -492,6 +496,9 @@ static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, acto
 				return "Battle field object %s must be finite and non-negative." % key
 		if not (float(field["radius"]) > 0.0) or not (float(field["remaining_seconds"]) > 0.0):
 			return "Battle field object radius and remaining_seconds must be positive."
+		# The wall thickness's cap (ig-0qh): the sim compares in float64, but the view's ring is float32.
+		if float(field["radius"]) > zone.battle_bounds * 2.0:
+			return "Battle zone radius must fit the authored bounds."
 	return ""
 
 
@@ -1130,6 +1137,7 @@ static func _use_skill(
 	target: BattleActor,
 	point: Vector2,
 	rng: RandomNumberGenerator = null,
+	across: Vector2 = Vector2.ZERO,
 ) -> bool:
 	if actor.life != BattleActor.LIFE_ALIVE or not skill.is_ability() or float(actor.skill_cooldowns.get(str(skill.skill_id), 0.0)) > 0.0:
 		return false
@@ -1147,7 +1155,7 @@ static func _use_skill(
 	var moves: bool = not _effect_of(skill, "move").is_empty()
 	if moves and _has_status(actor, "root"):
 		return false
-	if not _apply_effects(state, actor, skill, target, point, rng, false, false):
+	if not _apply_effects(state, actor, skill, target, point, rng, false, false, across):
 		return false
 	# The caster faces what it cast at, manual or auto; a caster that moved, or cast around itself,
 	# faces its target.
@@ -1175,7 +1183,8 @@ static func _spend_ability(state: BattleState, actor: BattleActor, skill: Abilit
 
 
 ## The primitives, in the skill's order (AbilityDefinition.EFFECT_KEYS). False only when a required
-## effect (which comes before anything that changes state) finds nothing.
+## effect (which comes before anything that changes state) finds nothing, or a wall can't be placed.
+## across: the line a wall goes across (its caster's aim).
 static func _apply_effects(
 	state: BattleState,
 	actor: BattleActor,
@@ -1185,6 +1194,7 @@ static func _apply_effects(
 	rng: RandomNumberGenerator,
 	combo: bool,
 	weaponskill: bool,
+	across: Vector2 = Vector2.ZERO,
 ) -> bool:
 	var heal_scale: float = 1.0 + _passive(actor, "heal_bonus")
 	# ig-1jw: an ability's ATK amounts and status or control seconds are x the battle's pace. A
@@ -1269,6 +1279,10 @@ static func _apply_effects(
 					"atk": _stat(actor, "atk"),
 					"heal_scale": heal_scale,
 				})
+			"wall":
+				# A wall is its skill's only effect, so a refusal changes nothing.
+				if not _cast_wall(state, actor, skill, effect, point, across, pace):
+					return false
 			"damage":
 				var multiplier: float = (float(effect["combo_multiplier"]) if combo and effect.has("combo_multiplier") else float(effect["multiplier"])) * pace
 				if effect.has("delay_seconds"):
@@ -1593,6 +1607,13 @@ static func _auto_cast(state: BattleState, actor: BattleActor, target: BattleAct
 				var gap: float = actor.position.distance_to(aim_from.position)
 				if gap < skill.min_range_units or gap > skill.range_units:
 					continue
+			if skill.ai_rule == "melee_near_back_row":
+				# Rime Wall (ig-vl1.5): across the ally-enemy line, ai_offset from the ally. A placement that
+				# can't push someone clear is skipped; the rule looks again next tick.
+				var threat: Array = _back_row_threat(state, actor, skill)
+				if not threat.is_empty() and _use_skill(state, actor, skill, threat[1], _threat_point(threat[0], threat[1], skill), rng, (threat[1] as BattleActor).position - (threat[0] as BattleActor).position):
+					return true
+				continue
 			var aim: BattleActor = _rule_aim(state, actor, skill, aim_from, band)
 			if aim == null:
 				continue
@@ -1740,6 +1761,40 @@ static func _pressed_group_aim(state: BattleState, actor: BattleActor, skill: Ab
 			lowest = candidate
 			lowest_fraction = candidate.hp / candidate.max_hp
 	return lowest
+
+
+## melee_near_back_row (Rime Wall, ig-vl1.5): [back-row ally, enemy] for the nearest living enemy melee
+## actor ai_min_radius to ai_radius from a living back-row ally whose cast point is in range; ties go to
+## the lower spawn index, the enemy's and then the ally's (actor order, strict <). [] for none. Worst
+## case: the back row in reach x the enemies, 50 x 30 on frontier_march, per ready caster per tick.
+static func _back_row_threat(state: BattleState, actor: BattleActor, skill: AbilityDefinition) -> Array:
+	# Only a back-row ally within range + ai_offset of the caster can have its point in range.
+	var reach: float = skill.range_units + skill.ai_offset
+	var guarded: Array[BattleActor] = []
+	for ally: BattleActor in state.actors:
+		if ally.faction == actor.faction and ally.life == BattleActor.LIFE_ALIVE and ally.archetype in BACK_ROW and ally.position.distance_to(actor.position) <= reach:
+			guarded.append(ally)
+	if guarded.is_empty():
+		return []
+	var best: Array = []
+	var best_gap: float = INF
+	for enemy: BattleActor in state.actors:
+		if enemy.faction == actor.faction or enemy.life != BattleActor.LIFE_ALIVE or enemy.attack_range > BALANCE.battle_melee_range:
+			continue
+		for ally: BattleActor in guarded:
+			var gap: float = ally.position.distance_to(enemy.position)
+			if gap < skill.ai_min_radius or gap > skill.ai_radius or not (gap < best_gap):
+				continue
+			if actor.position.distance_to(_threat_point(ally, enemy, skill)) > skill.range_units:
+				continue
+			best = [ally, enemy]
+			best_gap = gap
+	return best
+
+
+## Rime Wall's AI point: ai_offset from the ally toward the enemy, on the line between them.
+static func _threat_point(ally: BattleActor, enemy: BattleActor, skill: AbilityDefinition) -> Vector2:
+	return ally.position + (enemy.position - ally.position).normalized() * skill.ai_offset
 
 
 static func _inside_telegraph(telegraphs: Array[BattleActor], position: Vector2) -> bool:
@@ -2089,7 +2144,18 @@ static func _manual_abilities(state: BattleState, actors: Array[BattleActor], ta
 			continue
 		var self_cast: bool = skill.self_centered and target == null
 		var aim: Vector2 = actor.position if self_cast else (target.position if target != null else point)
-		used = _use_skill(state, actor, skill, actor if self_cast else target, aim, rng) or used
+		var across := Vector2.ZERO
+		var wall: Dictionary = _effect_of(skill, "wall")
+		if not wall.is_empty():
+			# ig-vl1.5, the hand rule (SYSTEMS.md § Casters, Walls): across the line from the caster to the aim,
+			# centered on it. A clicked unit's point first moves half the footprint's width and WALL_MARGIN
+			# toward the caster, so the unit ends on the far side. An aim on the caster takes its facing.
+			across = aim - actor.position
+			if across == Vector2.ZERO:
+				across = _push_direction(actor.facing, Vector2.ZERO)
+			elif target != null:
+				aim -= across.normalized() * (float(wall["thickness"]) * 0.5 + BALANCE.battle_separation_radius * 0.5 + WALL_MARGIN)
+		used = _use_skill(state, actor, skill, actor if self_cast else target, aim, rng, across) or used
 	state.rng_state = str(rng.state)
 	return used
 
@@ -2637,20 +2703,8 @@ static func _wall_paths(state: BattleState) -> WallPaths:
 	paths.count = state.field_objects.size()
 	state.wall_paths = paths
 	for field: Dictionary in state.field_objects:
-		if field["kind"] != "wall":
-			continue
-		var start: Vector2 = _array_vector(field["start"])
-		var finish: Vector2 = _array_vector(field["end"])
-		var along: Vector2 = (finish - start).normalized()
-		var grow: float = float(field["thickness"]) * 0.5 + BALANCE.battle_separation_radius * 0.5
-		var half := Vector2(start.distance_to(finish) * 0.5 + grow, grow)
-		var center: Vector2 = (start + finish) * 0.5
-		var reach := Vector2(absf(along.x) * half.x + absf(along.y) * half.y, absf(along.y) * half.x + absf(along.x) * half.y)
-		paths.centers.append(center)
-		paths.alongs.append(along)
-		paths.halves.append(half)
-		paths.box_low.append(center - reach)
-		paths.box_high.append(center + reach)
+		if field["kind"] == "wall":
+			_add_footprint(paths, _array_vector(field["start"]), _array_vector(field["end"]), float(field["thickness"]))
 	var bounds: float = float(state.objective_state.get("bounds", 20.0))
 	paths.bounds = bounds
 	for wall: int in paths.centers.size():
@@ -2681,6 +2735,19 @@ static func _wall_paths(state: BattleState) -> WallPaths:
 					paths.lengths[i * n + j] = through
 					paths.firsts[i * n + j] = paths.firsts[i * n + via]
 	return paths
+
+
+static func _add_footprint(paths: WallPaths, start: Vector2, finish: Vector2, thickness: float) -> void:
+	var along: Vector2 = (finish - start).normalized()
+	var grow: float = thickness * 0.5 + BALANCE.battle_separation_radius * 0.5
+	var half := Vector2(start.distance_to(finish) * 0.5 + grow, grow)
+	var center: Vector2 = (start + finish) * 0.5
+	var reach := Vector2(absf(along.x) * half.x + absf(along.y) * half.y, absf(along.y) * half.x + absf(along.x) * half.y)
+	paths.centers.append(center)
+	paths.alongs.append(along)
+	paths.halves.append(half)
+	paths.box_low.append(center - reach)
+	paths.box_high.append(center + reach)
 
 
 ## Where the straight move from -> to first enters the wall's footprint (its open rectangle), as a
@@ -2750,6 +2817,101 @@ static func _wall_face(paths: WallPaths, wall: int, point: Vector2, side: float)
 	return paths.centers[wall] + along * local.dot(along) + across * (side * (paths.halves[wall].y + WALL_MARGIN))
 
 
+## ig-vl1.5: a wall effect (Rime Wall; SYSTEMS.md § Casters, Walls). A segment of its length centered on
+## point and across the line `across` (the aim, pointing away from the caster's side), its ends pulled in
+## along it to the bounds; it never turns. Every alive or downed actor it lands on, elites too (not _push,
+## which skips both), goes out across it through _wall_face: to the side it stood on, one exactly on its
+## line to the caster's (DECISIONS.md 2026-09-25 item 6); when that face is out of bounds, to the far one.
+## A carried body rides with its carrier; the dead and extracted stay put. The oldest wall at
+## battle_wall_cap ends first, then the oldest object at battle_field_object_cap. False, with nothing
+## changed, when a pushed actor's spot is out of bounds or in a wall that stays up: so no actor is ever
+## left inside a footprint. The AI tries again next tick; a hand cast is refused and spends no cooldown.
+static func _cast_wall(state: BattleState, actor: BattleActor, skill: AbilityDefinition, effect: Dictionary, point: Vector2, across: Vector2, pace: float) -> bool:
+	var bounds: float = float(state.objective_state.get("bounds", 20.0))
+	if across == Vector2.ZERO or absf(point.x) > bounds or absf(point.y) > bounds:
+		return false
+	var normal: Vector2 = across.normalized()
+	# The footprint's across axis, (-along.y, along.x), is then normal.
+	var along := Vector2(normal.y, -normal.x)
+	var half: float = float(effect["length"]) * 0.5
+	var start: Vector2 = _clamp_to_bounds(state, point - along * minf(half, _reach_to_bounds(point, -along, bounds)))
+	var finish: Vector2 = _clamp_to_bounds(state, point + along * minf(half, _reach_to_bounds(point, along, bounds)))
+	if start == finish:
+		return false
+	var kept: Array[Dictionary] = state.field_objects.duplicate()
+	var walls: int = 0
+	for field: Dictionary in kept:
+		if field["kind"] == "wall":
+			walls += 1
+	while walls >= BALANCE.battle_wall_cap:
+		for index: int in kept.size():
+			if kept[index]["kind"] == "wall":
+				kept.remove_at(index)
+				break
+		walls -= 1
+	while kept.size() >= BALANCE.battle_field_object_cap:
+		kept.remove_at(0)
+	# The walls that stay up, then the new one: geometry only, no corner graph.
+	var paths := WallPaths.new()
+	paths.bounds = bounds
+	for field: Dictionary in kept:
+		if field["kind"] == "wall":
+			_add_footprint(paths, _array_vector(field["start"]), _array_vector(field["end"]), float(field["thickness"]))
+	var wall: int = paths.centers.size()
+	_add_footprint(paths, start, finish, float(effect["thickness"]))
+	var caster_side: float = _wall_side(paths, wall, actor.position)
+	if caster_side == 0.0:
+		caster_side = -1.0
+	var moves: Array = []
+	for other: BattleActor in state.actors:
+		if not other.life in [BattleActor.LIFE_ALIVE, BattleActor.LIFE_DOWNED] or not other.carried_by_id.is_empty() or not _in_wall(paths, wall, other.position):
+			continue
+		var side: float = _wall_side(paths, wall, other.position)
+		if side == 0.0:
+			side = caster_side
+		var spot: Vector2 = _wall_face(paths, wall, other.position, side)
+		if absf(spot.x) > bounds or absf(spot.y) > bounds:
+			spot = _wall_face(paths, wall, other.position, -side)
+		if absf(spot.x) > bounds or absf(spot.y) > bounds:
+			return false
+		for older: int in wall:
+			if _in_wall(paths, older, spot):
+				return false
+		moves.append([other, spot])
+	state.field_objects = kept
+	state.field_sequence += 1
+	state.field_objects.append({
+		"id": "field:%d" % state.field_sequence,
+		"kind": "wall",
+		"skill_id": str(skill.skill_id),
+		"owner_actor_id": actor.id,
+		"faction": actor.faction,
+		"start": [start.x, start.y],
+		"end": [finish.x, finish.y],
+		"thickness": float(effect["thickness"]),
+		"remaining_seconds": float(effect["seconds"]) * pace,
+	})
+	for move: Array in moves:
+		var pushed: BattleActor = move[0]
+		pushed.position = move[1]
+		if not pushed.carrying_id.is_empty():
+			var carried: BattleActor = _actor_by_id(state, pushed.carrying_id)
+			if carried != null:
+				carried.position = pushed.position
+	return true
+
+
+## How far from `from` along the unit `direction` the point stays inside the bounds (from is inside).
+static func _reach_to_bounds(from: Vector2, direction: Vector2, bounds: float) -> float:
+	var reach: float = INF
+	for axis: int in 2:
+		if direction[axis] > 0.0:
+			reach = minf(reach, (bounds - from[axis]) / direction[axis])
+		elif direction[axis] < 0.0:
+			reach = minf(reach, (-bounds - from[axis]) / direction[axis])
+	return maxf(reach, 0.0)
+
+
 ## ig-0qh: every instant move (a push, a move skill, separation, a walk step) stops at the first footprint
 ## edge it meets, WALL_MARGIN outside it. A footprint the mover already stands in doesn't stop it, so one
 ## that spawned in a wall can leave.
@@ -2774,7 +2936,9 @@ static func _wall_cut(paths: WallPaths, from: Vector2, to: Vector2) -> Vector2:
 		x = (1.0 if x >= 0.0 else -1.0) * (half.x + WALL_MARGIN)
 	else:
 		y = (1.0 if y >= 0.0 else -1.0) * (half.y + WALL_MARGIN)
-	return paths.centers[hit] + along * x + across * y
+	# ig-vl1.5: a footprint within WALL_MARGIN of the bounds puts its edge outside them; the mover stays in.
+	var cut: Vector2 = paths.centers[hit] + along * x + across * y
+	return Vector2(clampf(cut.x, -paths.bounds, paths.bounds), clampf(cut.y, -paths.bounds, paths.bounds))
 
 
 ## A goal inside a footprint (a point order, an evade, the exit) moves to the long edge on the goal's side
@@ -2811,7 +2975,11 @@ static func _next_waypoint(paths: WallPaths, from: Vector2, goal: Vector2) -> Va
 	var inside: int = _wall_containing(paths, from)
 	if inside >= 0:
 		var own_side: float = _wall_side(paths, inside, from)
-		return _wall_face(paths, inside, from, own_side if own_side != 0.0 else 1.0)
+		var face: Vector2 = _wall_face(paths, inside, from, own_side if own_side != 0.0 else 1.0)
+		# ig-vl1.5: that face out of bounds (the field's edge), the far one.
+		if absf(face.x) > paths.bounds or absf(face.y) > paths.bounds:
+			face = _wall_face(paths, inside, from, -own_side if own_side != 0.0 else -1.0)
+		return face
 	if not _wall_blocked(paths, from, goal):
 		return goal
 	var n: int = paths.corners.size()

@@ -25,7 +25,10 @@ const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ##   inside an enemy telegraph. "fight_on": the caster has a target in range. "enemy_on_weaker_ally": the
 ##   caster's own target when it is within range_units and attacks a back-row ally (a Knight's
 ##   covered threat, ig-uu7.2), else an enemy within range_units that attacks a back-row ally or an
-##   ally with less HP (as a fraction) than the caster.
+##   ally with less HP (as a fraction) than the caster. "melee_near_back_row" (Rime Wall, ig-vl1.5): a
+##   living enemy melee actor ai_min_radius to ai_radius from a living back-row ally (Ranger, Mage,
+##   Cleric); the cast point is ai_offset from that ally toward it, within range_units. The nearest
+##   such pair decides, ties to the lower spawn index (the enemy's, then the ally's).
 ## heal band: "ally_below_heal_below": the lowest-HP ally within range_units below the battle's
 ##   heal_below. "ally_below": the lowest-HP ally within range_units below ai_fraction (of
 ##   ai_archetype when set, without ai_status when set). "allies_below": ai_count allies within
@@ -38,7 +41,7 @@ const COUNTER_TAGS: Array[String] = ["", "stun", "interrupt", "shield", "dodge"]
 ## another rule (Warding Glyph) is also picked by that rule.
 const AI_RULES: Array[String] = [
 	"always", "default", "combo", "enemies_near_target", "enemies_near_self", "target_below", "target_lacks_status",
-	"allies_near", "allies_near_ally", "fight_on", "enemy_on_weaker_ally",
+	"allies_near", "allies_near_ally", "fight_on", "enemy_on_weaker_ally", "melee_near_back_row",
 	"ally_below_heal_below", "ally_below", "allies_below", "self_below",
 	"downed_ally", "telegraph",
 ]
@@ -46,6 +49,7 @@ const AI_BANDS: Dictionary = {
 	"always": "attack", "default": "attack", "combo": "attack", "enemies_near_target": "attack",
 	"enemies_near_self": "attack", "target_below": "attack", "target_lacks_status": "attack",
 	"allies_near": "buff", "allies_near_ally": "buff", "fight_on": "buff", "enemy_on_weaker_ally": "buff",
+	"melee_near_back_row": "buff",
 	"ally_below_heal_below": "heal", "ally_below": "heal", "allies_below": "heal", "self_below": "heal",
 	"downed_ally": "revive", "telegraph": "",
 }
@@ -77,6 +81,10 @@ const AI_BANDS: Dictionary = {
 ## ("opponents" or "allies") inside it: amounts are x the caster's ATK at the cast, no crit. A pulse
 ## status is a timed status that doesn't tick itself; a stat status may cut its stat (magnitude down
 ## to above -1: Rime Circle's slow).
+## wall (ig-vl1.5; same ADR, items 5-6): a segment length long and thickness thick for seconds, centered on
+## the point and across the line it was aimed along. It blocks walking for both sides, not attacks. Any
+## actor it lands on is pushed out across it (SYSTEMS.md § Casters, Walls). An ability's, with no other
+## effect.
 ## Heals, shields and heal-over-time from a caster with heal_bonus are that much larger.
 const EFFECT_KEYS: Dictionary = {
 	"damage": ["area", "multiplier", "combo_multiplier", "required", "count", "delay_seconds", "push"],
@@ -88,6 +96,7 @@ const EFFECT_KEYS: Dictionary = {
 	"move": ["to", "distance", "lane_push"],
 	"taunt": ["seconds"],
 	"zone": ["side", "seconds", "pulse"],
+	"wall": ["seconds", "length", "thickness"],
 }
 const ZONE_SIDES: Array[String] = ["opponents", "allies"]
 const PULSE_KEYS: Dictionary = {"damage": ["multiplier"], "heal": ["multiplier"], "status": ["status", "magnitude", "seconds"]}
@@ -133,6 +142,10 @@ const INTERRUPT_AREAS: Array[String] = ["target", "around_caster"]
 @export var ai_rule: String = "always"
 @export var ai_count: int = 0
 @export var ai_radius: float = 0.0
+## melee_near_back_row only: the closest the enemy may be to the ally, and how far from the ally the cast
+## point sits.
+@export var ai_min_radius: float = 0.0
+@export var ai_offset: float = 0.0
 @export var ai_or_elite: bool = false
 ## The AI casts it on a downed ally before anything else.
 @export var ai_revive_first: bool = false
@@ -149,7 +162,7 @@ func validate() -> String:
 		return "Skill needs a skill_id and a display_name."
 	if not kind in KINDS or not archetype in ARCHETYPES or not counter_tag in COUNTER_TAGS or not ai_rule in AI_RULES:
 		return "Skill %s kind, archetype, counter_tag or ai_rule is unknown." % skill_id
-	if unlock_level < 1 or cooldown_seconds < 0.0 or range_units < 0.0 or radius_units < 0.0 or ai_count < 0 or ai_radius < 0.0 or ai_fraction < 0.0:
+	if unlock_level < 1 or cooldown_seconds < 0.0 or range_units < 0.0 or radius_units < 0.0 or ai_count < 0 or ai_radius < 0.0 or ai_fraction < 0.0 or ai_min_radius < 0.0 or ai_offset < 0.0:
 		return "Skill %s has a negative number or an unlock level below 1." % skill_id
 	if min_range_units < 0.0 or min_range_units > range_units:
 		return "Skill %s: min_range_units runs from 0 to range_units." % skill_id
@@ -165,6 +178,11 @@ func validate() -> String:
 		return "Skill %s: a combo rule needs combo_after, and combo_after needs the combo rule." % skill_id
 	if effects.is_empty():
 		return "Skill %s has no effects." % skill_id
+	if ai_rule == "melee_near_back_row" and not (ai_min_radius <= ai_radius and ai_offset > 0.0 and ai_offset < ai_min_radius):
+		return "Skill %s: melee_near_back_row needs ai_min_radius <= ai_radius and an ai_offset between 0 and ai_min_radius." % skill_id
+	var walls: int = effects.filter(func(effect: Dictionary) -> bool: return str(effect.get("type", "")) == "wall").size()
+	if walls > 0 and (walls != effects.size() or kind != "ability"):
+		return "Skill %s: a wall is an ability's only effect." % skill_id
 	for effect: Dictionary in effects:
 		var type: String = str(effect.get("type", ""))
 		if not EFFECT_KEYS.has(type):
@@ -216,6 +234,10 @@ func _effect_problem(type: String, effect: Dictionary) -> String:
 		"taunt":
 			if float(effect.get("seconds", 0.0)) <= 0.0:
 				return "needs positive seconds."
+		"wall":
+			for key: String in ["seconds", "length", "thickness"]:
+				if not _positive(effect.get(key)):
+					return "needs positive, finite seconds, length and thickness."
 		"zone":
 			if kind != "ability" or not str(effect.get("side", "")) in ZONE_SIDES or not _positive(effect.get("seconds")) or not (radius_units > 0.0):
 				return "an ability's, with a known side, positive seconds and a radius."

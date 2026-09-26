@@ -1467,8 +1467,8 @@ at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this 
 1. **Rare** (`ig-vl1.1`): 1 in 100 each from a summon. § Summoning, Class odds.
 2. **Stats** (`ig-vl1.3`): the row below. It ships at 0, so a caster has no stat edge yet.
 3. **Battlefield shaping** (`ig-vl1.4`, after an ADR, `ig-vl1.2`): a few big casts a fight. The
-   spells carry the presence. The row below is set on the presence measure after zones and re-set
-   after walls, only as high as the spells leave a caster short.
+   spells carry the presence. The row below is set once on the presence measure, after zones and
+   walls (`ig-vl1.9`), only as high as the spells leave a caster short.
 
 | Row | Value | Why |
 |---|---|---|
@@ -1542,7 +1542,7 @@ Cleric's **Hearthward** holds a line up.
 
 | Row | Value | Why |
 |---|---|---|
-| `battle_field_object_cap` | 8 | Live zones and walls in one battle, together. The oldest ends first when a ninth is cast. A caster's zone lasts less than its cooldown, so one caster has at most one up; 8 covers a frontier_march force with several casters. The cost per tick is at most 8 × the actors (80 on frontier_march) distance checks. Don't lower it before `ig-vl1.5` lands: there the cap is trimmed on load, but today a checkpoint over the cap is rejected, and that blocks the whole save's load (`game_session.gd:3462`) |
+| `battle_field_object_cap` | 8 | Live zones and walls in one battle, together. The oldest ends first when a ninth is cast. A caster's zone lasts less than its cooldown, so one caster has at most one up; 8 covers a frontier_march force with several casters. The cost per tick is at most 8 × the actors (80 on frontier_march) distance checks. Since `ig-vl1.5`, a checkpoint over the cap loads trimmed, oldest first (walls over `battle_wall_cap` first, then the total), so lowering it never locks a save out |
 
 - **A zone** is a circle on the field for its lifetime. Every 1 s from the cast it applies its
   effects to every living actor of one side whose center is inside. Rime Circle hits enemies,
@@ -1567,11 +1567,13 @@ Cleric's **Hearthward** holds a line up.
 - **At P = 6** (§ Battle pace): Rime Circle's cooldown 20 s → 120 s and its lifetime 6 s → 36 s;
   Hearthward's 25 s → 150 s and 8 s → 48 s. About one cast a wave. The per-second amounts don't
   change, so each zone's total grows ×6 with the fight.
-- **Then the stats get set** (director, 2026-09-25). With zones in (`ig-vl1.4`), run the presence
-  measure and set `caster_rank_offset` to the smallest value ≥ 0 at which both casters pass at both
-  points. With walls in (`ig-vl1.5`), run it again and re-set the offset, likely lower. Until zones
-  land it stays 0. Why not wait for walls: they wait on pathfinding (`ig-0qh`), and the owner asked
-  for strong casters.
+- **Then the stats get set** (director, 2026-09-25; the order amended in `ig-vl1.5`). Zones
+  (`ig-vl1.4`) and walls (`ig-vl1.5`) go in first, each measured at offset 0 (the zones run, the
+  fit run and the walls run below; none picked an offset, and the walls run doesn't try). Then one pick, on the whole kit (`ig-vl1.9`):
+  `caster_rank_offset` goes to the smallest value ≥ 0 at which both casters pass at both points.
+  Until then it stays 0. Why one pick, after walls: walls are the Mage's F1 defense, and F1 is
+  exactly the Mage's hole, so a pick before walls fits a Mage that walls then change. The offset is
+  one decision, made once.
   - Never below 0. A caster above R+2 at offset 0 has a spell that is too strong, so the spell's
     numbers are cut, not the row.
   - One row for both casters. If no single offset fits both, the spell of the caster that misses
@@ -1663,7 +1665,27 @@ given, so V3's F1 log prints a 9.0% gap.
 > ⚠️ **PROVISIONAL** — every zone number is arithmetic, chosen next to Hail of Arrows, Hanging Star,
 > Prayer Circle and Wellspring. The fit run measured the working slow and three Hearthwards
 > (above), and no offset fits: the Mage's two points sit 0.99 apart · **Settled by:** the re-fit
-> (the Mage's slope, then Hearthward's version and size), then walls' re-pick (`ig-vl1.5`)
+> (the Mage's slope, then Hearthward's version and size) and the one pick with walls in (`ig-vl1.9`)
+
+**The walls run** (`ig-vl1.5`, offset 0, the fit run's harness with Rime Wall in the Mage's kit,
+log `.agent-results/ig-vl1.5/presence_walls.log`, run on the cloud's Linux engine). Measured once,
+no pick: the pick is `ig-vl1.9`'s, and this Mage row is its M0. The Knight rows and the Cleric (V1)
+row match the fit run exactly (F1 1.559 / 1.700 / 1.756; B30 2.938 / 3.221 / 3.068): their teams
+have no Mage, so walls can't move them. Cells as the fit run's, with its equivalent in brackets.
+
+| Point | Mage at R | Cleric V1 | Gap |
+|---|---|---|---|
+| F1 Verdant | F 1.445 (1.399–1.593), 24 / 1, **+0.13** [+0.13] | F 1.756 (1.664–1.854), 9 / 15, **+2.38** [+2.38] | 9.1% |
+| B30 Ashfall | B 3.118 (2.813–3.204), 20 / 12, **+1.65** [+1.12] | B 3.068 (3.002–3.101), 0 / 29, **+1.47** [+1.47] | 9.6% |
+
+- **Walls didn't lift the Mage at F1.** Its median held (1.446 → 1.445) and its seed spread
+  narrowed, but its team still loses F1 to wipes, more of them (24 of 25, was 19 of 24). At B30 the
+  Mage rose 0.53 (1.12 → 1.65), so its two points sit 1.52 apart, further than the fit run's 0.99.
+  That's `ig-vl1.9`'s input: a wall buys time, which counts most at the clock-bound point.
+- **Balance gate** (`.agent-results/ig-vl1.5/balance_final.log`, against a HEAD run made before the
+  change, since `ig-vl1.8`'s log isn't on the cloud machine; its lines match `ig-vl1.8`'s record):
+  8/8 win, starter_knights exact. The mixed cases have no downing now, bare or supplied (was 3 bare
+  and 1 supplied), and run 8–14 s longer (252–257 s), still under the 315–472 s band (`ig-gy0.9`).
 
 **Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
 any wall spell, so its tests place walls by hand.
@@ -1687,7 +1709,7 @@ any wall spell, so its tests place walls by hand.
 
 | Row | Value | Why |
 |---|---|---|
-| Pathfinding budget | 2 ms | What walls may add to the frame that advances a watched frontier_march (`_owe_battles`, `game_session.gd:2069`; since `ig-7sn.15` that frame runs about a pulse's worth of its sim, 14.0 ms in `ig-7sn.7`) with `battle_wall_cap` walls across both armies' paths. A miss switches the fallback the ADR names |
+| Pathfinding budget | 2 ms | What walls may add to the frame that advances a watched frontier_march (`GameSession._owe_battles`; since `ig-7sn.15` that frame runs about a pulse's worth of its sim, 14.0 ms in `ig-7sn.7`) with `battle_wall_cap` walls across both armies' paths. A miss switches the fallback the ADR names |
 
 > ⚠️ **PROVISIONAL** — 2 ms is a share of the pulse, not a measurement · **Settled by:** the
 > `ig-0qh` measure with three walls on frontier_march
@@ -1707,14 +1729,42 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
   Mage or Cleric), so the wall lands between them, it goes across the line from that ally to that
   enemy, 2.5 from the ally, centered on the line. The nearest such enemy decides; ties go to the
   lower spawn index. It blocks both sides, so a Knight holding in front of the wall has to walk
-  around it too.
+  around it too. As built (`ig-vl1.5`): "melee" is a basic reach of at most
+  `battle_melee_range`; the caster counts as a back-row ally itself; only pairs whose wall center
+  is in the caster's range 8 count; the nearest pair is ally-to-enemy distance, ties to the lower
+  enemy spawn index and then the lower ally's. A skipped placement (below) waits for the next
+  tick; the AI doesn't try the next pair.
 - **Cast on actors:** an actor whose center falls inside the new footprint is pushed out across
   the segment to the side it stood on, downed bodies too; a carried body moves with its carrier.
   One exactly on the segment's line goes to the caster's side (director default, agreed). The AI
   skips a placement whose push would leave anyone inside another wall's footprint, and tries
-  again next tick (director, 2026-09-25). So no actor ever stands inside a footprint.
+  again next tick (director, 2026-09-25). So no cast leaves an actor inside a footprint (a wave
+  spawn can; it walks out).
 - **It deals no damage** and has no counter tag. Its name passed the `ig-x8g` web check (2026-09-25, see Zones).
 - **Heroes only in v1,** like zones.
+- **The cap at a cast** (`ig-vl1.5`). While `battle_wall_cap` walls are up, the oldest wall ends;
+  then, while `battle_field_object_cap` objects are up, the oldest object ends. A checkpoint over
+  either cap loads trimmed in the same order.
+- **The ends** (`ig-vl1.5`). Each end of the segment moves along it toward the center until it is
+  inside the bounds. The wall gets shorter and never turns. The center is always inside: it sits
+  between the ally and the enemy (a hand cast's point is checked).
+- **Who the cast pushes** (`ig-vl1.5`). Alive, downed and elite actors, out across the segment
+  (not a knockback: a knockback skips the downed and elites). A carried body moves with its
+  carrier. The dead and the extracted stay put. When the side rule's face is out of bounds, the
+  push takes the far face; so does a walk out of a footprint. The skip rule checks the final
+  spot: inside the bounds and outside every wall that stays up. With no face that works, the AI
+  skips the cast.
+- **By hand** (`ig-vl1.5`). The signature command fires Rime Wall when it is first on the bar (the
+  bar can be reordered); `ig-gy0.6`'s hotbar and `ig-gy0.5`'s chain steps will too. The wall goes across the line from the caster to the aim point,
+  centered on it, in range 8 as usual. A clicked unit's point first moves thickness / 2 +
+  separation / 2 + 0.001 (0.926) toward the caster, so the clicked unit ends on the far side
+  instead of being pulled to the caster's side by the on-the-line rule. An aim on the caster itself
+  uses the caster's facing. A cast the AI would skip (someone left inside another footprint, or no
+  face in bounds) is refused and spends no cooldown.
+
+> ⚠️ **PROVISIONAL** — the hand rule is game-designer's first cut, untested in play: whether a
+> clicked unit should end on the far side, and whether an aim on the caster should wall along its
+> facing · **Settled by:** the owner's first hand-cast walls in a watched fight
 
 > ⚠️ **PROVISIONAL** — every wall number is arithmetic, and the AI's placement is untested
 > against real fights · **Settled by:** `ig-vl1.6`'s measure at P = 6 with walls in, and a watched
@@ -1722,8 +1772,8 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
 
 > ⚠️ **PROVISIONAL** — 0 is the old presence test's only pass (the Cleric's), on a test `ig-vl1.3`
 > found unsound. The zones run (`ig-vl1.4`) picked no offset: both spells need a change first
-> (`ig-vl1.7`) · **Settled by:** `ig-vl1.6`'s measure, run after the fit (`ig-vl1.7`'s engine
-> bead) and again after walls (`ig-vl1.5`)
+> (`ig-vl1.7`) · **Settled by:** `ig-vl1.6`'s measure with zones and walls in, and the one pick
+> (`ig-vl1.9`)
 
 ---
 

@@ -194,6 +194,7 @@ town_riot_burn_share = 0.1
 ledger_max_records = 10000
 battle_max_moments = 64
 battle_field_object_cap = 8
+battle_wall_cap = 3
 skill_ability_lock_seconds = 1.0
 skill_combo_window_seconds = 6.0
 skill_reaction_delay_seconds = 0.2

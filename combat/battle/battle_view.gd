@@ -21,6 +21,8 @@ const BATTLE_PULSE_SECONDS: float = 0.25
 const DRAG_THRESHOLD_SQUARED: float = 64.0
 const SQUAD_DOUBLE_TAP_SECONDS: float = 0.35
 const STANDARD_CAMERA_SIZE: float = 36.0
+## ig-vl1.5: how tall a wall draws, a little over a unit.
+const WALL_VIEW_HEIGHT: float = 1.4
 # Wave-clear slow-mo is view-only: unit lerps, tweens and particles slow; the sim never does.
 const SLOW_MO_SCALE: float = 0.25
 const SLOW_MO_SECONDS: float = 0.8
@@ -758,7 +760,8 @@ func _update_objective_views() -> void:
 
 
 ## ig-vl1.4: a ring per live zone, read from the checkpoint only (DECISIONS.md 2026-09-25, "Casters shape
-## the field", item 9): frost for a zone on opponents, warm for one on allies.
+## the field", item 9): frost for a zone on opponents, warm for one on allies. ig-vl1.5: a wall draws by its
+## kind, from its own keys and never its skill: a frost box over its segment, length x thickness.
 func _update_field_views() -> void:
 	var raw_fields: Variant = _snapshot.get("field_objects", [])
 	if not raw_fields is Array:
@@ -769,26 +772,41 @@ func _update_field_views() -> void:
 			continue
 		var field: Dictionary = raw_field as Dictionary
 		var field_id: String = str(field.get("id", ""))
+		var is_wall: bool = str(field.get("kind", "")) == "wall"
 		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(field.get("skill_id", ""))) as AbilityDefinition
-		if field_id.is_empty() or skill == null:
+		if field_id.is_empty() or (skill == null and not is_wall):
 			continue
 		seen_ids.append(field_id)
-		var ring: MeshInstance3D = _field_views.get(field_id) as MeshInstance3D
-		if ring == null:
-			ring = MeshInstance3D.new()
-			ring.name = "Field_%s" % field_id.validate_node_name()
-			ring.mesh = TorusMesh.new()
-			ring.material_override = _new_material(Color.WHITE)
-			_field_views[field_id] = ring
-			%Objectives.add_child(ring)
-		# Set every render: a retried run reuses its ids.
+		var shape: MeshInstance3D = _field_views.get(field_id) as MeshInstance3D
+		if shape == null:
+			shape = MeshInstance3D.new()
+			shape.name = "Field_%s" % field_id.validate_node_name()
+			shape.material_override = _new_material(Color.WHITE)
+			_field_views[field_id] = shape
+			%Objectives.add_child(shape)
+		# Set every render: a retried run reuses its ids, maybe for the other kind.
+		if is_wall:
+			var start: Vector2 = _array_vector2(field.get("start", [0.0, 0.0]))
+			var finish: Vector2 = _array_vector2(field.get("end", [0.0, 0.0]))
+			if not shape.mesh is BoxMesh:
+				shape.mesh = BoxMesh.new()
+			(shape.mesh as BoxMesh).size = Vector3(maxf(start.distance_to(finish), 0.1), WALL_VIEW_HEIGHT, maxf(float(field.get("thickness", 1.0)), 0.1))
+			(shape.material_override as StandardMaterial3D).albedo_color = Color("b8dcf2")
+			var middle: Vector2 = (start + finish) * 0.5
+			shape.position = Vector3(middle.x, WALL_VIEW_HEIGHT * 0.5, middle.y)
+			# The box's x runs along the segment; sim y is the view's z.
+			shape.rotation = Vector3(0.0, atan2(-(finish.y - start.y), finish.x - start.x), 0.0)
+			continue
+		if not shape.mesh is TorusMesh:
+			shape.mesh = TorusMesh.new()
 		var radius: float = maxf(float(field.get("radius", 1.0)), 0.5)
-		(ring.mesh as TorusMesh).inner_radius = radius * 0.93
-		(ring.mesh as TorusMesh).outer_radius = radius
+		(shape.mesh as TorusMesh).inner_radius = radius * 0.93
+		(shape.mesh as TorusMesh).outer_radius = radius
 		var on_opponents: bool = str(BattleSimulation._effect_of(skill, "zone").get("side", "")) == "opponents"
-		(ring.material_override as StandardMaterial3D).albedo_color = Color("8fc4e8") if on_opponents else Color("e8c77a")
+		(shape.material_override as StandardMaterial3D).albedo_color = Color("8fc4e8") if on_opponents else Color("e8c77a")
 		var center: Vector2 = _array_vector2(field.get("center", [0.0, 0.0]))
-		ring.position = Vector3(center.x, 0.04, center.y)
+		shape.position = Vector3(center.x, 0.04, center.y)
+		shape.rotation = Vector3.ZERO
 	for field_id: String in _field_views.keys():
 		if field_id not in seen_ids:
 			_field_views[field_id].queue_free()

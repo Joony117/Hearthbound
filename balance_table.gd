@@ -233,8 +233,10 @@ extends Resource
 # The Ledger (SYSTEMS.md § The Ledger; both caps PROVISIONAL).
 @export var ledger_max_records: int = 10000
 @export var battle_max_moments: int = 64
-# Caster zones (SYSTEMS.md § Casters, Zones; PROVISIONAL).
+# Caster zones and walls (SYSTEMS.md § Casters, Zones and Walls; PROVISIONAL). Walls live inside the
+# object cap; a cast or a load ends the oldest wall over battle_wall_cap first, then the oldest object.
 @export var battle_field_object_cap: int = 8
+@export var battle_wall_cap: int = 3
 # Skills (SYSTEMS.md § Skills, shared rules; PROVISIONAL).
 @export var skill_ability_lock_seconds: float = 1.0
 @export var skill_combo_window_seconds: float = 6.0

@@ -110,6 +110,13 @@ keep fitting the battle-sim-threading entry directly below.
      keeps its amounts after its caster is downed or leaves. A zone is the 10 keys the validator
      checks exactly: `id, kind, skill_id, owner_actor_id, faction, center, radius,
      remaining_seconds, atk, heal_scale`. Walls (`ig-vl1.5`) add their own geometry keys then.
+   - *Amended 2026-09-25 (`ig-vl1.5`, godot-architect, to match what `ig-0qh` built):* the drop covers
+     what an object reads from its skill. A zone reads its pulses from `ABILITIES[skill_id]`, so a
+     zone whose skill this build lacks, or whose skill makes no zone, drops with `push_warning`. A
+     wall reads nothing from its skill: it is 9 keys, `id, kind, skill_id, owner_actor_id, faction,
+     start, end, thickness, remaining_seconds`, and blocks walking from its own geometry. So a wall
+     is kept whatever its `skill_id`, and `BattleView` draws it from those keys, never from its
+     skill (item 9).
 2. The closed set of effect primitives (2026-09-23) grows by one: **zone**, an area over time that
    applies existing primitives (status, heal, damage, shield) to actors inside it, by faction.
    - *Amended 2026-09-25 (`ig-vl1.7`, godot-architect):* a v1 zone pulse is damage, heal or

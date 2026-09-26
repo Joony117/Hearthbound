@@ -16,15 +16,15 @@ func after_each() -> void:
 
 
 func test_every_skill_validates_and_the_kits_open_by_level() -> void:
-	assert_eq(SIM.ABILITIES.size(), 51)
+	assert_eq(SIM.ABILITIES.size(), 52)
 	for skill_id: String in SIM.ABILITIES:
 		assert_eq(SIM.ABILITIES[skill_id].validate(), "", skill_id)
 		assert_eq(str(SIM.ABILITIES[skill_id].skill_id), skill_id)
 	for archetype: String in ["knight", "ranger", "mage", "rogue", "cleric"]:
 		var sizes: Array = [1, 5, 15, 25, 100].map(func(level: int) -> int: return SIM.known_kit(archetype, level).size())
 		# The Knight also opens Charge and Ground Slam at level 1 (ig-zht), the Mage Rime Circle and the
-		# Cleric Hearthward (ig-vl1.4).
-		var want: Array = [5, 7, 8, 9, 9] if archetype == "knight" else [4, 6, 7, 8, 8] if archetype in ["mage", "cleric"] else [3, 5, 6, 7, 7]
+		# Cleric Hearthward (ig-vl1.4), and the Mage Rime Wall (ig-vl1.5).
+		var want: Array = [5, 7, 8, 9, 9] if archetype in ["knight", "mage"] else [4, 6, 7, 8, 8] if archetype == "cleric" else [3, 5, 6, 7, 7]
 		assert_eq(sizes, want, "%s: 3 at level 1, then one or two per tier; the book skill never" % archetype)
 	assert_eq(_ids(SIM.known_kit("knight", 5)), ["knight_bulwark", "knight_rally", "knight_iron_cut", "knight_follow_through", "knight_buckler_blow", "knight_charge", "knight_ground_slam"])
 

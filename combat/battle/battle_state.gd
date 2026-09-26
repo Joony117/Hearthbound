@@ -139,7 +139,8 @@ static func from_dict(data: Dictionary) -> BattleState:
 				state.kills[hero_id] = int((raw_kills as Dictionary)[hero_id])
 	# Additive keys (ig-vl1.4): a checkpoint without them has no zones. BattleSimulation.validate_snapshot
 	# has checked each object's shape; a zone whose skill this build lacks, or that makes no zone, is
-	# dropped. A wall is kept whatever its skill: it only blocks walking (ig-0qh).
+	# dropped. A wall is kept whatever its skill: it only blocks walking (ig-0qh; DECISIONS.md 2026-09-25
+	# item 1, amended by ig-vl1.5). Then the caps trim what is left.
 	state.field_sequence = int(data.get("field_sequence", 0))
 	var raw_fields: Variant = data.get("field_objects")
 	if raw_fields is Array:
@@ -179,7 +180,27 @@ static func from_dict(data: Dictionary) -> BattleState:
 				"atk": float(field.get("atk", 0.0)),
 				"heal_scale": float(field.get("heal_scale", 1.0)),
 			})
+	_trim_field_objects(state)
 	return state
+
+
+## ig-vl1.5: objects over the caps (a save from a build with higher ones) end as a cast ends them, oldest
+## first: walls over battle_wall_cap, then objects over battle_field_object_cap. The ids stay, so they stay
+## at or below field_sequence.
+static func _trim_field_objects(state: BattleState) -> void:
+	var walls: int = 0
+	for field: Dictionary in state.field_objects:
+		if field["kind"] == "wall":
+			walls += 1
+	var index: int = 0
+	while walls > BattleSimulation.BALANCE.battle_wall_cap:
+		if state.field_objects[index]["kind"] == "wall":
+			state.field_objects.remove_at(index)
+			walls -= 1
+		else:
+			index += 1
+	while state.field_objects.size() > BattleSimulation.BALANCE.battle_field_object_cap:
+		state.field_objects.remove_at(0)
 
 
 ## Every kind, read from data; a missing kind (a save from before it) is 0.

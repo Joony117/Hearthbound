@@ -37,7 +37,7 @@ func test_a_battle_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> vo
 
 ## ig-vl1.4: zones read their skill from BattleSimulation.ABILITIES, never a load, so a battle with both
 ## zones up gives the pool the main thread's bytes too. ig-0qh: and three walls, whose corner graph each
-## state builds for itself.
+## state builds for itself. ig-vl1.5: and the Rime Walls its Mages cast.
 func test_a_battle_with_both_zones_and_walls_up_matches_on_the_pool_byte_for_byte() -> void:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"frontier_march")
 	var jobs: Array[BattleJob] = []
@@ -55,7 +55,11 @@ func test_a_battle_with_both_zones_and_walls_up_matches_on_the_pool_byte_for_byt
 		assert_true(var_to_bytes(pooled["battle"]) == var_to_bytes(direct["battle"]), "%s: pool == main thread" % label)
 		var live: Array = ((direct["battle"] as Dictionary)["field_objects"] as Array).map(func(field: Dictionary) -> String: return str(field["skill_id"]))
 		assert_true("mage_rime_circle" in live and "cleric_hearthward" in live, "%s: both zones still up at the end: %s" % [label, live])
-		assert_eq(live.count("test_wall"), 3, "%s: and the walls" % label)
+		# ig-vl1.5: the level-80 Mages cast Rime Walls too, each ending the oldest wall at the cap of 3.
+		var walls: int = ((direct["battle"] as Dictionary)["field_objects"] as Array).filter(func(field: Dictionary) -> bool: return field["kind"] == "wall").size()
+		assert_eq(walls, live.count("test_wall") + live.count("mage_rime_wall"), "%s: and the walls: %s" % [label, live])
+		assert_eq(walls, BALANCE.battle_wall_cap, "%s: none ends in 20 s, so the cap stays full" % label)
+		assert_true("mage_rime_wall" in live, "%s: a Rime Wall was cast on the pool: %s" % [label, live])
 
 
 func test_a_forecast_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> void:

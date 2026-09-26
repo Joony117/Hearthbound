@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = &"mage_rime_wall"
+display_name = "Rime Wall"
+kind = "ability"
+archetype = "mage"
+cooldown_seconds = 30.0
+range_units = 8.0
+ai_rule = "melee_near_back_row"
+ai_radius = 6.0
+ai_min_radius = 3.5
+ai_offset = 2.5
+effects = Array[Dictionary]([{
+"type": "wall",
+"seconds": 8.0,
+"length": 6.0,
+"thickness": 1.2
+}])

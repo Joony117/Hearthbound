@@ -74,6 +74,16 @@ there.
 **Revisit if:** anything else starts to move with an empty roster. Then the periodic save's gate
 also opens while the mood is under 100.
 
+### An idle or HOLD actor inside a wall's footprint never walks out
+Found in `ig-vl1.5`'s sweep (extra's point 6). Only a walking actor leaves a footprint it stands in
+(`_next_waypoint`'s walk-out). An actor with no order, or on HOLD, skips the walk step (the idle skip
+in `_move_actors`), so it stays inside until the wall ends, at most its `remaining_seconds`. No
+cast can put it there: Rime Wall pushes every actor it lands on clear, and skips a placement that
+can't (SYSTEMS § Casters, Walls). Only a legacy or hand-made checkpoint, or a wave spawned onto a
+wall (placed with no wall check), can; a spawned enemy walks, so it walks out.
+**Revisit if:** anything else can place an actor inside a footprint (a teleport, a spawn point, a
+wall cast by an enemy kit). Then the idle skip walks it out first.
+
 ---
 
 ## Open questions
