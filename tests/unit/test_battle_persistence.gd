@@ -339,7 +339,15 @@ func test_five_battles_mid_fight_survive_a_real_save_and_each_resumes() -> void:
 		assert_ne(GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, _zero_loadout()), "", GameSession.last_action_error)
 	GameSession.set_process(false)
 	for ignored_frame: int in 100:
+		_finish_advance_jobs()
 		GameSession._process(1.0 / 60.0)
+	# ig-7sn.18: a battle whose job is out holds no kept state until it lands; run until none is out.
+	for ignored_frame: int in 60:
+		if GameSession._battle_advances.is_empty():
+			break
+		_finish_advance_jobs()
+		GameSession._process(1.0 / 60.0)
+	assert_true(GameSession._battle_advances.is_empty(), "every job landed")
 	GameSession.set_process(true)
 	var saved_battles: Dictionary = {}
 	for order: Dictionary in GameSession.expedition_orders:
@@ -383,6 +391,15 @@ func test_five_battles_mid_fight_survive_a_real_save_and_each_resumes() -> void:
 	for order: Dictionary in GameSession.expedition_orders:
 		assert_eq(order["battle"], resumed[order["id"]], "%s resumes" % order["id"])
 		assert_gt(float((order["battle"] as Dictionary)["elapsed_seconds"]), float((saved_battles[order["id"]] as Dictionary)["elapsed_seconds"]))
+
+
+## ig-7sn.18: waits until every advance job out has finished, so the next frame can land it. The game waits
+## on a job only when it lands; a frame here runs what a real one would once its job is in.
+func _finish_advance_jobs() -> void:
+	for entry: Dictionary in GameSession._battle_advances.values():
+		var job: BattleJob = entry["job"]
+		while GameSession._battle_jobs.has(job) and not WorkerThreadPool.is_task_completed(job.task_id):
+			OS.delay_usec(100)
 
 
 ## Lands the first order as a victory; returns [stones earned, items earned].

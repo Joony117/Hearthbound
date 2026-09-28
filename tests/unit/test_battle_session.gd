@@ -283,8 +283,8 @@ func test_a_command_between_advances_and_a_load_are_decoded_not_reused() -> void
 
 
 ## ig-7sn.15 (ACC 5): between pulses _process advances at most one battle a frame and none on the pulse's
-## frame; each active battle keeps up with real time to within a pulse and a frame per live battle, and
-## a battle_changed goes out once per advance.
+## frame; each active battle keeps up with real time, and a battle_changed goes out once per advance.
+## ig-7sn.18 (ACC 3f): an advance is a job's landing now, under the same rules.
 func test_frames_advance_one_battle_each_and_keep_up_with_real_time() -> void:
 	_dispatch_frame_battles()
 	var bad_frames: Array[String] = _drive_frames(1.0 / 60.0, 3600, 1800)
@@ -327,8 +327,11 @@ func _dispatch_frame_battles() -> void:
 
 
 ## Drives GameSession._process with frames of frame seconds; returns what broke the one-battle-a-frame rule
-## or let a battle fall behind real time by more than a pulse and a frame per live battle. At least
-## five_live of the frames must start with all five battles live.
+## or let a battle fall behind real time by more than a pulse and two frames per live battle, and a frame.
+## ig-7sn.18: a job lands one frame after it is sent at the soonest, and when landings are the bottleneck
+## (every frame a pulse's, or one frame free per live battle) a battle's job carries a turn of the landing
+## rotation while it waits another turn to land; that is the second frame per battle. At least five_live
+## of the frames must start with all five battles live.
 func _drive_frames(frame: float, count: int, five_live: int) -> Array[String]:
 	var changes: Array[int] = [0]
 	var on_change := func(_order_id: String) -> void: changes[0] += 1
@@ -345,6 +348,7 @@ func _drive_frames(frame: float, count: int, five_live: int) -> Array[String]:
 		if live == 5:
 			five_live_frames += 1
 		changes[0] = 0
+		_finish_advance_jobs()
 		GameSession._process(frame)
 		var ran: int = GameSession.pulse_battle_advances - advances
 		advanced_frames += ran
@@ -357,7 +361,7 @@ func _drive_frames(frame: float, count: int, five_live: int) -> Array[String]:
 			if str(battle.get("status", "active")) != "active":
 				continue
 			var lag: float = real - float(battle["elapsed_seconds"]) - float(battle["tick_remainder"])
-			if lag < -0.0001 or lag > GameSession.EXPEDITION_PULSE_SECONDS + (live + 1) * frame + 0.0001:
+			if lag < -0.0001 or lag > GameSession.EXPEDITION_PULSE_SECONDS + (2 * live + 1) * frame + 0.0001:
 				bad_frames.append("frame %d: %s lags %.4f s" % [index, order["id"], lag])
 	GameSession.set_process(true)
 	GameSession.battle_changed.disconnect(on_change)
@@ -365,6 +369,15 @@ func _drive_frames(frame: float, count: int, five_live: int) -> Array[String]:
 	assert_gte(five_live_frames, five_live, "%s s frames: all five live" % frame)
 	assert_gt(advanced_frames, int(count * frame), "the battles advanced")
 	return bad_frames
+
+
+## ig-7sn.18: waits until every advance job out has finished, so the next frame can land it. The game waits
+## on a job only when it lands; a frame here runs what a real one would once its job is in.
+func _finish_advance_jobs() -> void:
+	for entry: Dictionary in GameSession._battle_advances.values():
+		var job: BattleJob = entry["job"]
+		while GameSession._battle_jobs.has(job) and not WorkerThreadPool.is_task_completed(job.task_id):
+			OS.delay_usec(100)
 
 
 func _dispatch_one() -> String:

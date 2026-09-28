@@ -115,6 +115,10 @@ var _paused_battle_orders: Dictionary[String, bool] = {}
 var _battle_states: Dictionary[String, Array] = {}
 ## ig-7sn.15: the real seconds each live battle is owed since its last advance, by order id. Unsaved.
 var _battle_owed: Dictionary[String, float] = {}
+## ig-7sn.18: each live battle's advance out as a job, by order id, oldest first: the job, the battle
+## Dictionary it was sent from, the BattleState it took and the seconds it was sent for. The main thread
+## never reads that state before the job is waited on. Unsaved; _cancel_battle_jobs clears it.
+var _battle_advances: Dictionary[String, Dictionary] = {}
 ## Sim jobs out on WorkerThreadPool (ig-7sn.13, DECISIONS.md 2026-09-25 "Battle sim threading").
 ## Private and unsaved; nothing here is ever written by a job.
 var _battle_jobs: Array[BattleJob] = []
@@ -163,6 +167,7 @@ func _cancel_battle_jobs() -> void:
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 	_battle_jobs.clear()
 	_battle_checks.clear()
+	_battle_advances.clear()
 	if not _preview_forecasts.is_empty():
 		_preview_forecasts.clear()
 		# A preview left on "Checking..." asks again, once the state being replaced is gone.
@@ -245,9 +250,7 @@ func _land_battle_checks() -> void:
 ## checkpoint save), so no preview waits on "Checking..." for the stall (ig-7sn.14).
 func _release_battle_jobs() -> void:
 	for job: BattleJob in _battle_jobs.duplicate():
-		if WorkerThreadPool.is_task_completed(job.task_id):
-			WorkerThreadPool.wait_for_task_completion(job.task_id)
-			_battle_jobs.erase(job)
+		_battle_job_done(job)
 	var previewed: bool = false
 	for entry: Dictionary in _preview_forecasts.duplicate():
 		if entry.has("verdict") or _battle_jobs.has(entry["normal"]) or _battle_jobs.has(entry["stress"]):
@@ -262,6 +265,17 @@ func _release_battle_jobs() -> void:
 		entry["verdict"] = {"safe": bool(verdict["safe"]), "reason": str(verdict["reason"])}
 	if previewed:
 		preview_forecast_ready.emit()
+
+
+## True once job's task has finished. The first call after that waits on it, which frees the task, and
+## takes it off _battle_jobs.
+func _battle_job_done(job: BattleJob) -> bool:
+	if _battle_jobs.has(job):
+		if not WorkerThreadPool.is_task_completed(job.task_id):
+			return false
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+		_battle_jobs.erase(job)
+	return true
 
 
 ## landed: generation by order id. Each order in its place in expedition_orders, never completion
@@ -351,7 +365,8 @@ func _process(delta: float) -> void:
 	var pulse_frame: bool = _expedition_pulse_accumulator >= EXPEDITION_PULSE_SECONDS
 	# ig-7sn.10: the periodic save a pulse made due runs on the next frame, alone: each live battle is owed
 	# the frame's time and none advances. Below 4 fps every frame is a pulse's, so there it runs at the
-	# frame's start and the pulse follows.
+	# frame's start and the pulse follows; still no battle advances on it (ig-7sn.18).
+	var save_frame: bool = _periodic_save_due
 	if _periodic_save_due:
 		_periodic_save_due = false
 		if not pulse_frame:
@@ -360,10 +375,11 @@ func _process(delta: float) -> void:
 			_periodic_save()
 			return
 		_periodic_save()
-	# No battle moves during a stall (a failed checkpoint save), nor on the pulse's own frame unless the
-	# frame is itself a pulse long (below 4 fps every frame is a pulse's, and the battles must still move).
+	# No battle moves during a stall (a failed checkpoint save), on the save's frame, nor on the pulse's own
+	# frame unless the frame is itself a pulse long (below 4 fps every frame is a pulse's, and the battles
+	# must still move).
 	if not _checkpoint_save_failed:
-		_owe_battles(delta, not pulse_frame or delta >= EXPEDITION_PULSE_SECONDS)
+		_owe_battles(delta, not save_frame and (not pulse_frame or delta >= EXPEDITION_PULSE_SECONDS))
 	if not pulse_frame:
 		return
 	var elapsed_seconds: float = _expedition_pulse_accumulator
@@ -402,6 +418,9 @@ func _periodic_save() -> void:
 		_checkpoint_save_failed = true
 		_checkpoint_error = SaveService.last_write_error
 		last_action_error = _checkpoint_error
+		# ig-7sn.18: no battle moves during the stall. Each job out is dropped and its seconds owed again.
+		for order_id: String in _battle_advances.keys():
+			_drop_battle_advance(order_id, true)
 		for order: Dictionary in expedition_orders:
 			if str(order.get("backend", "legacy_v2")) == "battle_v1":
 				_notify_battle_changed(str(order.get("id", "")))
@@ -1418,6 +1437,8 @@ func set_battle_paused(order_id: String, paused: bool) -> void:
 		return
 	if paused:
 		_paused_battle_orders[order_id] = true
+		# ig-7sn.18: its job is dropped, as its owed time is. Un-paused, it sends again from its Dictionary.
+		_drop_battle_advance(order_id, false)
 	else:
 		_paused_battle_orders.erase(order_id)
 	_notify_battle_changed(order_id)
@@ -2153,28 +2174,69 @@ func tick_expeditions(delta_seconds: float) -> void:
 	_pulse(delta_seconds)
 
 
-## ig-7sn.15: one battle a frame. Each live battle is owed the frame's time; on a frame that may advance,
-## the live battle owed the most (at least a whole pulse; the first in order-list order on a tie) advances
-## by all it is owed. So each advances about once a pulse, no frame runs two, and at a low frame rate none
-## starves. The sim carries tick_remainder, so the battle runs the same ticks as advancing at the pulse did,
-## up to the sim's TICK_EPSILON rounding at a chunk's edge (the pulse's own chunks varied the same way).
+## ig-7sn.15: each live battle is owed the frame's time. ig-7sn.18 (the threading ADR, item 7): its advance
+## runs as a job. On a frame that may advance, one finished job lands, then every live battle owed at least a
+## whole pulse with no job out sends one for all it is owed. So no frame lands two, and at a low frame rate
+## none starves: the oldest finished job lands first, and a battle that lands sends again behind every job
+## already out. The sim carries tick_remainder, so the battle runs the same ticks as advancing at the pulse
+## did, up to the sim's TICK_EPSILON rounding at a chunk's edge (the pulse's own chunks varied the same way).
 ## A battle that ends turns home at the next pulse, at most a pulse later.
 func _owe_battles(delta: float, may_advance: bool) -> void:
 	var owed: Dictionary[String, float] = {}
-	var next: Dictionary = {}
-	var next_id: String = ""
 	for order: Dictionary in expedition_orders:
-		if not _battle_live(order):
-			continue
-		var order_id: String = str(order.get("id", ""))
-		owed[order_id] = float(_battle_owed.get(order_id, 0.0)) + delta
-		if may_advance and owed[order_id] >= EXPEDITION_PULSE_SECONDS and (next_id.is_empty() or owed[order_id] > owed[next_id]):
-			next = order
-			next_id = order_id
+		if _battle_live(order):
+			var order_id: String = str(order.get("id", ""))
+			owed[order_id] = float(_battle_owed.get(order_id, 0.0)) + delta
 	_battle_owed = owed
-	if not next.is_empty():
-		_advance_battle(next, _battle_owed[next_id])
-		_battle_owed.erase(next_id)
+	if not may_advance:
+		return
+	_land_battle_advance()
+	for order: Dictionary in expedition_orders:
+		var order_id: String = str(order.get("id", ""))
+		if float(_battle_owed.get(order_id, 0.0)) >= EXPEDITION_PULSE_SECONDS and not _battle_advances.has(order_id) and _battle_live(order):
+			_send_battle_advance(order, _battle_owed[order_id])
+			_battle_owed.erase(order_id)
+
+
+## ig-7sn.18: sends a live battle's advance by seconds (its leg's rest at most) as a job. The job takes the
+## kept BattleState itself: the main thread lets go of it, and a read before the landing decodes the order's
+## Dictionary, as _battle_state does on a miss.
+func _send_battle_advance(order: Dictionary, seconds: float) -> void:
+	var order_id: String = str(order.get("id", ""))
+	var state: BattleState = _battle_state(order)
+	_battle_states.erase(order_id)
+	var step: float = minf(seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0))
+	_battle_advances[order_id] = {"battle": order.get("battle"), "state": state, "seconds": seconds, "job": _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_battle(state, step, job))}
+
+
+## ig-7sn.18: lands the oldest finished job whose order still holds the battle Dictionary it was sent from
+## and is still live (a load has cleared the table first). Each finished job before it that fails that is
+## dropped, its seconds owed again while its order is live (a command replaced the Dictionary).
+func _land_battle_advance() -> void:
+	for order_id: String in _battle_advances.keys():
+		var entry: Dictionary = _battle_advances[order_id]
+		if not _battle_job_done(entry["job"]):
+			continue
+		var index: int = _order_index(order_id)
+		var result: Dictionary = (entry["job"] as BattleJob).result
+		if index >= 0 and is_same(expedition_orders[index].get("battle"), entry["battle"]) and _battle_live(expedition_orders[index]) and not bool(result.get("cancelled", true)):
+			_battle_advances.erase(order_id)
+			_land_battle(expedition_orders[index], result["battle"], entry["state"])
+			return
+		_drop_battle_advance(order_id, index >= 0 and _battle_live(expedition_orders[index]))
+
+
+## ig-7sn.18: drops an order's job. It stops at its next chunk, and its state is thrown away: the job
+## advanced it in place, so kept beside the old Dictionary it would run ahead of it. owe: its seconds are
+## owed again.
+func _drop_battle_advance(order_id: String, owe: bool) -> void:
+	var entry: Dictionary = _battle_advances.get(order_id, {})
+	if entry.is_empty():
+		return
+	(entry["job"] as BattleJob).cancelled = true
+	_battle_advances.erase(order_id)
+	if owe:
+		_battle_owed[order_id] = float(_battle_owed.get(order_id, 0.0)) + float(entry["seconds"])
 
 
 ## The pulse without the battles' advances: the route clocks, the due orders, the town, the checks.
@@ -2299,7 +2361,7 @@ func _advance_orders_in_memory(delta_seconds: float) -> void:
 	_notify_expeditions_changed()
 
 
-## The pulse's clocks. A live battle is not advanced here (_advance_battle does that, and says so); one
+## The pulse's clocks. No live battle advances here (_land_battle writes each advance, and says so); one
 ## whose fight ended since the last pulse turns home here, and leaves an incident if nobody can.
 func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	for order: Dictionary in expedition_orders:
@@ -2393,20 +2455,26 @@ func _battle_order_due(order: Dictionary, route_due: bool) -> bool:
 	return route_due or _battle_has_no_secured_allies(_battle_state(order))
 
 
-## Advances a live battle by seconds (its leg's rest at most), writes it back and says so (ig-7sn.15).
+## Advances a live battle by seconds (its leg's rest at most) on the main thread, for tick_expeditions
+## (ig-7sn.15; the frames send jobs since ig-7sn.18).
 func _advance_battle(order: Dictionary, seconds: float) -> void:
-	var order_id: String = str(order.get("id", ""))
 	var state: BattleState = _battle_state(order)
 	BattleSimulation.advance(state, minf(seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
-	pulse_battle_advances += 1
-	var battle: Dictionary = state.to_dict()
+	_land_battle(order, state.to_dict(), state)
+
+
+## An advance's write-back, the one place an advanced battle lands: the order takes the new Dictionary, the
+## state it came from is kept beside it, and the battle says so.
+func _land_battle(order: Dictionary, battle: Dictionary, state: BattleState) -> void:
+	var order_id: String = str(order.get("id", ""))
 	order["battle"] = battle
 	_battle_states[order_id] = [battle, state]
+	pulse_battle_advances += 1
 	_notify_battle_changed(order_id)
 
 
 ## The order's battle as a BattleState: the kept one while the order still holds its Dictionary, else a
-## decode, kept. Callers other than _advance_battle only read it.
+## decode, kept. _advance_battle advances it; _send_battle_advance hands it to a job. Others only read it.
 func _battle_state(order: Dictionary) -> BattleState:
 	var order_id: String = str(order.get("id", ""))
 	var battle: Dictionary = order.get("battle") as Dictionary

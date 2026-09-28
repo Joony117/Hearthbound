@@ -245,6 +245,23 @@ the single-thread run.
      - This moves the ticks and the battle's `to_dict()` off the frame. The landing (one
        Dictionary swap and `battle_changed`) and the view's render stay on it, since UI stays
        off threads (the owner's ruling). `tick_expeditions` keeps the synchronous path for tests.
+     - *Note 2026-09-27 (`ig-7sn.18` as built, reviewed by Sol):*
+       - (a) Landing order: the oldest finished job lands (send order, first in, first out), not
+         order-list order as the bullet above says. Why: when landings are the bottleneck (every
+         frame a pulse's, under 4 fps; or four free frames a pulse for five battles at 20 fps),
+         order-list priority lets the first battle re-send right after it lands, finish first and
+         win again, starving the tail. Each battle's state advances on its own, and a landing
+         touches only its own order, so the order changes no battle's `to_dict()` for the same
+         seconds (Sol). Item 4's "never completion order" is about committing rounds, and rounds
+         still resolve at the pulse in order-list order. `test_battles_keep_up_at_low_frame_rates`
+         bounds the lag.
+       - (b) Sends follow the landing rule: a frame that may not land sends nothing either, since a
+         send can decode the order's Dictionary (after a command or a load). So neither happens on
+         the pulse's own frame (unless that frame is a pulse long), on the periodic save's frame at
+         any frame rate, or during a stall. Sol caught that below 4 fps the save's frame still
+         landed; fixed, and `test_below_4_fps_the_due_save_runs_before_the_next_pulse` checks it.
+       - (c) The clause "a settle's refresh frame (`ig-7sn.16`, if it made one)" above guards
+         nothing: `ig-7sn.16` made no refresh frame.
 8. `ig-7sn.12` (load catch-up): `apply_offline_expedition_progress` does no sim work; it sets an
    additive order key `catch_up_seconds` (missing = 0, bad value → 0 with `push_warning`,
    `SAVE_VERSION` unchanged, the `P2-23` precedent). The first pulse sends one job per owed order;

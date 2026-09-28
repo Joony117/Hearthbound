@@ -2,6 +2,7 @@ extends GutTest
 
 ## ig-7sn.10 (fix 2, ACC 5): the 15 s periodic save runs on the frame after the pulse that made it due,
 ## never beside _pulse or a battle advance. On its frame each live battle is still owed the frame's time.
+## ig-7sn.18 (ACC 3f): an advance is a job's landing now; _frame lets every job out finish first.
 ## A transaction still saves inside itself, and a failed save still rolls it back.
 
 const LOADOUT: Dictionary = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
@@ -82,7 +83,7 @@ func test_the_periodic_save_gets_a_frame_of_its_own() -> void:
 
 
 ## Below 4 fps every frame is a pulse's: the due save runs at the start of the next frame, then that
-## frame's pulse.
+## frame's pulse. ig-7sn.18 (Sol): no battle lands there; it is owed the frame and lands on the next.
 func test_below_4_fps_the_due_save_runs_before_the_next_pulse() -> void:
 	_dispatch(1)
 	assert_true(SaveService.save(), SaveService.last_write_error)
@@ -91,10 +92,14 @@ func test_below_4_fps_the_due_save_runs_before_the_next_pulse() -> void:
 	assert_true(bool(crossing["pulse"]), "a pulse's frame")
 	assert_false(bool(crossing["saved"]), "the crossing pulse only makes the save due")
 	assert_true(bool(crossing["due"]))
+	assert_eq(GameSession._battle_advances.size(), 1, "the crossing frame sent a job")
 	var next: Dictionary = _frame(0.3)
 	assert_true(bool(next["saved"]), "the next frame saves")
 	assert_true(bool(next["pulse"]), "and runs its pulse after")
 	assert_false(bool(next["due"]))
+	assert_eq(int(next["advanced"]), 0, "no battle lands on the save's frame")
+	assert_almost_eq(float((next["owed_after"] as Dictionary).values()[0]), 0.3, 0.000001, "it is owed the save's frame")
+	assert_eq(int(_frame(0.3)["advanced"]), 1, "the frame after lands it")
 
 
 ## A blocked load never tries the due save.
@@ -182,6 +187,7 @@ func _frame(delta: float) -> Dictionary:
 		battles[order["id"]] = order.get("battle")
 	var saved_at: float = GameSession.saved_at_unix
 	var owed_before: Dictionary = (GameSession.get("_battle_owed") as Dictionary).duplicate()
+	_finish_advance_jobs()
 	GameSession._process(delta)
 	var advanced: int = 0
 	for order: Dictionary in GameSession.expedition_orders:
@@ -195,6 +201,15 @@ func _frame(delta: float) -> Dictionary:
 		"owed_before": owed_before,
 		"owed_after": (GameSession.get("_battle_owed") as Dictionary).duplicate(),
 	}
+
+
+## ig-7sn.18: waits until every advance job out has finished, so the next frame can land it. The game waits
+## on a job only when it lands; a frame here runs what a real one would once its job is in.
+func _finish_advance_jobs() -> void:
+	for entry: Dictionary in GameSession._battle_advances.values():
+		var job: BattleJob = entry["job"]
+		while GameSession._battle_jobs.has(job) and not WorkerThreadPool.is_task_completed(job.task_id):
+			OS.delay_usec(100)
 
 
 func _reset_clocks() -> void:
