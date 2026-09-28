@@ -2,7 +2,6 @@ class_name BattleView
 extends Node3D
 
 signal leave_requested(order_id: String)
-signal snapshot_rendered(snapshot: Dictionary)
 
 const FIELD_COLOR: Color = Color("263a32")
 const FIELD_GRID: Color = Color("34463b")
@@ -98,6 +97,9 @@ var _shake_clock: float = 0.0
 var _view_time_scale: float = 1.0
 var _last_living_enemy_ids: Array[String] = []
 var _snapshot_elapsed: float = 0.0
+# ig-7sn.19: a battle_changed render since the poll's last turn. The poll then skips its own: a second render of
+# the same battle would only re-set every unit and play their waiting hit reactions early.
+var _changed_since_poll: bool = false
 var _last_squad_key: int = -1
 var _last_squad_time: float = -1.0
 var _pause_requested: bool = false
@@ -238,7 +240,9 @@ func _process(delta: float) -> void:
 		_snapshot_elapsed += delta
 		if _snapshot_elapsed >= BATTLE_PULSE_SECONDS:
 			_snapshot_elapsed = 0.0
-			_refresh_live_snapshot()
+			if not _changed_since_poll:
+				_refresh_live_snapshot()
+			_changed_since_poll = false
 	_sync_selected_visuals()
 
 
@@ -442,6 +446,7 @@ func _connect_live_signal() -> void:
 func _on_battle_changed(order_id: String) -> void:
 	if order_id == _order_id:
 		_refresh_live_snapshot()
+		_changed_since_poll = true
 
 
 func _refresh_live_snapshot() -> void:
@@ -492,8 +497,9 @@ func _order_reports() -> Array[Dictionary]:
 	return reports
 
 
+## Keeps the Dictionary it's handed, uncopied (ig-7sn.19): every caller hands over one it never touches again.
 func _render_snapshot(snapshot: Dictionary) -> void:
-	_snapshot = snapshot.duplicate(true)
+	_snapshot = snapshot
 	if not is_inside_tree():
 		return
 	var zone_id: String = str(_snapshot.get("zone_id", ""))
@@ -539,7 +545,6 @@ func _render_snapshot(snapshot: Dictionary) -> void:
 	_update_unit_views()
 	_update_objective_views()
 	_update_field_views()
-	snapshot_rendered.emit(_snapshot.duplicate(true))
 
 
 func _mark_battle_ended() -> void:
@@ -621,7 +626,8 @@ func _update_unit_views() -> void:
 	if wave_cleared:
 		_schedule_event({"kind": "slow_mo"}, last_death_delay)
 	_last_living_enemy_ids = living_enemy_ids
-	# References into _snapshot, which is deep-copied per render and never mutated after; nothing may write to these dicts.
+	# References to the actor dicts inside _snapshot, which nothing may write to: _render_snapshot keeps the Dictionary
+	# it's handed, and every caller hands over one it never touches again.
 	_previous_actors = next_actors
 
 

@@ -17,6 +17,10 @@ extends SceneTree
 ## Since ig-7sn.18: the watched run finds the advance frame by pulse_battle_advances, reports the pulse's and
 ## the advance's whole frames and the frames that run neither (the floor), and splits an advance into ticks,
 ## to_dict, snapshot copy and render.
+## Since ig-7sn.19: it splits the render into the set_actor loop and events_between (each done again on the
+## same snapshot) and the rest (the view's two copies, gone since, were a line of their own in the before), and
+## splits the floor frames by what ran in them (the view's own poll re-render, an effect spawn, neither), and
+## the idle ones into process step, draw and rest.
 ## Since ig-7sn.9: roster times the action with no building open and with the Forge open and a hero
 ## selected, and splits _refresh_roster and _refresh_director_ui.
 ## Since ig-7sn.10: roster and pulse5 print SPLIT lines (each battle's bytes, actors by faction and life,
@@ -665,10 +669,35 @@ func _measure_battle(zone_id: String) -> void:
 	var live: Array[float] = []
 	var spawn_frames: Array[float] = []
 	var quiet_frames: Array[float] = []
+	# ig-7sn.19 ACC 1: the floor split by what ran in it: the view's own 0.25 s poll re-rendering
+	# (battle_view._process -> _refresh_live_snapshot), an effect spawning, or neither; for neither, the frame's
+	# process step, its draw and the rest, by the engine's frame signals.
+	var floor_poll: Array[float] = []
+	var floor_spawn: Array[float] = []
+	var floor_idle: Array[float] = []
+	var idle_process: Array[float] = []
+	var idle_draw: Array[float] = []
+	var idle_other: Array[float] = []
+	var floor_draw_cpu: Array[float] = []
+	var floor_draw_gpu: Array[float] = []
+	# ig-7sn.19: each advance frame as [whole, GameSession._process, process step, draw, effects spawned], and each
+	# frame that ran the periodic save as [whole, process step, draw]: the top frames, by what ran in them.
+	var advance_rows: Array[Array] = []
+	var save_rows: Array[Array] = []
+	# [this frame's start, its frame_pre_draw, its frame_post_draw (usec)]
+	var marks: Array[float] = [0.0, 0.0, 0.0]
+	# The snapshot the view held once this frame's landing (if any) was done.
+	var seen: Array[Dictionary] = [{}]
+	var on_pre_draw: Callable = func() -> void: marks[1] = Time.get_ticks_usec()
+	var on_post_draw: Callable = func() -> void: marks[2] = Time.get_ticks_usec()
+	RenderingServer.frame_pre_draw.connect(on_pre_draw)
+	RenderingServer.frame_post_draw.connect(on_post_draw)
+	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
 	var mages: int = session.roster.filter(func(hero: Hero) -> bool: return hero.def_id == &"mage" and session.is_hero_busy(hero)).size()
 	# [live effects at the last frame's start, the pulse ms inside that frame, most particle nodes, most walls,
-	# what the last call ran: 1 the pulse, 2 an advance, 0 neither]
-	var last: Array[float] = [float(vfx.get_child_count()), 0.0, 0.0, 0.0, 0.0]
+	# what the last call ran: 1 the pulse, 2 an advance, 0 neither, the advance's GameSession._process ms,
+	# 1 if the last call ran the periodic save]
+	var last: Array[float] = [float(vfx.get_child_count()), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 	var per_frame: Callable = func(delta: float, recording: bool) -> void:
 		# A frame's time less the pulse inside it (all its other work); an effect spawned in it if the
 		# live count went up. Warm-up frames are left out, as in the frame report.
@@ -676,18 +705,38 @@ func _measure_battle(zone_id: String) -> void:
 		if recording:
 			(spawn_frames if count > last[0] else quiet_frames).append(delta * 1000.0 - last[1])
 			live.append(count)
+			var split: bool = marks[0] > 0.0 and marks[1] >= marks[0] and marks[2] >= marks[1]
+			if last[6] == 1.0 and split:
+				save_rows.append([delta * 1000.0, (marks[1] - marks[0]) / 1000.0, (marks[2] - marks[1]) / 1000.0])
 			# ig-7sn.18 ACC 1: delta is the whole frame that ran the last call's work.
 			if last[4] == 1.0:
 				pulse_frames.append(delta * 1000.0)
 			elif last[4] == 2.0:
 				advance_frames.append(delta * 1000.0)
+				if split:
+					advance_rows.append([delta * 1000.0, last[5], (marks[1] - marks[0]) / 1000.0, (marks[2] - marks[1]) / 1000.0, count - last[0]])
 			else:
 				floor_frames.append(delta * 1000.0)
+				floor_draw_cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(root.get_viewport_rid()))
+				floor_draw_gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid()))
+				# The view holds a snapshot no landing handed it: it re-rendered on its own (its poll).
+				if not is_same(view._snapshot, seen[0]):
+					floor_poll.append(delta * 1000.0)
+				elif count > last[0]:
+					floor_spawn.append(delta * 1000.0)
+				else:
+					floor_idle.append(delta * 1000.0)
+					if marks[0] > 0.0 and marks[1] >= marks[0] and marks[2] >= marks[1]:
+						idle_process.append((marks[1] - marks[0]) / 1000.0)
+						idle_draw.append((marks[2] - marks[1]) / 1000.0)
+						idle_other.append((Time.get_ticks_usec() - marks[2]) / 1000.0)
+		marks[0] = Time.get_ticks_usec()
 		last[0] = count
 		# A tree scan costs time itself, so particles are counted once every 60 frames only.
 		if recording and live.size() % 60 == 0:
 			last[2] = maxf(last[2], _find_class(vfx, "GPUParticles3D").size() + _find_class(vfx, "CPUParticles3D").size())
 		var advanced: int = session.pulse_battle_advances
+		last[6] = 1.0 if session._periodic_save_due else 0.0
 		var started: int = Time.get_ticks_usec()
 		session._process(delta)
 		var spent: float = _since(started)
@@ -702,10 +751,14 @@ func _measure_battle(zone_id: String) -> void:
 		elif session.pulse_battle_advances > advanced:
 			# ig-7sn.18 ACC 1 (ig-vl1.5 ACC 7 before it): this frame advanced the battle.
 			last[4] = 2.0
+			last[5] = spent
 			if recording:
 				advances.append(spent)
+		seen[0] = view._snapshot
 	var ended: Callable = func() -> bool: return not is_instance_valid(vfx) or str(session.get_battle_snapshot(order_id).get("status", "")) != "active"
 	var frames: Array[float] = await _frames(per_frame, ended)
+	RenderingServer.frame_pre_draw.disconnect(on_pre_draw)
+	RenderingServer.frame_post_draw.disconnect(on_post_draw)
 	session.set_process(true)
 	var label: String = "watched %s (%d heroes)" % [zone_id, _cap(zone_id)]
 	_print_orders()
@@ -716,9 +769,22 @@ func _measure_battle(zone_id: String) -> void:
 	_report("%s: the frame that advances it (GameSession._process on _owe_battles' frame)" % label, advances)
 	_report("%s: the frame that advances it, whole" % label, advance_frames)
 	_report("%s: frames that run neither, whole (the floor: the view and the engine's draw)" % label, floor_frames)
+	_report("%s: the floor, frames where the view's own 0.25 s poll re-rendered (battle_view._process), whole" % label, floor_poll)
+	_report("%s: the floor, frames where an effect spawned (no poll), whole" % label, floor_spawn)
+	_report("%s: the floor, frames with neither, whole" % label, floor_idle)
+	_report("%s: the floor with neither: the process step (frame start to frame_pre_draw)" % label, idle_process)
+	_report("%s: the floor with neither: the draw (frame_pre_draw to frame_post_draw)" % label, idle_draw)
+	_report("%s: the floor with neither: the rest (to the next frame's start: physics, input, the loop)" % label, idle_other)
+	_report("%s: the floor's draw, CPU (the viewport's measured render time)" % label, floor_draw_cpu)
+	_report("%s: the floor's draw, GPU" % label, floor_draw_gpu)
 	_report("%s: live effects per frame (cap 40), most particle nodes %d" % [label, int(last[2])], live)
 	_report("%s: frames where the live effect count rose, less the pulse (all other work)" % label, spawn_frames)
 	_report("%s: frames where it did not, less the pulse" % label, quiet_frames)
+	advance_rows.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	for row: Array in advance_rows.slice(0, 5):
+		print("%s: a top advance frame: whole %.2f, GameSession._process %.2f, process step %.2f, draw %.2f, effects spawned %d" % [label, row[0], row[1], row[2], row[3], int(row[4])])
+	for row: Array in save_rows:
+		print("%s: a frame that ran the periodic save: whole %.2f, process step %.2f, draw %.2f" % [label, row[0], row[1], row[2]])
 	# The split, outside the recorded frames, on a battle still running: a fresh one if this one ended.
 	if not is_instance_valid(view) or session.get_battle_snapshot(order_id).get("status", "") != "active":
 		order_id = _dispatch(zone_id, _cap(zone_id))
@@ -734,6 +800,12 @@ func _measure_battle(zone_id: String) -> void:
 	var encode: Array[float] = []
 	var copy: Array[float] = []
 	var render: Array[float] = []
+	# ig-7sn.19 ACC 1: the render's parts, each done again right after it on the same snapshot.
+	var set_actors: Array[float] = []
+	var events: Array[float] = []
+	var rest: Array[float] = []
+	var spawn_renders: Array[float] = []
+	var still_renders: Array[float] = []
 	for _pulse: int in SAMPLES:
 		var index: int = session._order_index(order_id)
 		if index < 0 or not session._battle_live(session.expedition_orders[index]):
@@ -751,14 +823,36 @@ func _measure_battle(zone_id: String) -> void:
 		started = Time.get_ticks_usec()
 		var snapshot: Dictionary = session.get_battle_snapshot(order_id)
 		copy.append(_since(started))
+		var previous: Dictionary = view._previous_actors
+		var views_before: int = view._unit_views.size()
 		started = Time.get_ticks_usec()
 		view._render_snapshot(snapshot)
-		render.append(_since(started))
+		var whole: float = _since(started)
+		render.append(whole)
+		(spawn_renders if view._unit_views.size() > views_before else still_renders).append(whole)
+		var actors: Array = view._snapshot.get("actors", []) as Array
+		started = Time.get_ticks_usec()
+		for actor: Dictionary in actors:
+			var unit: Node = view._unit_views.get(str(actor.get("id", "")))
+			if unit != null:
+				unit.set_actor(actor, str(actor.get("id", "")) in view._selected_ids, PULSE)
+		var set_ms: float = _since(started)
+		started = Time.get_ticks_usec()
+		var _events: Array[Dictionary] = BattleVfx.events_between(previous, actors)
+		var events_ms: float = _since(started)
+		set_actors.append(set_ms)
+		events.append(events_ms)
+		rest.append(whole - set_ms - events_ms)
 		await process_frame
 	_report("%s: advance split, ticks (BattleSimulation.advance by a pulse)" % label, ticks)
 	_report("%s: advance split, to_dict" % label, encode)
 	_report("%s: advance split, snapshot copy (get_battle_snapshot)" % label, copy)
 	_report("%s: advance split, snapshot render (_render_snapshot)" % label, render)
+	_report("%s: render split, the set_actor loop over every unit view (done again)" % label, set_actors)
+	_report("%s: render split, BattleVfx.events_between (done again)" % label, events)
+	_report("%s: render split, the rest (the render less those: labels, panels, new unit views, objectives, field views)" % label, rest)
+	_report("%s: renders that made new unit views, whole" % label, spawn_renders)
+	_report("%s: renders that made none, whole" % label, still_renders)
 	var units: Array[Node] = _find_script(view, "battle_unit_view.gd")
 	for unit: Node in units:
 		unit.set_process(false)

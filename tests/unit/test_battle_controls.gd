@@ -160,6 +160,19 @@ func test_removing_paused_live_view_resumes_previous_order_and_preserves_unrelat
 	SceneRouter.clear_battle_payload()
 
 
+## ig-7sn.19: the view's own 0.25 s poll renders only when no battle_changed rendered since its last turn.
+func test_the_poll_skips_its_render_after_a_battle_changed_render() -> void:
+	var controller := _make_controller()
+	var view := _make_live_view(controller)
+	view._snapshot_elapsed = 0.0
+	controller.battle_changed.emit("battle-1")
+	var landed: Dictionary = view._snapshot
+	view._process(BattleView.BATTLE_PULSE_SECONDS)
+	assert_same(view._snapshot, landed, "the poll's turn after a landing's render renders nothing")
+	view._process(BattleView.BATTLE_PULSE_SECONDS)
+	assert_not_same(view._snapshot, landed, "a turn with no landing since renders, as before")
+
+
 func test_manual_skill_waits_for_target_and_submits_one_ability_command() -> void:
 	var controller := _make_controller()
 	var view := _make_live_view(controller)
@@ -183,13 +196,13 @@ func test_inspector_controls_persist_and_show_signature_cooldown_and_item_polici
 	controller.heroes[hero.instance_id] = hero
 	var view := _make_live_view(controller)
 	view._selected_ids = ["hero-1"]
-	view._render_snapshot(controller.snapshots["battle-1"])
+	view._render_snapshot(controller.snapshots["battle-1"].duplicate(true))
 	var skill_button: Button = view._selected_ability_button
 	var squad_button: Button = view._squad_row.get_child(0) as Button
 	assert_string_contains(view._selected_label.text, "Inspector Knight")
 	assert_string_contains(skill_button.text, "Stand Fast")
 	controller.snapshots["battle-1"]["actors"][0]["skill_cooldowns"]["knight_rally"] = 2.0
-	view._render_snapshot(controller.snapshots["battle-1"])
+	view._render_snapshot(controller.snapshots["battle-1"].duplicate(true))
 	assert_eq(view._selected_ability_button, skill_button)
 	assert_true(skill_button.disabled)
 	assert_string_contains(skill_button.tooltip_text, "2.0 seconds")
@@ -209,7 +222,7 @@ func test_the_inspector_shows_and_sends_both_draught_tiers() -> void:
 	var camera: Camera3D = view.get_node("CameraRig/Camera3D") as Camera3D
 	var ally: BattleUnitView = view.get_node("Units/Unit_hero-1") as BattleUnitView
 	view._selected_ids = ["hero-1"]
-	view._render_snapshot(controller.snapshots["battle-1"])
+	view._render_snapshot(controller.snapshots["battle-1"].duplicate(true))
 	assert_eq(view._supply_label.text, "Healing 0 · Revival 1 · Masterwork healing 2 · Masterwork revival 0")
 	assert_eq(view._item_buttons.keys(), BattleState.SUPPLY_KINDS)
 	for supply_kind: String in view._item_buttons:
@@ -287,7 +300,7 @@ func test_early_victory_status_explains_the_route_clock() -> void:
 	var view := _make_live_view(controller)
 	assert_eq(view._status_label.text, "Victory! Heading home · rewards in 02:31")
 	controller.snapshots["battle-1"]["route_remaining_seconds"] = 0.0
-	view._render_snapshot(controller.snapshots["battle-1"])
+	view._render_snapshot(controller.snapshots["battle-1"].duplicate(true))
 	assert_eq(view._status_label.text, "Victory   ·   Route minimum 00:00")
 
 
@@ -313,12 +326,12 @@ func test_zone_camera_presets_resize_apron_and_keep_perimeter_in_world() -> void
 	assert_eq(world_environment.environment.background_mode, Environment.BG_COLOR)
 	assert_eq(world_environment.environment.background_color, Color("18251f"))
 	controller.snapshots["battle-1"]["zone_id"] = "fallen_citadel"
-	view._render_snapshot(controller.snapshots["battle-1"])
+	view._render_snapshot(controller.snapshots["battle-1"].duplicate(true))
 	assert_almost_eq(camera.size, 44.0, 0.001)
 	assert_eq((view.get_node("Ground").mesh as PlaneMesh).size, Vector2(140.0, 140.0))
 	assert_eq((view.get_node("Boundary_0") as MeshInstance3D).position.z, -35.0)
 	controller.snapshots["battle-1"]["zone_id"] = "frontier_march"
-	view._render_snapshot(controller.snapshots["battle-1"])
+	view._render_snapshot(controller.snapshots["battle-1"].duplicate(true))
 	assert_almost_eq(camera.size, 60.0, 0.001)
 	assert_eq((view.get_node("Ground").mesh as PlaneMesh).size, Vector2(200.0, 200.0))
 	assert_eq((view.get_node("Boundary_0") as MeshInstance3D).position.z, -50.0)

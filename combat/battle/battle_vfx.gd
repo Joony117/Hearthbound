@@ -115,13 +115,16 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 				"critical": _tick(current[attack_target], "last_crit_tick") > _tick(previous[attack_target] as Dictionary, "last_crit_tick"),
 				"tick": _tick(current[attack_target], "last_hit_tick"),
 			})
-		# The skill it cast (a save from before ig-gy0.2 names none: the signature).
-		var ability: AbilityDefinition = BattleSimulation.ABILITIES.get(str(after_effects.get("last_skill_id", "")), BattleSimulation.signature_for(archetype)) as AbilityDefinition
-		var look: String = skill_look(ability) if ability != null else ""
+		# The skill it cast (a save from before ig-gy0.2 names none: the signature), looked up only when it cast
+		# one: signature_for walks every ability (ig-7sn.19).
+		var ability: AbilityDefinition = null
+		var look: String = ""
+		if _tick(after, "last_skill_tick") > _tick(before, "last_skill_tick"):
+			ability = BattleSimulation.ABILITIES.get(str(after_effects.get("last_skill_id", "")), BattleSimulation.signature_for(archetype)) as AbilityDefinition
+			look = skill_look(ability) if ability != null else ""
 		# An enemy's line or circle already shows as its telegraph, and so does an ally's delayed
 		# area (Hanging Star): both play when they land.
-		var skill_visible: bool = (faction == "ally" or not look in ["line", "burst"]) and str(after_effects.get("telegraph_kind", "")).is_empty()
-		if skill_visible and _tick(after, "last_skill_tick") > _tick(before, "last_skill_tick") and ability != null:
+		if ability != null and (faction == "ally" or not look in ["line", "burst"]) and str(after_effects.get("telegraph_kind", "")).is_empty():
 			var skill: Dictionary = {
 				"kind": "skill",
 				"actor_id": actor_id,
