@@ -861,7 +861,246 @@ func test_the_hub_gives_the_partner_its_debt_lines() -> void:
 	assert_eq(Lines.candidates(facts).size(), 10)
 
 
+## ---- ig-7sn.16: the settle's readers, exact after the speed-ups
+
+## ACC 3: the dream that skips battles without the hero equals the one that read every record, for
+## every hero of the perf seed's ledger, and at every 50th record of seeded ledgers the game could
+## write (a moment's hero and by are in the team), which open, pay and lose dreams.
+func test_the_dream_that_skips_equals_the_dream_that_read_every_record() -> void:
+	var heroes: Array[String] = []
+	for index: int in 100:
+		heroes.append("perf:%d" % index)
+	var seeded: Array[Dictionary] = _perf_ledger(heroes)
+	for hero_id: String in heroes:
+		if Bonds.dream(seeded, hero_id) != _dream_before(seeded, hero_id):
+			fail_test("the perf seed's %s" % hero_id)
+			return
+	var eight: Array[String] = heroes.slice(0, 8)
+	var states: Dictionary = {}
+	for seed_value: int in [1, 2, 3]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_value
+		var ledger: Array[Dictionary] = []
+		for seq: int in range(1, 801):
+			var made: Array = _random_record(rng, eight, seq, true)
+			Ledger.append(ledger, seq, 0, made[0], made[1])
+			if seq % 50 == 0:
+				for hero_id: String in eight:
+					var dream: Dictionary = Bonds.dream(ledger, hero_id)
+					if dream != _dream_before(ledger, hero_id):
+						fail_test("seed %d, %s at seq %d" % [seed_value, hero_id, seq])
+						return
+					states[dream.get("state", "none")] = true
+	assert_eq(states.keys().filter(func(state: String) -> bool: return state in ["open", "paid", "lost"]).size(), 3, "every state compared: %s" % [states.keys()])
+
+
+## ACC 4: History read from the newest end equals the full read, for every hero of the perf seed's
+## ledger and of seeded ledgers with summons, rank-ups, deaths and rescues; a hero with few records
+## still says it arrived before them, and a run of routine wins crossing the tenth line still counts on.
+func test_history_from_the_newest_end_equals_the_full_read() -> void:
+	var heroes: Array[String] = []
+	var names: Dictionary = {}
+	for index: int in 100:
+		heroes.append("perf:%d" % index)
+		names[heroes.back()] = "Perf %d" % index
+	var seeded: Array[Dictionary] = _perf_ledger(heroes)
+	for hero_id: String in heroes:
+		if Ledger.history_lines(seeded, hero_id, names, BALANCE.rank_names, 10) != _history_before(seeded, hero_id, names, BALANCE.rank_names, 10):
+			fail_test("the perf seed's %s" % hero_id)
+			return
+	var eight: Array[String] = heroes.slice(0, 8)
+	for seed_value: int in [1, 2]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_value
+		var ledger: Array[Dictionary] = []
+		for seq: int in range(1, 601):
+			var made: Array = _random_record(rng, eight, seq)
+			Ledger.append(ledger, seq, 0, made[0], made[1])
+			if seq % 50 == 0:
+				for hero_id: String in eight:
+					for max_lines: int in [1, 3, 10]:
+						if Ledger.history_lines(ledger, hero_id, names, BALANCE.rank_names, max_lines) != _history_before(ledger, hero_id, names, BALANCE.rank_names, max_lines):
+							fail_test("seed %d, %s at seq %d, %d lines" % [seed_value, hero_id, seq, max_lines])
+							return
+	var few: Array[Dictionary] = []
+	for index: int in 3:
+		_battle_in(few, [A, B], "retreated")
+	assert_eq(Ledger.history_lines(few, A, NAMES, BALANCE.rank_names, 10).back(), "Arrived before the records begin.")
+	assert_eq(Ledger.history_lines(few, A, NAMES, BALANCE.rank_names, 10), _history_before(few, A, NAMES, BALANCE.rank_names, 10))
+	var run: Array[Dictionary] = []
+	for index: int in 6:
+		_battle_in(run, [A, B], "victory")
+	for index: int in 9:
+		_battle_in(run, [A, B], "retreated")
+	var lines: Array[String] = Ledger.history_lines(run, A, NAMES, BALANCE.rank_names, 10)
+	assert_eq(lines.back(), "Won 6 battles at %s." % Ledger.zone_name(ZONE), "the tenth line keeps counting")
+	assert_eq(lines, _history_before(run, A, NAMES, BALANCE.rank_names, 10))
+
+
+## Fix A, the index: a fold stamps every hero whose pairs it changed with a new version, and a fold
+## that changes none (a routine win) stamps no one.
+func test_a_fold_stamps_every_hero_whose_pairs_it_changes() -> void:
+	var heroes: Array[String] = []
+	for index: int in 8:
+		heroes.append("hero:%d" % index)
+	var quiet: int = 0
+	for seed_value: int in [1, 2, 3]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_value
+		var ledger: Array[Dictionary] = []
+		var tiers: Array[int] = []
+		var folded: Dictionary = Bonds.index_state(ledger, BALANCE)
+		for seq: int in range(1, 401):
+			var made: Array = _random_record(rng, heroes, seq)
+			Ledger.append(ledger, seq, 0, made[0], made[1])
+			tiers.append(Ledger.tier(ledger.back()))
+			var before: Dictionary = (folded["pairs"] as Dictionary).duplicate(true)
+			var version: int = folded["version"]
+			Bonds.fold_in(folded, ledger.back(), BALANCE)
+			quiet += 1 if folded["version"] == version else 0
+			if not _stamped_all_changes(folded, before, version):
+				fail_test("seed %d: appending seq %d" % [seed_value, seq])
+				return
+			for record: Dictionary in Ledger.evict(ledger, tiers, 20):
+				before = (folded["pairs"] as Dictionary).duplicate(true)
+				version = folded["version"]
+				if not Bonds.fold_out(folded, record, BALANCE):
+					folded = Bonds.index_state(ledger, BALANCE)
+				elif not _stamped_all_changes(folded, before, version):
+					fail_test("seed %d: evicting after seq %d" % [seed_value, seq])
+					return
+	var routine: Dictionary = Bonds.index_state(_ledger, BALANCE)
+	_battle([A, B], "victory")
+	Bonds.fold_in(routine, _ledger.back(), BALANCE)
+	assert_eq([routine["version"], routine["touched"]], [0, {}], "a routine win stamps no one")
+	assert_gt(quiet, 0, "some folds changed no pairs")
+
+
+## Fix A, the hub: a look that reads only the touched heroes says, keeps and signs what a full look
+## would, after every record of a seeded run that reaches the cap halfway (then each record evicts the
+## oldest battle, which folds out), through a rename and a summon (which read every hero). A cap
+## that bites sooner would evict every battle before any pair grew close.
+func test_the_hubs_look_at_the_touched_heroes_equals_a_full_look() -> void:
+	_fill_to_cap(150)
+	var heroes: Array[String] = []
+	for index: int in 8:
+		heroes.append(_hero("hero:%d" % index, "H%d" % index).instance_id)
+	var hub: Node3D = _hub()
+	var status: Label = hub.get_node("%Status") as Label
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var looks: Dictionary = {"full": 0, "quiet": 0, "partial": 0, "said": 0}
+	for seq: int in range(1, 301):
+		if seq == 100:
+			GameSession.hero_by_id(heroes[0]).hero_name = "Renamed"
+		if seq == 200:
+			heroes.append(_hero("hero:new", "New").instance_id)
+		var made: Array = _random_record(rng, heroes, seq)
+		GameSession._record(made[0], made[1])
+		var before: Dictionary = hub._bond_candidates.duplicate()
+		var version: int = hub._bonds_version
+		# The look reads only the touched heroes when the index and the names are the last look's.
+		var partial: bool = is_same(GameSession.bond_index(), hub._bonds_pairs) and hub._roster_names() == hub._bonds_living
+		status.text = ""
+		var living: Dictionary = hub._roster_names()
+		var signs: Dictionary = hub._partner_signs(living).duplicate()
+		var told: String = status.text
+		var pairs: Dictionary = GameSession.bond_index()
+		var touched: int = (GameSession.bond_changes()["touched"] as Dictionary).values().filter(func(stamp: int) -> bool: return stamp > version).size()
+		if not partial:
+			looks["full"] += 1
+		elif touched == 0:
+			looks["quiet"] += 1
+		else:
+			looks["partial"] += 1
+		looks["said"] += 0 if told.is_empty() else 1
+		status.text = ""
+		hub._say_new_bonds(before, pairs, living)
+		var full_signs: Dictionary = {}
+		for id: String in living:
+			full_signs[id] = hub._partner_sign(id, living)
+		if told != status.text or hub._bond_candidates != hub._living_candidates(pairs, living) or signs != full_signs:
+			fail_test("record %d (%s): said %s, a full look says %s" % [seq, made[0], told, status.text])
+			return
+	gut.p("HUB LOOKS: %s" % looks)
+	assert_true(looks["quiet"] > 0 and looks["partial"] > 0 and looks["said"] > 0, "quiet looks, looks at a few heroes, and news: %s" % looks)
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records, "the second half evicted")
+
+
 ## ---- helpers
+
+## The perf seed's ledger (tests/perf/seed_perf.gd: its rng, 5-hero teams and mix) at the cap.
+func _perf_ledger(heroes: Array[String]) -> Array[Dictionary]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var ledger: Array[Dictionary] = []
+	for index: int in BALANCE.ledger_max_records:
+		var team: Array[String] = _team(rng, heroes, 5)
+		_battle_in(ledger, team, "victory", _mix(rng, index, team))
+	return ledger
+
+
+## Whether every hero whose pairs differ from before carries a stamp past version.
+func _stamped_all_changes(folded: Dictionary, before: Dictionary, version: int) -> bool:
+	var pairs: Dictionary = folded["pairs"]
+	for hero_id: String in _merged_keys(pairs, before):
+		if pairs.get(hero_id, {}) != before.get(hero_id, {}) and int((folded["touched"] as Dictionary).get(hero_id, 0)) <= version:
+			return false
+	return true
+
+
+func _merged_keys(one: Dictionary, other: Dictionary) -> Array:
+	var keys: Dictionary = one.duplicate()
+	keys.merge(other)
+	return keys.keys()
+
+
+## Bonds.dream before ig-7sn.16, reading every record: the exactness test's reference.
+static func _dream_before(ledger: Array[Dictionary], hero_id: String) -> Dictionary:
+	var current: Dictionary = {}
+	for record: Dictionary in ledger:
+		var kind: String = str(record.get("kind", ""))
+		if current.get("state", "") == "open":
+			var owed: String = current["owed"]
+			if kind == "died" and str(record.get("hero", "")) == owed:
+				current = {"state": "lost", "owed": owed}
+			elif kind == "battle" and not Bonds._save(record, owed, hero_id).is_empty():
+				current = {"state": "paid", "owed": owed, "zone": str(record.get("zone", ""))}
+			elif kind == "battle" and Bonds._array(record, "team").has(hero_id) and Bonds._array(record, "team").has(owed):
+				current["fights"] += 1
+			continue
+		if kind != "battle":
+			continue
+		var opened: Dictionary = Bonds._save(record, hero_id, "")
+		if not opened.is_empty():
+			current = {"state": "open", "owed": opened["by"], "what": opened["what"], "zone": str(record.get("zone", "")), "fights": 0}
+	return current
+
+
+## Ledger.history_lines before ig-7sn.16, gathering the hero's records first: the test's reference.
+static func _history_before(ledger: Array[Dictionary], hero_id: String, names: Dictionary, rank_names: PackedStringArray, max_lines: int) -> Array[String]:
+	var all_names: Dictionary = Ledger.known_names(ledger, names)
+	var records: Array[Dictionary] = Ledger.records_for_hero(ledger, hero_id)
+	var lines: Array[String] = []
+	var routine_zone: String = ""
+	var routine_count: int = 0
+	var arrived: bool = false
+	for index: int in range(records.size() - 1, -1, -1):
+		var record: Dictionary = records[index]
+		var kind: String = str(record.get("kind", ""))
+		arrived = arrived or kind == "summoned"
+		if Ledger.is_routine(record) and Ledger._array(record, "team").has(hero_id) and str(record.get("zone", "")) == routine_zone:
+			routine_count += 1
+			lines[lines.size() - 1] = "Won %d battles at %s." % [routine_count, Ledger.zone_name(routine_zone)]
+			continue
+		if lines.size() >= max_lines:
+			break
+		routine_zone = str(record.get("zone", "")) if Ledger.is_routine(record) and Ledger._array(record, "team").has(hero_id) else ""
+		routine_count = 1
+		lines.append(Ledger._line(record, hero_id, all_names, rank_names))
+	if not arrived and lines.size() < max_lines:
+		lines.append("Arrived before the records begin.")
+	return lines
 
 ## Walks the body out past REARM_DISTANCE and back in to bea, one step each, and returns its line.
 func _approach_once(town: TownView, bea: TownWalker) -> String:
@@ -936,8 +1175,9 @@ func _mix(rng: RandomNumberGenerator, index: int, team: Array[String]) -> Dictio
 
 ## ig-m6o.2.2.9: one seeded record, [kind, fields], of every kind the fold reads: hard fights, saves,
 ## rescues, routine wins, deaths (mostly of a battle a few records back, sometimes of none or of the
-## next one), summons and rank-ups. A battle's order is "order:<its seq>".
-func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int) -> Array:
+## next one), summons and rank-ups. A battle's order is "order:<its seq>". A moment's by is an enemy,
+## no one or any hero; with by_in_team, a teammate instead of any hero, as a real fight writes it.
+func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int, by_in_team: bool = false) -> Array:
 	var roll: int = rng.randi_range(0, 19)
 	var hero: String = heroes[rng.randi_range(0, heroes.size() - 1)]
 	if roll < 2:
@@ -951,8 +1191,9 @@ func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int)
 		return ["died", died]
 	var team: Array[String] = _team(rng, heroes, rng.randi_range(1, 5))
 	var moments: Array = []
+	var savers: Array[String] = team if by_in_team else heroes
 	for _index: int in rng.randi_range(0, 3) if rng.randi_range(0, 1) == 0 else 0:
-		var by: String = ["enemy:goblin", "", heroes[rng.randi_range(0, heroes.size() - 1)]][rng.randi_range(0, 2)]
+		var by: String = ["enemy:goblin", "", savers[rng.randi_range(0, savers.size() - 1)]][rng.randi_range(0, 2)]
 		moments.append(_moment(["revived", "carried", "downed"][rng.randi_range(0, 2)], team[rng.randi_range(0, team.size() - 1)], by))
 	var fields: Dictionary = {"order": "order:%d" % seq, "zone": [ZONE, "frontier_march"][rng.randi_range(0, 1)], "team": team,
 		"result": ["victory", "victory", "retreated", "stranded"][rng.randi_range(0, 3)], "moments": moments}

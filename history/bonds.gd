@@ -43,9 +43,11 @@ static func index(ledger: Array[Dictionary], balance: BalanceTable) -> Dictionar
 ## index(). counts is hero -> other -> one slot per fact kind in FACTS order, each [count, the latest
 ## record with it, its wording, the dead]. dead is battle order -> its died records, in fold order.
 ## battles is battle order -> its battle records. The rebuild and the fold share one set of rules, so
-## a kept state equals a fresh one.
+## a kept state's pairs equal a fresh one's. version counts the folds since the build that touched a
+## tally, and touched is hero -> the version that last touched its pairs (ig-7sn.16), so a reader of
+## pairs can re-read only those heroes; a build starts both at 0 and {}.
 static func index_state(ledger: Array[Dictionary], balance: BalanceTable) -> Dictionary:
-	var folded: Dictionary = {"pairs": {}, "counts": {}, "dead": {}, "battles": {}}
+	var folded: Dictionary = {"pairs": {}, "counts": {}, "dead": {}, "battles": {}, "version": 0, "touched": {}}
 	for record: Dictionary in ledger:
 		_fold(folded, record)
 	# One tally per pair at the end, not one per record.
@@ -261,8 +263,13 @@ static func _drop(lists: Dictionary, key: String, record: Dictionary) -> void:
 		lists.erase(key)
 
 
-## Retallies every counted pair between two touched heroes. A pair with no count left goes.
+## Retallies every counted pair between two touched heroes. A pair with no count left goes. Only the
+## touched heroes' pairs change, so they are stamped with a new version.
 static func _retally(folded: Dictionary, touched: Dictionary, balance: BalanceTable) -> void:
+	if not touched.is_empty():
+		folded["version"] += 1
+		for hero_id: String in touched:
+			folded["touched"][hero_id] = folded["version"]
 	var counts: Dictionary = folded["counts"]
 	var pairs: Dictionary = folded["pairs"]
 	for hero_id: String in touched:
@@ -345,10 +352,21 @@ static func _ahead(tally: Dictionary, chosen: Dictionary) -> bool:
 ## hero_id's dream, "repay a life debt", read oldest first. {} before the first save. Otherwise
 ## {state, owed, ...}: "open" adds what, zone and fights; "paid" adds zone; "lost" is the owed
 ## hero's death. Only one debt is open at a time; after it ends, the next save opens a new one.
+## A battle naming hero_id in none of team, rescued and rescuers is skipped (ig-7sn.16): it can't open,
+## pay or count a fight, since a moment's hero and by are actors in its fight and team is every
+## allied actor, downed or not (_record_battle). Dropping allies from team would break this.
+## The skip reads the three keys inline: three _array calls per record doubled the dream's cost.
 static func dream(ledger: Array[Dictionary], hero_id: String) -> Dictionary:
 	var current: Dictionary = {}
 	for record: Dictionary in ledger:
 		var kind: String = str(record.get("kind", ""))
+		if kind == "battle":
+			var team: Variant = record.get("team")
+			if not (team is Array and (team as Array).has(hero_id)):
+				var rescued: Variant = record.get("rescued")
+				var rescuers: Variant = record.get("rescuers")
+				if not (rescued is Array and (rescued as Array).has(hero_id) or rescuers is Array and (rescuers as Array).has(hero_id)):
+					continue
 		if current.get("state", "") == "open":
 			var owed: String = current["owed"]
 			if kind == "died" and str(record.get("hero", "")) == owed:

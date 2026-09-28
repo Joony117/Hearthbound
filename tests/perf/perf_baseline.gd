@@ -7,7 +7,9 @@ extends SceneTree
 ##   APPDATA="$(cygpath -w <copy>)" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --windowed -s res://tests/perf/perf_baseline.gd -- <measure> <commit>
 ## Measures (the ig-7sn.2 list): pulse1, pulse5, hub, battle_citadel, battle_frontier, roster, town, load;
 ## preview (ig-7sn.14).
-## Since ig-7sn.6: settle1, settle5 (the pulse that settles a leg, split).
+## Since ig-7sn.6: settle1, settle5 (the pulse that settles a leg, split). Since ig-7sn.16 they time
+## _pulse on the game's path, each handler inside it and the game work on a twin, in three cases; load
+## names the jobs in each slow frame and splits the catch-up round's landing the same way.
 ## Since ig-7sn.15: pulse_split (the pulse's "other", split; each battle's decode, advance and encode by zone).
 ## Since ig-vl1.5: battle_frontier_nowall is battle_frontier with every Mage's Rime Wall set to Off (the
 ## same fight, no walls; ACC 7's pair). Every battle measure prints the force's Mages, the most walls up,
@@ -298,76 +300,313 @@ func _measure_pulse_split() -> void:
 	_print_orders()
 
 
-## ---- 1b. The pulse that settles a leg, split (ig-7sn.6). One battle or all five, 99-run orders,
-## pulsed with the hub shown until SETTLES legs settle. Before each settling pulse, each part's work is
-## done again on the side: the repeat check's team snapshot (its forecast runs as jobs since ig-7sn.6),
-## the profile to_dict (the commit's snapshot), a save, and each signal's handlers. "rest" is the pulse
-## minus those (the other battles' advance, the report, the Ledger record and bond fold, the save's own
-## to_dict, sending the check's jobs).
+## ---- 1b. The pulse that settles a leg (ig-7sn.6), on the game's own path since ig-7sn.16: one battle
+## or all five, 99-run orders, the hub shown. Two frames a pulse: the first advances every live battle by
+## a pulse (untimed; the game spreads these over the frames between pulses), the second runs
+## GameSession._pulse(PULSE) alone, timed, as _process does on a pulse frame; its whole frame runs to the
+## next frame's start. Every roster_changed, expeditions_changed and battle_changed handler runs in a
+## timing wrapper (_wrap_handlers), so each handler's time is its own, inside the real pulse. Before a
+## pulse that settles, its game work is split on the side on a twin (_settle_split). A pulse that lands a
+## repeat check commits too (create_run, a save, every roster_changed handler), so it is reported beside
+## the settles. SETTLES settles in each case: no building open; the Forge open with a hero selected;
+## walking the town as a bonded hero (hub.gd _refresh_partner). The first two walk as no one. Each case
+## starts at the town mood the measure began with: the seed's homeless heroes wear it down, and a town
+## in revolt sends no order (a case runs 700 s or more of live time).
 const SETTLES: int = 5
+const SETTLE_CASES: Array[String] = ["no building open", "Forge open, one hero selected", "walking as a bonded hero"]
 
 
 func _measure_settle(count: int) -> void:
-	await _open_hub()
+	var hub: Node = await _open_hub()
 	for zone_id: String in ZONES.slice(0, count):
 		_dispatch(zone_id, _cap(zone_id))
 	session.set_process(false)
-	var settles: int = 0
-	var pulses: int = 0
-	while settles < SETTLES and pulses < 20000:
-		pulses += 1
-		var due: Dictionary = {}
-		for order: Dictionary in session.expedition_orders:
-			if str((order["battle"] as Dictionary).get("status", "")) != "active" and float(order.get("remaining_seconds", 0.0)) <= PULSE:
-				due = order
-		var parts: Dictionary = {}
-		if not due.is_empty():
-			parts = _settle_parts(due)
-		var active: int = _active()
-		var reports: int = session.expedition_reports.size()
-		var started: int = Time.get_ticks_usec()
-		session.tick_expeditions(PULSE)
-		var whole: float = _since(started)
-		if session.expedition_reports.size() != reports and not parts.is_empty():
-			settles += 1
-			var line: String = "SETTLE %s (%d active before): whole pulse %.1f" % [due.get("zone_id", "?"), active, whole]
-			var rest: float = whole
-			for part: String in parts:
-				line += ", %s %.1f" % [part, parts[part]]
-				rest -= float(parts[part])
-			print("%s, rest %.1f ms" % [line, rest])
-		await process_frame
+	var spent: Dictionary = {}
+	var mood: float = session.town_mood
+	for case: String in SETTLE_CASES:
+		session.town_mood = mood
+		if await _settle_case(hub, case):
+			_wrap_handlers(spent)
+			await _settle_pulses("settle%d, %s" % [count, case], count, spent)
+			_unwrap_handlers()
+	_signs_split(hub, "settle%d" % count)
 	session.set_process(true)
 
 
-## The settling pulse's parts for due, each timed once on the side (ms).
-func _settle_parts(due: Dictionary) -> Dictionary:
+## The hub's look at a changed ledger, split (what the first roster_changed handler to ask pays after a
+## settle): the index's size, a full look (_say_new_bonds and _living_candidates over every hero: every
+## look before ig-7sn.16, now a load, a rebuilt index or a roster change), a quiet look (a record that
+## touched no tally), the partner signs' rebuild, and _refresh_walkers with every memo warm. The ledger
+## key is set stale by hand each rep.
+func _signs_split(hub: Node, label: String) -> void:
+	var pairs: Dictionary = session.bond_index()
+	var tallies: int = 0
+	var over: int = 0
+	for hero_id: String in pairs:
+		for tally: Dictionary in (pairs[hero_id] as Dictionary).values():
+			tallies += 1
+			over += 1 if tally["points"] >= preload("res://balance.tres").bond_threshold else 0
+	print("SIGNS %s: %d heroes in the index, %d tallies, %d at or over the threshold" % [label, pairs.size(), tallies, over])
+	var full: Callable = func() -> void:
+		hub._bonds_seq = -1
+		hub._bonds_pairs = null
+		hub._bond_index()
+	_report("%s: SIGNS a full look (_say_new_bonds, _living_candidates)" % label, _time(full, 5))
+	var quiet: Callable = func() -> void:
+		hub._bonds_seq = -1
+		hub._bond_index()
+	_report("%s: SIGNS a quiet look (no tally touched)" % label, _time(quiet, 5))
+	_report("%s: SIGNS _living_candidates alone" % label, _time(hub._living_candidates.bind(pairs, hub._roster_names()), 5))
+	var rebuild: Callable = func() -> void:
+		hub._signs = {}
+		hub._partner_signs(hub._roster_names())
+	_report("%s: SIGNS the partner signs' rebuild" % label, _time(rebuild, 5))
+	_report("%s: SIGNS _refresh_walkers, memos warm" % label, _time(hub._refresh_walkers, 5))
+
+
+## Sets one case up; false, saying why, when it can't be.
+func _settle_case(hub: Node, case: String) -> bool:
+	if not case.begins_with("walking") and not session.step_out():
+		print("SETTLE CASE %s: not run, can't step out (%s)" % [case, session.last_action_error])
+		return false
+	hub._open(&"Forge" if case.begins_with("Forge") else &"")
+	if case.begins_with("Forge"):
+		var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+		roster_list.deselect_all()
+		roster_list.select(0)
+		roster_list.multi_selected.emit(0, true)
+	elif case.begins_with("walking"):
+		var living: Dictionary = hub._roster_names()
+		var walker: Hero = null
+		for hero: Hero in session.roster:
+			if walker == null and not session.is_hero_busy(hero) and not Bonds.bond_from(session.bond_index(), hero.instance_id, living, preload("res://balance.tres")).is_empty():
+				walker = hero
+		if walker == null or not session.embody_hero(walker.instance_id):
+			print("SETTLE CASE %s: not run, no free bonded hero to walk as (%s)" % [case, session.last_action_error])
+			return false
+	await _wait(5)
+	var shown: Hero = hub._selected_hero()
+	var body: Hero = session.hero_by_id(session.embodied_hero_id)
+	var partner: Hero = session.hero_by_id(hub._partner_id)
+	print("SETTLE CASE %s: the roster's selected hero %s; walking as %s, partner %s" % [case, shown.hero_name if shown != null else "none", body.hero_name if body != null else "no one", partner.hero_name if partner != null else "none"])
+	return true
+
+
+## Pulses until SETTLES pulses settle a leg (at most 4000 pulses). A zone whose order stopped is sent
+## again first, so each keeps one. Prints each commit's pulse, then the case's TIME lines.
+func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
+	var samples: Dictionary = {}
+	var settles: int = 0
+	var pulses: int = 0
+	while settles < SETTLES and pulses < 4000:
+		pulses += 1
+		for zone_id: String in ZONES.slice(0, count):
+			if not session.expedition_orders.any(func(order: Dictionary) -> bool: return str(order.get("zone_id", "")) == zone_id):
+				_dispatch(zone_id, _cap(zone_id))
+		for order: Dictionary in session.expedition_orders:
+			if session._battle_live(order):
+				session._advance_battle(order, PULSE)
+		var due: Dictionary = _due_order()
+		var parts: Dictionary = {} if due.is_empty() else _settle_split(due)
+		await process_frame
+		var last_report: String = _last_report_id()
+		var checking: int = _checking()
+		var active: int = _active()
+		var saved_at: float = session.saved_at_unix
+		var decodes: Array[int] = [session.pulse_decodes_active, session.pulse_decodes_idle]
+		spent.clear()
+		var started: int = Time.get_ticks_usec()
+		session._pulse(PULSE)
+		var pulse_ms: float = _since(started)
+		var handlers: Dictionary = spent.duplicate()
+		await process_frame
+		var frame_ms: float = _since(started)
+		var settled: int = _new_reports(last_report)
+		var kind: String = "no commit"
+		if settled > 0:
+			kind = "settled a leg"
+			settles += 1
+		elif _checking() < checking:
+			kind = "landed a repeat check"
+		elif session.saved_at_unix != saved_at:
+			kind = "another commit"
+		var head: String = "%s: %s:" % [label, kind]
+		_add(samples, head + " whole pulse (_pulse)", pulse_ms)
+		_add(samples, head + " whole frame", frame_ms)
+		if kind == "no commit":
+			continue
+		var keys: Array = handlers.keys()
+		keys.sort_custom(func(a: String, b: String) -> bool: return float(handlers[a]) > float(handlers[b]))
+		var handler_ms: float = 0.0
+		var top: PackedStringArray = []
+		for key: String in keys:
+			handler_ms += float(handlers[key])
+			_add(samples, "%s handler %s" % [head, key], float(handlers[key]))
+			if float(handlers[key]) >= 0.5:
+				top.append("%s %.1f" % [key, float(handlers[key])])
+		_add(samples, head + " handlers, all", handler_ms)
+		var zone: String = str(session.expedition_reports.back().get("zone_id", "?")) if settled > 0 else kind
+		var line: String = "%s %s, %s (%d active, %d checking before; %d leg(s)): pulse %.1f ms, whole frame %.1f ms, decodes %d active/%d idle; handlers %.1f ms (%s)" % ["SETTLE" if settled > 0 else "COMMIT", label, zone, active, checking, settled, pulse_ms, frame_ms, session.pulse_decodes_active - decodes[0], session.pulse_decodes_idle - decodes[1], handler_ms, ", ".join(top)]
+		if settled > 0 and not parts.is_empty():
+			var rest: float = pulse_ms - handler_ms
+			var side: PackedStringArray = []
+			for part: String in parts:
+				side.append("%s %.1f" % [part, float(parts[part])])
+				_add(samples, "%s side %s" % [head, part], float(parts[part]))
+				if not part.begins_with("its decode alone") and not part.begins_with("of which"):
+					rest -= float(parts[part])
+			_add(samples, head + " rest (the pulse less its handlers and the side parts)", rest)
+			line += "; side (twin): %s; rest %.1f ms" % [", ".join(side), rest]
+		elif settled > 0:
+			line += "; no side split (not due by its route: a wipe)"
+		print(line)
+	var labels: Array = samples.keys()
+	labels.sort()
+	for key: String in labels:
+		_report(key, samples[key])
+	print("%s: %d pulses, %d that settled" % [label, pulses, settles])
+
+
+## The order the next pulse settles by its route (its fight over and its route home done, as _pulse
+## reads it), or {}. A wipe, due at once with nobody to walk home, is not looked for: it settles unsplit.
+func _due_order() -> Dictionary:
+	for order: Dictionary in session.expedition_orders:
+		if str(order.get("phase", "")) != "checking" and order.get("battle") is Dictionary and str((order["battle"] as Dictionary).get("status", "active")) != "active" and float(order.get("remaining_seconds", 0.0)) <= PULSE:
+			return order
+	return {}
+
+
+## ig-7sn.16 (c): the settle's game work, split on the side on a twin: a GameSession built from this state
+## (to_dict and the ledger, the bond index and each battle's decode warmed as the real session keeps
+## them), which runs the pulse's commit step by step as _commit_profile_mutation does and is then freed.
+## The real session keeps its objects and caches for the timed pulse. The twin's signals have no handlers
+## (the wrappers time those inside the real pulse), and it saves nothing: the save part is
+## SaveService.save on the real session a pulse early (the same state less the settle's record and
+## report). Parts in ms, in the commit's order.
+func _settle_split(due: Dictionary) -> Dictionary:
+	var profile: Dictionary = session.to_dict()
+	profile["version"] = saves.SAVE_VERSION
+	profile["ledger"] = session.ledger
+	var twin: Node = _twin(profile, session._bond_in_step())
 	var parts: Dictionary = {}
-	var team: Array[Hero] = []
-	for hero_id: String in session._string_array(due["hero_ids"]):
-		team.append(session.hero_by_id(hero_id))
-	var squads: Array[Dictionary] = []
-	for squad: Dictionary in due["squads"]:
-		squads.append(squad.duplicate(true))
 	var started: int = Time.get_ticks_usec()
-	session._team_snapshots(team, squads)
-	parts["team snapshot"] = _since(started)
+	BattleState.from_dict(due["battle"] as Dictionary)
+	parts["its decode alone (fix 1; inside the due orders)"] = _since(started)
+	_twin_commit_head(twin, parts)
 	started = Time.get_ticks_usec()
-	session.to_dict()
-	parts["profile to_dict"] = _since(started)
+	twin._advance_clocks_in_memory(PULSE)
+	parts["clocks and town"] = _since(started)
 	started = Time.get_ticks_usec()
-	saves.save()
-	parts["save"] = _since(started)
-	for changed: Signal in [session.roster_changed, session.expeditions_changed]:
-		started = Time.get_ticks_usec()
-		for connection: Dictionary in changed.get_connections():
-			(connection["callable"] as Callable).call()
-		parts[changed.get_name() + " handlers"] = _since(started)
+	twin._resolve_due_orders_in_memory()
+	parts["the due orders (decode, outcome, record, rewards, check, report)"] = _since(started)
 	started = Time.get_ticks_usec()
-	for connection: Dictionary in session.battle_changed.get_connections():
-		(connection["callable"] as Callable).call(str(due["id"]))
-	parts["battle_changed handlers"] = _since(started)
+	twin._expire_recovery_caches_in_memory()
+	twin._expire_stranded_incidents_in_memory()
+	parts["expiries"] = _since(started)
+	_twin_commit_tail(twin, parts)
 	return parts
+
+
+## A GameSession built from profile, off the tree (no _ready: no load, no autosave connection), its
+## decoded battles and, when warm is true, its bond index warmed.
+func _twin(profile: Dictionary, warm: bool) -> Node:
+	var twin: Node = (session.get_script() as GDScript).new()
+	twin.from_dict(profile)
+	if warm:
+		twin.bond_index()
+	for order: Dictionary in twin.expedition_orders:
+		if order.get("battle") is Dictionary:
+			twin._battle_state(order)
+	return twin
+
+
+## The commit's head on a twin, timed into parts (its snapshot and what a rollback keeps), then the
+## mutation's depths, as _commit_profile_mutation sets them.
+func _twin_commit_head(twin: Node, parts: Dictionary) -> void:
+	var started: int = Time.get_ticks_usec()
+	twin.to_dict()
+	parts["commit snapshot (to_dict)"] = _since(started)
+	started = Time.get_ticks_usec()
+	twin._rollback_kept()
+	parts["_rollback_kept"] = _since(started)
+	twin._save_deferred_depth += 1
+	twin._notification_deferred_depth += 1
+	twin._ledger_hold_depth += 1
+
+
+## The commit's tail on a twin, timed into parts: the save (the real session's), the ledger eviction,
+## the checks sent after it; then the twin's jobs are cancelled and it is freed. The flush is left out:
+## the real pulse's handlers are timed where they run.
+func _twin_commit_tail(twin: Node, parts: Dictionary) -> void:
+	twin._save_deferred_depth -= 1
+	var started: int = Time.get_ticks_usec()
+	saves.save()
+	parts["save (the real session's, a pulse early)"] = _since(started)
+	twin._ledger_hold_depth -= 1
+	started = Time.get_ticks_usec()
+	twin._evict_ledger()
+	parts["_evict_ledger"] = _since(started)
+	twin._notification_deferred_depth -= 1
+	var builds: int = twin.bond_builds
+	started = Time.get_ticks_usec()
+	twin._send_battle_checks()
+	parts["send the repeat checks (team snapshots, two jobs each)"] = _since(started)
+	if twin.bond_builds > builds:
+		# A cold index (after a load) is rebuilt inside the checks: _cover_orders reads it.
+		started = Time.get_ticks_usec()
+		Bonds.index_state(twin.ledger, preload("res://balance.tres"))
+		parts["of which the bond index rebuild, timed again alone"] = _since(started)
+	twin._cancel_battle_jobs()
+	twin.free()
+
+
+## ig-7sn.16 (b): each connection of the three refresh signals swapped for a wrapper that calls it and adds
+## its time to spent ("<signal> <script>.<method>" -> ms), in the same order with the same flags, so a
+## flush still runs each handler once, in its place. Wrapper -> the handler it wraps.
+var _wrappers: Dictionary = {}
+
+
+func _refresh_signals() -> Array[Signal]:
+	return [session.roster_changed, session.expeditions_changed, session.battle_changed]
+
+
+func _wrap_handlers(spent: Dictionary) -> void:
+	for changed: Signal in _refresh_signals():
+		var connections: Array = changed.get_connections()
+		for connection: Dictionary in connections:
+			changed.disconnect(connection["callable"])
+		for connection: Dictionary in connections:
+			var handler: Callable = connection["callable"]
+			changed.connect(handler if _wrappers.has(handler) else _wrapper(changed, handler, spent), connection["flags"])
+
+
+func _wrapper(changed: Signal, handler: Callable, spent: Dictionary) -> Callable:
+	var target: Object = handler.get_object()
+	var source: Script = target.get_script() as Script if target != null else null
+	var key: String = "%s %s.%s" % [changed.get_name(), source.resource_path.get_file() if source != null else "?", handler.get_method()]
+	var wrapper: Callable
+	if changed.get_name() == "battle_changed":
+		wrapper = func(order_id: String) -> void:
+			var started: int = Time.get_ticks_usec()
+			handler.call(order_id)
+			spent[key] = float(spent.get(key, 0.0)) + _since(started)
+	else:
+		wrapper = func() -> void:
+			var started: int = Time.get_ticks_usec()
+			handler.call()
+			spent[key] = float(spent.get(key, 0.0)) + _since(started)
+	_wrappers[wrapper] = handler
+	return wrapper
+
+
+func _unwrap_handlers() -> void:
+	for changed: Signal in _refresh_signals():
+		var connections: Array = changed.get_connections()
+		for connection: Dictionary in connections:
+			changed.disconnect(connection["callable"])
+		for connection: Dictionary in connections:
+			changed.connect(_wrappers.get(connection["callable"], connection["callable"]) as Callable, connection["flags"])
+	_wrappers.clear()
 
 
 ## ---- 2. The hub's battle_changed and expeditions_changed handlers as the order count grows.
@@ -758,7 +997,8 @@ func _measure_town() -> void:
 
 
 ## ---- 6. The load after a long close with all five battles out. The load owes their catch-up; it
-## runs as jobs after (ig-7sn.12), timed here from the load until its round lands.
+## runs as jobs after (ig-7sn.12), timed here from the load until its round lands. Since ig-7sn.16 each
+## slow frame names the jobs _process ran in it, and the landing is split as a settle is (_landing_split).
 
 func _measure_load() -> void:
 	for zone_id: String in ZONES:
@@ -787,16 +1027,42 @@ func _measure_load() -> void:
 	var started_away: int = Time.get_ticks_usec()
 	saves.load_game()
 	print("load: load_game after %.0f h away (owes every battle's catch-up, then its save): %.1f ms, load_blocked %s" % [hours, _since(started_away), saves.load_blocked])
-	var owing: Callable = func() -> bool: return session.expedition_orders.any(func(order: Dictionary) -> bool: return order.has("catch_up_seconds"))
-	var frames: Array[float] = await _frames_after_load("until the catch-up landed (the last is the landing)", started_away, owing)
+	# As in the game, the hub opens on the load. Its first look rebuilds the bond index (hub.gd _ready ->
+	# _refresh_walkers), so the landing's repeat checks find it warm, and the landing runs the hub's handlers.
+	var builds: int = session.bond_builds
+	var started_hub: int = Time.get_ticks_usec()
+	await _open_hub()
+	print("load: the hub opened on the load: %.1f ms over its 30 frames, %d bond index rebuild(s)" % [_since(started_hub), session.bond_builds - builds])
+	var owing: Callable = func() -> bool: return _owing() > 0
+	var landing: Dictionary = {}
+	var spent: Dictionary = {}
+	_wrap_handlers(spent)
+	var frames: Array[float] = await _frames_after_load("until the catch-up landed (the last is the landing)", started_away, owing, landing, spent)
+	_unwrap_handlers()
 	# The last frame holds the round's commit, a settle pulse (the Dispatched battles row, ig-7sn.6).
-	var landing: float = 0.0
+	var landing_ms: float = 0.0
 	if not frames.is_empty():
-		landing = frames.pop_back()
+		landing_ms = frames.pop_back()
 	var worst: float = 0.0
 	for frame: float in frames:
 		worst = maxf(worst, frame)
-	print("load: catch-up landed %.1f s after the load began, %d frames, worst frame while it ran %.1f ms, landing frame %.1f ms" % [_since(started_away) / 1000.0, frames.size() + 1, worst, landing])
+	print("load: catch-up landed %.1f s after the load began, %d frames, worst frame while it ran %.1f ms, landing frame %.1f ms" % [_since(started_away) / 1000.0, frames.size() + 1, worst, landing_ms])
+	if not landing.is_empty():
+		var parts: Dictionary = _landing_split(landing)
+		var side: PackedStringArray = []
+		var total: float = 0.0
+		for part: String in parts:
+			side.append("%s %.1f" % [part, float(parts[part])])
+			if not part.begins_with("each landed") and not part.begins_with("of which"):
+				total += float(parts[part])
+		print("load: LANDING SPLIT (twin, ms): %s; the commit's parts together %.1f" % [", ".join(side), total])
+		var handler_ms: float = 0.0
+		var top: PackedStringArray = []
+		for key: String in spent:
+			handler_ms += float(spent[key])
+			if float(spent[key]) >= 0.5:
+				top.append("%s %.1f" % [key, float(spent[key])])
+		print("load: LANDING HANDLERS (the real frame's, ms): %.1f (%s)" % [handler_ms, ", ".join(top)])
 	_print_orders()
 
 
@@ -832,20 +1098,148 @@ func _measure_preview() -> void:
 
 ## ---- Helpers
 
-## Frame times (ms) from now while running() holds, prints those over 16.7 ms with their time since
-## started (usec), the load's start.
-func _frames_after_load(label: String, started: int, running: Callable) -> Array[float]:
+## Frame times (ms) from now while running() holds, with GameSession._process driven from here so each
+## frame's jobs are named (ig-7sn.16 ACC 8, _process_jobs). Prints the frames over 16.7 ms with their
+## time since started (usec, the load's start) and those jobs. When landing is given, the catch-up
+## round's inputs go into it once every catch-up job is in, before the pulse that lands them, and spent (the
+## wrapped handlers' times) starts over there.
+func _frames_after_load(label: String, started: int, running: Callable, landing: Dictionary = {}, spent: Dictionary = {}) -> Array[float]:
+	session.set_process(false)
 	var frames: Array[float] = []
 	var slow: Array[String] = []
+	var delta: float = 0.0
 	var last: int = Time.get_ticks_usec()
 	while running.call() and _since(started) < 600000.0:
+		var taken: String = ""
+		if landing.is_empty() and _catch_ups_in():
+			var before: int = Time.get_ticks_usec()
+			landing.merge(_landing_inputs())
+			spent.clear()
+			taken = "; the harness took the round's inputs here, %.1f ms" % _since(before)
+		var jobs: String = _process_jobs(delta) + taken
 		await process_frame
 		frames.append(_since(last))
 		last = Time.get_ticks_usec()
+		delta = frames.back() / 1000.0
 		if frames.back() > 16.7:
-			slow.append("%.1f ms at %.2f s" % [frames.back(), _since(started) / 1000.0])
+			slow.append("%.1f ms at %.2f s (%s)" % [frames.back(), _since(started) / 1000.0, jobs])
+	session.set_process(true)
 	print("load: %s, frames over 16.7 ms: %s" % [label, ", ".join(slow)])
 	return frames
+
+
+## Runs GameSession._process(delta) and names what it ran: the pulse, each battle advance, the periodic
+## save (it was due), a settle (a new report), the catch-up round's landing (catch_up_seconds cleared), a
+## repeat check's landing, any save; then _process's own time.
+func _process_jobs(delta: float) -> String:
+	var pulse: bool = not saves.load_blocked and session._expedition_pulse_accumulator + delta >= PULSE
+	var advances: int = session.pulse_battle_advances
+	var save_due: bool = session._periodic_save_due
+	var last_report: String = _last_report_id()
+	var owing: int = _owing()
+	var checking: int = _checking()
+	var saved_at: float = session.saved_at_unix
+	var started: int = Time.get_ticks_usec()
+	session._process(delta)
+	var spent: float = _since(started)
+	var jobs: PackedStringArray = []
+	if pulse:
+		jobs.append("pulse")
+	if session.pulse_battle_advances > advances:
+		jobs.append("%d battle advance(s)" % (session.pulse_battle_advances - advances))
+	if save_due and not session._periodic_save_due:
+		jobs.append("the periodic save")
+	if _new_reports(last_report) > 0:
+		jobs.append("%d settle(s)" % _new_reports(last_report))
+	if _owing() < owing:
+		jobs.append("the catch-up round landed")
+	if _checking() < checking:
+		jobs.append("a repeat check landed")
+	if session.saved_at_unix != saved_at:
+		jobs.append("a save")
+	return "%s; _process %.1f ms" % [", ".join(jobs) if not jobs.is_empty() else "no job", spent]
+
+
+## True once the load's catch-up round is out and each of its jobs is done (the next pulse lands it). A
+## job the game has waited on already has left _battle_jobs; its task id is gone then, so it isn't asked.
+func _catch_ups_in() -> bool:
+	var found: bool = false
+	for check: Dictionary in session._battle_checks.values():
+		if check.has("catch_up"):
+			var job: BattleJob = check["catch_up"] as BattleJob
+			if session._battle_jobs.has(job) and not WorkerThreadPool.is_task_completed(job.task_id):
+				return false
+			found = true
+	return found
+
+
+## The catch-up round's inputs before the pulse that lands it: the profile, the ledger (its own list;
+## records are never changed in place), whether the bond index is in step, and each catch-up's
+## [generation, job]. Their results are read after the landing, once the game has waited on each job.
+func _landing_inputs() -> Dictionary:
+	var jobs: Dictionary = {}
+	for order_id: String in session._battle_checks:
+		var check: Dictionary = session._battle_checks[order_id]
+		if check.has("catch_up"):
+			jobs[order_id] = [int(check["generation"]), check["catch_up"]]
+	var profile: Dictionary = session.to_dict()
+	profile["version"] = saves.SAVE_VERSION
+	profile["ledger"] = session.ledger.duplicate()
+	return {"profile": profile, "warm": session._bond_in_step(), "jobs": jobs}
+
+
+## ig-7sn.16 ACC 8: the catch-up landing, split as a settle is (_settle_split): a twin from the round's
+## inputs lands the same results through _land_battle_checks_in_memory (each catch-up applied, then the
+## legs that ended settled), inside the commit's steps. Parts in ms.
+func _landing_split(inputs: Dictionary) -> Dictionary:
+	var twin: Node = _twin(inputs["profile"] as Dictionary, bool(inputs["warm"]))
+	var parts: Dictionary = {}
+	var landed: Dictionary[String, int] = {}
+	var decode: float = 0.0
+	for order_id: String in inputs["jobs"]:
+		var entry: Array = inputs["jobs"][order_id]
+		var job := BattleJob.new()
+		job.result = (entry[1] as BattleJob).result.duplicate(true)
+		twin._battle_checks[order_id] = {"generation": int(entry[0]), "battle": twin.expedition_orders[twin._order_index(order_id)].get("battle"), "catch_up": job}
+		landed[order_id] = int(entry[0])
+		if job.result.get("battle") is Dictionary:
+			var started: int = Time.get_ticks_usec()
+			BattleState.from_dict(job.result["battle"] as Dictionary)
+			decode += _since(started)
+	parts["each landed battle's decode alone, together (fix 1's kind)"] = decode
+	_twin_commit_head(twin, parts)
+	var started_round: int = Time.get_ticks_usec()
+	twin._land_battle_checks_in_memory(landed)
+	parts["the round in memory (each catch-up applied, the ended legs settled)"] = _since(started_round)
+	_twin_commit_tail(twin, parts)
+	return parts
+
+
+func _last_report_id() -> String:
+	return "" if session.expedition_reports.is_empty() else str(session.expedition_reports.back().get("id", ""))
+
+
+## Reports added since the one whose id is last_id (every report when it is gone or was "").
+func _new_reports(last_id: String) -> int:
+	var reports: Array = session.expedition_reports
+	for index: int in range(reports.size() - 1, -1, -1):
+		if str((reports[index] as Dictionary).get("id", "")) == last_id:
+			return reports.size() - 1 - index
+	return reports.size()
+
+
+func _checking() -> int:
+	return session.expedition_orders.filter(func(order: Dictionary) -> bool: return str(order.get("phase", "")) == "checking").size()
+
+
+func _owing() -> int:
+	return session.expedition_orders.filter(func(order: Dictionary) -> bool: return order.has("catch_up_seconds")).size()
+
+
+func _add(samples: Dictionary, key: String, value: float) -> void:
+	if not samples.has(key):
+		samples[key] = []
+	(samples[key] as Array).append(value)
 
 
 func _open_hub() -> Node:

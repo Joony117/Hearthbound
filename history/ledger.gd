@@ -72,23 +72,29 @@ static func is_routine(record: Dictionary) -> bool:
 static func records_for_hero(ledger: Array[Dictionary], hero_id: String) -> Array[Dictionary]:
 	var found: Array[Dictionary] = []
 	for record: Dictionary in ledger:
-		if str(record.get("hero", "")) == hero_id or _array(record, "team").has(hero_id) or _array(record, "rescued").has(hero_id):
+		if _names_hero(record, hero_id):
 			found.append(record)
 	return found
 
 
+static func _names_hero(record: Dictionary, hero_id: String) -> bool:
+	return str(record.get("hero", "")) == hero_id or _array(record, "team").has(hero_id) or _array(record, "rescued").has(hero_id)
+
+
 ## The hero-detail History list, newest first, at most max_lines. Routine victories in a row at
 ## one zone collapse into one line. names maps hero ids to display names; the ledger's own
-## summoned/died records fill the gaps.
+## summoned/died records fill the gaps. It walks the ledger from the newest end and stops where the
+## list ends (ig-7sn.16), so only a hero with fewer lines than max_lines reads every record.
 static func history_lines(ledger: Array[Dictionary], hero_id: String, names: Dictionary, rank_names: PackedStringArray, max_lines: int) -> Array[String]:
 	var all_names: Dictionary = known_names(ledger, names)
-	var records: Array[Dictionary] = records_for_hero(ledger, hero_id)
 	var lines: Array[String] = []
 	var routine_zone: String = ""
 	var routine_count: int = 0
 	var arrived: bool = false
-	for index: int in range(records.size() - 1, -1, -1):
-		var record: Dictionary = records[index]
+	for index: int in range(ledger.size() - 1, -1, -1):
+		var record: Dictionary = ledger[index]
+		if not _names_hero(record, hero_id):
+			continue
 		var kind: String = str(record.get("kind", ""))
 		arrived = arrived or kind == "summoned"
 		if is_routine(record) and _array(record, "team").has(hero_id) and str(record.get("zone", "")) == routine_zone:

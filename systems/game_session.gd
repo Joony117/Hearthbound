@@ -3300,6 +3300,14 @@ func bond_index() -> Dictionary:
 	return _bond_state["pairs"]
 
 
+## The kept index's {version, touched} (Bonds.index_state): which heroes' tallies each fold since
+## bond_index()'s pairs were built touched (ig-7sn.16). A rebuild makes new pairs and starts these over.
+## Callers never change it.
+func bond_changes() -> Dictionary:
+	bond_index()
+	return {"version": _bond_state["version"], "touched": _bond_state["touched"]}
+
+
 func _bond_in_step() -> bool:
 	return is_same(ledger, _bond_ledger) and ledger_next_seq == _bond_seq
 
