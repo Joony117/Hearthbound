@@ -1742,6 +1742,29 @@ in the table is V3. Cells as the fit run's.
   magnitude, which for a cut is the weaker (`KNOWN_ISSUES.md`, "A legacy checkpoint's slowed enemy
   stays at 30%"). A unit test pins both.
 
+**The 16-seed recheck** (`ig-0dp`, owner PC, 2026-09-27). This is the pick's full run with seeds
+1–16, where the fit used 1–8. Log `.agent-results/ig-0dp/presence16.log`, 52 min. Seeds 1–8
+reproduce the pick's run: every median, and the casters' ranges, so the cloud's Linux numbers hold
+on Windows. **The pick holds at o = 0.** The harness prints `PICK offset=0.0`.
+
+| Point | Knights (R+1 / R+2) | Mage | Cleric V3 | Gap |
+|---|---|---|---|---|
+| F1 Verdant | 1.559 / 1.700 | 1.559 (1.283–1.700), **+1.00** | 1.628 (1.399–1.775), **+1.50** | 9.1% |
+| B30 Ashfall | 2.922 / 3.221 | 3.002 (2.813–3.382), **+1.28** | 3.084 (3.035–3.135), **+1.56** | 10.2% |
+
+- Each caster's two points sit within 0.5: the Mage's are 0.28 apart, the Cleric's 0.06. Offsets
+  0 and 0.25 both fit, and the rule takes 0. Only the B30 near Knight moved (2.938 → 2.922), which
+  lifts both B30 casters by 0.03–0.04.
+- **More seeds did not settle the Mage's F1 point.** Its median still equals the D Knight's
+  (1.559), so +1.00 is still the band's floor. Its low tail is longer than the Knight's: four of 16
+  seeds at 1.399 or below, against one. A paired bootstrap of the 16 seeds (20,000 resamples) puts
+  it below 1 in 56% (38% at 8 seeds), and keeps all four points in [1, 2] 41% of the time at o = 0
+  (47% at 0.25). So the Mage at F1 fights like an R+1 Knight, give or take a little: at the band's
+  edge, not inside it.
+- No game number changes. If the Mage should sit clearly inside the band at F1, the next lever is
+  M3 (more control, a design call), not the offset. An offset of 0.25 lifts every caster and puts
+  the Cleric's B30 point at 1.81.
+
 **Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
 any wall spell, so its tests place walls by hand.
 - **With no wall up, nothing changes.** Movement runs today's straight-line code; one check per

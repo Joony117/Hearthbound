@@ -3,7 +3,8 @@ extends SceneTree
 ## ig-vl1.6: the caster presence test (SYSTEMS.md § Casters, "Presence, as the sim measures it"), run by
 ## hand, never from tests/unit. Presence is the hardest fight the team still wins: its "break". The
 ## balance gate's mixed team with its Mage slot filled; everyone else at the point's rank and level.
-## Seeds 1-8, bare supplies (supplies heal, which would mask a Cleric), the live battle_pace.
+## Seeds 1-16 (1-8 until ig-0dp: 8 seeds put the fit inside noise), bare supplies (supplies heal, which
+## would mask a Cleric), the live battle_pace. A full run takes about an hour.
 ##   APPDATA="$(cygpath -w "$(mktemp -d)")" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s res://tests/balance/presence_check.gd -- --offsets=0 --points=F1_verdant
 ## Args (optional; the defaults are shown): --offsets=0 (a,b,..) and --points=F1_verdant,B30_ashfall.
 ## --ref=near,far,mage (ig-vl1.8) runs the Cleric row only: the two Knights' and the Mage's m come from an
@@ -23,7 +24,7 @@ extends SceneTree
 var _balance: BalanceTable = preload("res://balance.tres")
 const TEAM: Array[String] = ["knight", "ranger", "mage", "rogue", "knight"]
 const SLOT: int = 2
-const SEEDS: Array[int] = [1, 2, 3, 4, 5, 6, 7, 8]
+const SEEDS: Array[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 ## [label, zone, rank, level]. The Knight is measured at rank + 1 and rank + 2.
 const POINTS: Array = [["F1_verdant", &"verdant_outskirts", 0, 1], ["B30_ashfall", &"ashfall_reaches", 3, 30]]
 ## The search: [0.5, 2.0], widened x2 up to 8 or halved down to 0.125, then 6 halvings (about +-1.1%).
