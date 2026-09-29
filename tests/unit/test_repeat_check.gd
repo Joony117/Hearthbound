@@ -6,6 +6,7 @@ const STOCK: Dictionary = {"healing": 5, "revival": 5, "healing_masterwork": 0, 
 const LOADOUT: Dictionary = {"healing": 1, "revival": 1, "keep_healing": 0, "keep_revival": 0}
 const ESCROW: Dictionary = {"healing": 1, "revival": 1, "healing_masterwork": 0, "revival_masterwork": 0}
 const SPENT: Dictionary = {"healing": 4, "revival": 4, "healing_masterwork": 0, "revival_masterwork": 0}
+const Session = preload("res://systems/game_session.gd")
 
 
 func before_each() -> void:
@@ -48,7 +49,7 @@ func test_a_due_repeat_settles_now_and_its_check_starts_the_run_it_checked() -> 
 func test_a_save_mid_check_reloads_still_checking_and_never_settles_twice() -> void:
 	var order_id: String = _settle_into_check()
 	var order: Dictionary = GameSession.expedition_orders[0]
-	var seed: int = int(order["run_seed"])
+	var run_seed: int = int(order["run_seed"])
 	# Through JSON, as the save stores them (its numbers come back as floats).
 	var reports: Variant = JSON.parse_string(JSON.stringify(GameSession.expedition_reports))
 	var ledger_size: int = GameSession.ledger.size()
@@ -62,7 +63,7 @@ func test_a_save_mid_check_reloads_still_checking_and_never_settles_twice() -> v
 	assert_true(GameSession._battle_checks.is_empty(), "the load runs no check")
 	order = GameSession.expedition_orders[GameSession._order_index(order_id)]
 	assert_eq(order["phase"], "checking")
-	assert_eq(int(order["run_seed"]), seed)
+	assert_eq(int(order["run_seed"]), run_seed)
 	assert_eq(int(order["runs_completed"]), 1)
 	assert_eq(GameSession.supplies, SPENT)
 	# Real pulses from here: the first sends the check again, a later one lands it.
@@ -156,15 +157,15 @@ func _settle_into_check() -> String:
 ## create_run starts from them.
 func _expected_run(order: Dictionary, snapshots: Array[Dictionary]) -> Dictionary:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(str(order["zone_id"])))
-	var seed: int = int(order["run_seed"])
-	var verdict: Dictionary = BattleSimulation.forecast(str(order["id"]) + ":repeat", snapshots, zone, _squads(order), order["policies"] as Dictionary, order["escrow"] as Dictionary, seed)
-	var state: BattleState = BattleSimulation.create_run(str(order["id"]), snapshots, zone, _squads(order), order["policies"] as Dictionary, order["escrow"] as Dictionary, seed)
+	var run_seed: int = int(order["run_seed"])
+	var verdict: Dictionary = BattleSimulation.forecast(str(order["id"]) + ":repeat", snapshots, zone, _squads(order), order["policies"] as Dictionary, order["escrow"] as Dictionary, run_seed)
+	var state: BattleState = BattleSimulation.create_run(str(order["id"]), snapshots, zone, _squads(order), order["policies"] as Dictionary, order["escrow"] as Dictionary, run_seed)
 	return {"verdict": verdict, "battle": state.to_dict()}
 
 
 func _team(order: Dictionary) -> Array[Hero]:
 	var team: Array[Hero] = []
-	for hero_id: String in GameSession._string_array(order["hero_ids"]):
+	for hero_id: String in Session._string_array(order["hero_ids"]):
 		team.append(GameSession.hero_by_id(hero_id))
 	return team
 

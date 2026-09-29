@@ -496,10 +496,10 @@ func _ids(state: BattleState) -> Array:
 
 
 ## A saved field object, id field:<number>: a wall for a name "W...", else a zone.
-func _field(name: String, number: int, owner: String) -> Dictionary:
-	if name.begins_with("W"):
-		return {"id": "field:%d" % number, "kind": "wall", "skill_id": "mage_rime_wall", "owner_actor_id": owner, "faction": "ally", "start": [float(number), -3.0], "end": [float(number), 3.0], "thickness": 1.2, "remaining_seconds": float(number)}
-	return {"id": "field:%d" % number, "kind": "zone", "skill_id": "mage_rime_circle", "owner_actor_id": owner, "faction": "ally", "center": [0.0, 0.0], "radius": 3.0, "remaining_seconds": float(number), "atk": 10.0, "heal_scale": 1.0}
+func _field(field_name: String, number: int, owner_id: String) -> Dictionary:
+	if field_name.begins_with("W"):
+		return {"id": "field:%d" % number, "kind": "wall", "skill_id": "mage_rime_wall", "owner_actor_id": owner_id, "faction": "ally", "start": [float(number), -3.0], "end": [float(number), 3.0], "thickness": 1.2, "remaining_seconds": float(number)}
+	return {"id": "field:%d" % number, "kind": "zone", "skill_id": "mage_rime_circle", "owner_actor_id": owner_id, "faction": "ally", "center": [0.0, 0.0], "radius": 3.0, "remaining_seconds": float(number), "atk": 10.0, "heal_scale": 1.0}
 
 
 ## The names the kept objects were built with (field:<n> is names[n - 1]).

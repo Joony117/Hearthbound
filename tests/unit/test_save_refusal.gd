@@ -5,6 +5,7 @@ extends GutTest
 
 const REASON: String = "Invalid stranded incident checkpoint: Battle hero squad_id must match squad membership."
 const REFUSED: String = "Save refused: this game state would not load (%s). Your last save is safe; restart to return to it."
+const Session = preload("res://systems/game_session.gd")
 
 var _originals: Dictionary = {}
 
@@ -169,8 +170,8 @@ func test_the_check_costs_little_on_a_large_profile() -> void:
 	for _run: int in 7:
 		var started: int = Time.get_ticks_usec()
 		var parsed: Dictionary = JSON.parse_string(text) as Dictionary
-		GameSession.repair_rescue_timestamps(parsed)
-		assert_eq(GameSession.validate_saved_state(parsed, SaveService.SAVE_VERSION), "")
+		Session.repair_rescue_timestamps(parsed)
+		assert_eq(Session.validate_saved_state(parsed, SaveService.SAVE_VERSION), "")
 		check_usec = mini(check_usec, Time.get_ticks_usec() - started)
 	gut.p("SAVE CHECK: %d heroes, %d items, save.json %d bytes, save() best of 7 %.2f ms, the check alone %.2f ms" % [GameSession.roster.size(), GameSession.inventory.size(), text.length(), save_usec / 1000.0, check_usec / 1000.0])
 	assert_lt(save_usec, 5000000)
@@ -195,12 +196,14 @@ func _good_save() -> Dictionary:
 	assert_true(SaveService.save(), SaveService.last_write_error)
 	var kept: Dictionary = {}
 	for path: String in [SaveService.SAVE_PATH, SaveService.LEDGER_PATH]:
+		@warning_ignore("incompatible_ternary")
 		kept[path] = FileAccess.get_file_as_bytes(path) if FileAccess.file_exists(path) else null
 	return kept
 
 
 func _assert_files_unchanged(kept: Dictionary) -> void:
 	for path: String in kept:
+		@warning_ignore("incompatible_ternary")
 		var now: Variant = FileAccess.get_file_as_bytes(path) if FileAccess.file_exists(path) else null
 		assert_eq(now, kept[path], path + " is byte-identical, or still missing")
 	for path: String in [SaveService.TMP_PATH, SaveService.LEDGER_TMP_PATH]:

@@ -3,6 +3,7 @@ extends GutTest
 ## ig-m6o.1: the Ledger (DECISIONS.md 2026-09-24 "The Ledger"; SYSTEMS.md § The Ledger).
 
 const BALANCE: BalanceTable = preload("res://balance.tres")
+const Session = preload("res://systems/game_session.gd")
 
 var _originals: Dictionary = {}
 
@@ -307,13 +308,13 @@ func test_a_rescuer_stranded_by_a_failed_rescue_links_to_the_rescue_when_the_win
 func test_incident_battle_orders_is_validated_when_present() -> void:
 	_strand_a_rescuer("validate")
 	var saved: Dictionary = _json(GameSession.to_dict())
-	assert_eq(GameSession.validate_saved_state(saved, 3), "")
+	assert_eq(Session.validate_saved_state(saved, 3), "")
 	for bad: Variant in [[], {"hero:x": 5}, {"hero:x": ""}]:
 		var broken: Dictionary = saved.duplicate(true)
 		(broken["stranded_incidents"] as Array)[0]["battle_orders"] = bad
-		assert_string_contains(GameSession.validate_saved_state(broken, 3), "battle_orders", str(bad))
+		assert_string_contains(Session.validate_saved_state(broken, 3), "battle_orders", str(bad))
 	(saved["stranded_incidents"] as Array)[0].erase("battle_orders")
-	assert_eq(GameSession.validate_saved_state(saved, 3), "", "a legacy incident has no key")
+	assert_eq(Session.validate_saved_state(saved, 3), "", "a legacy incident has no key")
 
 
 ## A total wipe captures its incident when the fight ends, before the order settles. Live code runs
@@ -328,7 +329,7 @@ func test_abandoning_a_total_wipe_before_its_order_settles_still_carries_battle_
 	var order: Dictionary = GameSession.expedition_orders[0]
 	GameSession._capture_stranded_incident(order, BattleState.from_dict(order["battle"] as Dictionary))
 	assert_eq(GameSession.expedition_orders.size(), 1, "not settled yet")
-	assert_string_contains(GameSession.validate_saved_state(_json(GameSession.to_dict()), 3), "incident reference", "the window is never saved")
+	assert_string_contains(Session.validate_saved_state(_json(GameSession.to_dict()), 3), "incident reference", "the window is never saved")
 	assert_true(GameSession.abandon_stranded(str(GameSession.stranded_incidents[0]["id"])), GameSession.last_action_error)
 	assert_eq(_battle_records(order_id).size(), 0, "the stranding battle has no record yet")
 	_assert_expedition_death(hero["hero_id"], order_id)

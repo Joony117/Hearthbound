@@ -5,6 +5,7 @@ extends GutTest
 
 const SIM = preload("res://combat/battle/battle_simulation.gd")
 const Compare = preload("res://tests/unit/compare.gd")
+const Session = preload("res://systems/game_session.gd")
 var PUSH: float = SIM.BALANCE.battle_crit_push_units
 var GATE: int = SIM.BALANCE.battle_crit_push_gate_ticks
 
@@ -235,7 +236,7 @@ func test_a_mid_fight_save_and_reload_reproduces_the_pushes_and_legacy_saves_loa
 	for actor: Dictionary in _actors(legacy):
 		(actor["effect_state"] as Dictionary).erase("hit_from")
 		(actor["effect_state"] as Dictionary).erase("last_push_tick")
-	assert_eq(GameSession.validate_saved_state(legacy, 3), "", "a save from before knockback loads")
+	assert_eq(Session.validate_saved_state(legacy, 3), "", "a save from before knockback loads")
 	var legacy_file: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SaveService.SAVE_PATH)) as Dictionary
 	for actor: Dictionary in _actors(legacy_file):
 		(actor["effect_state"] as Dictionary).erase("hit_from")
@@ -252,7 +253,7 @@ func test_a_mid_fight_save_and_reload_reproduces_the_pushes_and_legacy_saves_loa
 	for cue: Array in [["hit_from", [1.0]], ["hit_from", "left"], ["hit_from", [null, 1.0]], ["last_push_tick", -1], ["last_push_tick", 1.5], ["last_push_tick", battle_tick + 1]]:
 		var broken: Dictionary = profile.duplicate(true)
 		(_actors(broken)[0]["effect_state"] as Dictionary)[cue[0]] = cue[1]
-		assert_ne(GameSession.validate_saved_state(broken, 3), "", "%s %s is rejected" % [cue[0], str(cue[1])])
+		assert_ne(Session.validate_saved_state(broken, 3), "", "%s %s is rejected" % [cue[0], str(cue[1])])
 
 
 func test_a_new_battle_starts_without_the_last_one_s_cues() -> void:

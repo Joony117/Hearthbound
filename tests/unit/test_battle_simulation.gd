@@ -522,6 +522,7 @@ func _authored_heroes(count: int) -> Array[Dictionary]:
 		hero.level = 80
 		var definition: HeroDefinition = Hero.definition_for(hero.def_id)
 		var stats: Dictionary[StringName, float] = Hero.compute_final_stats(hero, definition, preload("res://balance.tres"), Hero.level_for(hero, preload("res://balance.tres")))
+		@warning_ignore("integer_division")
 		heroes.append({
 			"hero_id": hero.instance_id,
 			"archetype": archetype,

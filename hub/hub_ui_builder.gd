@@ -96,13 +96,13 @@ static func _build_nav(root: Control) -> void:
 		key.physical_keycode = (KEY_1 + index) as Key
 		button.shortcut = Shortcut.new()
 		button.shortcut.events = [key]
-	var build := MenuButton.new()
-	_add(nav, build, "Build", true)
-	build.text = "Build"
+	var build_menu := MenuButton.new()
+	_add(nav, build_menu, "Build", true)
+	build_menu.text = "Build"
 	# hub.gd writes each item's price; the first of each TownRules.FREE_FIRST type is free.
 	for type: StringName in TownRules.TYPES:
-		build.get_popup().add_item(String(type))
-		build.get_popup().set_item_metadata(build.get_popup().item_count - 1, type)
+		build_menu.get_popup().add_item(String(type))
+		build_menu.get_popup().set_item_metadata(build_menu.get_popup().item_count - 1, type)
 	_button(nav, "Move", "MoveBuilding", true).visible = false
 	_button(nav, "Close · Esc", "ClosePanel", true).visible = false
 

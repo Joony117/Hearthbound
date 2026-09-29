@@ -202,7 +202,7 @@ func test_a_threat_on_the_partner_takes_the_knight_off_an_unlisted_victim_and_ne
 		assert_eq(knight.order_target_id, on_mage.id, "tick %d: never back to the unlisted victim, though it is hurt worse" % state.tick)
 
 
-func _lock(state: BattleState, enemy: BattleActor, point: Vector2, victim: BattleActor) -> BattleActor:
+func _lock(_state: BattleState, enemy: BattleActor, point: Vector2, victim: BattleActor) -> BattleActor:
 	enemy.position = point
 	enemy.effect_state["home_position"] = [point.x, point.y]
 	enemy.order_kind = BattleSimulation.COMMAND_ATTACK

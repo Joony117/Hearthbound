@@ -16,12 +16,12 @@ class FakeBattleController extends Node:
 		return snapshots.get(order_id, {}).duplicate(true)
 
 
-	func issue_battle_command(order_id: String, command: Dictionary) -> Dictionary:
+	func issue_battle_command(_order_id: String, command: Dictionary) -> Dictionary:
 		commands.append(command.duplicate(true))
 		return next_command_result.duplicate(true)
 
 
-	func set_battle_paused(order_id: String, paused: bool) -> void:
+	func set_battle_paused(_order_id: String, paused: bool) -> void:
 		pause_values.append(paused)
 
 
@@ -260,7 +260,7 @@ func test_practice_rejected_item_feedback_survives_local_snapshot_render() -> vo
 	view._set_paused(true)
 	view._practice_state.supplies_remaining["healing"] = 1
 	var ally: BattleActor
-	var enemy: BattleActor
+	var enemy: BattleActor = null
 	for actor: BattleActor in view._practice_state.actors:
 		if actor.faction == "ally":
 			ally = actor
@@ -568,7 +568,7 @@ func _actor(actor_id: String, hero_id: String, faction: String, archetype: Strin
 
 func _send_mouse_button(view: BattleView, button: int, pressed: bool, point: Vector2) -> void:
 	var event := InputEventMouseButton.new()
-	event.button_index = button
+	event.button_index = button as MouseButton
 	event.pressed = pressed
 	event.position = point
 	view._unhandled_input(event)

@@ -4,6 +4,7 @@ extends GutTest
 
 const LOADOUT: Dictionary = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
 const ZONE: String = "verdant_outskirts"
+const Session = preload("res://systems/game_session.gd")
 
 
 func before_each() -> void:
@@ -103,7 +104,7 @@ func test_each_input_misses_the_cache() -> void:
 			GameSession.equip_item(hero, ring),
 		"skills": func() -> void: hero.skill_chains = [{"trigger": "knight_iron_cut", "then": ["knight_rally"]}] as Array[Dictionary],
 		"zone": func() -> void: zone_id[0] = "ashfall_reaches",
-		"squads": func() -> void: GameSession.save_team_preset(presets[0], "Renamed", GameSession._string_array(GameSession.team_presets[0]["hero_ids"]), ZONE),
+		"squads": func() -> void: GameSession.save_team_preset(presets[0], "Renamed", Session._string_array(GameSession.team_presets[0]["hero_ids"]), ZONE),
 		"policies": func() -> void: policies[0] = {"heal_below": 0.5},
 		"loadout": func() -> void: loadout[0] = {"healing": 1, "revival": 0, "keep_healing": 0, "keep_revival": 0},
 	}

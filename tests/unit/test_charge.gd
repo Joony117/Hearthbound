@@ -247,10 +247,10 @@ func test_a_mid_fight_save_and_reload_repeats_the_charges_and_pushes() -> void:
 	var read_back: Dictionary = GameSession.expedition_orders[0]["battle"]
 	assert_eq(Compare.first_difference(read_back, round_trip), "", "the file reads back as the round trip, raw")
 	var loaded := BattleState.from_dict(read_back)
-	var ready: Array[String] = []
+	var ready_ids: Array[String] = []
 	for actor: BattleActor in written.actors:
 		if actor.faction == "ally" and float(actor.skill_cooldowns.get("knight_charge", 1.0)) == 0.0:
-			ready.append(actor.id)
+			ready_ids.append(actor.id)
 	var charges: int = 0
 	var lane_pushes: int = 0
 	for step: int in 150:
@@ -259,8 +259,8 @@ func test_a_mid_fight_save_and_reload_repeats_the_charges_and_pushes() -> void:
 		SIM.advance(loaded, TICK)
 		# A Charge just cast: its lane's pushes carry its cast tick (a crit push on that very tick aside).
 		for actor: BattleActor in loaded.actors:
-			if actor.id in ready and float(actor.skill_cooldowns["knight_charge"]) > 0.0:
-				ready.erase(actor.id)
+			if actor.id in ready_ids and float(actor.skill_cooldowns["knight_charge"]) > 0.0:
+				ready_ids.erase(actor.id)
 				charges += 1
 				for enemy: BattleActor in loaded.actors:
 					if enemy.faction == "enemy" and int(enemy.effect_state.get("last_push_tick", -1)) == int(actor.effect_state["last_skill_tick"]):

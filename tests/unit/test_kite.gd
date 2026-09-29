@@ -71,14 +71,14 @@ func test_a_60_second_chase_hops_at_most_once_a_cooldown() -> void:
 	_lock(enemies[0], Vector2(-3, 2.5), heroes[0])
 	_lock(enemies[1], Vector2(3, 2.5), heroes[1])
 	var hops: Array[int] = [0, 0]
-	var ready: Array[int] = [0, 0]
+	var ready_ticks: Array[int] = [0, 0]
 	for _tick: int in int(60.0 / BALANCE.battle_tick_seconds):
 		BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
 		for index: int in heroes.size():
 			var now: int = int(heroes[index].effect_state.get("kite_ready_tick", 0))
-			if now != ready[index]:
+			if now != ready_ticks[index]:
 				hops[index] += 1
-				ready[index] = now
+				ready_ticks[index] = now
 	var cap: int = ceili(60.0 / BALANCE.battle_kite_cooldown_seconds)
 	for index: int in heroes.size():
 		assert_between(hops[index], 1, cap, "%s hopped %d times" % [heroes[index].archetype, hops[index]])
@@ -99,7 +99,7 @@ func test_an_evade_during_a_hop_cancels_it_and_keeps_the_cooldown_spent() -> voi
 	var enemy: BattleActor = _lock(_melee(state)[0], Vector2(0, 2.5), ranger)
 	BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
 	assert_true(ranger.effect_state.get("kite_point") is Array, "hopping")
-	var ready: int = int(ranger.effect_state["kite_ready_tick"])
+	var ready_tick: int = int(ranger.effect_state["kite_ready_tick"])
 	# Another enemy telegraphs a circle on the ranger.
 	var caster: BattleActor = _melee(state)[1]
 	caster.effect_state["telegraph_kind"] = "circle"
@@ -111,7 +111,7 @@ func test_an_evade_during_a_hop_cancels_it_and_keeps_the_cooldown_spent() -> voi
 	BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
 	assert_true(ranger.effect_state.get("evade_point") is Array, "the ranger evades")
 	assert_false(ranger.effect_state.has("kite_point"), "which cancels the hop")
-	assert_eq(int(ranger.effect_state["kite_ready_tick"]), ready, "and the cooldown stays spent")
+	assert_eq(int(ranger.effect_state["kite_ready_tick"]), ready_tick, "and the cooldown stays spent")
 	assert_eq(enemy.order_target_id, ranger.id)
 
 

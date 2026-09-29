@@ -1,6 +1,7 @@
 extends GutTest
 
 const Compare = preload("res://tests/unit/compare.gd")
+const Session = preload("res://systems/game_session.gd")
 
 
 func before_each() -> void:
@@ -23,7 +24,7 @@ func test_v3_profile_round_trip_preserves_battle_rng_and_supplies() -> void:
 	var saved: Dictionary = GameSession.to_dict()
 	var rng_before: String = str((saved["expedition_orders"][0]["battle"] as Dictionary)["rng_state"])
 	assert_eq(saved["version"], 3)
-	assert_eq(GameSession.validate_saved_state(saved, 3), "")
+	assert_eq(Session.validate_saved_state(saved, 3), "")
 	GameSession.from_dict(saved)
 	assert_eq(str((GameSession.get_battle_snapshot(order_id))["rng_state"]), rng_before)
 	assert_eq(GameSession.supplies, {"healing": 2, "revival": 1, "healing_masterwork": 0, "revival_masterwork": 0})
@@ -38,7 +39,7 @@ func test_v3_validation_rejects_non_string_rng_without_mutating_profile() -> voi
 	GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0})
 	var saved: Dictionary = GameSession.to_dict()
 	(saved["expedition_orders"][0]["battle"] as Dictionary)["rng_state"] = 12.0
-	assert_string_contains(GameSession.validate_saved_state(saved, 3), "rng_state")
+	assert_string_contains(Session.validate_saved_state(saved, 3), "rng_state")
 
 
 func test_v3_validation_rejects_order_checkpoint_identity_actor_and_nullable_contract_breaks() -> void:
@@ -52,15 +53,15 @@ func test_v3_validation_rejects_order_checkpoint_identity_actor_and_nullable_con
 	var identity_fixture: Dictionary = GameSession.to_dict()
 	var identity_order: Dictionary = (identity_fixture["expedition_orders"] as Array)[0]
 	(identity_order["battle"] as Dictionary)["order_id"] = "wrong"
-	assert_string_contains(GameSession.validate_saved_state(identity_fixture, 3), "identities")
+	assert_string_contains(Session.validate_saved_state(identity_fixture, 3), "identities")
 	var nullable_fixture: Dictionary = GameSession.to_dict()
 	((nullable_fixture["expedition_orders"] as Array)[0] as Dictionary)["loadout"] = null
-	assert_string_contains(GameSession.validate_saved_state(nullable_fixture, 3), "loadout")
+	assert_string_contains(Session.validate_saved_state(nullable_fixture, 3), "loadout")
 	var actor_fixture: Dictionary = GameSession.to_dict()
 	var actor_order: Dictionary = (actor_fixture["expedition_orders"] as Array)[0]
 	var actor_data: Dictionary = ((actor_order["battle"] as Dictionary)["actors"] as Array)[0]
 	actor_data["hero_id"] = "hero:unrelated"
-	assert_ne(GameSession.validate_saved_state(actor_fixture, 3), "")
+	assert_ne(Session.validate_saved_state(actor_fixture, 3), "")
 
 
 func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
@@ -79,14 +80,14 @@ func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
 	var old_shape: Dictionary = Compare.json_round_trip(profile)
 	for raw_actor: Variant in ((old_shape["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"]:
 		((raw_actor as Dictionary)["effect_state"] as Dictionary).erase("last_crit_tick")
-	assert_eq(GameSession.validate_saved_state(old_shape, 3), "", "a save from before crits were recorded still loads")
+	assert_eq(Session.validate_saved_state(old_shape, 3), "", "a save from before crits were recorded still loads")
 	GameSession.from_dict(old_shape)
 	assert_false(GameSession.get_battle_snapshot(order_id).is_empty())
 
 	var with_crit: Dictionary = profile.duplicate(true)
 	_first_actor_effects(with_crit)["last_crit_tick"] = tick
 	var recorded: Dictionary = Compare.json_round_trip(with_crit)
-	assert_eq(GameSession.validate_saved_state(recorded, 3), "")
+	assert_eq(Session.validate_saved_state(recorded, 3), "")
 	GameSession.from_dict(recorded)
 	var reloaded: Dictionary = ((GameSession.get_battle_snapshot(order_id)["actors"] as Array)[0] as Dictionary)["effect_state"]
 	assert_eq(int(reloaded["last_crit_tick"]), tick, "value survives the round trip")
@@ -96,7 +97,7 @@ func test_last_crit_tick_is_optional_round_trips_and_is_validated() -> void:
 	for bad_value: Variant in [-1, 1.5, "3", tick + 1]:
 		var broken: Dictionary = Compare.json_round_trip(profile)
 		_first_actor_effects(broken)["last_crit_tick"] = bad_value
-		assert_ne(GameSession.validate_saved_state(broken, 3), "", "last_crit_tick %s is rejected" % str(bad_value))
+		assert_ne(Session.validate_saved_state(broken, 3), "", "last_crit_tick %s is rejected" % str(bad_value))
 
 
 ## ig-gy0.1: a v3 profile saved by SaveService before skills were data (ability_cooldown and
@@ -161,7 +162,7 @@ func test_pre_skills_checkpoint_loads_migrates_and_finishes_identically() -> voi
 
 	GameSession.tick_expeditions(0.1)
 	var profile: Dictionary = Compare.json_round_trip(GameSession.to_dict())
-	assert_eq(GameSession.validate_saved_state(profile, 3), "", "the session re-saves the migrated battle")
+	assert_eq(Session.validate_saved_state(profile, 3), "", "the session re-saves the migrated battle")
 	assert_true(((((profile["expedition_orders"] as Array)[0]["battle"] as Dictionary)["actors"] as Array)[0] as Dictionary).has("skills"))
 
 
@@ -274,7 +275,7 @@ func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_read
 	# A battle from before the key: it loads as [] and advances.
 	var legacy: Dictionary = Compare.json_round_trip(profile)
 	_knight_effects(legacy).erase("cover_order")
-	assert_eq(GameSession.validate_saved_state(legacy, 3), "")
+	assert_eq(Session.validate_saved_state(legacy, 3), "")
 	GameSession.from_dict(legacy)
 	var tick: int = int(GameSession.get_battle_snapshot(order_id)["tick"])
 	for actor: Dictionary in GameSession.get_battle_snapshot(order_id)["actors"]:
@@ -285,7 +286,7 @@ func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_read
 	for bad_value: Variant in [["hero:m", 3], "hero:m", [null], {}]:
 		var broken: Dictionary = Compare.json_round_trip(profile)
 		_knight_effects(broken)["cover_order"] = bad_value
-		assert_string_contains(GameSession.validate_saved_state(broken, 3), "cover_order", "cover_order %s is rejected" % str(bad_value))
+		assert_string_contains(Session.validate_saved_state(broken, 3), "cover_order", "cover_order %s is rejected" % str(bad_value))
 
 
 ## ig-1jw (boundary #1): a mid-battle checkpoint keeps its pace through a real save and reload. One from
@@ -321,7 +322,7 @@ func test_a_battle_keeps_its_pace_through_a_real_save_and_a_legacy_one_is_pace_1
 	var legacy_battle: Dictionary = (legacy["expedition_orders"] as Array)[0]["battle"] as Dictionary
 	legacy_battle.erase("pace")
 	legacy_battle["max_seconds"] = zone.max_battle_seconds
-	assert_eq(GameSession.validate_saved_state(legacy, 3), "")
+	assert_eq(Session.validate_saved_state(legacy, 3), "")
 	GameSession.from_dict(legacy)
 	assert_eq(BattleState.from_dict(GameSession.expedition_orders[0]["battle"] as Dictionary).pace, 1, "a legacy battle reads as pace 1")
 	GameSession.tick_expeditions(1.0)
@@ -572,28 +573,28 @@ func _knight_cover(profile: Dictionary) -> Variant:
 
 func test_v3_validation_rejects_orphaned_mislinked_or_cross_zone_rescue_orders() -> void:
 	var valid_fixture: Dictionary = _active_rescue_fixture()
-	assert_eq(GameSession.validate_saved_state(valid_fixture, 3), "")
+	assert_eq(Session.validate_saved_state(valid_fixture, 3), "")
 
 	var missing_incident: Dictionary = valid_fixture.duplicate(true)
 	missing_incident["stranded_incidents"] = []
-	assert_string_contains(GameSession.validate_saved_state(missing_incident, 3), "matching stranded incident backlink")
+	assert_string_contains(Session.validate_saved_state(missing_incident, 3), "matching stranded incident backlink")
 
 	var cleared_backlink: Dictionary = valid_fixture.duplicate(true)
 	var cleared_incident: Dictionary = (cleared_backlink["stranded_incidents"] as Array)[0]
 	cleared_incident["active_rescue_order_id"] = ""
-	assert_string_contains(GameSession.validate_saved_state(cleared_backlink, 3), "matching stranded incident backlink")
+	assert_string_contains(Session.validate_saved_state(cleared_backlink, 3), "matching stranded incident backlink")
 
 	var wrong_backlink: Dictionary = valid_fixture.duplicate(true)
 	var wrong_incident: Dictionary = (wrong_backlink["stranded_incidents"] as Array)[0]
 	wrong_incident["active_rescue_order_id"] = "missing:rescue"
-	assert_string_contains(GameSession.validate_saved_state(wrong_backlink, 3), "missing active rescue")
+	assert_string_contains(Session.validate_saved_state(wrong_backlink, 3), "missing active rescue")
 
 	var wrong_zone: Dictionary = valid_fixture.duplicate(true)
 	wrong_zone["cleared_zone_ids"] = ["verdant_outskirts"]
 	var wrong_zone_order: Dictionary = (wrong_zone["expedition_orders"] as Array)[0]
 	wrong_zone_order["zone_id"] = "ashfall_reaches"
 	(wrong_zone_order["battle"] as Dictionary)["zone_id"] = "ashfall_reaches"
-	assert_string_contains(GameSession.validate_saved_state(wrong_zone, 3), "same zone")
+	assert_string_contains(Session.validate_saved_state(wrong_zone, 3), "same zone")
 
 
 func test_partial_timeout_defers_incident_until_return_then_abandonment_removes_once() -> void:
@@ -641,7 +642,7 @@ func test_partial_timeout_defers_incident_until_return_then_abandonment_removes_
 	assert_eq(GameSession.lost_caches.size(), 1)
 	assert_false(GameSession.abandon_stranded(incident_id))
 	assert_eq(GameSession.lost_caches.size(), 1)
-	assert_eq(GameSession.validate_saved_state(GameSession.to_dict(), 3), "")
+	assert_eq(Session.validate_saved_state(GameSession.to_dict(), 3), "")
 
 
 func test_large_incident_keeps_original_deadline_across_two_failed_five_hero_rescues() -> void:
@@ -668,7 +669,7 @@ func test_large_incident_keeps_original_deadline_across_two_failed_five_hero_res
 		GameSession.tick_expeditions(0.1)
 		assert_eq((GameSession.stranded_incidents[0]["hero_ids"] as Array).size(), 55 + attempt * 5)
 		assert_eq(float(GameSession.stranded_incidents[0]["created_recovery_seconds"]), deadline_origin)
-	assert_eq(GameSession.validate_saved_state(GameSession.to_dict(), 3), "")
+	assert_eq(Session.validate_saved_state(GameSession.to_dict(), 3), "")
 
 
 func test_incident_expiry_defers_permanent_loss_while_rescue_attempt_is_active() -> void:
@@ -738,7 +739,7 @@ func test_partial_rescue_prunes_secured_hero_so_later_profile_removal_keeps_inci
 			source_index = index
 	assert_gte(source_index, 0)
 	GameSession.roster.remove_at(source_index)
-	assert_eq(GameSession.validate_saved_state(GameSession.to_dict(), 3), "")
+	assert_eq(Session.validate_saved_state(GameSession.to_dict(), 3), "")
 	var incident_actors: Array = (GameSession.stranded_incidents[0]["battle_snapshot"] as Dictionary)["actors"] as Array
 	for actor: Dictionary in incident_actors:
 		assert_ne(str(actor.get("hero_id", "")), source_hero_id)
@@ -783,6 +784,7 @@ func _add_force(hero_count: int, squad_count: int, zone_id: String, prefix: Stri
 	var result: Array[String] = []
 	for squad_index: int in squad_count:
 		var ids: Array[String] = []
+		@warning_ignore("integer_division")
 		for member_index: int in hero_count / squad_count:
 			var hero := Hero.new("%s %d-%d" % [prefix, squad_index, member_index], 7)
 			hero.def_id = &"knight"

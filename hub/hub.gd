@@ -2559,42 +2559,42 @@ func _refresh_incident_cards() -> void:
 			panel.set_meta("incident_id", incident_id)
 			panel.custom_minimum_size.y = 92.0
 			_incident_cards.add_child(panel)
-			var box := VBoxContainer.new()
-			box.name = "Box"
-			box.add_theme_constant_override("separation", 2)
-			panel.add_child(box)
-			var label := Label.new()
-			label.name = "IncidentLabel"
-			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			label.add_theme_color_override("font_color", Color("E8AAA0"))
-			box.add_child(label)
-			var actions := HBoxContainer.new()
-			actions.name = "Actions"
-			box.add_child(actions)
-			var start := Button.new()
-			start.name = "StartWindow"
-			start.text = "Start rescue window"
-			start.pressed.connect(_on_start_stranded_window_pressed.bind(incident_id))
-			actions.add_child(start)
-			var preset_option := OptionButton.new()
-			preset_option.name = "RescueTeam"
-			preset_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			actions.add_child(preset_option)
-			var dispatch := Button.new()
-			dispatch.name = "DispatchRescue"
-			dispatch.text = "Dispatch rescue"
-			dispatch.pressed.connect(_on_dispatch_rescue_pressed.bind(incident_id, preset_option))
-			actions.add_child(dispatch)
-			var watch := Button.new()
-			watch.name = "WatchRescue"
-			watch.text = "Watch rescue"
-			watch.pressed.connect(_on_watch_incident_rescue_pressed.bind(incident_id))
-			actions.add_child(watch)
-			var abandon := Button.new()
-			abandon.name = "Abandon"
-			abandon.text = "Abandon"
-			abandon.pressed.connect(_on_abandon_incident_pressed.bind(incident_id))
-			actions.add_child(abandon)
+			var card_box := VBoxContainer.new()
+			card_box.name = "Box"
+			card_box.add_theme_constant_override("separation", 2)
+			panel.add_child(card_box)
+			var card_label := Label.new()
+			card_label.name = "IncidentLabel"
+			card_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			card_label.add_theme_color_override("font_color", Color("E8AAA0"))
+			card_box.add_child(card_label)
+			var card_actions := HBoxContainer.new()
+			card_actions.name = "Actions"
+			card_box.add_child(card_actions)
+			var card_start := Button.new()
+			card_start.name = "StartWindow"
+			card_start.text = "Start rescue window"
+			card_start.pressed.connect(_on_start_stranded_window_pressed.bind(incident_id))
+			card_actions.add_child(card_start)
+			var card_preset := OptionButton.new()
+			card_preset.name = "RescueTeam"
+			card_preset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			card_actions.add_child(card_preset)
+			var card_dispatch := Button.new()
+			card_dispatch.name = "DispatchRescue"
+			card_dispatch.text = "Dispatch rescue"
+			card_dispatch.pressed.connect(_on_dispatch_rescue_pressed.bind(incident_id, card_preset))
+			card_actions.add_child(card_dispatch)
+			var card_watch := Button.new()
+			card_watch.name = "WatchRescue"
+			card_watch.text = "Watch rescue"
+			card_watch.pressed.connect(_on_watch_incident_rescue_pressed.bind(incident_id))
+			card_actions.add_child(card_watch)
+			var card_abandon := Button.new()
+			card_abandon.name = "Abandon"
+			card_abandon.text = "Abandon"
+			card_abandon.pressed.connect(_on_abandon_incident_pressed.bind(incident_id))
+			card_actions.add_child(card_abandon)
 		var box: VBoxContainer = panel.get_node("Box") as VBoxContainer
 		var hero_names: PackedStringArray = []
 		for hero_id: String in _string_array(incident.get("hero_ids", [])):
@@ -2999,6 +2999,7 @@ static func _string_array(value: Variant) -> Array[String]:
 
 static func _format_duration(seconds: float) -> String:
 	var total: int = maxi(ceili(seconds), 0)
+	@warning_ignore("integer_division")
 	return "%d:%02d" % [total / 60, total % 60]
 
 

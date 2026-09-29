@@ -214,13 +214,13 @@ func _send_battle_checks() -> void:
 		check["duration"] = ExpeditionOrders.force_duration_seconds(team, zone, preload("res://balance.tres"))
 		var policies: Dictionary = order.get("policies") as Dictionary
 		var escrow: Dictionary = order.get("escrow") as Dictionary
-		var seed: int = Item.int_field(order, "run_seed", 0, "battle order")
+		var run_seed: int = Item.int_field(order, "run_seed", 0, "battle order")
 		for stress: bool in [false, true]:
 			var leg_snapshots: Array[Dictionary] = snapshots.duplicate(true)
 			var leg_squads: Array[Dictionary] = squads.duplicate(true)
 			var leg_policies: Dictionary = policies.duplicate(true)
 			var leg_escrow: Dictionary = escrow.duplicate(true)
-			check["stress" if stress else "normal"] = _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_forecast_leg(order_id + ":repeat", leg_snapshots, zone, leg_squads, leg_policies, leg_escrow, seed, stress, job))
+			check["stress" if stress else "normal"] = _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_forecast_leg(order_id + ":repeat", leg_snapshots, zone, leg_squads, leg_policies, leg_escrow, run_seed, stress, job))
 
 
 ## Releases every finished job, then commits every check whose two jobs are both in. Nothing else
@@ -296,13 +296,13 @@ func _land_battle_checks_in_memory(landed: Dictionary[String, int]) -> void:
 			var result: Dictionary = (check["catch_up"] as BattleJob).result
 			if _catch_up_seconds(order) <= 0.0 or not is_same(order.get("battle"), check["battle"]) or bool(result.get("cancelled", true)):
 				continue
-			var state := BattleState.from_dict(result["battle"] as Dictionary)
+			var caught_up_state := BattleState.from_dict(result["battle"] as Dictionary)
 			order["battle"] = result["battle"]
 			order.erase("catch_up_seconds")
-			if state.status != "active":
+			if caught_up_state.status != "active":
 				order["phase"] = "returning"
-				if _battle_has_no_secured_allies(state):
-					_capture_stranded_incident(order, state)
+				if _battle_has_no_secured_allies(caught_up_state):
+					_capture_stranded_incident(order, caught_up_state)
 			caught_up = true
 			_notify_battle_changed(order_id)
 			continue
@@ -602,7 +602,7 @@ func unequip_item(hero: Hero, slot: int) -> void:
 
 
 ## Only the inventory UI offers items to this path, so equipped gear is unreachable.
-func salvage_item(item: Item, balance: BalanceTable) -> void:
+func salvage_item(item: Item, _balance: BalanceTable) -> void:
 	if not inventory.has(item) or is_item_protected(item):
 		return
 	var gain: int = salvage_yield(item)
@@ -978,6 +978,7 @@ func still_building(building_id: StringName) -> String:
 	if not _is_building(building):
 		return ""
 	var left: int = ceili(float(building["build_remaining"]))
+	@warning_ignore("integer_division")
 	return "%s is still being built (%d:%02d left)." % [String(building_id).capitalize(), left / 60, left % 60]
 
 
@@ -1513,14 +1514,14 @@ func _preview_forecast(snapshots: Array[Dictionary], zone: ZoneDefinition, squad
 	var index: int = _preview_forecast_index(key)
 	if index >= 0:
 		return _preview_forecasts[index]
-	var seed: int = _new_run_seed()
-	var entry: Dictionary = {"key": key.duplicate(true), "seed": seed}
+	var run_seed: int = _new_run_seed()
+	var entry: Dictionary = {"key": key.duplicate(true), "seed": run_seed}
 	for stress: bool in [false, true]:
 		var leg_snapshots: Array[Dictionary] = snapshots.duplicate(true)
 		var leg_squads: Array[Dictionary] = squads.duplicate(true)
 		var leg_policies: Dictionary = policies.duplicate(true)
 		var leg_escrow: Dictionary = escrow.duplicate(true)
-		entry["stress" if stress else "normal"] = _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_forecast_leg("forecast", leg_snapshots, zone, leg_squads, leg_policies, leg_escrow, seed, stress, job))
+		entry["stress" if stress else "normal"] = _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_forecast_leg("forecast", leg_snapshots, zone, leg_squads, leg_policies, leg_escrow, run_seed, stress, job))
 	_preview_forecasts.append(entry)
 	if _preview_forecasts.size() > PREVIEW_FORECAST_CAP:
 		var dropped: Dictionary = _preview_forecasts.pop_front()
@@ -1553,7 +1554,7 @@ func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs
 		hero_ids.append_array(_string_array(squad.get("hero_ids")))
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(StringName(zone_id))
 	var order_id: String = Item.new_instance_id()
-	var seed: int = _new_run_seed()
+	var run_seed: int = _new_run_seed()
 	var escrow: Dictionary = _loadout_escrow(loadout)
 	if total_runs == 0:
 		# ig-7sn.14: valid means the preview's entry for these exact inputs landed Safe. The run starts
@@ -1563,16 +1564,16 @@ func _dispatch_force_data(squads: Array[Dictionary], zone_id: String, total_runs
 		if index < 0:
 			last_action_error = "Until-stopped dispatch waits for the forecast."
 			return ""
-		seed = int(_preview_forecasts[index]["seed"])
+		run_seed = int(_preview_forecasts[index]["seed"])
 		_preview_forecasts.remove_at(index)
-	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, squads, policies, escrow, seed)
+	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, squads, policies, escrow, run_seed)
 	var names: PackedStringArray = []
 	for squad: Dictionary in squads:
 		names.append(str(squad.get("name", "Team")))
 	var order: Dictionary = {
 		"id": order_id, "backend": "battle_v1", "team_name": " + ".join(names), "preset_id": str(squads[0].get("id", "")),
 		"preset_ids": _squad_ids(squads), "hero_ids": hero_ids, "squads": squads.duplicate(true), "zone_id": zone_id,
-		"total_runs": total_runs, "runs_completed": 0, "stop_requested": false, "run_seed": seed,
+		"total_runs": total_runs, "runs_completed": 0, "stop_requested": false, "run_seed": run_seed,
 		"initial_duration_seconds": float(preview.get("route_seconds", 0.0)), "remaining_seconds": float(preview.get("route_seconds", 0.0)),
 		"cumulative_stones": 0, "cumulative_xp": 0, "cumulative_items": 0, "battle": state.to_dict(), "phase": "fighting",
 		"loadout": loadout.duplicate(true), "policies": state.policies.duplicate(true), "escrow": escrow.duplicate(true), "last_command_error": "", "checkpoint_error": "", "incident_id": "",
@@ -1838,7 +1839,7 @@ func dispatch_rescue(incident_id: String, preset_id: String, loadout: Dictionary
 		last_action_error = "The incident destination is missing."
 		return ""
 	var order_id: String = Item.new_instance_id()
-	var seed: int = _new_run_seed()
+	var run_seed: int = _new_run_seed()
 	var squad: Dictionary = {"id": preset_id, "name": str(preset.get("name", "Rescue")), "hero_ids": hero_ids, "stance": "stay_together", "guard_target_id": ""}
 	var snapshots: Array[Dictionary] = []
 	var preserved: Dictionary = incident.get("battle_snapshot") as Dictionary
@@ -1850,8 +1851,8 @@ func dispatch_rescue(incident_id: String, preset_id: String, loadout: Dictionary
 		snapshots.append(rescuer)
 	var escrow: Dictionary = _loadout_escrow(loadout)
 	# ig-1jw: the rescue fights at its incident's pace; a snapshot without one is pace 1.
-	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, [squad], {}, escrow, seed, "rescue", int(preserved.get("pace", 1)))
-	var order: Dictionary = {"id": order_id, "backend": "battle_v1", "team_name": str(preset.get("name", "Rescue")), "preset_id": preset_id, "preset_ids": [preset_id], "hero_ids": hero_ids, "squads": [squad], "zone_id": str(zone.zone_id), "total_runs": 1, "runs_completed": 0, "stop_requested": false, "run_seed": seed, "initial_duration_seconds": 0.0, "remaining_seconds": 0.0, "cumulative_stones": 0, "cumulative_xp": 0, "cumulative_items": 0, "battle": state.to_dict(), "phase": "rescuing", "loadout": loadout.duplicate(true), "policies": state.policies.duplicate(true), "escrow": escrow, "last_command_error": "", "checkpoint_error": "", "incident_id": incident_id}
+	var state: BattleState = BattleSimulation.create_run(order_id, snapshots, zone, [squad], {}, escrow, run_seed, "rescue", int(preserved.get("pace", 1)))
+	var order: Dictionary = {"id": order_id, "backend": "battle_v1", "team_name": str(preset.get("name", "Rescue")), "preset_id": preset_id, "preset_ids": [preset_id], "hero_ids": hero_ids, "squads": [squad], "zone_id": str(zone.zone_id), "total_runs": 1, "runs_completed": 0, "stop_requested": false, "run_seed": run_seed, "initial_duration_seconds": 0.0, "remaining_seconds": 0.0, "cumulative_stones": 0, "cumulative_xp": 0, "cumulative_items": 0, "battle": state.to_dict(), "phase": "rescuing", "loadout": loadout.duplicate(true), "policies": state.policies.duplicate(true), "escrow": escrow, "last_command_error": "", "checkpoint_error": "", "incident_id": incident_id}
 	if not _commit_profile_mutation(_append_rescue_order_in_memory.bind(order, incident_index)):
 		return ""
 	return order_id
@@ -2315,8 +2316,8 @@ func migrate_v2_orders(now_unix: float) -> bool:
 			if squad_id.is_empty():
 				squad_id = "legacy"
 			var squad: Dictionary = {"id": squad_id, "name": str(order.get("team_name", "Team")), "hero_ids": _string_array(order.get("hero_ids")), "stance": "stay_together", "guard_target_id": ""}
-			var seed: int = Item.int_field(order, "run_seed", _new_run_seed(), "legacy order")
-			var state: BattleState = BattleSimulation.create_run(str(order.get("id")), _team_snapshots(team, [squad]), zone, [squad], {}, {}, seed)
+			var run_seed: int = Item.int_field(order, "run_seed", _new_run_seed(), "legacy order")
+			var state: BattleState = BattleSimulation.create_run(str(order.get("id")), _team_snapshots(team, [squad]), zone, [squad], {}, {}, run_seed)
 			order["backend"] = "battle_v1"
 			order["preset_ids"] = [squad_id]
 			order["squads"] = [squad]
@@ -2424,13 +2425,13 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 func _resolve_due_orders_in_memory() -> void:
 	var due_orders: Array[Dictionary] = []
 	for order: Dictionary in expedition_orders:
-		var ready: bool = Item.float_field(order, "remaining_seconds", 0.0, "expedition order") <= 0.0
+		var is_due: bool = Item.float_field(order, "remaining_seconds", 0.0, "expedition order") <= 0.0
 		if str(order.get("backend", "legacy_v2")) == "battle_v1":
 			# A "checking" order is settled already; its check lands at the pulse (ig-7sn.6).
 			if str(order.get("phase", "")) == "checking":
 				continue
-			ready = _battle_order_due(order, ready)
-		if ready:
+			is_due = _battle_order_due(order, is_due)
+		if is_due:
 			due_orders.append(order)
 	due_orders.sort_custom(_due_order_before)
 	for due_order: Dictionary in due_orders:

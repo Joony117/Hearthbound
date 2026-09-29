@@ -257,6 +257,7 @@ func test_cost_of_a_worst_burst_of_crits_on_skeletons() -> void:
 	var actors: Array = []
 	for index: int in 30:
 		var id: String = "e%d" % index
+		@warning_ignore("integer_division")
 		var position: Array = [float(index % 6), float(index / 6)]
 		previous[id] = _actor(id, "enemy", "knight", {"last_crit_tick": 0}, {"position": position})
 		actors.append(_actor(id, "enemy", "knight", {"last_hit_tick": 4, "last_crit_tick": 4}, {"hp": 70.0, "position": position}))

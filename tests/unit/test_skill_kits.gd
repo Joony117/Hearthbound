@@ -262,10 +262,10 @@ func test_same_band_heals_go_in_bar_order() -> void:
 
 func test_field_dressing_waits_while_a_class_heal_is_ready() -> void:
 	for kit: Array in [["general_field_dressing", "cleric_mend"], ["cleric_mend", "general_field_dressing"]]:
-		var state: BattleState = _battle([_unit("hero:c", "cleric", "ally", Vector2(0, -16)), _unit("hero:k", "knight", "ally", Vector2(1, -16), {"current_hp": 30.0})])
-		_give(state.actors[0], kit)
-		SIM._support_actions(state)
-		assert_almost_eq(state.actors[1].hp, 60.0, 0.0001, "%s: Mend, wherever it sits" % str(kit))
+		var heal_state: BattleState = _battle([_unit("hero:c", "cleric", "ally", Vector2(0, -16)), _unit("hero:k", "knight", "ally", Vector2(1, -16), {"current_hp": 30.0})])
+		_give(heal_state.actors[0], kit)
+		SIM._support_actions(heal_state)
+		assert_almost_eq(heal_state.actors[1].hp, 60.0, 0.0001, "%s: Mend, wherever it sits" % str(kit))
 	var state: BattleState = _battle([_unit("hero:c", "cleric", "ally", Vector2(0, -16)), _unit("hero:k", "knight", "ally", Vector2(1, -16), {"current_hp": 30.0})])
 	var cleric: BattleActor = state.actors[0]
 	_give(cleric, ["general_field_dressing", "cleric_mend"])

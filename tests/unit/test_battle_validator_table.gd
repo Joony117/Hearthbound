@@ -334,10 +334,10 @@ func _field_rows() -> Array[Array]:
 	for bad: String in ["field:9", "field:0", "zone:1", "field:01", "field:x"]:
 		rows.append([v, ids, func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({"id": bad}, true)])])
 	rows.append([v, ids, func(d: Dictionary) -> void: _fields(d, [_zone_object(d), _wall_object(d).merged({"id": "field:1"}, true)])])
-	var owner: String = "Battle field object kind, faction or owner is invalid."
-	rows.append([v, owner, func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({"kind": "blob"}, true)])])
-	rows.append([v, owner, func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({"faction": "neutral"}, true)])])
-	rows.append([v, owner, func(d: Dictionary) -> void: _fields(d, [_wall_object(d).merged({"owner_actor_id": "ghost"}, true)])])
+	var owner_error: String = "Battle field object kind, faction or owner is invalid."
+	rows.append([v, owner_error, func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({"kind": "blob"}, true)])])
+	rows.append([v, owner_error, func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({"faction": "neutral"}, true)])])
+	rows.append([v, owner_error, func(d: Dictionary) -> void: _fields(d, [_wall_object(d).merged({"owner_actor_id": "ghost"}, true)])])
 	rows.append([v, "Battle wall ends must remain inside the authored bounds.", func(d: Dictionary) -> void: _fields(d, [_wall_object(d).merged({"start": [99.0, 0.0]}, true)])])
 	rows.append([v, "Battle wall ends must remain inside the authored bounds.", func(d: Dictionary) -> void: _fields(d, [_wall_object(d).merged({"end": [1.0]}, true)])])
 	rows.append([v, "Battle wall ends must differ.", func(d: Dictionary) -> void: _fields(d, [_wall_object(d).merged({"end": [0.0, 0.0]}, true)])])

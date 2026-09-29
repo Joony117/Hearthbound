@@ -11,6 +11,8 @@ const CORRUPT_PATH := "user://save.corrupt.json"
 const LEDGER_PATH := "user://ledger.jsonl"
 const LEDGER_TMP_PATH := "user://ledger.tmp.jsonl"
 const SAVE_VERSION := 3
+# GameSession is an autoload with no class_name; its static validators are called through the script.
+const Session = preload("res://systems/game_session.gd")
 
 var _load_notice: String = ""
 var load_blocked: bool = false
@@ -177,8 +179,8 @@ func load_game() -> bool:
 ## Why load refuses a parsed save, or "". save() runs it on its own text first (ig-6pm), so the write
 ## side and the read side cannot drift. Repairs rescue timestamps in place, as load needs.
 static func _load_refusal(parsed: Dictionary, version: int) -> String:
-	GameSession.repair_rescue_timestamps(parsed)
-	return GameSession.validate_saved_state(parsed, version)
+	Session.repair_rescue_timestamps(parsed)
+	return Session.validate_saved_state(parsed, version)
 
 
 ## The committed records in LEDGER_PATH: lines below mark, oldest first. rewrite is true when the

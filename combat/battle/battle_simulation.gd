@@ -110,7 +110,7 @@ static func create_run(
 	squads: Array[Dictionary],
 	policies: Dictionary,
 	supply_escrow: Dictionary,
-	seed: int,
+	run_seed: int,
 	kind: String = "normal",
 	pace: int = 0,
 ) -> BattleState:
@@ -126,7 +126,7 @@ static func create_run(
 	# pace 0: the live battle_pace. A rescue passes its incident's.
 	state.pace = pace if pace > 0 else BALANCE.battle_pace
 	state.max_seconds = zone.max_battle_seconds * state.pace
-	state.rng_state = str(seed)
+	state.rng_state = str(run_seed)
 	state.squads = squads.duplicate(true)
 	state.policies = _normalized_policies(policies)
 	state.supplies_remaining = _normalized_supplies(supply_escrow)
@@ -279,10 +279,10 @@ static func forecast(
 	squads: Array[Dictionary],
 	policies: Dictionary,
 	supply_escrow: Dictionary,
-	seed: int,
+	run_seed: int,
 ) -> Dictionary:
-	var normal: Dictionary = forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed, false)
-	var stress: Dictionary = forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed, true)
+	var normal: Dictionary = forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, run_seed, false)
+	var stress: Dictionary = forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, run_seed, true)
 	return forecast_verdict(normal, stress)
 
 
@@ -296,7 +296,7 @@ static func forecast_leg(
 	squads: Array[Dictionary],
 	policies: Dictionary,
 	supply_escrow: Dictionary,
-	seed: int,
+	run_seed: int,
 	stress: bool,
 	job: BattleJob = null,
 ) -> Dictionary:
@@ -307,7 +307,7 @@ static func forecast_leg(
 		leg_policies = policies.duplicate(true)
 		leg_policies["force_enemy_crit"] = true
 		leg_policies["suppress_ally_crit"] = true
-	var state := create_run(leg_id, team_snapshots, zone, squads, leg_policies, supply_escrow, seed)
+	var state := create_run(leg_id, team_snapshots, zone, squads, leg_policies, supply_escrow, run_seed)
 	if not BattleJob.advance(state, state.max_seconds, job):
 		return {}
 	return {"outcome": snapshot_outcome(state).to_dict(), "clean": state.status == "victory" and state.downed_ever_ids.is_empty()}
@@ -1001,9 +1001,11 @@ static func _spawn_initial_enemies(state: BattleState, zone: ZoneDefinition) -> 
 	match zone.battle_kind:
 		"raid":
 			for index: int in zone.objective_points.size():
+				@warning_ignore("integer_division")
 				_spawn_group(state, Wave.from_zone(zone, 0).enemy_power / 3.0, zone.objective_enemy_count / 3, zone.objective_points[index], false, "capture:%d" % index)
 		"region":
 			for index: int in zone.objective_points.size():
+				@warning_ignore("integer_division")
 				_spawn_group(state, Wave.from_zone(zone, 0).enemy_power / 3.0, zone.objective_enemy_count / 3, zone.objective_points[index], false, "camp:%d" % index)
 		_:
 			_spawn_wave(state, zone, 0)
@@ -1963,7 +1965,7 @@ static func _face(actor: BattleActor, at: Vector2) -> void:
 
 ## Marks skill's line or circle at point; it lands after seconds (_resolve_telegraph) unless the
 ## caster is stunned or downed first.
-static func _start_telegraph(state: BattleState, actor: BattleActor, skill: AbilityDefinition, point: Vector2, seconds: float) -> void:
+static func _start_telegraph(_state: BattleState, actor: BattleActor, skill: AbilityDefinition, point: Vector2, seconds: float) -> void:
 	var kind: String = _telegraph_kind(skill)
 	actor.effect_state["telegraph_kind"] = kind
 	actor.effect_state["telegraph_skill"] = str(skill.skill_id)
@@ -3088,15 +3090,15 @@ static func _kite_order(state: BattleState, actor: BattleActor, rows: RowScan) -
 ## formation spacing farther from its reference point than its squad's nearest living front-liner.
 ## Off while any living enemy is within its contact range, or with no living front-liner. Returns
 ## whether it set the order. Reads _scan_rows, so it adds no pass of its own.
-static func _formation_order(actor: BattleActor, rows: RowScan, reference: Vector2) -> bool:
+static func _formation_order(actor: BattleActor, rows: RowScan, anchor: Vector2) -> bool:
 	if rows.contact or rows.front.is_empty():
 		return false
 	var front_distance: float = INF
 	for other: BattleActor in rows.front:
-		front_distance = minf(front_distance, other.position.distance_to(reference))
+		front_distance = minf(front_distance, other.position.distance_to(anchor))
 	var cap: float = front_distance + BALANCE.battle_formation_spacing
-	if actor.position.distance_to(reference) > cap:
-		_set_auto_order(actor, COMMAND_MOVE, "", reference + (actor.position - reference).normalized() * cap)
+	if actor.position.distance_to(anchor) > cap:
+		_set_auto_order(actor, COMMAND_MOVE, "", anchor + (actor.position - anchor).normalized() * cap)
 	else:
 		_set_auto_order(actor, COMMAND_HOLD, "", actor.position)
 	return true
@@ -3392,6 +3394,7 @@ static func _apply_separation(state: BattleState, actor: BattleActor, paths: Wal
 
 static func _grid_offset(index: int, count: int, spacing: float) -> Vector2:
 	var columns: int = mini(5, maxi(count, 1))
+	@warning_ignore("integer_division")
 	var row: int = index / columns
 	var column: int = index % columns
 	var row_count: int = mini(columns, count - row * columns)

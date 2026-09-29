@@ -45,11 +45,11 @@ static func run_forecast_leg(
 	squads: Array[Dictionary],
 	policies: Dictionary,
 	supply_escrow: Dictionary,
-	seed: int,
+	run_seed: int,
 	stress: bool,
 	job: BattleJob,
 ) -> Dictionary:
-	var leg: Dictionary = BattleSimulation.forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, seed, stress, job)
+	var leg: Dictionary = BattleSimulation.forecast_leg(order_id, team_snapshots, zone, squads, policies, supply_escrow, run_seed, stress, job)
 	if leg.is_empty():
 		return {"cancelled": true}
 	return {"cancelled": false, "leg": leg}

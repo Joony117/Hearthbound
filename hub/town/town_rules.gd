@@ -58,6 +58,7 @@ static func world_to_hex(point: Vector3) -> Vector2i:
 
 
 static func ring_distance(hex: Vector2i) -> int:
+	@warning_ignore("integer_division")
 	return (absi(hex.x) + absi(hex.y) + absi(hex.x + hex.y)) / 2
 
 

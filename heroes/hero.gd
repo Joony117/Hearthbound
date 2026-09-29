@@ -121,8 +121,8 @@ static func profession_xp_to_next(hero: Hero, profession: StringName, balance: B
 	if skill >= balance.profession_skill_cap:
 		return 0.0
 	var needed_minutes: float = 0.0
-	for level: int in range(1, skill + 2):
-		needed_minutes += balance.profession_xp_minutes_per_level * level
+	for skill_level: int in range(1, skill + 2):
+		needed_minutes += balance.profession_xp_minutes_per_level * skill_level
 	return needed_minutes * 60.0 - hero.profession_xp.get(profession, 0.0)
 
 
@@ -143,8 +143,8 @@ static func level_for(hero: Hero, balance: BalanceTable) -> int:
 	)
 
 
-static func xp_to_next_level(level: int, balance: BalanceTable) -> int:
-	return balance.xp_coefficient * (level + 1)
+static func xp_to_next_level(from_level: int, balance: BalanceTable) -> int:
+	return balance.xp_coefficient * (from_level + 1)
 
 
 static func grant_xp(hero: Hero, amount: int, balance: BalanceTable) -> void:
@@ -182,11 +182,11 @@ static func compute_final_stats(
 	hero: Hero,
 	definition: HeroDefinition,
 	balance: BalanceTable,
-	level: int,
+	hero_level: int,
 ) -> Dictionary[StringName, float]:
 	assert(hero != null)
 	assert(balance != null)
-	assert(level >= 0)
+	assert(hero_level >= 0)
 	assert(not balance.stat_multipliers.is_empty())
 	assert(not balance.equip_pct_per_rank.is_empty())
 	assert(not balance.equip_crit_pct_per_rank.is_empty())
@@ -200,10 +200,10 @@ static func compute_final_stats(
 	# SYSTEMS.md § Casters: a Mage or Cleric at rank R plays like a Knight at R+1 to R+2. Not SPD or crit.
 	var caster_scale: float = pow(balance.stat_multipliers[1], balance.caster_rank_offset) if definition.caster else 1.0
 	var final_stats: Dictionary[StringName, float] = {
-		STAT_HP: (definition.base_hp + definition.hp_growth * level) * multiplier * caster_scale,
-		STAT_ATK: (definition.base_atk + definition.atk_growth * level) * multiplier * caster_scale,
-		STAT_DEF: (definition.base_def + definition.def_growth * level) * multiplier * caster_scale,
-		STAT_SPD: (definition.base_spd + definition.spd_growth * level) * multiplier,
+		STAT_HP: (definition.base_hp + definition.hp_growth * hero_level) * multiplier * caster_scale,
+		STAT_ATK: (definition.base_atk + definition.atk_growth * hero_level) * multiplier * caster_scale,
+		STAT_DEF: (definition.base_def + definition.def_growth * hero_level) * multiplier * caster_scale,
+		STAT_SPD: (definition.base_spd + definition.spd_growth * hero_level) * multiplier,
 		STAT_CRIT_RATE: definition.crit_rate,
 		STAT_CRIT_DMG: definition.crit_dmg,
 	}

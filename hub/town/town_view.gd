@@ -655,6 +655,7 @@ func ground_point(screen_position: Vector2) -> Variant:
 	if camera == null:
 		return null
 	var hit: Variant = Plane(Vector3.UP, global_position.y).intersects_ray(camera.project_ray_origin(screen_position), camera.project_ray_normal(screen_position))
+	@warning_ignore("incompatible_ternary")
 	return null if hit == null else to_local(hit as Vector3)
 
 

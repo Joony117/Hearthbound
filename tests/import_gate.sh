@@ -42,6 +42,22 @@ output="$("$godot" --headless --quit 2>&1)"
 engine_exit=$?
 # ig-rd9: every .gd under tests/ that GUT doesn't run (test_*.gd directly in a folder named unit).
 mapfile -t standalone < <(find tests -name '*.gd' ! -regex '.*/unit/test_[^/]*' | LC_ALL=C sort | sed 's|^|res://|')
+# ig-4k2, ig-k65: a headless run never prints a GDScript warning, so project.godot's [debug] section raises
+# each warning the tree is clean of to Error (2). In this debug binary the script then fails with
+# "(Warning treated as error.)" and its file and line, which both runs above and GUT catch. At Error:
+# unassigned_variable_op_assign, unused_variable, unused_local_constant, unused_private_class_variable,
+# unused_signal, unreachable_code, unreachable_pattern, standalone_expression, standalone_ternary,
+# unsafe_void_return, missing_tool, redundant_static_unload, redundant_await, assert_always_true,
+# assert_always_false, narrowing_conversion, int_as_enum_without_match, enum_variable_without_default,
+# empty_file, deprecated_keyword, confusable_identifier, confusable_local_usage,
+# confusable_capture_reassignment, confusable_temporary_modification, property_used_as_function,
+# constant_used_as_function, function_used_as_property, static_called_on_instance,
+# shadowed_global_identifier, confusable_local_declaration, shadowed_variable, integer_division,
+# unused_parameter, shadowed_variable_base_class, incompatible_ternary, unassigned_variable,
+# int_as_enum_without_cast. Every site of integer_division is an intended floor and carries
+# @warning_ignore("integer_division"); one that meant a float is a bug, so fix it, not the annotation.
+# Engine defaults stay as they are (the unsafe_*, untyped and inferred declarations are off; four are
+# already Error). Export builds skip warnings.
 parse_output="$("$godot" --headless -s res://tests/gate_parse.gd -- "${standalone[@]}" 2>&1)"
 parse_exit=$?
 printf '%s\n' "$warmup_output" "$output" "$parse_output"

@@ -126,7 +126,7 @@ func test_cost_at_frontier_march_50_v_30() -> void:
 	var state: BattleState = BattleSimulation.create_run("order:uu71perf", heroes, ZoneDefinition.definition_for(&"frontier_march"), squads, {}, {"healing": 0, "revival": 0}, 11)
 	assert_eq(state.actors.size(), 80)
 	var runs: Array[int] = []
-	for _run: int in 7:
+	for _repeat: int in 7:
 		var started: int = Time.get_ticks_usec()
 		BattleSimulation.advance(state, BALANCE.battle_tick_seconds)
 		runs.append(Time.get_ticks_usec() - started)
@@ -150,7 +150,7 @@ func _regrouping(state: BattleState, hero: BattleActor, stance: String) -> bool:
 	return stance == "stay_together" and hero != leader and hero.position.distance_to(leader.position) > BALANCE.battle_cohesion_regroup_distance
 
 
-func _front_distance(state: BattleState, hero: BattleActor, reference: Vector2) -> float:
+func _front_distance(state: BattleState, _hero: BattleActor, reference: Vector2) -> float:
 	var nearest: float = INF
 	for ally: BattleActor in _allies(state):
 		if ally.life == BattleActor.LIFE_ALIVE and ally.archetype in FRONT_ROW:

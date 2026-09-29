@@ -245,6 +245,7 @@ static func preview_supplies(
 		return _invalid(plan, "Quantity and reserve cannot be negative.")
 	var cost: int = supply_parts_cost(supply_kind, alchemy_skill, balance)
 	var available: int = maxi(parts[0] - reserve, 0)
+	@warning_ignore("integer_division")
 	var maximum: int = available / cost
 	var units: int = maximum if quantity == 0 else quantity
 	if units <= 0 or units > maximum:

@@ -8,6 +8,7 @@ const ITEM_ENHANCE_LEVEL := 4
 const PARTS: Array[int] = [1, 2, 3, 4, 5, 6, 7, 8]
 const STONES := 987
 const CLEARED_ZONE_ID := &"verdant_outskirts"
+const Session = preload("res://systems/game_session.gd")
 
 var _original_save_existed: bool = false
 var _original_save_bytes: PackedByteArray
@@ -466,7 +467,7 @@ func test_battle_policy_toggle_saves_and_reloads_matching_order_checkpoint() -> 
 	assert_true(bool(result["accepted"]))
 	var saved_bytes: PackedByteArray = _read_file_bytes(SaveService.SAVE_PATH)
 	var saved_payload: Dictionary = JSON.parse_string(saved_bytes.get_string_from_utf8()) as Dictionary
-	assert_eq(GameSession.validate_saved_state(saved_payload, 3), "")
+	assert_eq(Session.validate_saved_state(saved_payload, 3), "")
 	_clear_session_without_saving()
 	_write_save(SaveService.SAVE_PATH, saved_bytes)
 	assert_true(SaveService.load_game())
@@ -502,7 +503,7 @@ func test_periodic_checkpoint_failure_freezes_current_state_and_retries_without_
 	GameSession._process(0.01)  # ig-7sn.10: the periodic save runs on the frame after its pulse.
 	assert_eq(str(GameSession.get_battle_snapshot(order_id)["checkpoint_error"]), "")
 	var retried_payload: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
-	assert_eq(GameSession.validate_saved_state(retried_payload, 3), "")
+	assert_eq(Session.validate_saved_state(retried_payload, 3), "")
 	assert_eq(str(((retried_payload["inventory"] as Array)[0] as Dictionary)["instance_id"]), durable_item.instance_id)
 	assert_eq(int((((retried_payload["expedition_orders"] as Array)[0] as Dictionary)["battle"] as Dictionary)["tick"]), int(GameSession.get_battle_snapshot(order_id)["tick"]))
 

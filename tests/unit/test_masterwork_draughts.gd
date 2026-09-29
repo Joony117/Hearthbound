@@ -8,6 +8,7 @@ const BALANCE: BalanceTable = preload("res://balance.tres")
 const MASTER_XP: float = 300.0 * 60.0
 const MW_HEAL: String = "healing_masterwork"
 const MW_REVIVE: String = "revival_masterwork"
+const Session = preload("res://systems/game_session.gd")
 
 
 func before_each() -> void:
@@ -27,9 +28,9 @@ func after_each() -> void:
 func test_brewing_is_refused_without_a_home_master_alchemist() -> void:
 	GameSession.parts[0] = 200
 	for kind: String in [MW_HEAL, MW_REVIVE]:
-		var plan: Dictionary = GameSession.preview_bulk_supplies(kind, 1, 0)
-		assert_false(bool(plan["valid"]), "%s: no keeper" % kind)
-		assert_eq(str(plan["error"]), "Only a master alchemist at home brews masterwork draughts.")
+		var kind_plan: Dictionary = GameSession.preview_bulk_supplies(kind, 1, 0)
+		assert_false(bool(kind_plan["valid"]), "%s: no keeper" % kind)
+		assert_eq(str(kind_plan["error"]), "Only a master alchemist at home brews masterwork draughts.")
 	var alchemist: Hero = _alchemist()
 	alchemist.profession_xp[&"alchemy"] = MASTER_XP
 	alchemist.passions = [&"farming", &"mining"] as Array[StringName]
@@ -208,7 +209,7 @@ func test_dispatch_repeat_and_rescue_carry_the_masterwork_stock_into_the_run() -
 	assert_eq(GameSession.supplies, {"healing": 1, "revival": 2, MW_HEAL: 1, MW_REVIVE: 3}, "refund, then refill")
 	# The repeat's safety forecast is the run it starts.
 	var team: Array[Hero] = []
-	for hero_id: String in GameSession._string_array(order["hero_ids"]):
+	for hero_id: String in Session._string_array(order["hero_ids"]):
 		team.append(GameSession.hero_by_id(hero_id))
 	var squads: Array[Dictionary] = []
 	for squad: Dictionary in order["squads"]:
@@ -383,7 +384,7 @@ func _stock(stock: Dictionary) -> void:
 
 ## Every allocation and reserve at 0, then the given fields.
 func _loadout(fields: Dictionary) -> Dictionary:
-	var loadout: Dictionary = GameSession._empty_loadout()
+	var loadout: Dictionary = Session._empty_loadout()
 	loadout.merge(fields, true)
 	return loadout
 

@@ -37,7 +37,7 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $standalone = Get-ChildItem -Path $PSScriptRoot -Recurse -Filter *.gd |
 	Where-Object { -not ($_.Directory.Name -eq "unit" -and $_.Name -like "test_*") } |
 	ForEach-Object { "res://" + $_.FullName.Substring($root.Length + 1).Replace("\", "/") }
-# ig-4k2: a headless run never prints a GDScript warning, so project.godot's [debug] section raises
+# ig-4k2, ig-k65: a headless run never prints a GDScript warning, so project.godot's [debug] section raises
 # each warning the tree is clean of to Error (2). In this debug binary the script then fails with
 # "(Warning treated as error.)" and its file and line, which both runs above and GUT catch. At Error:
 # unassigned_variable_op_assign, unused_variable, unused_local_constant, unused_private_class_variable,
@@ -46,12 +46,13 @@ $standalone = Get-ChildItem -Path $PSScriptRoot -Recurse -Filter *.gd |
 # assert_always_false, narrowing_conversion, int_as_enum_without_match, enum_variable_without_default,
 # empty_file, deprecated_keyword, confusable_identifier, confusable_local_usage,
 # confusable_capture_reassignment, confusable_temporary_modification, property_used_as_function,
-# constant_used_as_function, function_used_as_property. Still at Warn, because the tree holds them
-# (count on 2026-09-25; the follow-up bead fixes them, then raises each): static_called_on_instance
-# 38, shadowed_global_identifier 16, confusable_local_declaration 14, shadowed_variable 12,
-# integer_division 11, unused_parameter 6, shadowed_variable_base_class 5, incompatible_ternary 4,
-# unassigned_variable 1, int_as_enum_without_cast 1. Engine defaults stay as they are (the unsafe_*,
-# untyped and inferred declarations are off; four are already Error). Export builds skip warnings.
+# constant_used_as_function, function_used_as_property, static_called_on_instance,
+# shadowed_global_identifier, confusable_local_declaration, shadowed_variable, integer_division,
+# unused_parameter, shadowed_variable_base_class, incompatible_ternary, unassigned_variable,
+# int_as_enum_without_cast. Every site of integer_division is an intended floor and carries
+# @warning_ignore("integer_division"); one that meant a float is a bug, so fix it, not the annotation.
+# Engine defaults stay as they are (the unsafe_*, untyped and inferred declarations are off; four are
+# already Error). Export builds skip warnings.
 $parse_output = & $godot --headless -s res://tests/gate_parse.gd -- @standalone 2>&1
 $parse_exit = $LASTEXITCODE
 $env:APPDATA = $original_appdata

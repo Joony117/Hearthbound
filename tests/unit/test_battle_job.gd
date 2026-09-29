@@ -15,19 +15,19 @@ func test_a_battle_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> vo
 		var hero_count: int = 50 if zone_id == &"frontier_march" else 30
 		# Every seed's pool job runs at once, sharing one zone, so the threads overlap.
 		var jobs: Array[BattleJob] = []
-		for seed: int in SEEDS:
+		for run_seed: int in SEEDS:
 			var job := BattleJob.new()
-			var state: BattleState = _run(zone, hero_count, seed)
+			var state: BattleState = _run(zone, hero_count, run_seed)
 			job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_battle(state, RUN_SECONDS, job))
 			jobs.append(job)
 		for index: int in SEEDS.size():
-			var seed: int = SEEDS[index]
+			var run_seed: int = SEEDS[index]
 			WorkerThreadPool.wait_for_task_completion(jobs[index].task_id)
 			var pooled: Dictionary = jobs[index].result
-			var direct: Dictionary = BattleJob.run_battle(_run(zone, hero_count, seed), RUN_SECONDS, null)
-			var one_call: BattleState = _run(zone, hero_count, seed)
+			var direct: Dictionary = BattleJob.run_battle(_run(zone, hero_count, run_seed), RUN_SECONDS, null)
+			var one_call: BattleState = _run(zone, hero_count, run_seed)
 			BattleSimulation.advance(one_call, RUN_SECONDS)
-			var label: String = "%s seed %d" % [zone_id, seed]
+			var label: String = "%s seed %d" % [zone_id, run_seed]
 			assert_false(bool(pooled.get("cancelled", true)), label)
 			assert_true(var_to_bytes(pooled["battle"]) == var_to_bytes(direct["battle"]), "%s: pool == main thread" % label)
 			# The 5 s chunks run the same ticks as one advance() call.
@@ -41,9 +41,9 @@ func test_a_battle_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> vo
 func test_a_battle_with_both_zones_and_walls_up_matches_on_the_pool_byte_for_byte() -> void:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"frontier_march")
 	var jobs: Array[BattleJob] = []
-	for seed: int in SEEDS:
+	for run_seed: int in SEEDS:
 		var job := BattleJob.new()
-		var state: BattleState = _run_with_zones(zone, seed)
+		var state: BattleState = _run_with_zones(zone, run_seed)
 		job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_battle(state, RUN_SECONDS, job))
 		jobs.append(job)
 	for index: int in SEEDS.size():
@@ -69,10 +69,10 @@ func test_a_forecast_job_on_the_pool_matches_the_main_thread_byte_for_byte() -> 
 	var escrow: Dictionary = {"healing": 1, "revival": 0}
 	# Each seed's normal and stress legs, all out at once (ig-7sn.6 sends a repeat's check this way).
 	var jobs: Array[BattleJob] = []
-	for seed: int in SEEDS:
+	for run_seed: int in SEEDS:
 		for stress: bool in [false, true]:
 			var job := BattleJob.new()
-			job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_forecast_leg("forecast", heroes, zone, squads, {}, escrow, seed, stress, job))
+			job.task_id = WorkerThreadPool.add_task(func() -> void: job.result = BattleJob.run_forecast_leg("forecast", heroes, zone, squads, {}, escrow, run_seed, stress, job))
 			jobs.append(job)
 	for index: int in SEEDS.size():
 		var normal: BattleJob = jobs[index * 2]
@@ -136,8 +136,8 @@ func test_a_catch_up_job_ending_partway_matches_the_chunked_advance() -> void:
 func test_quit_stops_every_job_within_half_a_second_and_drops_its_result() -> void:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"frontier_march")
 	var jobs: Array[BattleJob] = []
-	for seed: int in SEEDS:
-		var state: BattleState = _run(zone, 50, seed)
+	for run_seed: int in SEEDS:
+		var state: BattleState = _run(zone, 50, run_seed)
 		jobs.append(GameSession._submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_battle(state, 600.0, job)))
 	var started: int = Time.get_ticks_usec()
 	GameSession._exit_tree()
@@ -162,11 +162,11 @@ func test_a_load_stops_every_job_before_the_session_is_replaced() -> void:
 ## 20 heroes of level 80 (their whole kits), with a Rime Circle on the first enemy and a Hearthward on
 ## the first Cleric cast at tick 0: 36 s and 48 s at P = 6, so both outlast the run. Three walls 6 long
 ## stand side by side across the middle of the armies' way, 1 apart, for 60 s.
-func _run_with_zones(zone: ZoneDefinition, seed: int) -> BattleState:
+func _run_with_zones(zone: ZoneDefinition, run_seed: int) -> BattleState:
 	var heroes: Array[Dictionary] = _heroes(20)
 	for hero: Dictionary in heroes:
 		hero["level"] = 80
-	var state: BattleState = BattleSimulation.create_run("order:job", heroes, zone, _squads(20), {"default_stance": "advance"}, {"healing": 0, "revival": 0}, seed)
+	var state: BattleState = BattleSimulation.create_run("order:job", heroes, zone, _squads(20), {"default_stance": "advance"}, {"healing": 0, "revival": 0}, run_seed)
 	var mage: BattleActor = state.actors.filter(func(actor: BattleActor) -> bool: return actor.archetype == "mage")[0]
 	var cleric: BattleActor = state.actors.filter(func(actor: BattleActor) -> bool: return actor.archetype == "cleric")[0]
 	var enemy: BattleActor = state.actors.filter(func(actor: BattleActor) -> bool: return actor.faction == "enemy")[0]
@@ -196,8 +196,8 @@ func _run_with_zones(zone: ZoneDefinition, seed: int) -> BattleState:
 
 
 ## Built on the main thread, as every job's state is: the zone is already resolved.
-func _run(zone: ZoneDefinition, hero_count: int, seed: int) -> BattleState:
-	return BattleSimulation.create_run("order:job", _heroes(hero_count), zone, _squads(hero_count), {"default_stance": "advance"}, {"healing": 0, "revival": 0}, seed)
+func _run(zone: ZoneDefinition, hero_count: int, run_seed: int) -> BattleState:
+	return BattleSimulation.create_run("order:job", _heroes(hero_count), zone, _squads(hero_count), {"default_stance": "advance"}, {"healing": 0, "revival": 0}, run_seed)
 
 
 func _heroes(count: int) -> Array[Dictionary]:

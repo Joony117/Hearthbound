@@ -1,5 +1,7 @@
 extends GutTest
 
+const Session = preload("res://systems/game_session.gd")
+
 
 func before_each() -> void:
 	GameSession.set("_save_deferred_depth", 1)
@@ -179,7 +181,7 @@ func test_a_launch_and_a_repeat_build_the_team_snapshot_once() -> void:
 	# The shared snapshot starts the same run a fresh one would.
 	var order: Dictionary = GameSession.expedition_orders[0]
 	var team: Array[Hero] = []
-	for hero_id: String in GameSession._string_array(order["hero_ids"]):
+	for hero_id: String in Session._string_array(order["hero_ids"]):
 		team.append(GameSession.hero_by_id(hero_id))
 	var squads: Array[Dictionary] = []
 	for squad: Dictionary in order["squads"]:
@@ -394,6 +396,7 @@ func _add_force(hero_count: int, squad_count: int, zone_id: String) -> Array[Str
 	var archetypes: Array[StringName] = [&"knight", &"ranger", &"mage", &"rogue"]
 	for squad_index: int in squad_count:
 		var ids: Array[String] = []
+		@warning_ignore("integer_division")
 		var squad_size: int = hero_count / squad_count
 		for member_index: int in squad_size:
 			var hero := Hero.new("Force %d-%d" % [squad_index, member_index], 0)

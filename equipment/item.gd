@@ -33,9 +33,9 @@ func rank_label(balance: BalanceTable) -> String:
 ## makes the Forge bonus yield literally zero on an unenhanced drop, the commonest salvage there is.
 ## keeper_skill is the Forge keeper's Smithing (GameSession.keeper_skill); it stacks past the level cap.
 static func compute_salvage_yield(item: Item, forge_level: int, keeper_skill: int, balance: BalanceTable) -> int:
-	var enhance_level: int = clamped_enhance_level(item, balance)
+	var clamped_enhance: int = clamped_enhance_level(item, balance)
 	var clamped_forge_level: int = clampi(forge_level, 0, balance.summoning_circle_level_cap)
-	return roundi((3 + enhance_level) * (1.0 + balance.forge_salvage_yield_bonus * (clamped_forge_level + balance.keeper_skill_bonus_levels * keeper_skill)))
+	return roundi((3 + clamped_enhance) * (1.0 + balance.forge_salvage_yield_bonus * (clamped_forge_level + balance.keeper_skill_bonus_levels * keeper_skill)))
 
 
 ## The highest enhance_level a Forge at this level permits (docs/SYSTEMS.md, Enhancement). Level 0
@@ -80,12 +80,12 @@ static func compute_stat_magnitude(item: Item, definition: EquipmentDefinition, 
 
 ## Applies the deterministic part of Damaged; the caller owns the independent random roll.
 static func apply_damaged(item: Item, balance: BalanceTable) -> void:
-	var enhance_level: int = clamped_enhance_level(item, balance)
-	if enhance_level > 0:
-		item.enhance_level = floori(float(enhance_level) / 2.0)
+	var clamped_enhance: int = clamped_enhance_level(item, balance)
+	if clamped_enhance > 0:
+		item.enhance_level = floori(float(clamped_enhance) / 2.0)
 	else:
-		var rank: int = clampi(item.rank, 0, balance.rank_names.size() - 1)
-		item.rank = maxi(rank - 1, 0) if rank > 0 else rank
+		var clamped_rank: int = clampi(item.rank, 0, balance.rank_names.size() - 1)
+		item.rank = maxi(clamped_rank - 1, 0) if clamped_rank > 0 else clamped_rank
 
 
 ## ig-7sn.14: held here, since a load nothing keeps re-reads the .tres on every call. Main thread only

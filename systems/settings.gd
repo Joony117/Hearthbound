@@ -153,6 +153,7 @@ static func apply_window_size(choice: String) -> String:
 	# Centre the outer frame (title bar included), then offset to where the client area sits in it.
 	var outer: Vector2i = DisplayServer.window_get_size_with_decorations()
 	var inset: Vector2i = DisplayServer.window_get_position() - DisplayServer.window_get_position_with_decorations()
+	@warning_ignore("integer_division")
 	DisplayServer.window_set_position(usable.position + ((usable.size - outer) / 2).max(Vector2i.ZERO) + inset)
 	return chosen
 

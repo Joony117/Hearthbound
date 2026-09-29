@@ -2,6 +2,8 @@ extends GutTest
 
 ## ig-4if: the Cleric's Grace + Mend (SYSTEMS.md § Skills, Cleric).
 
+const Session = preload("res://systems/game_session.gd")
+
 
 func test_cleric_default_kit_is_grace_then_mend() -> void:
 	var kit: Array[AbilityDefinition] = BattleSimulation.default_kit("cleric")
@@ -87,7 +89,7 @@ func test_cleric_kit_survives_a_profile_save_and_reload() -> void:
 	assert_ne(order_id, "")
 	GameSession.tick_expeditions(0.5)
 	var saved: Dictionary = JSON.parse_string(JSON.stringify(GameSession.to_dict())) as Dictionary
-	assert_eq(GameSession.validate_saved_state(saved, 3), "")
+	assert_eq(Session.validate_saved_state(saved, 3), "")
 	GameSession.from_dict(saved)
 	var actor: Dictionary = (GameSession.get_battle_snapshot(order_id)["actors"] as Array)[0]
 	# A level-0 hero carries its level-1 kit: Grace, Mend, the Censer Swing weaponskill (no cooldown) and

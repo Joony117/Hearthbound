@@ -823,7 +823,7 @@ func _measure_battle(zone_id: String) -> void:
 		started = Time.get_ticks_usec()
 		var snapshot: Dictionary = session.get_battle_snapshot(order_id)
 		copy.append(_since(started))
-		var previous: Dictionary = view._previous_actors
+		var previous_actors: Dictionary = view._previous_actors
 		var views_before: int = view._unit_views.size()
 		started = Time.get_ticks_usec()
 		view._render_snapshot(snapshot)
@@ -838,7 +838,7 @@ func _measure_battle(zone_id: String) -> void:
 				unit.set_actor(actor, str(actor.get("id", "")) in view._selected_ids, PULSE)
 		var set_ms: float = _since(started)
 		started = Time.get_ticks_usec()
-		var _events: Array[Dictionary] = BattleVfx.events_between(previous, actors)
+		var _events: Array[Dictionary] = BattleVfx.events_between(previous_actors, actors)
 		var events_ms: float = _since(started)
 		set_actors.append(set_ms)
 		events.append(events_ms)
@@ -1081,8 +1081,8 @@ func _roster_split(hub: Node, label: String) -> void:
 		"_refresh_expeditions(true)": hub._refresh_expeditions.bind(true),
 		"_refresh_hero_detail": hub._refresh_hero_detail,
 	}
-	for call: String in calls:
-		_report("%s: _refresh_director_ui call %s" % [label, call], _time(calls[call], 10))
+	for call_name: String in calls:
+		_report("%s: _refresh_director_ui call %s" % [label, call_name], _time(calls[call_name], 10))
 
 
 ## ---- 5. The full town: every figure out, then one building change.

@@ -174,13 +174,13 @@ static func validate_dict(data: Dictionary) -> String:
 			return "Battle actor %s must be a String." % key
 	if (data["id"] as String).is_empty():
 		return "Battle actor id must be non-empty."
-	var archetype: String = data["archetype"]
-	var faction: String = data["faction"]
-	if not archetype in VALID_ARCHETYPES or not faction in VALID_FACTIONS:
+	var actor_archetype: String = data["archetype"]
+	var actor_faction: String = data["faction"]
+	if not actor_archetype in VALID_ARCHETYPES or not actor_faction in VALID_FACTIONS:
 		return "Battle actor archetype or faction is invalid."
 	if not (data["order_kind"] as String) in VALID_ORDERS:
 		return "Battle actor order_kind is invalid."
-	var ally: bool = faction == "ally"
+	var ally: bool = actor_faction == "ally"
 	if ally == (data["hero_id"] as String).is_empty():
 		return "Allied battle actors need hero IDs and enemies must not have them."
 	if not _valid_nonnegative_integer(data.get("spawn_index")):
@@ -191,28 +191,28 @@ static func validate_dict(data: Dictionary) -> String:
 	for key: String in _NUMBER_KEYS:
 		if not _valid_number(data.get(key)):
 			return "Battle actor %s must be finite." % key
-	var hp: float = float(data["hp"])
-	var max_hp: float = float(data["max_hp"])
-	if max_hp <= 0.0 or hp < 0.0 or hp > max_hp:
+	var actor_hp: float = float(data["hp"])
+	var actor_max_hp: float = float(data["max_hp"])
+	if actor_max_hp <= 0.0 or actor_hp < 0.0 or actor_hp > actor_max_hp:
 		return "Battle actor HP is outside its valid range."
 	for key: String in _NONNEGATIVE_KEYS:
 		if float(data[key]) < 0.0:
 			return "Battle actor %s must be non-negative." % key
-	var crit_rate: float = float(data["crit_rate"])
-	if crit_rate < 0.0 or crit_rate > 1.0 or float(data["crit_damage"]) < 1.0:
+	var actor_crit_rate: float = float(data["crit_rate"])
+	if actor_crit_rate < 0.0 or actor_crit_rate > 1.0 or float(data["crit_damage"]) < 1.0:
 		return "Battle actor critical values are invalid."
-	var life: String = data["life"]
-	if not life in VALID_LIFE:
+	var actor_life: String = data["life"]
+	if not actor_life in VALID_LIFE:
 		return "Battle actor life is invalid."
-	if ally and life == LIFE_DEAD:
+	if ally and actor_life == LIFE_DEAD:
 		return "Allied battle actors cannot be dead inside a battle snapshot."
-	if not ally and life == LIFE_DOWNED:
+	if not ally and actor_life == LIFE_DOWNED:
 		return "Enemy battle actors cannot be downed."
-	if life == LIFE_ALIVE and hp <= 0.0:
+	if actor_life == LIFE_ALIVE and actor_hp <= 0.0:
 		return "Living battle actors need positive HP."
-	if (life == LIFE_DOWNED or life == LIFE_DEAD) and hp != 0.0:
+	if (actor_life == LIFE_DOWNED or actor_life == LIFE_DEAD) and actor_hp != 0.0:
 		return "Downed and dead battle actors must have zero HP."
-	var skills_error: String = _validate_skills(data, archetype, faction)
+	var skills_error: String = _validate_skills(data, actor_archetype, actor_faction)
 	if not skills_error.is_empty():
 		return skills_error
 	if not data.get("effect_state") is Dictionary:
@@ -289,8 +289,8 @@ static func validate_dict(data: Dictionary) -> String:
 
 ## The skill archetypes an actor of archetype and faction may carry: its class, then the general
 ## pool for a hero or the enemy-only skills for an enemy (enemies never use the general pool).
-static func kit_archetypes(archetype: String, faction: String) -> Array[String]:
-	return [archetype, "enemy_" + archetype] if faction == "enemy" else [archetype, "general"]
+static func kit_archetypes(for_archetype: String, for_faction: String) -> Array[String]:
+	return [for_archetype, "enemy_" + for_archetype] if for_faction == "enemy" else [for_archetype, "general"]
 
 
 ## The archetype's kit (BattleSimulation.default_kit), every ability ready. auto sets the
@@ -320,7 +320,7 @@ func set_abilities_auto(auto: bool) -> void:
 
 ## Both shapes load: skills + skill_cooldowns, or the old ability_cooldown + ability_auto. archetype and
 ## faction are the actor's, already checked.
-static func _validate_skills(data: Dictionary, archetype: String, faction: String) -> String:
+static func _validate_skills(data: Dictionary, actor_archetype: String, actor_faction: String) -> String:
 	if not data.has("skills"):
 		if not _valid_number(data.get("ability_cooldown")) or float(data.get("ability_cooldown")) < 0.0:
 			return "Battle actor ability_cooldown must be finite and non-negative."
@@ -330,7 +330,7 @@ static func _validate_skills(data: Dictionary, archetype: String, faction: Strin
 	if not data.get("skills") is Array or not data.get("skill_cooldowns") is Dictionary:
 		return "Battle actor skills must be an Array and skill_cooldowns a Dictionary."
 	# Untyped: kit_archetypes builds its pair with a ternary, which Godot returns as a plain Array.
-	var kit: Array = kit_archetypes(archetype, faction)
+	var kit: Array = kit_archetypes(actor_archetype, actor_faction)
 	var seen: Dictionary = {}
 	var abilities: Dictionary = {}
 	for raw_entry: Variant in data["skills"] as Array:
@@ -339,13 +339,13 @@ static func _validate_skills(data: Dictionary, archetype: String, faction: Strin
 		var entry: Dictionary = raw_entry as Dictionary
 		if entry.size() != 2 or not entry.get("id") is String or not entry.get("mode") is String:
 			return "Every battle actor skill must be {id, mode} Strings."
-		var id: String = entry["id"]
+		var skill_key: String = entry["id"]
 		var mode: String = entry["mode"]
-		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(id) as AbilityDefinition
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_key) as AbilityDefinition
 		if skill == null or not skill.archetype in kit:
-			return "Battle actor skill %s is unknown or from another class." % id
+			return "Battle actor skill %s is unknown or from another class." % skill_key
 		if not mode in SKILL_MODES or (skill.kind == "passive" and mode != "auto"):
-			return "Battle actor skill %s mode is invalid." % id
+			return "Battle actor skill %s mode is invalid." % skill_key
 		if seen.has(skill.skill_id):
 			return "Battle actor skill %s is listed twice." % str(skill.skill_id)
 		seen[skill.skill_id] = true

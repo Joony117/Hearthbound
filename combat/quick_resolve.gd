@@ -52,13 +52,13 @@ static func _resolve(
 	var r := effective_enemy_power / team_power
 
 	if not won:
-		var damage_fraction: float = clamp(
+		var loss_fraction: float = clamp(
 			BALANCE.wave_loss_damage_coefficient * r * r * r,
 			0.0,
 			1.0,
 		)
 		for hero: Hero in team:
-			var hp_after := result.maximum_hp[hero] * (1.0 - damage_fraction)
+			var hp_after := result.maximum_hp[hero] * (1.0 - loss_fraction)
 			result.hp_after[hero] = hp_after
 			if hp_after > 0.0:
 				result.survivors.append(hero)

@@ -30,17 +30,17 @@ static func append(ledger: Array[Dictionary], next_seq: int, time: int, kind: St
 ## every record added since the last load, about 0.3 ms each at the cap; batch it (one pass that
 ## picks every victim, then one rebuild) if loads ever get slow. Returns the evicted records, in
 ## eviction order.
-static func evict(ledger: Array[Dictionary], tiers: Array[int], max_records: int) -> Array[Dictionary]:
+static func evict(ledger: Array[Dictionary], tier_list: Array[int], max_records: int) -> Array[Dictionary]:
 	var evicted: Array[Dictionary] = []
 	while ledger.size() > max_records:
 		var index: int = -1
 		for tier_index: int in TIER_BY_KIND.size() + 1:
-			index = tiers.find(tier_index)
+			index = tier_list.find(tier_index)
 			if index >= 0:
 				break
 		evicted.append(ledger[index])
 		ledger.remove_at(index)
-		tiers.remove_at(index)
+		tier_list.remove_at(index)
 	return evicted
 
 
@@ -198,6 +198,7 @@ static func _array(record: Dictionary, key: String) -> Array:
 static func normalized(value: Variant) -> Variant:
 	if value is float:
 		var number: float = value
+		@warning_ignore("incompatible_ternary")
 		return int(number) if is_finite(number) and number == floorf(number) else number
 	if value is Array:
 		var out: Array = []

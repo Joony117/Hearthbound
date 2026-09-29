@@ -575,12 +575,12 @@ func test_real_clicks_place_refuse_and_open_a_building() -> void:
 	var town: TownView = hub.get_node("%Town") as TownView
 	var status: Label = hub.get_node("%Status") as Label
 	(hub.get_node("%Build") as MenuButton).get_popup().index_pressed.emit(0)
-	var hall: Vector2 = _point_over(hub, func(hex: Vector2i) -> bool: return hex == TownRules.HALL_HEXES[&"TrainingHall"])
+	var hall: Vector2 = _point_over(hub, func(cell: Vector2i) -> bool: return cell == TownRules.HALL_HEXES[&"TrainingHall"])
 	assert_ne(hall, Vector2(-1, -1), "a reachable point over the Training Hall's hex")
 	_click(hub, hall)
 	assert_eq(status.text, "The Training Hall stands there. Esc cancels.")
 	assert_true(_placed().is_empty())
-	var free: Vector2 = _point_over(hub, func(hex: Vector2i) -> bool: return TownRules.hex_refusal(hex, GameSession.town_buildings, BALANCE) == "")
+	var free: Vector2 = _point_over(hub, func(cell: Vector2i) -> bool: return TownRules.hex_refusal(cell, GameSession.town_buildings, BALANCE) == "")
 	assert_ne(free, Vector2(-1, -1), "a reachable point over a free hex")
 	var hex: Vector2i = TownRules.world_to_hex(town.ground_point(free) as Vector3)
 	_click(hub, free)

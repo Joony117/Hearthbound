@@ -55,13 +55,13 @@ func test_the_periodic_save_gets_a_frame_of_its_own() -> void:
 	var pulses: int = 0
 	var advances: int = 0
 	for index: int in calls.size():
-		var call: Dictionary = calls[index]
-		assert_true(int(call["advanced"]) <= 1, "call %d advances at most one battle" % index)
-		if bool(call["pulse"]):
+		var record: Dictionary = calls[index]
+		assert_true(int(record["advanced"]) <= 1, "call %d advances at most one battle" % index)
+		if bool(record["pulse"]):
 			pulses += 1
-			assert_eq(int(call["advanced"]), 0, "call %d: the pulse's frame advances none" % index)
-		advances += int(call["advanced"])
-		if bool(call["saved"]):
+			assert_eq(int(record["advanced"]), 0, "call %d: the pulse's frame advances none" % index)
+		advances += int(record["advanced"])
+		if bool(record["saved"]):
 			saves.append(index)
 	assert_eq(saves.size(), 1, "one periodic save in the second")
 	assert_gt(pulses, 2, "the pulses ran")
