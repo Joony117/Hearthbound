@@ -52,9 +52,10 @@ const AMBIENT_HERO_CAP: int = 16
 const HOME_EVERY: int = 4
 ## Where a new body stands, in town space: the open ground in front of the Training Hall.
 const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
-## Close enough to a building's centre to count as there. A body stopped on a corner of a 3 m
-## building stands 2.12 + 0.4 (its radius) = 2.52 m out, so this covers every approach.
-const ARRIVE_RADIUS: float = 2.8
+## Close enough to a building's centre to count as there. A body stopped on a corner of a 4.5 m
+## building stands 3.18 + 0.4 (its radius) = 3.58 m out, so this covers every approach but the Mine's
+## back corners (4.2 m), which fall back to STUCK_SECONDS.
+const ARRIVE_RADIUS: float = 3.6
 ## A walker this close to a WorkSpot stands at it.
 const AT_SPOT: float = 0.05
 ## The overview camera (ig-6m2.8.1). Presentation only: tune by screenshot. hub.tscn sets the start

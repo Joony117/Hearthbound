@@ -8,6 +8,10 @@ const BALANCE: BalanceTable = preload("res://balance.tres")
 const LOADOUT: Dictionary = {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0}
 const FREE_HEX: Vector2i = Vector2i(0, 2)
 const NEXT_HEX: Vector2i = Vector2i(1, 2)
+## A hall whose body a click cannot reach from the start view, and the hall whose box takes the click:
+## the Apothecary (6, -10.4) stands straight behind the Sanctum's 5 m box. A change of layout, camera
+## or box shows up as a red test to delete the entry from.
+const HIDDEN_BEHIND: Dictionary[StringName, StringName] = {&"Apothecary": &"Sanctum"}
 
 
 func before_each() -> void:
@@ -596,6 +600,18 @@ func test_real_clicks_place_refuse_and_open_a_building() -> void:
 	_click(hub, on_house)
 	assert_true((hub.get_node("%PlacedBuildingPanel") as Control).visible, "a click on a placed building opens its panel")
 	assert_eq((hub.get_node("%PlacedTitle") as Label).text, "HOUSE 1")
+
+
+## ig-6m2.8.2: with the halls' 4.5 m boxes on the default layout, a click on each hall's body, seen from
+## the overview camera, names that hall. A taller box in front would steal it.
+func test_building_at_names_each_of_the_seven_halls_from_the_overview_camera() -> void:
+	var hub: Node3D = _instantiate_hub()
+	var town: TownView = hub.get_node("%Town") as TownView
+	var camera: Camera3D = hub.get_viewport().get_camera_3d()
+	for hall: StringName in TownRules.HALL_HEXES:
+		var at: Vector2 = camera.unproject_position((town.get_node(NodePath(hall)) as Node3D).global_position + Vector3(0.0, 1.0, 0.0))
+		assert_true(hub.get_viewport().get_visible_rect().has_point(at), "%s is on screen at the start view" % hall)
+		assert_eq(town.building_at(at), HIDDEN_BEHIND.get(hall, hall), "a click on %s's body names it" % hall)
 
 
 ## A hand-edited save: a malformed Forge on a map every other hex fills. The Forge still stands,

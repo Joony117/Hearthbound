@@ -3,7 +3,7 @@
 [ext_resource type="PackedScene" path="res://hub/town/models/hexagon/building_lumbermill_blue.gltf" id="1_model"]
 
 [sub_resource type="BoxShape3D" id="BoxShape_1"]
-size = Vector3(4.5, 3, 4.5)
+size = Vector3(4.5, 5.5, 4.5)
 
 [node name="Lumbermill" type="Node3D"]
 
@@ -20,7 +20,7 @@ text = "Lumbermill"
 collision_layer = 2
 
 [node name="Shape" type="CollisionShape3D" parent="Pick"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.75, 0)
 shape = SubResource("BoxShape_1")
 
 [node name="WorkSpot" type="Marker3D" parent="."]
