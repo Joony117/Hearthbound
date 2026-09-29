@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 @onready var _screen_shake: CheckButton = %ScreenShake
+@onready var _gore: OptionButton = %Gore
 @onready var _window_size: OptionButton = %WindowSize
 
 
@@ -8,6 +9,11 @@ func _ready() -> void:
 	# Not `button_pressed =`: the assignment emits `toggled`, and the pause menu is a static child of
 	# hub.tscn, so every hub load wrote the setting straight back to user://settings.cfg.
 	_screen_shake.set_pressed_no_signal(Settings.screen_shake_enabled())
+	# Off, Low and Full, the stored one ticked. select() emits nothing, so filling never writes it back.
+	for level: String in Settings.GORE_LEVELS:
+		_gore.add_item(level.capitalize())
+		_gore.set_item_metadata(_gore.item_count - 1, level)
+	_gore.select(Settings.GORE_LEVELS.find(Settings.gore()))
 	_fill_window_sizes()
 	# Filled again each time it opens: the window may have moved to a smaller screen since.
 	visibility_changed.connect(func() -> void: if visible: _fill_window_sizes())
@@ -42,6 +48,10 @@ func _on_menu_pressed() -> void:
 
 func _on_screen_shake_toggled(toggled_on: bool) -> void:
 	Settings.set_screen_shake_enabled(toggled_on)
+
+
+func _on_gore_item_selected(index: int) -> void:
+	Settings.set_gore(str(_gore.get_item_metadata(index)))
 
 
 func _on_window_size_item_selected(index: int) -> void:

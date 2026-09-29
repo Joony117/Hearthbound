@@ -10,6 +10,10 @@ extends RefCounted
 const SETTINGS_PATH: String = "user://settings.cfg"
 const SECTION: String = "combat"
 const SCREEN_SHAKE_KEY: String = "screen_shake"
+## How much a hit on bone or flesh throws in the battle view (ig-c9y.1): off adds nothing.
+const GORE_KEY: String = "gore"
+const GORE_LEVELS: Array[String] = ["off", "low", "full"]
+const DEFAULT_GORE: String = "full"
 const DISPLAY_SECTION: String = "display"
 const WINDOW_SIZE_KEY: String = "window_size"
 const FULLSCREEN: String = "fullscreen"
@@ -37,6 +41,22 @@ static func screen_shake_enabled() -> bool:
 static func set_screen_shake_enabled(enabled: bool) -> void:
 	var config: ConfigFile = _loaded_config()
 	config.set_value(SECTION, SCREEN_SHAKE_KEY, enabled)
+	var save_error: Error = config.save(SETTINGS_PATH)
+	if save_error != OK:
+		push_error("Could not write %s: %s" % [SETTINGS_PATH, error_string(save_error)])
+
+
+## One of GORE_LEVELS. Anything else in the file, a non-string included, means the default.
+static func gore() -> String:
+	var value: Variant = _loaded_config().get_value(SECTION, GORE_KEY, DEFAULT_GORE)
+	if value is String and GORE_LEVELS.has(value):
+		return value
+	return DEFAULT_GORE
+
+
+static func set_gore(level: String) -> void:
+	var config: ConfigFile = _loaded_config()
+	config.set_value(SECTION, GORE_KEY, level)
 	var save_error: Error = config.save(SETTINGS_PATH)
 	if save_error != OK:
 		push_error("Could not write %s: %s" % [SETTINGS_PATH, error_string(save_error)])

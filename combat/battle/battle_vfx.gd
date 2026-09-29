@@ -47,6 +47,17 @@ const LANDING_DUST_COUNT: int = 18
 const LANDING_DUST_SIZE: float = 0.16
 const LANDING_DUST_SPEED: float = 0.6
 const LANDING_RING_RADIUS: float = 1.1
+# PROVISIONAL (ig-c9y.1): the gore's feel numbers, unfelt; game-designer's to tune. Settled by: a played build.
+const BONE_COLOR: Color = Color("e6dcc3")
+const BLOOD_COLOR: Color = Color("7a0e12")
+const GORE_DUST_COUNT: int = 12
+const GORE_DUST_SIZE: float = 0.07
+const GORE_SPLINTER_COUNT: int = 4
+const GORE_DROPLET_COUNT: int = 14
+const GORE_SPEED: float = 1.1
+const GORE_SPREAD: float = 30.0
+# Inside the shortest hit effect with damage (0.7 s), so the reaper never frees a spray mid-flight.
+const GORE_SECONDS: float = 0.55
 # Camera trauma per event, 0-1; battle_view squares it into a shake offset.
 const SHAKE_CRIT: float = 0.45
 const SHAKE_SKILL: float = 0.55
@@ -57,6 +68,9 @@ static var _effect_material: ShaderMaterial = _build_effect_material()
 # One material for every particle speck; CPUParticles3D.color tints it per burst.
 static var _speck_material: StandardMaterial3D = _build_speck_material()
 static var _specks: Dictionary = {}
+# The gore's splinter and droplet, shared and tinted like the specks (ig-c9y.1).
+static var _splinter: PrismMesh = _build_splinter()
+static var _droplet: SphereMesh = _build_droplet()
 
 # Every tween spawn starts, so the view's slow-mo can rescale live effects mid-flight.
 var _tweens: Array[Tween] = []
@@ -98,7 +112,21 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 		var life_before: String = str(before.get("life", "alive"))
 		var life_after: String = str(after.get("life", "alive"))
 		if actor_id in hit_ids:
-			events.append({"kind": "hit", "actor_id": actor_id, "faction": faction, "position": spot, "damage": roundi(maxf(hp_before - hp_after, 0.0)), "critical": _tick(after, "last_crit_tick") > _tick(before, "last_crit_tick"), "tick": _tick(after, "last_hit_tick")})
+			# ig-c9y.1, the gore's cues: the body, the way the hit sent it as the unit view reads it (-facing for a
+			# save from before ig-36y), and the unit view's heavy test.
+			var hit_from: Variant = after_effects.get("hit_from")
+			events.append({
+				"kind": "hit",
+				"actor_id": actor_id,
+				"faction": faction,
+				"position": spot,
+				"damage": roundi(maxf(hp_before - hp_after, 0.0)),
+				"critical": _tick(after, "last_crit_tick") > _tick(before, "last_crit_tick"),
+				"tick": _tick(after, "last_hit_tick"),
+				"body": HeroModel.body_type(faction, archetype),
+				"direction": _world(hit_from).normalized() if hit_from is Array else -facing,
+				"heavy": hp_before - hp_after >= maxf(float(after.get("max_hp", 1.0)), 1.0) * BattleUnitView.RECOIL_HP_FRACTION,
+			})
 		if life_before == "alive" and life_after == "alive" and roundi(hp_after - hp_before) > 0:
 			events.append({"kind": "heal", "actor_id": actor_id, "position": spot, "amount": roundi(hp_after - hp_before)})
 		var attack_target: String = str(before_effects.get("attack_target_id", ""))
@@ -229,6 +257,7 @@ func spawn(event: Dictionary) -> void:
 				else:
 					_rising_label(effect, spot, str(damage), DAMAGE_COLOR, 0.0, DAMAGE_POP_SCALE)
 					lifetime = 0.7
+				_gore(effect, spot + Vector3(0.0, 0.9, 0.0), event)
 		"heal":
 			_rising_label(effect, spot, "+%d" % int(event.get("amount", 0)), HEAL_COLOR)
 			lifetime = 0.7
@@ -424,18 +453,37 @@ static func shake_for(event: Dictionary) -> float:
 	return 0.0
 
 
-func _burst(effect: Node3D, at: Vector3, color: Color, amount: int, lifetime: float, size: float = 0.08, speed: float = 1.0, delay: float = 0.0) -> void:
+## ig-c9y.1: bone dust and splinters, or a blood spray, thrown the way the hit sent the body. Nothing with gore
+## off or on an event that names no body. A crit or heavy hit throws double; Low throws half (at least one).
+func _gore(effect: Node3D, at: Vector3, event: Dictionary) -> void:
+	var level: String = Settings.gore()
+	var body: String = str(event.get("body", ""))
+	if level == "off" or not body in ["bones", "flesh"]:
+		return
+	var direction: Vector3 = event.get("direction", Vector3.UP)
+	if direction.is_zero_approx():
+		direction = Vector3.UP
+	var factor: float = (2.0 if bool(event.get("critical", false)) or bool(event.get("heavy", false)) else 1.0) * (0.5 if level == "low" else 1.0)
+	# [color, amount at Full, mesh] per burst.
+	var bursts: Array[Array] = [[BLOOD_COLOR, GORE_DROPLET_COUNT, _droplet]]
+	if body == "bones":
+		bursts = [[BONE_COLOR, GORE_DUST_COUNT, _speck(GORE_DUST_SIZE)], [BONE_COLOR, GORE_SPLINTER_COUNT, _splinter]]
+	for burst: Array in bursts:
+		_burst(effect, at, burst[0], maxi(1, int(burst[1] * factor)), GORE_SECONDS, GORE_DUST_SIZE, GORE_SPEED, 0.0, direction, GORE_SPREAD, burst[2])
+
+
+func _burst(effect: Node3D, at: Vector3, color: Color, amount: int, lifetime: float, size: float = 0.08, speed: float = 1.0, delay: float = 0.0, direction: Vector3 = Vector3.UP, spread: float = 180.0, mesh: Mesh = null) -> void:
 	var particles := CPUParticles3D.new()
 	particles.one_shot = true
 	particles.explosiveness = 1.0
 	particles.amount = amount
 	particles.lifetime = lifetime
-	particles.direction = Vector3.UP
-	particles.spread = 180.0
+	particles.direction = direction
+	particles.spread = spread
 	particles.initial_velocity_min = 2.0 * speed
 	particles.initial_velocity_max = 4.0 * speed
 	particles.gravity = Vector3(0.0, -6.0, 0.0)
-	particles.mesh = _speck(size)
+	particles.mesh = mesh if mesh != null else _speck(size)
 	particles.color = color
 	particles.speed_scale = _time_scale
 	particles.position = at
@@ -544,6 +592,24 @@ static func _speck(size: float) -> BoxMesh:
 		speck.material = _speck_material
 		_specks[size] = speck
 	return _specks[size]
+
+
+static func _build_splinter() -> PrismMesh:
+	var splinter := PrismMesh.new()
+	splinter.size = Vector3(0.05, 0.2, 0.05)
+	splinter.material = _speck_material
+	return splinter
+
+
+static func _build_droplet() -> SphereMesh:
+	var droplet := SphereMesh.new()
+	droplet.radius = 0.05
+	droplet.height = 0.1
+	# Low-poly: every droplet of every spray draws it.
+	droplet.radial_segments = 6
+	droplet.rings = 3
+	droplet.material = _speck_material
+	return droplet
 
 
 static func _build_effect_material() -> ShaderMaterial:

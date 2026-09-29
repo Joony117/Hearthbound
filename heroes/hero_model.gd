@@ -55,6 +55,12 @@ static func look(faction: String, archetype: String) -> Array:
 	return looks.get(archetype, looks["knight"])
 
 
+## "bones" for a skeleton look (every enemy, and an unknown one, drawn as the knight), else "flesh" (every
+## hero): what a hit throws in the battle view (ig-c9y.1). The sim never sees it.
+static func body_type(faction: String, archetype: String) -> String:
+	return "bones" if str(look(faction, archetype)[0]).begins_with("Skeleton_") else "flesh"
+
+
 ## The model with its weapons on the hand bones and an AnimationPlayer (child "AnimationPlayer",
 ## root_node "..") carrying the shared library. The caller parents and scales it.
 static func build(faction: String, archetype: String) -> Node3D:
