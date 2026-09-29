@@ -65,7 +65,7 @@ Godot resolves these at runtime, so a green gate proves nothing about them:
 4. **Combat seam.** Both `resolve(team, wave)` implementations must agree, and both get the same `Wave`
    (`zones/wave.gd`), whose ramp lives in one place.
 
-The reviewer is **GPT-6 Sol**: `codex-worker.ps1 -Profile verifier -Effort high`. Brief it
+The reviewer is **GPT-6.1 Sol**: `codex-worker.ps1 -Profile verifier -Effort high`. Brief it
 read-only, with no Godot runs. Fall back to a Claude `verifier-hard` only if Sol is down, and say so in the bead.
 Codex-written work gets a Claude reviewer.
 
