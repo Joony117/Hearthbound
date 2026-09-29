@@ -3,6 +3,8 @@ extends GutTest
 # ig-6m2.8.2: every building scene fits its model. The Pick box is 4.5 m square (the Mine's is longer),
 # stands on the ground, covers the model except in the OVERFLOWS scenes, and the WorkSpot and Label clear it.
 
+const Bounds = preload("res://tests/unit/town_bounds.gd")
+
 const BOX_SIDE: float = 4.5
 ## The Mine's box is longer than square, as it is today (mine.tscn).
 const MINE_DEPTH: float = 5.3
@@ -38,8 +40,8 @@ func test_every_scene_has_its_parts_and_its_pick_on_the_pick_layer_alone() -> vo
 func test_every_pick_box_is_square_and_stands_on_the_ground_and_covers_its_model() -> void:
 	for type: StringName in TownView.SCENES:
 		var building: Node3D = TownView.SCENES[type].instantiate() as Node3D
-		var box: AABB = _box(building)
-		var model: AABB = _model_aabb(building)
+		var box: AABB = Bounds.pick_box(building)
+		var model: AABB = Bounds.bounds_under(building, building.get_node("Model") as Node3D)
 		assert_gt(model.size.y, 0.5, "%s: a real model was found under Model" % type)
 		assert_almost_eq(box.size.x, BOX_SIDE, TOLERANCE, "%s: box width" % type)
 		if type != TownRules.MINE:
@@ -47,7 +49,7 @@ func test_every_pick_box_is_square_and_stands_on_the_ground_and_covers_its_model
 		else:
 			assert_almost_eq(box.size.z, MINE_DEPTH, TOLERANCE, "%s: box depth" % type)
 		assert_almost_eq(box.position.y, 0.0, TOLERANCE, "%s: the box stands on the ground" % type)
-		var covers: bool = _footprint(box).grow(TOLERANCE).encloses(_footprint(model)) and model.size.y <= box.size.y + TOLERANCE
+		var covers: bool = Bounds.footprint(box).grow(TOLERANCE).encloses(Bounds.footprint(model)) and model.size.y <= box.size.y + TOLERANCE
 		assert_eq(covers, not OVERFLOWS.has(type), "%s: model %s in box %s" % [type, model, box])
 		building.free()
 
@@ -55,11 +57,11 @@ func test_every_pick_box_is_square_and_stands_on_the_ground_and_covers_its_model
 func test_every_work_spot_is_outside_the_grown_box_and_every_label_above_the_model() -> void:
 	for type: StringName in TownView.SCENES:
 		var building: Node3D = TownView.SCENES[type].instantiate() as Node3D
-		var box: AABB = _box(building)
-		var grown: Rect2 = _footprint(box).grow(ROUTE_MARGIN)
+		var box: AABB = Bounds.pick_box(building)
+		var grown: Rect2 = Bounds.footprint(box).grow(ROUTE_MARGIN)
 		var spot: Vector3 = (building.get_node("WorkSpot") as Marker3D).position
 		assert_false(grown.has_point(Vector2(spot.x, spot.z)), "%s: the WorkSpot clears the box grown by %s m" % [type, ROUTE_MARGIN])
-		assert_gt((building.get_node("Label") as Label3D).position.y, _model_aabb(building).end.y, "%s: the label is above the model" % type)
+		assert_gt((building.get_node("Label") as Label3D).position.y, Bounds.bounds_under(building, building.get_node("Model") as Node3D).end.y, "%s: the label is above the model" % type)
 		building.free()
 
 
@@ -78,37 +80,3 @@ func test_the_seven_halls_match_their_designed_boxes_labels_and_work_spots() -> 
 func test_arrival_covers_a_body_stopped_on_a_corner_of_a_4_5_m_building() -> void:
 	assert_eq(TownView.ARRIVE_RADIUS, 3.6)
 	assert_gt(TownView.ARRIVE_RADIUS, sqrt(2.0) * BOX_SIDE / 2.0 + 0.4, "the corner (3.18 m) plus the body's radius")
-
-
-func _footprint(bounds: AABB) -> Rect2:
-	return Rect2(bounds.position.x, bounds.position.z, bounds.size.x, bounds.size.z)
-
-
-## The Pick box in the building's own frame: the Shape's size, through the Shape's transform.
-func _box(building: Node3D) -> AABB:
-	var shape: CollisionShape3D = building.get_node("Pick/Shape") as CollisionShape3D
-	var size: Vector3 = (shape.shape as BoxShape3D).size
-	return shape.transform * AABB(-size / 2.0, size)
-
-
-## The Model's bounds in the building's frame: every mesh under it, through its chain of transforms. Model
-## is a glTF root, not a mesh, so it has no AABB of its own.
-func _model_aabb(building: Node3D) -> AABB:
-	var model: Node3D = building.get_node("Model") as Node3D
-	var bounds := AABB()
-	var first: bool = true
-	for node: Node in model.find_children("*", "GeometryInstance3D", true, false):
-		var mesh: GeometryInstance3D = node as GeometryInstance3D
-		var moved: AABB = _relative_to(mesh, building) * mesh.get_aabb()
-		bounds = moved if first else bounds.merge(moved)
-		first = false
-	return bounds
-
-
-func _relative_to(node: Node3D, building: Node3D) -> Transform3D:
-	var chain := Transform3D.IDENTITY
-	var step: Node3D = node
-	while step != building:
-		chain = step.transform * chain
-		step = step.get_parent() as Node3D
-	return chain

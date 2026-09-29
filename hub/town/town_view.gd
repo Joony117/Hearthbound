@@ -37,6 +37,39 @@ const STAGES: Array[PackedScene] = [
 	preload("res://hub/town/models/hexagon/building_stage_B.gltf"),
 	preload("res://hub/town/models/hexagon/building_stage_C.gltf"),
 ]
+## A leveled hall (GameSession.building_levels, in this order) swaps its Model for a smaller model below
+## level 5 (ig-wgj.6): three [model, factor] pairs for tiers 0 (level 0, a ruin), 1 (levels 1-2) and
+## 2 (levels 3-4). The factor multiplies the Model's scale and facing, so those carry over; its offset
+## does not, because that only fits the level-5 mesh (the TrainingHall's) in the box. Tier 3 (level 5) is
+## the scene's Model. Every ruin ends at about 2.7 scale (the TrainingHall's 2.85 x 0.95 = 2.71), and
+## the TrainingHall's archeryrange is x0.9 at tier 2, so each tier fits the fixed 4.5 m Pick box.
+const TIERS: Dictionary[StringName, Array] = {
+	&"SummoningCircle": [
+		[preload("res://hub/town/models/hexagon/building_destroyed.gltf"), 0.9],
+		[preload("res://hub/town/models/hexagon/building_tower_base_blue.gltf"), 1.0],
+		[preload("res://hub/town/models/hexagon/building_tower_A_blue.gltf"), 1.0],
+	],
+	&"Forge": [
+		[preload("res://hub/town/models/hexagon/building_destroyed.gltf"), 0.9],
+		[preload("res://hub/town/models/hexagon/building_blacksmith_blue.gltf"), 0.75],
+		[preload("res://hub/town/models/hexagon/building_blacksmith_blue.gltf"), 0.9],
+	],
+	&"TrainingHall": [
+		[preload("res://hub/town/models/hexagon/building_destroyed.gltf"), 0.95],
+		[preload("res://hub/town/models/hexagon/building_archeryrange_blue.gltf"), 0.75],
+		[preload("res://hub/town/models/hexagon/building_archeryrange_blue.gltf"), 0.9],
+	],
+	&"Sanctum": [
+		[preload("res://hub/town/models/hexagon/building_destroyed.gltf"), 0.9],
+		[preload("res://hub/town/models/hexagon/building_church_blue.gltf"), 0.75],
+		[preload("res://hub/town/models/hexagon/building_church_blue.gltf"), 0.9],
+	],
+	&"Reliquary": [
+		[preload("res://hub/town/models/hexagon/building_destroyed.gltf"), 1.35],
+		[preload("res://hub/town/models/hexagon/building_castle_blue.gltf"), 0.75],
+		[preload("res://hub/town/models/hexagon/building_castle_blue.gltf"), 0.9],
+	],
+}
 
 const PICK_DISTANCE: float = 200.0
 ## Every building scene puts its Pick body on this layer alone, so other bodies (the avatar) never block a pick.
@@ -334,17 +367,23 @@ func _attach_partner() -> void:
 
 
 ## Spawns what is new in buildings (GameSession.town_buildings), stands each on its hex (a move) and
-## frees what is gone. It only draws.
-func show_buildings(buildings: Array[Dictionary]) -> void:
+## frees what is gone. levels is GameSession.building_levels: each leveled hall shows its tier. With no
+## levels, a new hall shows its scene's Model and a hall already showing a tier keeps it. It only draws.
+func show_buildings(buildings: Array[Dictionary], levels: Array[int] = []) -> void:
 	var wanted: Dictionary[String, bool] = {}
 	for building: Dictionary in buildings:
 		var id: String = building["id"]
 		wanted[id] = true
 		var at: Vector3 = TownRules.hex_to_world(Vector2i(building["q"], building["r"]))
+		var type := StringName(building["type"])
 		if not _placed.has(id):
-			_placed[id] = _spawn_building(id, StringName(building["type"]), at)
+			_placed[id] = _spawn_building(id, type, at)
 		_placed[id].position = at
 		_show_stage(_placed[id], building)
+		if TIERS.has(type):
+			var hall: int = TIERS.keys().find(type)
+			if hall < levels.size():
+				_show_tier(_placed[id], type, hall_tier(levels[hall]))
 	for id: String in _placed.keys():
 		if not wanted.has(id):
 			_placed[id].queue_free()
@@ -373,6 +412,32 @@ func _show_stage(node: Node3D, building: Dictionary) -> void:
 	model.scale = Vector3.ONE * TownRules.MODEL_SCALE
 	model.set_meta(&"stage", stage)
 	node.add_child(model)
+
+
+## The tier a hall at level shows: 0 a ruin, 1 for levels 1-2, 2 for 3-4, 3 (its own Model) for 5.
+static func hall_tier(level: int) -> int:
+	return clampi(ceili(level / 2.0), 0, 3)
+
+
+## A leveled hall's smaller model below tier 3, or its own Model at tier 3. Runs on every pulse, so it
+## swaps the Tier node only when the tier changes. The Pick, Label and WorkSpot never change.
+func _show_tier(node: Node3D, type: StringName, tier: int) -> void:
+	var shown: Node3D = node.get_node_or_null("Tier") as Node3D
+	if (3 if shown == null else int(shown.get_meta(&"tier"))) == tier:
+		return
+	if shown != null:
+		node.remove_child(shown)
+		shown.queue_free()
+	var model: Node3D = node.get_node("Model") as Node3D
+	model.visible = tier == 3
+	if tier == 3:
+		return
+	var pair: Array = TIERS[type][tier]
+	var swapped := (pair[0] as PackedScene).instantiate() as Node3D
+	swapped.name = "Tier"
+	swapped.transform = Transform3D(model.basis.scaled_local(Vector3.ONE * float(pair[1])), Vector3.ZERO)
+	swapped.set_meta(&"tier", tier)
+	node.add_child(swapped)
 
 
 ## A place or a move changes which hexes hold a building: the graph follows, anyone on a hex that

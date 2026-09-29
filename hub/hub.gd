@@ -1197,7 +1197,7 @@ func _is_placed(building_id: StringName) -> bool:
 
 
 func _refresh_town() -> void:
-	%Town.show_buildings(GameSession.town_buildings)
+	%Town.show_buildings(GameSession.town_buildings, GameSession.building_levels)
 	var menu: PopupMenu = (%Build as MenuButton).get_popup()
 	for index: int in menu.item_count:
 		var type: StringName = menu.get_item_metadata(index)

@@ -6198,8 +6198,9 @@ input, only live play time, so the worst case is waiting for a free producer to 
   "no timers" still holds for halls.
 
 **One meaning per model.** `building_scaffolding` and `building_stage_A/B/C` mean "under
-construction" and nothing else. `building_destroyed` means "a hall at level 0". `ig-wgj.6`'s
-level mapping uses no stage model; its new mapping is in that bead.
+construction" and nothing else. `building_destroyed` means "a hall at level 0". A leveled hall shows
+four tiers (`ig-wgj.6`, `TownView.TIERS`): a ruin at level 0, a smaller model at levels 1-2, a bigger
+one at 3-4 and its own model at level 5. No tier uses a stage model.
 
 ### Hall upgrades cost wood and stone (`ig-6m2.4`)
 

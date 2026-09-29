@@ -222,9 +222,9 @@ So:
   dying mid-expedition reaches the avatar as a signal, never as the town calling `kill_hero()`.
   Rule 8 stays single-writer with no exception carved for the town.
 
-The one thing this does *not* settle is whether a level-3 building looks different from a level-1
-one. Levels already persist (`GameSession`), nothing renders them, and that is art, not
-architecture.
+How a level-3 building looks different from a level-1 one is art, not architecture. Levels persist
+(`GameSession`), and `ig-wgj.6` renders them: the hub passes `building_levels` to
+`TownView.show_buildings`.
 
 ### The town is the interface (`ig-wgj`, 2026-09-23)
 

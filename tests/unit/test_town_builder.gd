@@ -614,6 +614,20 @@ func test_building_at_names_each_of_the_seven_halls_from_the_overview_camera() -
 		assert_eq(town.building_at(at), HIDDEN_BEHIND.get(hall, hall), "a click on %s's body names it" % hall)
 
 
+## ig-wgj.6: a hall's Pick box is the same at every tier, so its body stays clickable from the overview
+## camera at levels 0, 3 and 5. One hub per test: a second town in the tree would answer the same rays.
+func test_the_five_leveled_halls_stay_clickable_as_ruins() -> void:
+	_assert_leveled_halls_clickable(0)
+
+
+func test_the_five_leveled_halls_stay_clickable_at_level_3() -> void:
+	_assert_leveled_halls_clickable(3)
+
+
+func test_the_five_leveled_halls_stay_clickable_at_level_5() -> void:
+	_assert_leveled_halls_clickable(5)
+
+
 ## A hand-edited save: a malformed Forge on a map every other hex fills. The Forge still stands,
 ## and its keeper keeps it.
 func test_a_dropped_hall_on_a_full_map_takes_the_last_placed_buildings_hex() -> void:
@@ -744,6 +758,16 @@ func _point_over(hub: Node3D, wanted: Callable) -> Vector2:
 			if ground != null and wanted.call(TownRules.world_to_hex(ground as Vector3)) and _reachable(hub, at):
 				return at
 	return Vector2(-1, -1)
+
+
+func _assert_leveled_halls_clickable(level: int) -> void:
+	GameSession.building_levels.fill(level)
+	var hub: Node3D = _instantiate_hub()
+	var town: TownView = hub.get_node("%Town") as TownView
+	var camera: Camera3D = hub.get_viewport().get_camera_3d()
+	for hall: StringName in [&"SummoningCircle", &"Forge", &"TrainingHall", &"Sanctum", &"Reliquary"]:
+		var at: Vector2 = camera.unproject_position((town.get_node(NodePath(hall)) as Node3D).global_position + Vector3(0.0, 1.0, 0.0))
+		assert_eq(town.building_at(at), hall, "a click on %s's body at level %d names it" % [hall, level])
 
 
 func _click(hub: Node3D, at: Vector2) -> void:
