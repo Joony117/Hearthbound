@@ -24,6 +24,8 @@ const _EFFECT_STRING_KEYS: Array[String] = ["attack_target_id", "telegraph_kind"
 const _TELEGRAPH_KINDS: Array[String] = ["", "circle", "line"]
 const _EFFECT_VECTOR_KEYS: Array[String] = ["telegraph_origin", "telegraph_point", "home_position"]
 const _EFFECT_HOP_KEYS: Array[String] = ["kite_point", "evade_point"]
+## A running chain (ig-gy0.5): all four or none.
+const CHAIN_KEYS: Array[String] = ["chain_trigger", "chain_step", "chain_deadline_tick", "chain_target"]
 
 var id: String = ""
 var hero_id: String = ""
@@ -51,11 +53,15 @@ var order_point: Vector2 = Vector2.ZERO
 var carried_by_id: String = ""
 var carrying_id: String = ""
 var guard_target_id: String = ""
-## [{id, mode}] in bar order; mode is "auto", "manual" (fired only by command) or "off" (never
-## fired). A passive is always "auto".
+## [{id, mode}] in bar order; mode is "auto", "manual" (fired only by command, or as a chain step) or
+## "off" (never fired). A passive is always "auto".
 var skills: Array[Dictionary] = []
 ## {skill_id: seconds} for every ability in skills.
 var skill_cooldowns: Dictionary = {}
+## The player's chains (ig-gy0.5), [{trigger, then: [ids]}] as the team snapshot carried them: the ids
+## may name skills the actor lacks (skipped when reached). An enemy has none. A chain that is running
+## is four effect_state keys (chain_trigger, chain_step, chain_deadline_tick, chain_target).
+var chains: Array[Dictionary] = []
 ## Seconds until the next ability may fire (skill_ability_lock_seconds after any ability).
 var ability_lock: float = 0.0
 ## The last weaponskill and the tick it landed, for combos.
@@ -70,7 +76,7 @@ var effect_state: Dictionary = {}
 
 
 func to_dict() -> Dictionary:
-	return {
+	var data: Dictionary = {
 		"id": id,
 		"hero_id": hero_id,
 		"archetype": archetype,
@@ -105,6 +111,10 @@ func to_dict() -> Dictionary:
 		"statuses": statuses.duplicate(true),
 		"effect_state": effect_state.duplicate(true),
 	}
+	# Only when there are some, so a battle with no chains saves the bytes it always did.
+	if not chains.is_empty():
+		data["chains"] = chains.duplicate(true)
+	return data
 
 
 static func from_dict(data: Dictionary) -> BattleActor:
@@ -146,6 +156,10 @@ static func from_dict(data: Dictionary) -> BattleActor:
 		# A checkpoint from before skills were data (ig-gy0.1): the archetype's kit, its signature
 		# carrying the old ability_cooldown and the old ability_auto mode.
 		actor.set_default_kit(bool(data.get("ability_auto", true)), _number(data.get("ability_cooldown"), 0.0))
+	if data.get("chains") is Array:
+		for entry: Variant in data.get("chains") as Array:
+			if entry is Dictionary and (entry as Dictionary).get("then") is Array:
+				actor.chains.append({"trigger": str((entry as Dictionary).get("trigger", "")), "then": ((entry as Dictionary)["then"] as Array).map(func(step: Variant) -> String: return str(step))})
 	actor.ability_lock = _number(data.get("ability_lock"), 0.0)
 	actor.combo_skill = str(data.get("combo_skill", ""))
 	actor.combo_tick = _integer(data.get("combo_tick"), 0)
@@ -284,7 +298,7 @@ static func validate_dict(data: Dictionary) -> String:
 		for entry: Variant in value as Array:
 			if not entry is String:
 				return "Battle actor effect cover_order must be an Array of Strings."
-	return ""
+	return _validate_chains(data, effects, actor_archetype, ally)
 
 
 ## The skill archetypes an actor of archetype and faction may carry: its class, then the general
@@ -360,6 +374,88 @@ static func _validate_skills(data: Dictionary, actor_archetype: String, actor_fa
 		if not _valid_number(cooldowns[skill_id]) or float(cooldowns[skill_id]) < 0.0:
 			return "Battle actor skill cooldowns must be finite and non-negative."
 	return ""
+
+
+## Optional (a checkpoint from before ig-gy0.5 has none): the actor's chains, and the four keys of a
+## running one. Absent costs four key lookups. The steps' ids are checked against the class's kit, not
+## the actor's skills, and a chain's length not at all, so lowering skill_chain_max_steps never locks a
+## save out. A deadline is ahead of the tick by design, so it is no tick-bound check's.
+static func _validate_chains(data: Dictionary, effects: Dictionary, actor_archetype: String, ally: bool) -> String:
+	var chains_here: Array = []
+	if data.has("chains"):
+		if not ally:
+			return "Enemy battle actors cannot have chains."
+		if not data["chains"] is Array:
+			return "Battle actor chains must be an Array of {trigger, then}."
+		chains_here = data["chains"]
+		var kit: Array = kit_archetypes(actor_archetype, "ally")
+		var triggers: Dictionary = {}
+		for raw_chain: Variant in chains_here:
+			var problem: String = _chain_problem(raw_chain, kit, triggers)
+			if not problem.is_empty():
+				return problem
+			triggers[(raw_chain as Dictionary)["trigger"]] = true
+	var present: int = 0
+	for key: String in CHAIN_KEYS:
+		if effects.has(key):
+			present += 1
+	if present == 0:
+		return ""
+	if present != CHAIN_KEYS.size():
+		return "Battle actor chain state needs chain_trigger, chain_step, chain_deadline_tick and chain_target together."
+	if not effects["chain_trigger"] is String or not effects["chain_target"] is String:
+		return "Battle actor effects chain_trigger and chain_target must be Strings."
+	var running: Dictionary = {}
+	for chain: Dictionary in chains_here:
+		if chain["trigger"] == effects["chain_trigger"]:
+			running = chain
+	if running.is_empty():
+		return "Battle actor effect chain_trigger must name one of its chains."
+	if not _valid_nonnegative_integer(effects["chain_step"]) or int(effects["chain_step"]) >= (running["then"] as Array).size():
+		return "Battle actor effect chain_step must be a non-negative integer inside its chain."
+	if not _valid_nonnegative_integer(effects["chain_deadline_tick"]):
+		return "Battle actor effect chain_deadline_tick must be a non-negative integer."
+	return ""
+
+
+## Why raw_chain cannot be one of an ally's chains, or "": {trigger, then} with a String and a non-empty
+## Array of Strings, each a non-passive skill of the class kit (kit_archetypes), and a trigger not in triggers.
+static func _chain_problem(raw_chain: Variant, kit: Array, triggers: Dictionary) -> String:
+	const SHAPE: String = "Every battle actor chain must be {trigger, then}: a String and a non-empty Array of Strings."
+	if not raw_chain is Dictionary:
+		return SHAPE
+	var chain: Dictionary = raw_chain
+	if chain.size() != 2 or not chain.get("trigger") is String or not chain.get("then") is Array or (chain["then"] as Array).is_empty():
+		return SHAPE
+	for raw_id: Variant in [chain["trigger"]] + (chain["then"] as Array):
+		if not raw_id is String:
+			return SHAPE
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(raw_id) as AbilityDefinition
+		if skill == null or skill.kind == "passive" or not skill.archetype in kit:
+			return "Battle actor chain skill %s is unknown, a passive or from another class." % raw_id
+	if triggers.has(chain["trigger"]):
+		return "Battle actor chain trigger %s is listed twice." % chain["trigger"]
+	return ""
+
+
+## The running chain ends: its four keys go.
+func end_chain() -> void:
+	for key: String in CHAIN_KEYS:
+		effect_state.erase(key)
+
+
+## A team snapshot's chains, as far as a checkpoint could hold them: the malformed, passive, other-class
+## and repeated-trigger ones are left out, as a kit's bad ids are. Heroes only.
+func take_chains(raw: Variant) -> void:
+	if not raw is Array or faction != "ally":
+		return
+	var kit: Array = kit_archetypes(archetype, faction)
+	var triggers: Dictionary = {}
+	for entry: Variant in raw as Array:
+		if _chain_problem(entry, kit, triggers).is_empty():
+			var chain: Dictionary = entry
+			triggers[chain["trigger"]] = true
+			chains.append({"trigger": chain["trigger"], "then": (chain["then"] as Array).duplicate()})
 
 
 ## Optional keys (a checkpoint from before ig-gy0.2 has none): the ability lock, combo state and

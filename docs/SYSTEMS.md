@@ -660,9 +660,18 @@ player's order decides. The telegraph half of each cell arrives with the counter
 - **When a step fires.** When it could be fired by hand: off cooldown, the ability lock clear for
   an ability, a swing due for a weaponskill, not stunned or silenced, and a legal target in range.
   Its "AI uses it when" cell is ignored, because the chain is the player saying when. An Off step
-  is skipped at once, and a Manual step fires (`DECISIONS.md` 2026-09-23, item 6). Enemy steps aim
-  at the hero's target. Self, ally and area steps pick theirs as the picker does, without the
-  cell's threshold. A chain never moves the hero: a step out of range waits.
+  is skipped at once, and a Manual step fires (`DECISIONS.md` 2026-09-23, item 6). A step aims by
+  its AI band, not its effect (director ruling 2026-09-29):
+  - a revive goes to the nearest downed ally. With none, a pure revive (Hearthcall) waits, and a
+    revive-first skill (Rally) casts as its own band;
+  - a heal or shield goes to the living ally in range with the lowest HP fraction, the caster
+    included. A self-centred one casts at the caster;
+  - an ally-side zone (Hearthward) aims like a heal, and an enemy-side zone (Rime Circle) at the
+    chain's target. A wall (Rime Wall) uses the hand rule at the chain's target (`ig-vl1.5`);
+  - everything else aims at the chain's target: the hero's target when the chain started, or the
+    first one it gets after.
+
+  The cell's threshold is ignored. A chain never moves the hero: a step out of range waits.
 - **Waiting.** Until the next step is ready, the hero keeps swinging (a basic, or the picker's
   weaponskill) but fires no ability outside the chain. Each step must fire within
   `skill_chain_step_timeout_seconds` of the one before it, or of the trigger, or it is skipped. The
@@ -673,11 +682,13 @@ player's order decides. The telegraph half of each cell arrives with the counter
   heal band's shields and self damage reduction (`DECISIONS.md` 2026-09-23, item 7). A cut-in
   never ends the chain, and the step's deadline keeps running.
 - **End.** The last step fires or is skipped, the hero's target dies or changes (a cover switch or
-  a target order), a new trigger replaces the chain, or the hero is downed.
-- **Saved.** Four optional actor `effect_state` keys, each validated only when present (the § Hero
+  a target order), a new trigger replaces the chain, or the hero is downed. Losing the target for a
+  moment (a kite hop, a regroup, a hold or a carry) is not a change, and neither is a stun.
+- **Saved.** Four optional actor `effect_state` keys, present together or not at all (the § Hero
   AI on auto pattern): `chain_trigger` (a skill id), `chain_step` (a non-negative integer index
-  into its `then`), `chain_deadline_tick` (a non-negative integer) and `chain_target` (an actor
-  id). A reload mid-chain resumes it. `SIMULATION_VERSION` stays 1.
+  into its `then`), `chain_deadline_tick` (a non-negative integer, with no upper bound) and
+  `chain_target` (an actor id, or empty when the chain started with no target). A reload mid-chain
+  resumes it. `SIMULATION_VERSION` stays 1.
 
 ### Learning
 

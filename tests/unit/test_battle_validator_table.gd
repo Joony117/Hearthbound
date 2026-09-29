@@ -38,6 +38,11 @@ func test_actor_effect_refusals() -> void:
 	_check(_effect_rows())
 
 
+## ig-gy0.5 (boundary #1): an actor's chains and the four keys of a running one.
+func test_actor_chain_refusals() -> void:
+	_check(_chain_rows())
+
+
 func test_snapshot_refusals() -> void:
 	_check(_snapshot_rows())
 
@@ -193,6 +198,63 @@ func _effect_rows() -> Array[Array]:
 		_fx(d)["kite_point"] = [0.0, 0.0]])
 	rows.append([v, "Battle actor effect cover_order must be an Array of Strings.", func(d: Dictionary) -> void: _fx(d)["cover_order"] = [3]])
 	rows.append([v, "Battle actor effect cover_order must be an Array of Strings.", func(d: Dictionary) -> void: _fx(d)["cover_order"] = "x"])
+	return rows
+
+
+## hero:a is a Knight. Its chains are checked against the class kit, not its bar, and never for length.
+func _chain_rows() -> Array[Array]:
+	var v: String = "verdant_outskirts"
+	var shape: String = "Every battle actor chain must be {trigger, then}: a String and a non-empty Array of Strings."
+	var rally_then_charge: Array = [{"trigger": "knight_rally", "then": ["knight_charge"]}]
+	var running: Dictionary = {"chain_trigger": "knight_rally", "chain_step": 0.0, "chain_deadline_tick": 40.0, "chain_target": ""}
+	var rows: Array[Array] = []
+	rows.append([v, "", func(d: Dictionary) -> void: _a(d)["chains"] = rally_then_charge.duplicate(true)])
+	rows.append([v, "", func(d: Dictionary) -> void: _a(d)["chains"] = [{"trigger": "knight_rally", "then": ["knight_charge", "knight_charge", "knight_charge", "knight_charge", "knight_charge", "knight_charge", "knight_charge", "knight_charge", "knight_charge"]}]])
+	rows.append([v, "Battle actor chains must be an Array of {trigger, then}.", func(d: Dictionary) -> void: _a(d)["chains"] = "x"])
+	rows.append([v, "Enemy battle actors cannot have chains.", func(d: Dictionary) -> void: _e(d)["chains"] = []])
+	for bad: Variant in [3, {"trigger": "knight_rally"}, {"trigger": "knight_rally", "then": []}, {"trigger": 3, "then": ["knight_charge"]}, {"trigger": "knight_rally", "then": [3]}, {"trigger": "knight_rally", "then": ["knight_charge"], "extra": 1}]:
+		rows.append([v, shape, func(d: Dictionary) -> void: _a(d)["chains"] = [bad]])
+	for bad_id: String in ["knight_bulwark", "nonexistent", "mage_rime_wall"]:
+		var problem: String = "Battle actor chain skill %s is unknown, a passive or from another class." % bad_id
+		rows.append([v, problem, func(d: Dictionary) -> void: _a(d)["chains"] = [{"trigger": bad_id, "then": ["knight_charge"]}]])
+		rows.append([v, problem, func(d: Dictionary) -> void: _a(d)["chains"] = [{"trigger": "knight_rally", "then": [bad_id]}]])
+	rows.append([v, "Battle actor chain trigger knight_rally is listed twice.", func(d: Dictionary) -> void: _a(d)["chains"] = [{"trigger": "knight_rally", "then": ["knight_charge"]}, {"trigger": "knight_rally", "then": ["knight_ground_slam"]}]])
+	rows.append([v, "", func(d: Dictionary) -> void:
+		_a(d)["chains"] = rally_then_charge.duplicate(true)
+		_fx(d).merge(running, true)])
+	rows.append([v, "", func(d: Dictionary) -> void:
+		_a(d)["chains"] = rally_then_charge.duplicate(true)
+		_fx(d).merge(running, true)
+		_fx(d)["chain_target"] = _e(d)["id"]])
+	rows.append([v, "Battle actor references must target existing actors.", func(d: Dictionary) -> void:
+		_a(d)["chains"] = rally_then_charge.duplicate(true)
+		_fx(d).merge(running, true)
+		_fx(d)["chain_target"] = "enemy:nobody"])
+	for key: String in ["chain_trigger", "chain_step", "chain_deadline_tick", "chain_target"]:
+		rows.append([v, "Battle actor chain state needs chain_trigger, chain_step, chain_deadline_tick and chain_target together.", func(d: Dictionary) -> void:
+			_a(d)["chains"] = rally_then_charge.duplicate(true)
+			_fx(d).merge(running, true)
+			_fx(d).erase(key)])
+	for key: String in ["chain_trigger", "chain_target"]:
+		rows.append([v, "Battle actor effects chain_trigger and chain_target must be Strings.", func(d: Dictionary) -> void:
+			_a(d)["chains"] = rally_then_charge.duplicate(true)
+			_fx(d).merge(running, true)
+			_fx(d)[key] = 3])
+	rows.append([v, "Battle actor effect chain_trigger must name one of its chains.", func(d: Dictionary) -> void:
+		_a(d)["chains"] = rally_then_charge.duplicate(true)
+		_fx(d).merge(running, true)
+		_fx(d)["chain_trigger"] = "knight_charge"])
+	rows.append([v, "Battle actor effect chain_trigger must name one of its chains.", func(d: Dictionary) -> void: _fx(d).merge(running, true)])
+	for step: Variant in [1.0, -1.0, 0.5, "x"]:
+		rows.append([v, "Battle actor effect chain_step must be a non-negative integer inside its chain.", func(d: Dictionary) -> void:
+			_a(d)["chains"] = rally_then_charge.duplicate(true)
+			_fx(d).merge(running, true)
+			_fx(d)["chain_step"] = step])
+	for deadline: Variant in [-1.0, 1.5, "x"]:
+		rows.append([v, "Battle actor effect chain_deadline_tick must be a non-negative integer.", func(d: Dictionary) -> void:
+			_a(d)["chains"] = rally_then_charge.duplicate(true)
+			_fx(d).merge(running, true)
+			_fx(d)["chain_deadline_tick"] = deadline])
 	return rows
 
 

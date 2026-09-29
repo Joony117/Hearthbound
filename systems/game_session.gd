@@ -1311,6 +1311,38 @@ func _set_skill_bar_in_memory(hero: Hero, bar: Array[Dictionary]) -> void:
 	hero.skill_bar = bar
 
 
+## The hero's whole chain list (GAME_SPEC.md § Skills, "Chains", SYSTEMS.md § Skills): one chain per
+## trigger, each a known non-passive trigger with 1 to skill_chain_max_steps known non-passive steps.
+## Refuses what the hero load would drop or cut, and changes nothing then. Same contract as set_skill_bar:
+## a dispatch fixes the chains into the team snapshot, so an edit counts from the hero's next expedition.
+func set_skill_chains(hero: Hero, chains: Array[Dictionary]) -> bool:
+	last_action_error = ""
+	if SaveService.load_blocked:
+		last_action_error = SaveService.load_block_reason
+		return false
+	if hero == null or not roster.has(hero):
+		last_action_error = "That hero is not on the roster."
+		return false
+	var balance: BalanceTable = preload("res://balance.tres")
+	var known: Array[AbilityDefinition] = Hero.known_skills(hero, balance)
+	var clean: Array[Dictionary] = []
+	for chain: Dictionary in chains:
+		var problem: String = Hero.chain_problem(chain, known)
+		if problem.is_empty() and clean.any(func(kept: Dictionary) -> bool: return kept["trigger"] == str(chain["trigger"])):
+			problem = "a second chain on the same trigger"
+		elif problem.is_empty() and (chain["then"] as Array).size() > balance.skill_chain_max_steps:
+			problem = "at most %d steps after the trigger" % balance.skill_chain_max_steps
+		if not problem.is_empty():
+			last_action_error = "That chain cannot be set: %s." % problem
+			return false
+		clean.append({"trigger": str(chain["trigger"]), "then": (chain["then"] as Array).map(func(id: Variant) -> String: return str(id))})
+	return _commit_profile_mutation(_set_skill_chains_in_memory.bind(hero, clean))
+
+
+func _set_skill_chains_in_memory(hero: Hero, chains: Array[Dictionary]) -> void:
+	hero.skill_chains = chains
+
+
 ## Checked path only. target is a Hero or an Item; both carry favorite.
 func _set_favorite_in_memory(target: Object, value: bool) -> void:
 	target.set(&"favorite", value)
@@ -2765,6 +2797,9 @@ func _incident_snapshot(state: BattleState, stranded_ids: Array[String]) -> Dict
 		var effect_state: Dictionary = actor_data.get("effect_state", {}) as Dictionary
 		if not str(effect_state.get("attack_target_id", "")).is_empty() and not kept_actor_ids.has(str(effect_state.get("attack_target_id"))):
 			effect_state["attack_target_id"] = ""
+		# A chain's target may not be kept, and its ticks are this battle's (ig-gy0.5): the stranded start none.
+		for key: String in BattleActor.CHAIN_KEYS:
+			effect_state.erase(key)
 	snapshot["actors"] = kept
 	snapshot["squads"] = []
 	snapshot["status"] = "stranded"

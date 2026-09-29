@@ -412,9 +412,24 @@ static func valid_mode(skill: AbilityDefinition, mode: String) -> bool:
 	return mode in SKILL_MODES and (skill.kind != "passive" or mode == "auto")
 
 
+## Why a chain cannot stand, or "" when it can (SYSTEMS.md § Skills, "Chains"): a trigger and at least one
+## step, each a skill the hero knows, and none of them the passive. Whether it repeats a trigger or is over
+## skill_chain_max_steps is the caller's: the load drops or cuts it, set_skill_chains refuses it.
+static func chain_problem(raw_chain: Variant, known: Array[AbilityDefinition]) -> String:
+	var chain: Dictionary = raw_chain as Dictionary if raw_chain is Dictionary else {}
+	var ids: Array = [chain.get("trigger")] + (chain.get("then") as Array if chain.get("then") is Array and not (chain.get("then") as Array).is_empty() else [null])
+	if not ids.all(func(id: Variant) -> bool: return id is String and known.has(BattleSimulation.ABILITIES.get(id))):
+		return "empty, or an unknown or unlearned skill"
+	if ids.any(func(id: Variant) -> bool: return (BattleSimulation.ABILITIES[id] as AbilityDefinition).kind == "passive"):
+		return "the passive cannot be a trigger or a step"
+	return ""
+
+
 ## Additive keys (item 3, no SAVE_VERSION bump); a legacy hero has none and gets the derived bar.
 ## Read after level, rank and def_id. Unknown ids, another class's, skills the hero does not know
-## and bad modes are dropped with a warning; a general id is valid on every class.
+## and bad modes are dropped with a warning; a general id is valid on every class. A chain with the
+## passive or a second on one trigger is dropped, and one over skill_chain_max_steps is cut to it
+## (lowering the cap never deletes a player's chain).
 static func _read_skills(hero: Hero, data: Dictionary) -> void:
 	var archetype: String = str(hero.def_id)
 	for raw_id: Variant in _array_field(data, "learned_skills", hero):
@@ -423,7 +438,8 @@ static func _read_skills(hero: Hero, data: Dictionary) -> void:
 			push_warning("Learned skill '%s' dropped from hero %s: unknown, another class's or repeated." % [raw_id, hero.instance_id])
 			continue
 		hero.learned_skills.append(str(raw_id))
-	var known: Array[AbilityDefinition] = known_skills(hero, preload("res://balance.tres"))
+	var balance: BalanceTable = preload("res://balance.tres")
+	var known: Array[AbilityDefinition] = known_skills(hero, balance)
 	for raw_entry: Variant in _array_field(data, "skill_bar", hero):
 		var entry: Dictionary = raw_entry as Dictionary if raw_entry is Dictionary else {}
 		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(entry.get("id"))) as AbilityDefinition if entry.get("id") is String else null
@@ -431,13 +447,19 @@ static func _read_skills(hero: Hero, data: Dictionary) -> void:
 			push_warning("Skill bar entry %s dropped from hero %s: unknown, another class's, not known, a bad mode or repeated." % [str(raw_entry), hero.instance_id])
 			continue
 		hero.skill_bar.append({"id": str(entry["id"]), "mode": str(entry["mode"])})
+	var max_steps: int = balance.skill_chain_max_steps
 	for raw_chain: Variant in _array_field(data, "skill_chains", hero):
-		var chain: Dictionary = raw_chain as Dictionary if raw_chain is Dictionary else {}
-		var ids: Array = [chain.get("trigger")] + (chain.get("then") as Array if chain.get("then") is Array and not (chain.get("then") as Array).is_empty() else [null])
-		if not ids.all(func(id: Variant) -> bool: return id is String and known.has(BattleSimulation.ABILITIES.get(id))):
-			push_warning("Skill chain %s dropped from hero %s: empty, or an unknown or unlearned skill." % [str(raw_chain), hero.instance_id])
+		var problem: String = chain_problem(raw_chain, known)
+		if problem.is_empty() and hero.skill_chains.any(func(kept: Dictionary) -> bool: return kept["trigger"] == str(raw_chain["trigger"])):
+			problem = "a second chain on the same trigger"
+		if not problem.is_empty():
+			push_warning("Skill chain %s dropped from hero %s: %s." % [str(raw_chain), hero.instance_id, problem])
 			continue
-		hero.skill_chains.append({"trigger": str(chain["trigger"]), "then": (chain["then"] as Array).map(func(id: Variant) -> String: return str(id))})
+		var steps: Array = (raw_chain["then"] as Array).map(func(id: Variant) -> String: return str(id))
+		if steps.size() > max_steps:
+			push_warning("Skill chain %s of hero %s cut to its first %d steps." % [str(raw_chain), hero.instance_id, max_steps])
+			steps.resize(max_steps)
+		hero.skill_chains.append({"trigger": str(raw_chain["trigger"]), "then": steps})
 
 
 ## data[key] when it is an Array; absent is empty, anything else is empty with a warning.

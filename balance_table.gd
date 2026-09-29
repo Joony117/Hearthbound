@@ -241,6 +241,8 @@ extends Resource
 @export var skill_ability_lock_seconds: float = 1.0
 @export var skill_combo_window_seconds: float = 6.0
 @export var skill_reaction_delay_seconds: float = 0.2
+@export var skill_chain_step_timeout_seconds: float = 3.0
+@export var skill_chain_max_steps: int = 8
 @export var skill_status_tick_seconds: float = 1.0
 # Bonds and dreams, slice 1 (SYSTEMS.md § Bonds and dreams, slice 1; every row PROVISIONAL).
 @export var bond_points_hard_battle: int = 1

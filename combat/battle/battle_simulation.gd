@@ -64,6 +64,11 @@ const STANCES: Array[String] = ["advance", "stay_together", "defend", "protect"]
 const FRONT_ROW: Array[String] = ["knight", "rogue"]
 const BACK_ROW: Array[String] = ["ranger", "mage", "cleric"]
 const TICK_EPSILON: float = 0.000001
+## ig-gy0.5, _chain_step's answers: a step fired; the chain waits on a step (the buff and attack bands stay
+## shut and the swing still lands); no chain is running.
+const CHAIN_NONE: int = 0
+const CHAIN_FIRED: int = 1
+const CHAIN_WAITING: int = 2
 ## ig-1jw: the largest pace a checkpoint may carry. Settlement rolls loot `pace` times, so a corrupt save
 ## must not name a huge one. Not a balance number: raise it if battle_pace ever goes past it.
 const MAX_PACE: int = 20
@@ -145,6 +150,8 @@ static func create_run(
 		actor.effect_state.erase("hit_from")
 		actor.effect_state.erase("kite_point")
 		actor.effect_state.erase("kite_ready_tick")
+		# A chain's ticks are this battle's too (ig-gy0.5): one carried across a leg would sit ahead of it.
+		actor.end_chain()
 		state.actors.append(actor)
 		has_enemy_snapshot = has_enemy_snapshot or actor.faction == "enemy"
 	if not has_enemy_snapshot and kind != "rescue":
@@ -426,7 +433,8 @@ static func validate_snapshot(data: Dictionary) -> String:
 				return "Only a living actor can carry a same-faction downed actor."
 		var order_target_id: String = actor_data["order_target_id"]
 		var guard_target_id: String = actor_data["guard_target_id"]
-		if (not order_target_id.is_empty() and not actor_ids.has(order_target_id)) or (not guard_target_id.is_empty() and not actor_ids.has(guard_target_id)):
+		var chain_target_id: String = effects.get("chain_target", "")
+		if (not order_target_id.is_empty() and not actor_ids.has(order_target_id)) or (not guard_target_id.is_empty() and not actor_ids.has(guard_target_id)) or (not chain_target_id.is_empty() and not actor_ids.has(chain_target_id)):
 			return "Battle actor references must target existing actors."
 	var supplies_error: String = supplies_shape_error(data.get("supplies_remaining") as Dictionary, BALANCE.battle_supply_allocation_cap)
 	if not supplies_error.is_empty():
@@ -564,6 +572,9 @@ static func _expire_effects_and_cooldowns(state: BattleState) -> void:
 				actor.effect_state[key] = left - step if left - step >= TICK_EPSILON else 0.0
 		if actor.life != BattleActor.LIFE_ALIVE or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0:
 			_cancel_pending_action(actor)
+			# A chain ends when its hero goes non-alive, not when it is stunned (ig-gy0.5); a loaded one too.
+			if actor.life != BattleActor.LIFE_ALIVE and actor.effect_state.has("chain_trigger"):
+				actor.end_chain()
 
 
 static func _choose_intentions(state: BattleState) -> void:
@@ -829,8 +840,13 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 				_resolve_telegraph(state, actor, rng)
 			continue
 		var target: BattleActor = _in_range_target(state, actor)
+		# ig-gy0.5: the chain band sits between heal and buff (DECISIONS.md 2026-09-23 item 7). While a chain
+		# waits on a step no other ability fires, and the swing below still lands.
+		var chain: int = _chain_step(state, actor, rng) if actor.effect_state.has("chain_trigger") else CHAIN_NONE
+		if chain == CHAIN_FIRED:
+			continue
 		# Before the range check: a rule that finds its own aim (Gauntlet Toss) reaches past the swing.
-		if _auto_cast(state, actor, target, ["buff", "attack"], rng):
+		if chain == CHAIN_NONE and _auto_cast(state, actor, target, ["buff", "attack"], rng):
 			continue
 		if target == null:
 			continue
@@ -848,11 +864,14 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 			actor.effect_state["attack_target_id"] = ""
 			continue
 		# A weaponskill rides the swing: same windup, same interval (SYSTEMS.md § Skills).
-		var weaponskill: AbilityDefinition = _pick_weaponskill(state, actor, target)
+		var stepped: AbilityDefinition = _chain_weaponskill(actor, target) if chain == CHAIN_WAITING else null
+		var weaponskill: AbilityDefinition = stepped if stepped != null else _pick_weaponskill(state, actor, target)
 		if weaponskill != null:
 			_use_weaponskill(state, actor, weaponskill, target, rng)
 		else:
 			_damage(state, actor, target, 1.0, rng, true)
+		if stepped != null:
+			_chain_advance(state, actor)
 		# ig-vl1.8: SPD's raise before the clamp (Hunter's Focus), a slow after it.
 		actor.attack_cooldown = clampf(
 			BALANCE.battle_basic_interval_numerator / maxf(_stat(actor, "speed", false), 0.001),
@@ -1119,6 +1138,7 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 				actor.add_skill(skill, mode if skill.is_ability() else "auto")
 	else:
 		actor.set_default_kit(bool(snapshot.get("ability_auto", true)))
+	actor.take_chains(snapshot.get("chains"))
 	actor.attack_range = _attack_range(actor)
 	actor.move_speed = clampf(actor.speed * BALANCE.battle_move_speed_per_stat, BALANCE.battle_move_speed_min, BALANCE.battle_move_speed_max)
 	actor.effect_state = _default_effect_state(bool(snapshot.get("elite", false)))
@@ -1183,6 +1203,7 @@ static func _use_weaponskill(state: BattleState, actor: BattleActor, skill: Abil
 		return
 	actor.combo_skill = str(skill.skill_id)
 	actor.combo_tick = state.tick
+	_start_chain(state, actor, skill, false)
 
 
 ## The cooldown (x the battle's pace, ig-1jw), the ability lock and the tick the views read.
@@ -1191,6 +1212,7 @@ static func _spend_ability(state: BattleState, actor: BattleActor, skill: Abilit
 	actor.ability_lock = BALANCE.skill_ability_lock_seconds
 	actor.effect_state["last_skill_tick"] = state.tick
 	actor.effect_state["last_skill_id"] = str(skill.skill_id)
+	_start_chain(state, actor, skill, false)
 
 
 ## The primitives, in the skill's order (AbilityDefinition.EFFECT_KEYS). False only when a required
@@ -1638,6 +1660,129 @@ static func _auto_cast(state: BattleState, actor: BattleActor, target: BattleAct
 			if _use_skill(state, actor, skill, aim, point, rng):
 				return true
 	return false
+
+
+## ig-gy0.5: how many ticks a chain step waits before it is skipped (skill_chain_step_timeout_seconds).
+static func _chain_timeout_ticks() -> int:
+	return ceili(BALANCE.skill_chain_step_timeout_seconds / BALANCE.battle_tick_seconds - TICK_EPSILON)
+
+
+## skill was just used (SYSTEMS.md § Chains). An actor with a chain on it starts that chain at its first
+## step, aimed at the hero's current opponent. One already running is only replaced by a trigger fired by
+## hand: a step, or a cut-in from another band, never starts a chain.
+static func _start_chain(state: BattleState, actor: BattleActor, skill: AbilityDefinition, by_hand: bool) -> void:
+	if actor.chains.is_empty() or (actor.effect_state.has("chain_trigger") and not by_hand):
+		return
+	for chain: Dictionary in actor.chains:
+		if chain["trigger"] == str(skill.skill_id):
+			var order: BattleActor = _actor_by_id(state, actor.order_target_id)
+			actor.effect_state["chain_trigger"] = chain["trigger"]
+			actor.effect_state["chain_step"] = 0
+			actor.effect_state["chain_deadline_tick"] = state.tick + _chain_timeout_ticks()
+			actor.effect_state["chain_target"] = order.id if order != null and order.faction != actor.faction else ""
+			return
+
+
+static func _chain_steps(actor: BattleActor, trigger: String) -> Array:
+	for chain: Dictionary in actor.chains:
+		if chain["trigger"] == trigger:
+			return chain["then"]
+	return []
+
+
+## The bar mode of skill_id on the actor ("" when it is not on its bar).
+static func _skill_mode(actor: BattleActor, skill_id: String) -> String:
+	for entry: Dictionary in actor.skills:
+		if entry["id"] == skill_id:
+			return str(entry["mode"])
+	return ""
+
+
+## The chain band (DECISIONS.md 2026-09-23 item 7: counter, revive, heal, chain, buff, attack). CHAIN_FIRED
+## when the running chain's step cast, CHAIN_WAITING when it holds a step that could not (the buff and attack
+## bands stay shut, the swing still lands), CHAIN_NONE when it has ended. The chain ends when its target is
+## dead or gone, when the hero is given another target, or after its last step. A step past its deadline, set
+## Off, or not on the bar is skipped, and the next one gets a fresh deadline. A weaponskill step waits for the swing.
+static func _chain_step(state: BattleState, actor: BattleActor, rng: RandomNumberGenerator) -> int:
+	var effects: Dictionary = actor.effect_state
+	if str(effects["chain_target"]).is_empty():
+		# Started with no opponent: it takes the first the hero is given.
+		var order: BattleActor = _actor_by_id(state, actor.order_target_id)
+		if order != null and order.faction != actor.faction:
+			effects["chain_target"] = order.id
+	var foe_id: String = effects["chain_target"]
+	var foe: BattleActor = _actor_by_id(state, foe_id)
+	# An empty order (a kite hop, a regroup, a hold) does not end it; a different target does.
+	if not foe_id.is_empty() and (foe == null or foe.life != BattleActor.LIFE_ALIVE or (not actor.order_target_id.is_empty() and actor.order_target_id != foe_id)):
+		actor.end_chain()
+		return CHAIN_NONE
+	var steps: Array = _chain_steps(actor, effects["chain_trigger"])
+	var step: int = int(effects["chain_step"])
+	var deadline: int = int(effects["chain_deadline_tick"])
+	while step < steps.size():
+		var skill: AbilityDefinition = ABILITIES.get(steps[step]) as AbilityDefinition
+		var mode: String = _skill_mode(actor, steps[step])
+		if state.tick <= deadline and skill != null and (mode == "auto" or mode == "manual"):
+			if skill.kind == "weaponskill":
+				return CHAIN_WAITING
+			var aim: Array = _chain_aim(state, actor, skill, foe)
+			if not aim.is_empty() and _use_skill(state, actor, skill, aim[0], aim[1], rng, aim[2]):
+				_chain_advance(state, actor)
+				return CHAIN_FIRED
+			return CHAIN_WAITING
+		step += 1
+		deadline = state.tick + _chain_timeout_ticks()
+		effects["chain_step"] = step
+		effects["chain_deadline_tick"] = deadline
+	actor.end_chain()
+	return CHAIN_NONE
+
+
+## The running chain's step is done: the next one gets a fresh deadline, or the chain ends after its last.
+static func _chain_advance(state: BattleState, actor: BattleActor) -> void:
+	var step: int = int(actor.effect_state["chain_step"]) + 1
+	if step >= _chain_steps(actor, actor.effect_state["chain_trigger"]).size():
+		actor.end_chain()
+		return
+	actor.effect_state["chain_step"] = step
+	actor.effect_state["chain_deadline_tick"] = state.tick + _chain_timeout_ticks()
+
+
+## The weaponskill step this swing casts, when the swing is at the chain's target; else null.
+static func _chain_weaponskill(actor: BattleActor, target: BattleActor) -> AbilityDefinition:
+	if target.id != str(actor.effect_state["chain_target"]) or _has_status(actor, "silence"):
+		return null
+	var steps: Array = _chain_steps(actor, actor.effect_state["chain_trigger"])
+	var skill: AbilityDefinition = ABILITIES.get(steps[int(actor.effect_state["chain_step"])]) as AbilityDefinition
+	return skill if skill != null and skill.kind == "weaponskill" else null
+
+
+## Where a chain step aims, by the band its AI rule puts the skill in and not by its effect (ig-gy0.5):
+## [target, point, the line a wall goes across], or [] when there is nothing to aim at and the step waits.
+## foe is the chain's opponent, or null. The rule's "AI uses it when" condition is ignored.
+static func _chain_aim(state: BattleState, actor: BattleActor, skill: AbilityDefinition, foe: BattleActor) -> Array:
+	var band: String = skill.band()
+	if band == "revive" or skill.ai_revive_first:
+		# The nearest downed ally, as the picker aims a revive. Rally also buffs, so with nobody down it casts as a buff.
+		var downed: BattleActor = _nearest_actor(state, actor, actor.faction, BattleActor.LIFE_DOWNED)
+		if downed != null:
+			return [downed, downed.position, Vector2.ZERO]
+		if band == "revive":
+			return []
+	if band == "heal" or str(_effect_of(skill, "zone").get("side", "")) == "allies":
+		if skill.self_centered:
+			return [actor, actor.position, Vector2.ZERO]
+		# The caster is always in reach of itself, so this is never null.
+		var ally: BattleActor = _lowest_health_ally(state, actor.position, skill.range_units)
+		return [ally, ally.position, Vector2.ZERO]
+	if not _effect_of(skill, "wall").is_empty():
+		if foe == null:
+			return []
+		var hand: Array = _hand_aim(actor, skill, foe, foe.position)
+		return [foe, hand[0], hand[1]]
+	if skill.self_centered:
+		return [foe if foe != null else actor, actor.position, Vector2.ZERO]
+	return [foe, foe.position, Vector2.ZERO] if foe != null else []
 
 
 ## The weaponskill for this swing: a conditional one whose rule holds (a combo step when its combo
@@ -2153,22 +2298,32 @@ static func _manual_abilities(state: BattleState, actors: Array[BattleActor], ta
 		var skill: AbilityDefinition = _signature(actor)
 		if skill == null:
 			continue
-		var self_cast: bool = skill.self_centered and target == null
-		var aim: Vector2 = actor.position if self_cast else (target.position if target != null else point)
-		var across := Vector2.ZERO
-		var wall: Dictionary = _effect_of(skill, "wall")
-		if not wall.is_empty():
-			# ig-vl1.5, the hand rule (SYSTEMS.md § Casters, Walls): across the line from the caster to the aim,
-			# centered on it. A clicked unit's point first moves half the footprint's width and WALL_MARGIN
-			# toward the caster, so the unit ends on the far side. An aim on the caster takes its facing.
-			across = aim - actor.position
-			if across == Vector2.ZERO:
-				across = _push_direction(actor.facing, Vector2.ZERO)
-			elif target != null:
-				aim -= across.normalized() * (float(wall["thickness"]) * 0.5 + BALANCE.battle_separation_radius * 0.5 + WALL_MARGIN)
-		used = _use_skill(state, actor, skill, actor if self_cast else target, aim, rng, across) or used
+		var hand: Array = _hand_aim(actor, skill, target, point)
+		if _use_skill(state, actor, skill, actor if hand[2] else target, hand[0], rng, hand[1]):
+			used = true
+			# ig-gy0.5: a trigger fired by hand starts its chain, and replaces one already running.
+			_start_chain(state, actor, skill, true)
 	state.rng_state = str(rng.state)
 	return used
+
+
+## Where a cast by hand at target (or at point, with no target) aims: [the point, the line a wall goes
+## across, whether the caster is its own target]. A chain step's wall aims the same way (ig-gy0.5).
+static func _hand_aim(actor: BattleActor, skill: AbilityDefinition, target: BattleActor, point: Vector2) -> Array:
+	var self_cast: bool = skill.self_centered and target == null
+	var aim: Vector2 = actor.position if self_cast else (target.position if target != null else point)
+	var across := Vector2.ZERO
+	var wall: Dictionary = _effect_of(skill, "wall")
+	if not wall.is_empty():
+		# ig-vl1.5, the hand rule (SYSTEMS.md § Casters, Walls): across the line from the caster to the aim,
+		# centered on it. A clicked unit's point first moves half the footprint's width and WALL_MARGIN
+		# toward the caster, so the unit ends on the far side. An aim on the caster takes its facing.
+		across = aim - actor.position
+		if across == Vector2.ZERO:
+			across = _push_direction(actor.facing, Vector2.ZERO)
+		elif target != null:
+			aim -= across.normalized() * (float(wall["thickness"]) * 0.5 + BALANCE.battle_separation_radius * 0.5 + WALL_MARGIN)
+	return [aim, across, self_cast]
 
 
 ## masterwork: the tier a manual use picked; null for auto-use (DECISIONS.md 2026-09-23, masterwork draughts).
@@ -2310,6 +2465,8 @@ static func _take_damage(state: BattleState, attacker: BattleActor, target: Batt
 		_add_moment(state, "downed", target, attacker)
 		# ig-ls3: a downed carrier's channel is over; after a revive it starts at 0.
 		target.effect_state.erase("carry_progress")
+		# A chain ends when its hero is downed (ig-gy0.5), so none is checkpointed on a downed body.
+		target.end_chain()
 		_drop_carried(state, target)
 		_drop_from_carrier(state, target)
 	else:
@@ -2355,6 +2512,8 @@ static func _update_carry(state: BattleState, carrier: BattleActor) -> void:
 
 static func _extract_actor(state: BattleState, actor: BattleActor) -> void:
 	actor.life = BattleActor.LIFE_EXTRACTED
+	# ig-gy0.5: no chain key outlives a living hero (a retreat and a timeout both end here).
+	actor.end_chain()
 	if not actor.hero_id.is_empty() and not actor.hero_id in state.extracted_ids:
 		state.extracted_ids.append(actor.hero_id)
 	if not actor.carrying_id.is_empty():
