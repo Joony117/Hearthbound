@@ -1,6 +1,6 @@
 extends GutTest
 
-# ig-6m2.8.2: every building scene fits its model. The Pick box is 4.5 m square (the Mine's is longer),
+# ig-6m2.8.2: how each building scene's boxes sit on its model. The Pick box is 4.5 m square (the Mine's is longer),
 # stands on the ground, covers the model except in the OVERFLOWS scenes, and the WorkSpot and Label clear it.
 
 const Bounds = preload("res://tests/unit/town_bounds.gd")
