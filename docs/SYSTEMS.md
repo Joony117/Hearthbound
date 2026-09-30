@@ -1808,7 +1808,7 @@ at rank R should play like a Knight at R+1 to R+2. Three parts, shipped in this 
 
 | Row | Value | Why |
 |---|---|---|
-| `caster_rank_offset` | 0 | Director ruling, 2026-09-25 (`ig-vl1.3`). `ig-vl1.3`'s presence test passed no offset. An F Mage out-clears a C Knight at every offset, 0 included (263.6 s against 272.6), so no value fixes the Mage. An F Cleric fits D–C on team HP only at 0 (2359.6, between the D Knight's 2133.5 and the C Knight's 2550.2). Point 2 was 0/8 wins in every slot. The first guess, 1.5, put both casters above the R+2 Knight on their own measure. The row scales a caster's HP, ATK and DEF by 1.35^offset (one rank's step); 1.5 would be ≈ 1.57, halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks). Logs: `.agent-results/ig-vl1.3/presence_verdant.log`, `presence_1.5.log`. Picked on the whole kit in `ig-vl1.9` (the re-fit, below): 0, with Rime Circle at M2 and Hearthward at V3; all four caster points land in [+1.00, +1.53] |
+| `caster_rank_offset` | 0 | Director ruling, 2026-09-25 (`ig-vl1.3`). `ig-vl1.3`'s presence test passed no offset. An F Mage out-clears a C Knight at every offset, 0 included (263.6 s against 272.6), so no value fixes the Mage. An F Cleric fits D–C on team HP only at 0 (2359.6, between the D Knight's 2133.5 and the C Knight's 2550.2). Point 2 was 0/8 wins in every slot. The first guess, 1.5, put both casters above the R+2 Knight on their own measure. The row scales a caster's HP, ATK and DEF by 1.35^offset (one rank's step); 1.5 would be ≈ 1.57, halfway between one rank up (1.35) and two (1.82). SPD is left alone, so casters don't walk or swing faster. Crit stays an archetype constant (§ Ranks). Logs: `.agent-results/ig-vl1.3/presence_verdant.log`, `presence_1.5.log`. Picked on the whole kit in `ig-vl1.9` (the re-fit, below): 0, with Rime Circle at M2 and Hearthward at V3; all four caster points land in [+1.00, +1.53]. Since `ig-gy0.9` (`ig-vl1.10`'s 16-seed recheck, below), three are out of [+1.00, +2.00]: two over (+2.22, +2.20) and the B30 Cleric under (+0.60). The director kept 0 until `ig-vl1.11`, after `ig-gy0.8`'s combat parts (PROVISIONAL, below) |
 
 - It applies in `Hero.compute_final_stats`, so the sim, `quick_resolve` and team power all see it,
   and the combat seam stays one number. Enemy Mages are unchanged: enemy stats come from the wave
@@ -2101,6 +2101,44 @@ on Windows. **The pick holds at o = 0.** The harness prints `PICK offset=0.0`.
   M3 (more control, a design call), not the offset. An offset of 0.25 lifts every caster and puts
   the Cleric's B30 point at 1.81.
 
+**The gy0.9 recheck** (`ig-vl1.10`, owner PC, 2026-09-30). The same 16-seed run at c7c6513 (code
+134bfce), after `ig-gy0.9`. Log `.agent-results/ig-vl1.10/presence16.log`, 61 min, exit 0.
+**Three of the four caster points are out of band.** The harness prints `PICK offset=none`.
+
+| Point | Knights (R+1 / R+2) | Mage | Cleric V3 | Gap |
+|---|---|---|---|---|
+| F1 Verdant | 1.477 / 1.628 | 1.526 (1.176–1.700), **+1.33** | 1.664 (1.526–1.854), **+2.22** | 10.2% |
+| B30 Ashfall | 3.035 / 3.204 | 3.238 (3.068–3.382), **+2.20** | 2.970 (2.938–3.068), **+0.60** | 5.6% |
+
+- The rank units are the harness's, from the unrounded medians. The rounded medians above give the
+  Mage +1.34 at F1 and +2.19 at B30.
+- **The misses are real.** A paired bootstrap of the 16 seeds (20,000 resamples, rank units by log
+  interpolation) puts the F1 Mage in band 98.6% of the time. It puts the F1 Cleric over the band 75%
+  of the time, the B30 Mage over 99%, and the B30 Cleric under 100%. All four are in band together
+  0% of the time.
+- **A reading, not a measure.** The run is one HEAD, so it can't split the commits since `ig-0dp`.
+  The largest is `ig-gy0.9`: every level-1 starter weaponskill became a plain swing (1.0×), the
+  enemies' too, and dodges went 1.0 → 1.2 s.
+  - At B30, the teams that lost by dying gained, as their defeats fell: Knight A 17 → 6 defeats
+    (2.922 → 3.035), the Mage 30 → 17 (3.002 → 3.238). The teams that lose on the clock fell: Knight
+    S 3.221 → 3.204, and the Cleric, 0 defeats in both runs, 3.084 → 2.970.
+  - At F1, defeats fell for all four teams too, but timeouts rose, and three of the four breaks
+    fell: Knight D 1.559 → 1.477, C 1.700 → 1.628, the Mage 1.559 → 1.526. The Cleric rose,
+    1.628 → 1.664.
+- **The B30 Knights' gap narrowed, 10.2% → 5.6%.** That stretches every B30 caster's distance from
+  R+1, in rank units, by ×1.8. At `ig-0dp`'s gap, the same B30 medians would read Mage +1.66 and
+  Cleric +0.78. (The F1 gap widened, 9.1% → 10.2%, which shrinks F1's by ×0.9.)
+- **The ruling (the director, 2026-09-30): accept at offset 0, with no number change.**
+  - The two overs err strong, and the owner wants casters special.
+  - The one under is the B30 Cleric, and combat is still moving (`ig-gy0.8`'s parts A, B and D).
+  - The same run follows `ig-gy0.8`'s combat parts (`ig-vl1.11`). If the B30 Cleric is still under
+    R+1 then, the owner is asked: a Hearthward variant, or accept.
+
+> ⚠️ **PROVISIONAL** — `caster_rank_offset` 0 with Rime Circle M2 and Hearthward V3: after
+> `ig-gy0.9` three of the four caster points are out of [+1.00, +2.00], and the B30 Cleric is under
+> R+1 · **Settled by:** `ig-vl1.11`'s 16-seed run after `ig-gy0.8`'s combat parts; if the B30 Cleric
+> is still under R+1 there, the owner's answer (a Hearthward variant, or accept)
+
 **Walking around walls** (`ig-0qh`, design 2026-09-25; the ADR's item 5). Pathfinding lands before
 any wall spell, so its tests place walls by hand.
 - **With no wall up, nothing changes.** Movement runs today's straight-line code; one check per
@@ -2199,7 +2237,8 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
 > frontier_march fight
 
 *`caster_rank_offset`'s PROVISIONAL (0 from an unsound test) was settled by the one pick with zones
-and walls in (`ig-vl1.9`, the re-fit above): 0, on `ig-vl1.6`'s measure.*
+and walls in (`ig-vl1.9`, the re-fit above): 0, on `ig-vl1.6`'s measure. `ig-vl1.10`'s gy0.9
+recheck reopened it (PROVISIONAL again, above).*
 
 ---
 
