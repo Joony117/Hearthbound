@@ -433,6 +433,17 @@ for 100+ hours at the guessed 60 records an hour.
      each evicted record out. A load or a rolled-back append rebuilds, as does an eviction the fold
      cannot take out exactly (none under today's tiers). The dream stays out of the fold (items 2
      and 6); the hub keeps each hero's dream until the ledger changes.
+   - *Amended 2026-09-30 (`ig-m6o.2.2.4`):* the first live-tick record is built: an `encounter`,
+     one per meeting, written by `GameSession._roll_encounters` at the end of the pulse's clocks.
+     The fold takes it in and out exactly. An encounter's append and its oldest-first eviction fold
+     without a rebuild; a load, a rolled-back append and a fold-out the fold refuses still rebuild,
+     as above. A meeting is a fifth counted fact ("meetings") of both heroes of the record, and a
+     pair with only meetings is a pair: the retally's "no count left" sum reads every fact slot,
+     not the first four. An encounter's eviction touches both heroes and marks no dream
+     (`OUT_MARKS["encounter"]` is empty until `ig-m6o.2.2.10` names the heroes a meeting can
+     change). The pair scan (which pairs may meet) is a pure static in `TownRules`, run once per
+     tick that crosses a minute. At 100 heroes it costs 4.2 ms best and at most 6.2 ms worst of
+     seven, under the 16.7 ms line, so it is not bucketed by hex.
 6. **Dreams stay derived too.** A hero's dream is read from its records by a fixed rule, for one
    hero at a time (the detail panel), as the slice does. The dream catalogue keeps that. A dream
    becomes saved per-hero state only when something that is not a record can choose or revise it:
@@ -450,9 +461,16 @@ for 100+ hours at the guessed 60 records an hour.
      item 8, which puts routine battles first, and that item says so. Each is frequent and matters
      little alone. A friendship built on them fades at the cap, the same way a bond built on
      routine victories would, which is why those score nothing.
-   - The slice that adds the first of them changes `Ledger.tier()` and `TIER_BY_KIND`. Today an
-     unknown kind falls to tier 1 with the other battles (`TIER_BY_KIND.get(kind, 1)`), and
-     routine battles are tier 0.
+   - Built by `ig-m6o.2.2.4`: `Ledger.tier()` and `TIER_BY_KIND` put `encounter` at tier 0, a
+     routine battle at tier 1 (`ROUTINE_TIER`), other `battle` records and any kind not listed at
+     tier 2 (`UNKNOWN_TIER`), `ranked_up` 3, `summoned` 4 and `died` 5. The `meal` kind, when
+     `ig-m6o.2.2.5` adds it, is listed at tier 0.
+   - Meetings come from saved state only. A hero is in town when on the roster and not
+     `is_hero_busy` (the body counts). A pair is coworkers (both at built stations: the same
+     building, or within `encounter_coworker_hexes`), else neighbours (both in built Houses: the
+     same House, or within `encounter_neighbour_hexes`). Where a walker stands is never read. The
+     town's walk is a show played after the record: `GameSession.social_recorded` says a tick's
+     records once, after the tick's evictions, and after the commit when the tick commits.
 
 **Testimony against the Ledger (architecture note 9).**
 
@@ -595,15 +613,20 @@ that is not recorded when it happens can never be told later, so the record come
    - `ledger_max_records` caps the list, and `battle_max_moments` caps each battle; past it,
      `moments_truncated` is set.
    - Over the cap, eviction is tiered, and within a tier the oldest record goes first:
-     1. routine battles: a victory `battle` with no moments and no rescued heroes
-     2. other `battle` records
-     3. `ranked_up`
-     4. `summoned`
-     5. `died`, last of all. A game about remembering the dead forgets them last.
+     1. `encounter` records (and `meal`, when it lands)
+     2. routine battles: a victory `battle` with no moments and no rescued heroes
+     3. other `battle` records, and any kind not listed
+     4. `ranked_up`
+     5. `summoned`
+     6. `died`, last of all. A game about remembering the dead forgets them last.
      *Director amendment.*
-     *Amended 2026-09-24 by "Bonds stay derived" (item 7): `meal` and `encounter` records go
-     first, as a new tier ahead of routine battles. The slice that adds the first of them changes
-     `Ledger.tier()`.*
+     *Amended 2026-09-24 by "Bonds stay derived" (item 7), built 2026-09-30 in `ig-m6o.2.2.4`:
+     `encounter` records go first, as a new tier ahead of routine battles.* At the cap each new
+     record evicts the oldest record of the lowest tier present. So every other new record evicts
+     an encounter while one is left, and a new `encounter` evicts itself when no older one is left:
+     the town still plays that meeting and says its line, but the bond gains no point (the ceiling
+     `SYSTEMS.md` § Encounters and shared meals names). An encounter is one more line of the side
+     file: no new save key and no `SAVE_VERSION` bump.
    - Every reader tolerates gaps ("arrived before the records begin"). Legacy saves need that
      anyway.
    - *Amended 2026-09-24 (`ig-m6o.9`, save budget): eviction stays in-memory, on the list held

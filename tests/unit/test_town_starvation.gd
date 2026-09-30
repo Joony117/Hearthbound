@@ -18,6 +18,7 @@ func before_each() -> void:
 	SaveService.load_blocked = false
 	SaveService.load_block_reason = ""
 	GameSession.from_dict({"roster": []})
+	GameSession._encounter_rng.seed = 7  # ig-m6o.2.2.4: two housed heroes can roll a meeting here; the same stream every run
 	GameSession.town_resources["wood"] = 1000.0
 
 

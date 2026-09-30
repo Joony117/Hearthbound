@@ -19,6 +19,7 @@ const SLOTS: Dictionary = {
 	"watch_over": ["name", "place"],
 	"carry_name": ["name", "place", "dead"],
 	"be_worthy": ["name", "dead"],
+	"met": ["name", "place"],
 }
 
 var _ledger: Array[Dictionary] = []
@@ -34,6 +35,8 @@ func test_the_bank_fills_every_line_from_only_its_kinds_slots() -> void:
 	var slot := RegEx.create_from_string("\\{(\\w+)\\}")
 	# The worst case for length: a 14-letter name, the longest zone name, the fallback dead name.
 	var worst: Dictionary = {"name": "Maximilianusss", "place": Ledger.zone_name(ZONE), "dead": "a hero now forgotten", "count": "Twelve"}
+	# A "met" line's place is a building's, so its worst case is the longest building name.
+	var worst_met: Dictionary = worst.merged({"place": _longest_place()}, true)
 	for kind: String in slots:
 		var quirk: bool = kind.begins_with("quirk:")
 		var lines: Array = Lines.BANK[kind]
@@ -51,7 +54,7 @@ func test_the_bank_fills_every_line_from_only_its_kinds_slots() -> void:
 				assert_has(used, "place", "a carry_name line names the place: %s" % text)
 			for slot_name: String in used:
 				assert_has(slots[kind], slot_name, "%s may use {%s}: %s" % [kind, slot_name, text])
-			var filled: String = text.format(worst)
+			var filled: String = text.format(worst_met if kind == "met" else worst)
 			assert_false(filled.contains("{"), filled)
 			assert_lte(filled.length(), 72, filled)
 
@@ -88,7 +91,7 @@ func test_a_death_line_names_the_dead_hero_or_the_fallback() -> void:
 
 
 func test_two_picks_in_a_row_differ_and_the_pick_wraps() -> void:
-	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"], ["watch_over"], ["carry_name"], ["be_worthy"]]:
+	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"], ["watch_over"], ["carry_name"], ["be_worthy"], ["met"]]:
 		var facts: Dictionary = {"kinds": _kinds(kinds), "slots": {"name": "Ada", "place": "Here", "dead": "Cal", "count": "Two"}, "start": 7}
 		var size: int = Lines.candidates(facts).size()
 		for pick: int in size:
@@ -182,6 +185,62 @@ func test_the_partners_quirk_kind_comes_last_and_adds_its_three_lines() -> void:
 		assert_false(Lines.line(quirky, pick).contains("{"), Lines.line(quirky, pick))
 
 
+# ig-m6o.2.2.4: a meeting speaks the "met" kind. Its place is a building's, said as a place.
+func test_place_name_says_each_hall_and_type_as_a_place_and_an_unknown_id_as_here() -> void:
+	assert_eq(Lines.place_name("SummoningCircle"), "the Summoning Circle")
+	assert_eq(Lines.place_name("Forge"), "the Forge")
+	assert_eq(Lines.place_name("TrainingHall"), "the Training Hall")
+	assert_eq(Lines.place_name("Sanctum"), "the Sanctum")
+	assert_eq(Lines.place_name("Reliquary"), "the Reliquary")
+	assert_eq(Lines.place_name("TownGate"), "the Town Gate")
+	assert_eq(Lines.place_name("Apothecary"), "the Apothecary")
+	assert_eq(Lines.place_name("House_3"), "the House")
+	assert_eq(Lines.place_name("Lumbermill_12"), "the Lumbermill")
+	assert_eq(Lines.place_name("Mine_1"), "the Mine")
+	assert_eq(Lines.place_name("Farm_2"), "the Farm")
+	for unknown: String in ["", "Nowhere", "House_0", "House_x", "House_01", "House"]:
+		assert_eq(Lines.place_name(unknown), "here", "'%s' names no building" % unknown)
+
+
+func test_a_bond_that_is_only_chats_speaks_the_met_kind_at_the_place_of_the_last_chat() -> void:
+	for _index: int in 8:
+		_record("encounter", {"heroes": [A, B], "place": "Forge", "why": "coworkers"})
+	_record("encounter", {"heroes": [A, B], "place": "House_2", "why": "neighbours"})
+	var bond: Dictionary = Bonds.bond(_ledger, A, {A: true, B: true}, BALANCE)
+	assert_eq(bond["fact"]["kind"], "met")
+	var facts: Dictionary = Lines.greeting_facts(bond, Bonds.dream(_ledger, B), A, NAMES)
+	assert_eq(facts["kinds"], _kinds(["met"]), "no dream, no quirk: the bond's own kind")
+	assert_eq(facts["slots"], {"name": "Ada", "place": "the House"}, "the place of the latest chat, not a zone")
+	assert_eq(Lines.candidates(facts).size(), 5)
+	for pick: int in 5:
+		var said: String = Lines.line(facts, pick)
+		assert_false(said.contains("{"), said)
+		assert_false(said.contains(Ledger.zone_name(ZONE)), "a zone is not where they met: %s" % said)
+	assert_true(Lines.line(facts, 0).contains("Ada") or Lines.line(facts, 2).contains("Ada"))
+	# A record from another version with no place still speaks, "here".
+	assert_eq(Lines.greeting_facts({"partner": B, "hard": 0, "fact": {"kind": "met", "zone": ""}}, {}, A, NAMES)["slots"]["place"], "here")
+
+
+func test_meeting_facts_name_the_second_hero_and_the_place_and_start_at_the_seq() -> void:
+	var record: Dictionary = {"seq": 41, "time": 0, "kind": "encounter", "heroes": [A, B], "place": "SummoningCircle", "why": "coworkers"}
+	var facts: Dictionary = Lines.meeting_facts(record, NAMES)
+	assert_eq(facts["kinds"], _kinds(["met"]))
+	assert_eq(facts["slots"], {"name": "Bea", "place": "the Summoning Circle"}, "the first hero speaks to the second")
+	assert_eq(facts["start"], 41)
+	var lines: Dictionary = {}
+	for pick: int in 5:
+		var said: String = Lines.line(facts, pick)
+		assert_false(said.contains("{"), said)
+		lines[said] = true
+	assert_eq(lines.size(), 5, "five different lines")
+	var next: Dictionary = Lines.meeting_facts({"seq": 42, "heroes": [A, B], "place": "SummoningCircle"}, NAMES)
+	assert_ne(Lines.line(facts, 0), Lines.line(next, 0), "the next meeting reads the next line")
+	assert_eq(Lines.meeting_facts({"heroes": [A]}, NAMES), {}, "one hero")
+	assert_eq(Lines.meeting_facts({"heroes": "ab"}, NAMES), {}, "not a list")
+	assert_eq(Lines.meeting_facts({}, NAMES), {}, "no heroes")
+	assert_eq(Lines.meeting_facts({"seq": 3, "heroes": [A, "hero:gone"]}, NAMES)["slots"]["name"], "a hero now forgotten")
+
+
 # The owner's case (ig-m6o.2.1's seeded save, rebuilt): Dunn has at least 10 lines for Mara.
 func test_the_owners_case_gives_dunn_ten_lines_for_mara() -> void:
 	var mara: String = "hero:mara"
@@ -209,6 +268,21 @@ func test_the_owners_case_gives_dunn_ten_lines_for_mara() -> void:
 
 
 ## ---- helpers
+
+## The longest place_name of any hall or building type, for the "met" lines' worst case.
+func _longest_place() -> String:
+	var longest: String = ""
+	var ids: Array[String] = []
+	for hall: StringName in TownRules.HALL_HEXES:
+		ids.append(String(hall))
+	for type: StringName in TownRules.TYPES:
+		ids.append("%s_1" % type)
+	for id: String in ids:
+		var said: String = Lines.place_name(id)
+		if said.length() > longest.length():
+			longest = said
+	return longest
+
 
 ## SLOTS plus every quirk kind (ig-m6o.2.2.3), which may use {name} and nothing else.
 func _slots() -> Dictionary:

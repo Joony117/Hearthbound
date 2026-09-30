@@ -150,6 +150,9 @@ var _bond_candidates: Dictionary = {}
 var _bonds_pairs: Variant = null
 var _bonds_version: int = 0
 var _bonds_living: Dictionary = {}
+## The living heroes the last _bond_index look re-read (ig-m6o.2.2.4): those a fold since the look before touched,
+## appends and evictions alike; every living hero after a full look; none when it found nothing new.
+var _look_touched: Dictionary = {}
 ## The dreams read for the index the last look saw, {hero_id: {fold, outs, dream}} (ig-7sn.21): fold is
 ## Bonds.dream_fold's state, outs the eviction count (GameSession.bond_changes) it was read at, dream what
 ## Bonds.dream says. An append resumes the fold; an eviction that could change it (the marks), a load and
@@ -213,6 +216,7 @@ func _ready() -> void:
 	GameSession.expeditions_changed.connect(_refresh_walkers)
 	GameSession.expeditions_changed.connect(_show_partner)
 	GameSession.battle_changed.connect(_on_battle_changed)
+	GameSession.social_recorded.connect(_on_social_recorded)
 	GameSession.preview_forecast_ready.connect(_refresh_dispatch_summary)
 	_populate_rank_filter(_roster_rank_filter)
 	_populate_rank_filter(_inventory_rank_filter)
@@ -767,8 +771,9 @@ func _bond_text(hero: Hero) -> String:
 
 
 ## The walking hero's bonded partner and greeting facts, from the kept index and the partner's
-## dream memo on roster_changed only (every settle that writes a record also changes the roster);
-## never per frame or per pulse.
+## dream memo, on roster_changed (every settle that writes a record also changes the roster) and on
+## social_recorded when a meeting or its eviction touched the body's tallies (ig-m6o.2.2.4); never per
+## frame or per pulse.
 func _refresh_partner() -> void:
 	var old_partner: String = _partner_id
 	_partner_id = ""
@@ -849,6 +854,7 @@ func _bond_index() -> Dictionary:
 	var pairs: Dictionary = GameSession.bond_index()
 	var ledger: Array[Dictionary] = GameSession.ledger
 	if is_same(ledger, _bonds_ledger) and GameSession.ledger_next_seq == _bonds_seq and is_same(pairs, _bonds_pairs):
+		_look_touched = {}
 		return pairs
 	var living: Dictionary = _roster_names()
 	var changes: Dictionary = GameSession.bond_changes()
@@ -871,6 +877,7 @@ func _bond_index() -> Dictionary:
 		for id: String in changes["touched"]:
 			if int(changes["touched"][id]) > _bonds_version and living.has(id):
 				touched[id] = true
+		_look_touched = touched
 		if membership:
 			_change_membership(pairs, living, gone, added, touched)
 		_say_new_bonds(_bond_candidates, pairs, touched)
@@ -883,6 +890,7 @@ func _bond_index() -> Dictionary:
 			_say_new_bonds(_bond_candidates, pairs, living)
 		_bond_candidates = _living_candidates(pairs, living)
 		_signs = {}
+		_look_touched = living
 		# A hero that left the roster keeps no dream (the roster changed, or the index is new).
 		for id: String in _dreams.keys():
 			if not living.has(id):
@@ -2661,6 +2669,34 @@ func _on_battle_changed(order_id: String) -> void:
 		if str(child.get_meta("order_id", "")) == order_id:
 			_update_order_card(child)
 			return
+
+
+## Neighbours met (ig-m6o.2.2.4): records is one tick's encounters, and no roster_changed came with them in the
+## pulse's path, so the 15-handler roster cascade never runs for a chat. The look at the index says a bond that
+## just formed ("X and Y grew close."), and what to redraw follows the heroes that look re-read (_look_touched),
+## not the ones the records name: at the cap a new chat evicts the oldest one, which can end another pair's bond.
+## The roster rows and the walkers' signs redraw only if one of those heroes' partner sign changed, the body's
+## greeting only if the body is one, the open detail only if the selected hero is one; then the town plays each
+## meeting. In the commit path the flush's roster_changed already redrew everything, and this look finds nothing.
+func _on_social_recorded(records: Array[Dictionary]) -> void:
+	var signs_before: Dictionary = _signs.duplicate()
+	_bond_index()
+	var looked: Dictionary = _look_touched
+	var living: Dictionary = _roster_names()
+	var signs: Dictionary = _partner_signs(living)
+	var signs_changed: bool = looked.keys().any(func(id: String) -> bool: return living.has(id) and signs.get(id, "") != signs_before.get(id, ""))
+	if signs_changed:
+		_refresh_roster()
+		_refresh_walkers()
+	if looked.has(GameSession.embodied_hero_id):
+		_refresh_partner()
+	var selected: Hero = _selected_hero()
+	if selected != null and looked.has(selected.instance_id) and not _skip_hidden(&"hero_detail"):
+		_refresh_hero_detail()
+	for record: Dictionary in records:
+		var facts: Dictionary = Lines.meeting_facts(record, living)
+		if not facts.is_empty():
+			%Town.play_meeting(str(record["heroes"][0]), str(record["heroes"][1]), facts)
 
 
 func _refresh_supply_stock() -> void:

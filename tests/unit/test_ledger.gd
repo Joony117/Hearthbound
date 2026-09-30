@@ -175,6 +175,91 @@ func test_eviction_is_tiered_oldest_first_and_seq_is_never_reused() -> void:
 	assert_eq(next_seq, 13)
 
 
+## ig-m6o.2.2.4: encounters go first, then routine battles, then the other battles and any kind not listed.
+func test_tiers_put_encounters_first_and_an_unlisted_kind_with_the_battles() -> void:
+	var routine: Dictionary = {"kind": "battle", "result": "victory", "moments": [], "team": ["h"]}
+	var hard: Dictionary = {"kind": "battle", "result": "retreated", "moments": [], "team": ["h"]}
+	var records: Array[Dictionary] = [{"kind": "encounter"}, routine, hard, {"kind": "meal"}, {"kind": "ranked_up"}, {"kind": "summoned"}, {"kind": "died"}]
+	assert_eq(Ledger.tiers(records), [0, 1, 2, 2, 3, 4, 5] as Array[int], "encounter, routine, battle, unknown, ranked_up, summoned, died")
+	assert_eq(Ledger.TIER_BY_KIND.size() + 1, 6, "evict scans tiers 0 to 5")
+
+
+func test_eviction_takes_encounters_before_routine_battles_oldest_first() -> void:
+	var ledger: Array[Dictionary] = []
+	var next_seq: int = 1
+	var routine: Dictionary = {"result": "victory", "moments": [], "team": ["h"]}
+	var hard: Dictionary = {"result": "retreated", "moments": [], "team": ["h"]}
+	for entry: Array in [["died", {}], ["encounter", {"heroes": ["a", "b"]}], ["battle", routine], ["encounter", {"heroes": ["a", "b"]}], ["battle", hard], ["battle", routine]]:
+		next_seq = Ledger.append(ledger, next_seq, 0, entry[0], entry[1])
+	var evicted: Array[Dictionary] = Ledger.evict(ledger, Ledger.tiers(ledger), 3)
+	assert_eq(evicted.map(func(record: Dictionary) -> int: return record["seq"]), [2, 4, 3], "both encounters, oldest first, then the oldest routine battle")
+	assert_eq(ledger.map(func(record: Dictionary) -> int: return record["seq"]), [1, 5, 6])
+
+
+## ig-m6o.2.2.4 (the save round trip): an encounter is one more Ledger record, so it needs no key in the main save.
+func test_encounters_survive_a_disk_reload_as_whole_ints_and_make_the_same_bond_as_a_rebuild() -> void:
+	var one: String = "hero:ada"
+	var other: String = "hero:bea"
+	for _meeting: int in 8:
+		GameSession._record("encounter", {"heroes": [one, other], "place": "House_1", "why": "neighbours"})
+	GameSession._record("battle", {"order": "order:1", "zone": "verdant_outskirts", "team": [one, other], "result": "victory", "moments": []})
+	var before: String = JSON.stringify(GameSession.ledger)
+	assert_false(_disk_save().contains("encounter"), "no new key in the main save")
+	assert_eq(FileAccess.get_file_as_string(SaveService.LEDGER_PATH).count("\"kind\":\"encounter\""), 8, "eight lines of the side file")
+	assert_true(_disk_load())
+	assert_eq(JSON.stringify(GameSession.ledger), before, "ints stay ints")
+	var pairs: Dictionary = GameSession.bond_index()
+	assert_eq(pairs, Bonds.index(GameSession.ledger, BALANCE), "the kept index is a rebuild")
+	var bond: Dictionary = Bonds.bond_from(pairs, one, {one: true, other: true}, BALANCE)
+	assert_eq([bond["partner"], bond["fact"]["kind"], bond["fact"]["place"]], [other, "met", "House_1"], "eight chats and a quiet battle: the pair fact is the chat")
+
+
+## Ruling 6 of ig-m6o.2.2.4: at the cap an encounter is the first record to go, and a load in between changes
+## nothing. GameSession's cap is folded in when it compiles, so the ledger is padded to the real one.
+func test_encounters_are_evicted_first_at_the_cap_through_a_disk_reload_and_the_kept_index_follows() -> void:
+	var cap: int = BALANCE.ledger_max_records
+	for seq: int in range(1, cap - 2):
+		Ledger.append(GameSession.ledger, seq, 0, "summoned", {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
+	GameSession.ledger_next_seq = cap - 2
+	for _meeting: int in 3:
+		GameSession._record("encounter", {"heroes": ["hero:ada", "hero:bea"], "place": "House_1", "why": "neighbours"})
+	assert_eq(GameSession.ledger.size(), cap)
+	_disk_save()
+	assert_true(_disk_load())
+	assert_eq(GameSession.ledger.size(), cap)
+	GameSession.bond_index()
+	for step: int in 3:
+		GameSession._record("summoned", {"hero": "new:%d" % step, "name": "N", "rank": 0})
+		assert_eq(GameSession.ledger.size(), cap)
+		assert_eq(_kinds().count("encounter"), 2 - step, "one encounter goes for each new record")
+	assert_eq(GameSession.ledger[0]["hero"], "filler:1", "no other record went")
+	assert_eq(_nonempty(GameSession.bond_index()), _nonempty(Bonds.index(GameSession.ledger, BALANCE)), "the kept index followed each eviction")
+	var kept: String = JSON.stringify(GameSession.ledger)
+	assert_false(_disk_save().contains("encounter"))
+	assert_true(_disk_load())
+	assert_eq(JSON.stringify(GameSession.ledger), kept, "the load leaves the ledger as it was")
+	assert_eq(FileAccess.get_file_as_string(SaveService.LEDGER_PATH).count("\"kind\":\"encounter\""), 0, "the load cut the side file")
+	assert_eq(_nonempty(GameSession.bond_index()), _nonempty(Bonds.index(GameSession.ledger, BALANCE)))
+
+
+func test_a_hand_edited_encounter_and_a_torn_last_line_load_and_count_nothing() -> void:
+	var one: String = "hero:ada"
+	var other: String = "hero:bea"
+	for _meeting: int in 2:
+		GameSession._record("encounter", {"heroes": [one, other], "place": "House_1", "why": "neighbours"})
+	_disk_save()
+	var lines: PackedStringArray = FileAccess.get_file_as_string(SaveService.LEDGER_PATH).split("\n")
+	lines[1] = lines[1].replace("[\"hero:ada\",\"hero:bea\"]", "[\"hero:ada\"]")
+	var file := FileAccess.open(SaveService.LEDGER_PATH, FileAccess.WRITE)
+	file.store_string("\n".join(lines) + "{\"seq\":3,\"ti")
+	file.close()
+	assert_true(_disk_load())
+	assert_eq(GameSession.ledger.size(), 2, "the torn last line is gone and the edited record stays")
+	var pairs: Dictionary = Bonds.index(GameSession.ledger, BALANCE)
+	assert_eq(int(pairs[one][other]["points"]), BALANCE.bond_points_encounter, "the edited one counted nothing")
+	assert_eq(GameSession.bond_index(), pairs)
+
+
 func test_history_lines_collapse_routine_wins_and_name_killers_and_rescuers() -> void:
 	var ledger: Array[Dictionary] = []
 	var next_seq: int = Ledger.append(ledger, 1, 0, "summoned", {"hero": "h:a", "name": "Aldric", "rank": 0, "archetype": "knight"})
@@ -728,6 +813,15 @@ func _write_save(payload: Dictionary) -> void:
 
 func _json(value: Dictionary) -> Dictionary:
 	return JSON.parse_string(JSON.stringify(value)) as Dictionary
+
+
+## A hero whose pairs were all evicted keeps an empty map in a kept index and has none in a rebuild (test_bonds does the same).
+func _nonempty(pairs: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for hero_id: String in pairs:
+		if not (pairs[hero_id] as Dictionary).is_empty():
+			out[hero_id] = pairs[hero_id]
+	return out
 
 
 func _kinds() -> Array:

@@ -5,7 +5,7 @@ extends SceneTree
 ## both scripts refuse:
 ##   T="$(mktemp -d)"; mkdir -p "$T/Godot/app_userdata/Infinite Gacha"; touch "$T/Godot/app_userdata/Infinite Gacha/perf_throwaway.txt"
 ##   APPDATA="$(cygpath -w "$T")" ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless -s res://tests/perf/seed_perf.gd
-## 100 heroes; the Ledger at its 10,000-record cap; every zone open; and the fullest town 100 heroes
+## 100 heroes; the Ledger at its 10,000-record cap (1 record in 3 a chat); every zone open; and the fullest town 100 heroes
 ## make: every hall keeper, 76 workers in 38 workplaces with a house each, the body, and the rest
 ## free to wander. perf_baseline.gd refuses a save without the marker this writes.
 
@@ -62,7 +62,16 @@ func _seed() -> void:
 	_town(session, ids)
 	# The Ledger last, so the town's mutations above stay cheap. The mix of test_bonds' read cost:
 	# 6 in 10 routine wins, the rest hard with a revive, 1 in 10 a rescue; 5-hero teams.
+	var chats := RandomNumberGenerator.new()
+	chats.seed = 8
 	for index: int in BALANCE.ledger_max_records:
+		# 1 record in 3 is a neighbours' chat (ig-m6o.2.2.4), from its own stream so the battles keep their draw order.
+		if index % 3 == 1:
+			var first: int = chats.randi_range(0, ids.size() - 1)
+			var pair: Array[String] = [ids[first], ids[(first + chats.randi_range(1, ids.size() - 1)) % ids.size()]]
+			pair.sort()
+			session._record("encounter", {"heroes": pair, "place": "House_1", "why": "neighbours"})
+			continue
 		var team: Array[String] = []
 		while team.size() < 5:
 			var id: String = ids[rng.randi_range(0, ids.size() - 1)]

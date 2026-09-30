@@ -13,6 +13,10 @@ const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five"
 ## are the partner's dream (ig-m6o.2.2.7): their {place} and {dead} are the dream's, not the bond's.
 ## Then one "quirk:<id>" kind per Hero.QUIRKS id (ig-m6o.2.2.3), 3 lines each, at most {name}, and no
 ## {place} or {dead}: a quirk is the partner's own habit, not a fact of the bond.
+## "met" (ig-m6o.2.2.4) is what a hero says to another when they meet, and what a partner whose bond is only
+## chats says to the body: {name} and {place}, the place being one place_name gives ("the Forge", or "here"),
+## so a line uses it after "near", "around" or "in". PROVISIONAL: the five lines are a first pass; settled by
+## the owner reading them in play.
 const BANK: Dictionary = {
 	"saved_by": [
 		"I'd come for you again. {place} or anywhere.",
@@ -69,6 +73,13 @@ const BANK: Dictionary = {
 		"I have to be worth {dead}'s life, {name}.",
 		"{dead} paid for me to stand here, {name}.",
 		"Win one hard fight for {dead}, {name}.",
+	],
+	"met": [
+		"Morning, {name}. Quiet around {place} today.",
+		"{name}! I was just thinking of you, near {place}.",
+		"Good to see you, {name}. Walk with me a moment?",
+		"Nothing like a chat in {place}, {name}.",
+		"{name}! Tell me the news from around {place}.",
 	],
 	"quirk:hums": [
 		"Was I humming again? Tell me if it grates, {name}.",
@@ -184,7 +195,7 @@ static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String,
 	var fact: Dictionary = bond["fact"]
 	var kind: String = str(fact["kind"])
 	var kinds: Array[String] = [kind]
-	var slots: Dictionary = {"name": _name(body_id, names), "place": Ledger.zone_name(str(fact["zone"]))}
+	var slots: Dictionary = {"name": _name(body_id, names), "place": place_name(str(fact.get("place", ""))) if kind == "met" else Ledger.zone_name(str(fact["zone"]))}
 	if kind == "death":
 		slots["dead"] = _name(str(fact["dead"]), names)
 	elif kind == "hard":
@@ -213,6 +224,25 @@ static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String,
 	if not own.is_empty():
 		facts["own"] = own
 	return facts
+
+
+## What one hero says to the other when they meet (ig-m6o.2.2.4), as facts for line(): the "met" kind, the
+## second hero of the record named (the first speaks) and the place of the meeting. The start is the record's
+## seq, so meeting after meeting reads the next line. {} for a record that names no two heroes.
+static func meeting_facts(record: Dictionary, names: Dictionary) -> Dictionary:
+	var heroes: Variant = record.get("heroes")
+	if not heroes is Array or (heroes as Array).size() != 2:
+		return {}
+	var kinds: Array[String] = ["met"]
+	return {"kinds": kinds, "slots": {"name": _name(str((heroes as Array)[1]), names), "place": place_name(str(record.get("place", "")))}, "start": int(record.get("seq", 0))}
+
+
+## A building's id as a place in a sentence: "the Forge" for a hall, "the House" for "House_3" and "here" for
+## an id that names no building (a record written by another version, or none).
+static func place_name(id: String) -> String:
+	var building := StringName(id)
+	var type: StringName = building if TownRules.is_hall(building) else TownRules.type_of(building)
+	return "the %s" % String(type).capitalize() if type != &"" else "here"
 
 
 static func _name(id: String, names: Dictionary) -> String:

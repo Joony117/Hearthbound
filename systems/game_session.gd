@@ -10,6 +10,9 @@ signal expeditions_changed
 signal battle_changed(order_id: String)
 ## ig-7sn.14: a dispatch preview's forecast landed (or its cache was dropped): refresh the preview.
 signal preview_forecast_ready
+## ig-m6o.2.2.4: the "encounter" records the live tick wrote (a meeting each), once per tick, deferred like the
+## other notifications so it goes out after the commit and the eviction, and never for a tick that rolled back.
+signal social_recorded(records: Array[Dictionary])
 
 ## A fresh save must afford at least one pull or the game is unplayable from boot: the roster
 ## starts empty and only a pull can fill it (docs/SYSTEMS.md, Summon Stones, 3).
@@ -104,6 +107,16 @@ var _notification_deferred_depth: int = 0
 var _roster_notification_pending: bool = false
 var _expeditions_notification_pending: bool = false
 var _battle_notifications_pending: Dictionary[String, bool] = {}
+## ig-m6o.2.2.4: the encounter records written inside a deferral, for social_recorded. Unsaved; from_dict
+## clears it, and a rollback puts back its value from before the transaction (_rollback_kept).
+var _social_pending: Array[Dictionary] = []
+## ig-m6o.2.2.4: the live seconds the encounter roll has not yet spent (it rolls once per 60), and the seconds
+## before each pair may meet again, "a|b" -> seconds. Unsaved: from_dict starts both over, so the first roll
+## comes a minute after a load and a pair that met may meet again then. A rollback puts them back.
+var _encounter_clock: float = 0.0
+var _encounter_cooldowns: Dictionary[String, float] = {}
+## The draw for whether two heroes meet and which. A stream of its own, not the global one, so a test seeds it.
+var _encounter_rng := RandomNumberGenerator.new()
 var _expedition_pulse_accumulator: float = 0.0
 var _periodic_save_accumulator: float = 0.0
 ## ig-7sn.10: a pulse crossed PERIODIC_SAVE_SECONDS; the next _process call runs the save. Unsaved.
@@ -456,6 +469,15 @@ func _notify_battle_changed(order_id: String) -> void:
 	battle_changed.emit(order_id)
 
 
+func _notify_social_recorded(records: Array[Dictionary]) -> void:
+	if records.is_empty():
+		return
+	if _notification_deferred_depth > 0:
+		_social_pending.append_array(records)
+		return
+	social_recorded.emit(records)
+
+
 func _flush_deferred_notifications() -> void:
 	# The transaction has already performed its one explicit save. Keep the UI refresh signal from
 	# invoking the signal-connected autosave a second time.
@@ -469,6 +491,10 @@ func _flush_deferred_notifications() -> void:
 	for order_id: String in _battle_notifications_pending:
 		battle_changed.emit(order_id)
 	_battle_notifications_pending.clear()
+	if not _social_pending.is_empty():
+		var social: Array[Dictionary] = _social_pending
+		_social_pending = []
+		social_recorded.emit(social)
 	_save_deferred_depth -= 1
 
 
@@ -2579,6 +2605,44 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	# Live tick only, like the wood: home keepers learn by working (SYSTEMS.md § Keepers and professions).
 	for working: Array in _working_keepers():
 		Hero.add_profession_xp(working[0] as Hero, working[1] as StringName, delta_seconds, preload("res://balance.tres"))
+	_roll_encounters(delta_seconds, preload("res://balance.tres"))
+
+
+## ig-m6o.2.2.4 (SYSTEMS.md § Encounters and shared meals). Live tick only, like the wood: the offline catch-up
+## makes no meeting. Once per 60 s of live clock, two heroes who are in town (on the roster and not busy; the
+## body counts) and are neighbours or coworkers (TownRules.meeting_pairs, from saved homes and stations) may
+## meet: with chance encounter_chance_per_minute one pair that is off cooldown is drawn, and one "encounter"
+## record is written for it. The scan runs once for a tick that crosses a minute (none under 60 s of clock) and
+## serves every minute the tick crosses, so one 3,600 s tick draws exactly as 3,600 one-second ticks do. A
+## tick with no pair off cooldown draws nothing. social_recorded says the records after the commit. The table
+## comes in as an argument, like the other rules' (ARCHITECTURE.md: no autoload holds a shared Resource); a test
+## passes its own copy.
+func _roll_encounters(delta_seconds: float, balance: BalanceTable) -> void:
+	_encounter_clock += delta_seconds
+	if _encounter_clock < 60.0:
+		return
+	var in_town: Array[Hero] = []
+	for hero: Hero in roster:
+		if not is_hero_busy(hero):
+			in_town.append(hero)
+	var pairs: Array[Dictionary] = TownRules.meeting_pairs(in_town, town_buildings, balance)
+	var records: Array[Dictionary] = []
+	while _encounter_clock >= 60.0:
+		_encounter_clock -= 60.0
+		for key: String in _encounter_cooldowns.keys():
+			_encounter_cooldowns[key] -= 60.0
+			if _encounter_cooldowns[key] <= 0.0:
+				_encounter_cooldowns.erase(key)
+		var open: Array[Dictionary] = []
+		for pair: Dictionary in pairs:
+			if not _encounter_cooldowns.has(pair["key"]):
+				open.append(pair)
+		if open.is_empty() or _encounter_rng.randf() >= balance.encounter_chance_per_minute:
+			continue
+		var meeting: Dictionary = open[_encounter_rng.randi() % open.size()]
+		records.append(_record("encounter", {"heroes": [meeting["a"], meeting["b"]], "place": meeting["place"], "why": meeting["why"]}))
+		_encounter_cooldowns[meeting["key"]] = balance.encounter_pair_cooldown_minutes * 60.0
+	_notify_social_recorded(records)
 
 
 func _resolve_due_orders_in_memory() -> void:
@@ -3095,6 +3159,7 @@ func _rollback_kept() -> Dictionary:
 		"checkpoint_failed": _checkpoint_save_failed, "checkpoint_error": _checkpoint_error,
 		"command_errors": _command_errors.duplicate(), "checks": checks, "current": current,
 		"town_notice": _town_notice.duplicate(true),
+		"social": _social_pending.duplicate(), "encounter_clock": _encounter_clock, "encounter_cooldowns": _encounter_cooldowns.duplicate(),
 	}
 
 
@@ -3117,6 +3182,10 @@ func _roll_back(snapshot: Dictionary, kept: Dictionary) -> void:
 	_command_errors = kept["command_errors"]
 	# ig-0og.3: before the flush below, or its refresh would take the undone death or fire.
 	_town_notice = kept["town_notice"]
+	# ig-m6o.2.2.4: the undone tick's meetings are not said, and its minutes are not spent.
+	_social_pending = kept["social"]
+	_encounter_clock = float(kept["encounter_clock"])
+	_encounter_cooldowns = kept["encounter_cooldowns"]
 	_battle_checks = kept["checks"]
 	for order_id: String in _battle_checks.keys():
 		# A check the mutation ended (its jobs cancelled) stays ended: a job that finished first still holds
@@ -3277,6 +3346,9 @@ func to_dict() -> Dictionary:
 func from_dict(data: Dictionary) -> void:
 	_cancel_battle_jobs()
 	_town_notice = _empty_town_notice()
+	_social_pending = []
+	_encounter_clock = 0.0
+	_encounter_cooldowns = {}
 	_read_profile(data)
 
 
@@ -3551,20 +3623,23 @@ func _read_ledger(data: Dictionary) -> void:
 	_evict_ledger()
 
 
-## Appends one Ledger record, stamped now. Outside a profile mutation nothing can roll it back, so it
-## evicts at once; inside one, _commit_profile_mutation evicts after the commit.
-func _record(kind: String, fields: Dictionary) -> void:
+## Appends one Ledger record, stamped now, and returns it (the eviction below may take it out again: at the
+## cap an encounter is the first to go). Outside a profile mutation nothing can roll it back, so it evicts at
+## once; inside one, _commit_profile_mutation evicts after the commit.
+func _record(kind: String, fields: Dictionary) -> Dictionary:
 	var in_step: bool = _bond_in_step()
 	ledger_next_seq = Ledger.append(ledger, ledger_next_seq, int(Time.get_unix_time_from_system()), kind, fields)
-	_ledger_tiers.append(Ledger.tier(ledger.back()))
+	var record: Dictionary = ledger.back()
+	_ledger_tiers.append(Ledger.tier(record))
 	if in_step:
-		Bonds.fold_in(_bond_state, ledger.back(), preload("res://balance.tres"))
+		Bonds.fold_in(_bond_state, record, preload("res://balance.tres"))
 		_bond_seq = ledger_next_seq
 	else:
 		# A rollback puts seqs back, so an index out of step could look in step after this append.
 		_bond_ledger = null
 	if _ledger_hold_depth == 0:
 		_evict_ledger()
+	return record
 
 
 func _evict_ledger() -> void:

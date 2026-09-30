@@ -513,7 +513,7 @@ func show_walkers(heroes: Array[Hero], signs: Dictionary = {}) -> void:
 		if walker == null:
 			walker = TownWalker.create(hero)
 			walker.set_sign(str(signs.get(hero.instance_id, "")))
-			walker.planner = _wander.bind(walker, false)
+			walker.planner = _replan.bind(walker)
 			add_child(walker)
 			walkers[hero.instance_id] = walker
 			if _stepped_out.get("hero_id", "") == hero.instance_id:
@@ -535,6 +535,34 @@ func show_walkers(heroes: Array[Hero], signs: Dictionary = {}) -> void:
 	_walkers_shown = true
 	_stepped_out = {}
 	_attach_partner()
+
+
+## What a figure does when its linger ends: back to its loop if its station stands, else its next trip (the
+## choice show_walkers makes). A worker who lingered for a meeting (ig-m6o.2.2.4) goes back to work.
+func _replan(walker: TownWalker) -> void:
+	if _placed.has(str(walker.station)):
+		_plan(walker, false)
+	else:
+		_wander(walker, false)
+
+
+## Plays one meeting the town saw recorded (ig-m6o.2.2.4): a walks to b, b holds where it stands, and a
+## says its line of facts when it arrives (b answers with a look, no line). False when either figure is not
+## shown (the body is no walker), is already in a meeting, or a has no way to b. When they do not meet in
+## TownWalker.MEETING_SECONDS the meeting is dropped; both then go back to their own plans (_replan).
+func play_meeting(a_id: String, b_id: String, facts: Dictionary) -> bool:
+	var a: TownWalker = walkers.get(a_id)
+	var b: TownWalker = walkers.get(b_id)
+	if a == null or b == null or a == b or a.is_meeting() or b.is_meeting():
+		return false
+	var lead: PackedVector3Array = _lead(a, free_point(b.position))
+	if lead.is_empty():
+		return false
+	a.wander(lead, &"Idle_B", NAN)
+	b.linger_at(b.position, &"Idle_B", NAN, TownWalker.MEETING_SECONDS)
+	a.meet(b, facts)
+	b.meet(a, {})
+	return true
 
 
 ## A wanderer's next trip from where it stands: to a street hex its RNG picks, where it uses the stall
@@ -586,7 +614,8 @@ func _plan(walker: TownWalker, first: bool) -> void:
 		walker.work_at(spot, walker.rng.randf() * TownWalker.WORK_SECONDS)
 		return
 	var target: StringName = house if walker.heading_home else walker.station
-	if not walker.is_walking() and walker.position.distance_to(work_spot(target)) < AT_SPOT:
+	# A lingering figure (held for a meeting) is not at its post: it walks (or works again) from where it is.
+	if not walker.is_walking() and walker.activity != TownWalker.LINGER and walker.position.distance_to(work_spot(target)) < AT_SPOT:
 		return
 	var lead: PackedVector3Array = _lead(walker, target)
 	if lead.is_empty():

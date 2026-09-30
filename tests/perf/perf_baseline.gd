@@ -32,6 +32,8 @@ extends SceneTree
 ## Since ig-7sn.20: battle_frontier and battle_frontier_nowall are also read headless (the advance row, the advance
 ## split and the render's CPU side mean something there; the whole-frame, floor and draw rows do not), and
 ## frontier_march runs end with a "wall split": the walls' work in an advance, replayed on a twin (_wall_replay).
+## Since ig-m6o.2.2.4: encounter (the pulse a neighbours' chat lands on, the Sanctum open and its hero's detail drawn,
+## the Ledger at its cap; tests/perf/seed_perf.gd puts chats in the Ledger). Read it headless (MODE=headless).
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -110,6 +112,8 @@ func _run() -> void:
 		"dreams":
 			diagnose = true
 			await _measure_actions()
+		"encounter":
+			await _measure_encounter()
 		"town":
 			await _measure_town()
 		"load":
@@ -640,6 +644,91 @@ func _partner_ids(hub: Node, balance: BalanceTable) -> Dictionary:
 		if not partner.is_empty():
 			partners[partner] = true
 	return partners
+
+
+## ig-m6o.2.2.4: the frame a chat lands on. The Sanctum open with a hero selected (its detail panel drawn) and the
+## Ledger at its cap. Each rep makes one chat that names that hero (every other pair on cooldown) and times
+## GameSession._roll_encounters(PULSE, a copy of the table with the chance at 1, the minute clock a hair short), alone,
+## with the hub's social handler inside it (the signal is said at once outside a commit); its whole frame runs to
+## the next frame's start. The game's own pulse rolls at the shipped 0.2 and takes no table from outside, so the pulse
+## a chat lands on is derived: a pulse that rolls nothing (GameSession._pulse with the minute clock at 0, timed
+## beside it) plus that roll. Also timed: the pair scan alone and the hub's social handler done again on the same
+## record (a repeat look is quiet). The chat is written and, at the cap, evicted at once (tier 0), so a rep is also
+## the eviction's cost. A rep counts only when the named hero is the one selected and exactly one encounter was written
+## (one seq spent and the drawn pair's cooldown set); any other rep is VOID, left out of the stats, and an error.
+const ENCOUNTER_REPS: int = 5
+
+
+func _measure_encounter() -> void:
+	var hub: Node = await _open_hub()
+	session.set_process(false)
+	if not await _settle_case(hub, ACTION_CASES[0]):
+		return
+	var balance: BalanceTable = (preload("res://balance.tres") as BalanceTable).duplicate()
+	balance.encounter_chance_per_minute = 1.0
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var samples: Dictionary = {}
+	var void_reps: int = 0
+	for rep: int in ENCOUNTER_REPS:
+		var in_town: Array[Hero] = []
+		for hero: Hero in session.roster:
+			if not session.is_hero_busy(hero):
+				in_town.append(hero)
+		var pairs: Array[Dictionary] = TownRules.meeting_pairs(in_town, session.town_buildings, balance)
+		if pairs.is_empty():
+			print("ENCOUNTER: not run, no pair could meet")
+			return
+		var pair: Dictionary = pairs[rep % pairs.size()]
+		session._encounter_cooldowns.clear()
+		for other: Dictionary in pairs:
+			if other["key"] != pair["key"]:
+				session._encounter_cooldowns[other["key"]] = 3600.0
+		for row: int in roster_list.item_count:
+			var member: Hero = roster_list.get_item_metadata(row) as Hero
+			if member != null and member.instance_id == pair["a"]:
+				roster_list.deselect_all()
+				roster_list.select(row)
+				roster_list.multi_selected.emit(row, true)
+		await _wait(5)
+		var shown: Hero = hub._selected_hero()
+		session._encounter_clock = 0.0
+		var started: int = Time.get_ticks_usec()
+		session._pulse(PULSE)
+		var quiet_ms: float = _since(started)
+		await process_frame
+		var seq: int = session.ledger_next_seq
+		var reads: int = _hub_counter("dream_reads")
+		session._encounter_clock = 60.0 - PULSE / 2.0
+		started = Time.get_ticks_usec()
+		session._roll_encounters(PULSE, balance)
+		var roll_ms: float = _since(started)
+		await process_frame
+		var frame_ms: float = _since(started)
+		var wrote: int = session.ledger_next_seq - seq
+		var chose_them: bool = float(session._encounter_cooldowns.get(pair["key"], 0.0)) == 3600.0
+		var selected_named: bool = shown != null and shown.instance_id == pair["a"]
+		if wrote != 1 or not chose_them or not selected_named:
+			void_reps += 1
+			print("ENCOUNTER rep %d: VOID, left out of the stats (%s selected, named hero selected %s, %d record(s) written, drawn pair is the named one %s)" % [rep + 1, shown.hero_name if shown != null else "no one", selected_named, wrote, chose_them])
+			continue
+		var record: Dictionary = {"heroes": [pair["a"], pair["b"]], "place": pair["place"], "why": pair["why"]}
+		var records: Array[Dictionary] = [record]
+		var handler_ms: float = _time(hub._on_social_recorded.bind(records), 1)[0]
+		var scan_ms: float = _time(TownRules.meeting_pairs.bind(in_town, session.town_buildings, balance), 1)[0]
+		_add(samples, "ENCOUNTER: a pulse that rolls nothing (_pulse)", quiet_ms)
+		_add(samples, "ENCOUNTER: the roll a chat lands on (_roll_encounters, the hub's handler inside)", roll_ms)
+		_add(samples, "ENCOUNTER: derived, that pulse plus the roll", quiet_ms + roll_ms)
+		_add(samples, "ENCOUNTER: whole frame of the roll", frame_ms)
+		_add(samples, "ENCOUNTER: the hub's social handler, again", handler_ms)
+		_add(samples, "ENCOUNTER: the pair scan alone (TownRules.meeting_pairs)", scan_ms)
+		print("ENCOUNTER rep %d: %d pairs, %s selected and named, 1 record written, dream_reads %d: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms" % [rep + 1, pairs.size(), shown.hero_name, _hub_counter("dream_reads") - reads, roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms])
+	var labels: Array = samples.keys()
+	labels.sort()
+	for key: String in labels:
+		_report(key, samples[key])
+	if void_reps > 0:
+		push_error("ENCOUNTER: %d of %d reps were void; the stats are of the rest" % [void_reps, ENCOUNTER_REPS])
+	session.set_process(true)
 
 
 ## ig-bnq: one stranded incident for a free bonded hero, not the shown one, that expires on the next pulse:

@@ -4,8 +4,13 @@ extends RefCounted
 ## The Ledger's rules (DECISIONS.md 2026-09-24 "The Ledger"): pure static functions over the list
 ## GameSession owns. GameSession's mutators are the only callers of append().
 
-## Eviction tiers, first evicted first (item 8). A routine battle is tier 0.
-const TIER_BY_KIND: Dictionary = {"battle": 1, "ranked_up": 2, "summoned": 3, "died": 4}
+## Eviction tiers, first evicted first (item 8, amended by "Bonds stay derived" item 7). An encounter is tier 0,
+## a routine battle tier 1, and a kind not listed (a meal, until ig-m6o.2.2.5 adds it at 0) tier 2 with the other
+## battles. Each new kind of settled event must be listed here.
+const TIER_BY_KIND: Dictionary = {"encounter": 0, "battle": 2, "ranked_up": 3, "summoned": 4, "died": 5}
+## What a routine battle and a kind not in TIER_BY_KIND evict as.
+const ROUTINE_TIER: int = 1
+const UNKNOWN_TIER: int = 2
 const RESULT_TEXT: Dictionary = {
 	"victory": "Won a battle at %s",
 	"retreated": "Retreated from %s",
@@ -54,8 +59,8 @@ static func tiers(ledger: Array[Dictionary]) -> Array[int]:
 
 static func tier(record: Dictionary) -> int:
 	if is_routine(record):
-		return 0
-	return int(TIER_BY_KIND.get(str(record.get("kind", "")), 1))
+		return ROUTINE_TIER
+	return int(TIER_BY_KIND.get(str(record.get("kind", "")), UNKNOWN_TIER))
 
 
 ## A victory battle with no moments and no rescued heroes.

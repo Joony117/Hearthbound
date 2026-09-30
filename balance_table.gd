@@ -261,6 +261,13 @@ extends Resource
 @export var bond_points_rescued: int = 5
 @export var bond_points_death_witnessed: int = 5
 @export var bond_threshold: int = 8
+# Encounters (SYSTEMS.md § Encounters and shared meals; ig-m6o.2.2.4; every row PROVISIONAL): one roll a live minute for
+# the whole town, a pair cooldown, how close Houses (neighbours) or stations (coworkers) are, and a meeting's bond points.
+@export var encounter_chance_per_minute: float = 0.2
+@export var encounter_pair_cooldown_minutes: int = 60
+@export var encounter_neighbour_hexes: int = 2
+@export var encounter_coworker_hexes: int = 1
+@export var bond_points_encounter: int = 1
 @export var dream_fight_beside_battles: int = 3
 @export var dream_name_victories: int = 3
 @export var dream_worthy_hard_victories: int = 2

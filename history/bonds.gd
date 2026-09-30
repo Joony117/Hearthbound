@@ -7,7 +7,14 @@ extends RefCounted
 
 const SAVES: Array[String] = ["revived", "carried"]
 ## The fact kinds in the order a record scores them, and the tally keys that count them.
-const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths"]
+const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths", "meetings"]
+## Where the meetings slot sits in FACTS. It is last, so every battle fact is scored before it.
+const MEETINGS: int = 4
+## What an evicted record of each kind can change in a kept dream (_mark_out): the keys of the record that
+## name the heroes whose dreams it can touch. A kind not listed here can touch any hero's. An encounter
+## touches none today, since dream_fold reads only battle and died records; ig-m6o.2.2.10 (dreams proved by
+## encounter and meal records) makes it read encounters, and must change this to ["heroes"].
+const OUT_MARKS: Dictionary = {"battle": ["team", "rescued", "rescuers"], "encounter": []}
 ## How each dream ends, in one line: {who} and {zone} are its names, {count} the fade's battles.
 const ENDINGS: Dictionary = {
 	"life_debt:paid": "Dream fulfilled: repaid {who} at {zone}.",
@@ -68,8 +75,8 @@ static func index(ledger: Array[Dictionary], balance: BalanceTable) -> Dictionar
 ## pairs can re-read only those heroes; a build starts both at 0 and {}. outs counts the evictions
 ## fold_out took out, and out_named and out_all say which of them could change a kept dream (ig-7sn.21):
 ## out_named is hero -> outs at the last eviction that named it in a battle's team, rescued or rescuers,
-## and out_all is outs at the last one that was a non-battle record, or any record carrying a name field
-## (dream reads every non-battle record, and the kept names every name); see _mark_out.
+## and out_all is outs at the last one of a kind OUT_MARKS does not list (dream reads every such record),
+## or any record carrying a name field (the kept names read every name); see _mark_out.
 static func index_state(ledger: Array[Dictionary], balance: BalanceTable) -> Dictionary:
 	var folded: Dictionary = {"pairs": {}, "counts": {}, "dead": {}, "battles": {}, "version": 0, "touched": {}, "outs": 0, "out_named": {}, "out_all": 0}
 	for record: Dictionary in ledger:
@@ -93,7 +100,8 @@ static func fold_in(folded: Dictionary, record: Dictionary, balance: BalanceTabl
 ## Takes one evicted record out of a kept index_state(). False when it cannot, and the caller then
 ## rebuilds: a count left over whose latest record was this one (the one before is unknown), or a
 ## death whose battle is still in. Under today's eviction tiers neither happens: every scoring record
-## is a non-routine battle, those go oldest first, and died records go only after every battle.
+## is an encounter or a non-routine battle, each goes oldest first within its tier, and died records go
+## only after every battle.
 static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTable) -> bool:
 	_mark_out(folded, record)
 	var touched: Dictionary = {}
@@ -103,6 +111,14 @@ static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTab
 			if not _unscore(folded["counts"], record, (folded["dead"] as Dictionary).get(order, []), touched):
 				return false
 			_drop(folded["battles"], order, record)
+		"encounter":
+			var pair: Array[String] = _meeting_pair(record)
+			if not pair.is_empty():
+				var counts: Dictionary = folded["counts"]
+				if not _uncount(counts[pair[0]][pair[1]][MEETINGS], record) or not _uncount(counts[pair[1]][pair[0]][MEETINGS], record):
+					return false
+				touched[pair[0]] = true
+				touched[pair[1]] = true
 		"died":
 			if record.has("battle_order"):
 				var battle_order: String = str(record["battle_order"])
@@ -115,18 +131,20 @@ static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTab
 
 ## Says which kept dreams and names an evicted record could change (ig-7sn.21). dream reads only the
 ## battles that name its hero in team, rescued or rescuers, so taking out any other battle leaves that
-## hero's dream as it was, and taking out one of those changes only the heroes it names. Every other kind
-## (died, ranked_up, summoned) can change any hero's dream. So can a record of any kind that carries a
-## "name" (a load accepts a battle that does), since Ledger.record_names reads every one. A hero named
-## here has out_named[hero] past the outs it was read at; out_all past it means every one.
+## hero's dream as it was, and taking out one of those changes only the heroes it names. A kind in
+## OUT_MARKS changes only the heroes under the keys listed there (an encounter, none). Every other kind
+## (died, ranked_up, summoned, and one not yet known) can change any hero's dream. So can a record of any
+## kind that carries a "name" (a load accepts a battle that does), since Ledger.record_names reads every
+## one. A hero named here has out_named[hero] past the outs it was read at; out_all past it means every one.
 static func _mark_out(folded: Dictionary, record: Dictionary) -> void:
 	var outs: int = int(folded["outs"]) + 1
 	folded["outs"] = outs
-	if str(record.get("kind", "")) != "battle" or record.has("name"):
+	var kind: String = str(record.get("kind", ""))
+	if not OUT_MARKS.has(kind) or record.has("name"):
 		folded["out_all"] = outs
 		return
 	var named: Dictionary = folded["out_named"]
-	for key: String in ["team", "rescued", "rescuers"]:
+	for key: String in OUT_MARKS[kind] as Array:
 		for id: Variant in _array(record, key):
 			named[str(id)] = outs
 
@@ -141,7 +159,37 @@ static func _fold(folded: Dictionary, record: Dictionary) -> Dictionary:
 		"died":
 			if record.has("battle_order"):
 				return _witness(folded, record)
+		"encounter":
+			return _meet(folded["counts"], record)
 	return {}
+
+
+## Counts one meeting in, for both heroes, as the latest record of the meetings slot of their pair. Returns
+## both, since either one's bond can change. A record that names no two different heroes counts nothing.
+static func _meet(counts: Dictionary, record: Dictionary) -> Dictionary:
+	var pair: Array[String] = _meeting_pair(record)
+	if pair.is_empty():
+		return {}
+	_count(_slots(_others(counts, pair[0]), pair[1])[MEETINGS], record, "met", "")
+	_count(_slots(_others(counts, pair[1]), pair[0])[MEETINGS], record, "met", "")
+	return {pair[0]: true, pair[1]: true}
+
+
+## The two heroes of an encounter record, or [] unless "heroes" is a list of exactly two different, non-empty
+## strings. A load accepts any record with a seq and a kind, so this is the one rule for fold_in, fold_out
+## and a rebuild: what one counts, the others count.
+static func _meeting_pair(record: Dictionary) -> Array[String]:
+	var raw: Variant = record.get("heroes")
+	var pair: Array[String] = []
+	if not raw is Array or (raw as Array).size() != 2:
+		return pair
+	for id: Variant in raw as Array:
+		if not id is String or (id as String).is_empty():
+			return [] as Array[String]
+		pair.append(id as String)
+	if pair[0] == pair[1]:
+		return [] as Array[String]
+	return pair
 
 
 ## Counts one battle in as the latest record of its pairs' slots: each fact at most once per pair.
@@ -324,7 +372,11 @@ static func _retally(folded: Dictionary, touched: Dictionary, balance: BalanceTa
 			if not others.has(other):
 				continue
 			var slots: Array = others[other]
-			if slots[0][0] + slots[1][0] + slots[2][0] + slots[3][0] == 0:
+			# Every slot counts: a pair with only meetings is a pair (a sum over the first four erased it).
+			var counted: int = 0
+			for slot: Array in slots:
+				counted += slot[0]
+			if counted == 0:
 				others.erase(other)
 				tallies.erase(other)
 			else:
@@ -340,7 +392,7 @@ static func _others(counts: Dictionary, hero_id: String) -> Dictionary:
 ## One pair's slots, one per kind in FACTS order.
 static func _slots(others: Dictionary, other: String) -> Array:
 	if not others.has(other):
-		others[other] = [[0, null, "hard", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""]]
+		others[other] = [[0, null, "hard", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""]]
 	return others[other]
 
 
@@ -362,9 +414,11 @@ static func _uncount(slot: Array, record: Dictionary) -> bool:
 
 ## One pair's counted slots as the tally bond() returns. The strongest fact is the last one with the
 ## most points, as an oldest-first running best with >= keeps it: a later record wins a tie, and
-## within one record the later kind in FACTS order does.
+## within one record the later kind in FACTS order does. Meetings are the exception: they are the fact
+## only for a pair with no battle fact, so a newer chat (1 point) never displaces an older hard fight
+## (1 point). They still count for points and last_seq.
 static func _tally(other: String, slots: Array, balance: BalanceTable) -> Dictionary:
-	var points: Array[int] = [balance.bond_points_hard_battle, balance.bond_points_saved, balance.bond_points_rescued, balance.bond_points_death_witnessed]
+	var points: Array[int] = [balance.bond_points_hard_battle, balance.bond_points_saved, balance.bond_points_rescued, balance.bond_points_death_witnessed, balance.bond_points_encounter]
 	var tally: Dictionary = {"partner": other, "points": 0, "last_seq": 0}
 	var best: int = -1
 	var best_seq: int = 0
@@ -376,11 +430,13 @@ static func _tally(other: String, slots: Array, balance: BalanceTable) -> Dictio
 		tally["points"] += slot[0] * points[kind]
 		var seq: int = int((slot[1] as Dictionary).get("seq", 0))
 		tally["last_seq"] = maxi(tally["last_seq"], seq)
+		if kind == MEETINGS and best >= 0:
+			continue
 		if best < 0 or points[kind] > points[best] or points[kind] == points[best] and seq >= best_seq:
 			best = kind
 			best_seq = seq
 	var record: Dictionary = slots[best][1]
-	tally["fact"] = {"kind": slots[best][2], "points": points[best], "seq": best_seq, "zone": str(record.get("zone", "")), "dead": slots[best][3]}
+	tally["fact"] = {"kind": slots[best][2], "points": points[best], "seq": best_seq, "zone": str(record.get("zone", "")), "dead": slots[best][3], "place": str(record.get("place", ""))}
 	return tally
 
 
@@ -561,13 +617,13 @@ static func _witnessed(record: Dictionary, fought: Dictionary) -> bool:
 	return str(record.get("cause", "")) == "expedition" and not str(record.get("hero", "")).is_empty() and not order.is_empty() and fought.has(order)
 
 
-## "Closest to Mara: 4 hard fights, 1 rescue, 1 death seen together." names holds display names.
+## "Closest to Mara: 4 hard fights, 1 rescue, 1 death seen together, 8 chats." names holds display names.
 static func bond_line(found: Dictionary, names: Dictionary, away: bool) -> String:
 	var parts: PackedStringArray = []
-	for key: String in ["hard", "saves", "rescues", "deaths"]:
+	for key: String in FACTS:
 		var count: int = found[key]
 		if count > 0:
-			var noun: String = {"hard": "hard fight", "saves": "save", "rescues": "rescue", "deaths": "death"}[key]
+			var noun: String = {"hard": "hard fight", "saves": "save", "rescues": "rescue", "deaths": "death", "meetings": "chat"}[key]
 			parts.append("%d %s%s%s" % [count, noun, "" if count == 1 else "s", " seen together" if key == "deaths" else ""])
 	return "Closest to %s%s: %s." % [_name(found["partner"], names), " (away)" if away else "", ", ".join(parts)]
 

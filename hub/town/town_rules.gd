@@ -37,6 +37,8 @@ const HALL_HEXES: Dictionary[StringName, Vector2i] = {
 	&"Apothecary": Vector2i(2, -2),
 }
 
+## No hex: the hex of a hero's House or station it does not have (meeting_of). Far outside any map.
+const NO_HEX: Vector2i = Vector2i(1000000, 1000000)
 ## A hex's six neighbours are these steps away (axial q, r).
 const AXIAL_DIRECTIONS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
 
@@ -142,6 +144,58 @@ static func default_halls() -> Array[Dictionary]:
 
 static func is_workplace_id(id: StringName) -> bool:
 	return worker_slots(type_of(id), preload("res://balance.tres")) > 0
+
+
+## Building id -> hex, for every finished building (halls included). A hero whose House or station is not in
+## it is unhoused or unstationed to meeting_pairs, whatever its fields say.
+static func building_hexes(buildings: Array[Dictionary]) -> Dictionary[StringName, Vector2i]:
+	var hexes: Dictionary[StringName, Vector2i] = {}
+	for building: Dictionary in buildings:
+		if not building.has("build_remaining"):
+			hexes[StringName(str(building["id"]))] = Vector2i(int(building["q"]), int(building["r"]))
+	return hexes
+
+
+## Why two heroes may meet (ig-m6o.2.2.4, SYSTEMS.md § Encounters and shared meals), from the hexes of their Houses
+## and stations (NO_HEX for none): "coworkers" when both are stationed within encounter_coworker_hexes of each other
+## (the same building is 0), else "neighbours" when both are housed within encounter_neighbour_hexes, else "". Work
+## goes first: it is the rarer tie, and neighbours already share meals.
+static func meeting_of(a_home: Vector2i, a_station: Vector2i, b_home: Vector2i, b_station: Vector2i, balance: BalanceTable) -> String:
+	if a_station != NO_HEX and b_station != NO_HEX and ring_distance(a_station - b_station) <= balance.encounter_coworker_hexes:
+		return "coworkers"
+	if a_home != NO_HEX and b_home != NO_HEX and ring_distance(a_home - b_home) <= balance.encounter_neighbour_hexes:
+		return "neighbours"
+	return ""
+
+
+## Every pair of heroes (the in-town ones GameSession hands in) who may meet, as {a, b, why, place, key}: a and b are
+## instance ids, a < b, why is meeting_of's, place is a's station (coworkers) or a's House (neighbours) and key is
+## "a|b". Sorted by key, so a draw over the list is the same on every machine. Reads only the heroes' saved fields and
+## the buildings, never where a figure stands (DECISIONS.md 2026-09-24, "Bonds stay derived", item 7). A hero with
+## neither a built House nor a built station is dropped before pairing, and each hero's hexes are read once.
+## ponytail: every pair of the placed heroes, about 5,000 at 100. Bucket by hex if the cost print says so.
+static func meeting_pairs(heroes: Array[Hero], buildings: Array[Dictionary], balance: BalanceTable) -> Array[Dictionary]:
+	var hexes: Dictionary[StringName, Vector2i] = building_hexes(buildings)
+	var placed: Array[Hero] = []
+	for hero: Hero in heroes:
+		if hexes.has(hero.home) or hexes.has(hero.station):
+			placed.append(hero)
+	placed.sort_custom(func(left: Hero, right: Hero) -> bool: return left.instance_id < right.instance_id)
+	var homes: Array[Vector2i] = []
+	var stations: Array[Vector2i] = []
+	for hero: Hero in placed:
+		homes.append(hexes.get(hero.home, NO_HEX))
+		stations.append(hexes.get(hero.station, NO_HEX))
+	var pairs: Array[Dictionary] = []
+	for first: int in placed.size():
+		for second: int in range(first + 1, placed.size()):
+			var why: String = meeting_of(homes[first], stations[first], homes[second], stations[second], balance)
+			if why.is_empty():
+				continue
+			var a: Hero = placed[first]
+			var b: Hero = placed[second]
+			pairs.append({"a": a.instance_id, "b": b.instance_id, "why": why, "place": String(a.station if why == "coworkers" else a.home), "key": "%s|%s" % [a.instance_id, b.instance_id]})
+	return pairs
 
 
 ## Why a building cannot go on hex; "" when the hex is free.

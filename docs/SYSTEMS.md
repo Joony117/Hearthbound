@@ -973,9 +973,13 @@ The record of settled events that every history reader derives from. The ADR is 
 | History lines in hero detail | 10 | Newest first. Routine victories at one zone collapse into one line |
 | Ledger save budget | ≤ 2 ms | What the ledger may add to any save or profile action, at any size up to the cap. A save's cost must not grow with history. Load compaction and the one-time recovery rewrite are exempt (`DECISIONS.md` The Ledger, item 8) |
 
-The eviction order is tiered, oldest first within each tier: routine victory `battle` records (no
-moments, no rescued heroes), then other `battle` records, then `ranked_up`, then `summoned`, and
-`died` last (`DECISIONS.md` 2026-09-24, director amendment).
+The eviction order is tiered, oldest first within each tier: `encounter` records (a meeting in
+town, built in `ig-m6o.2.2.4`), then routine victory `battle` records (no moments, no rescued
+heroes), then other `battle` records, then `ranked_up`, then `summoned`, and `died` last
+(`DECISIONS.md` 2026-09-24, director amendment). A kind the table does not list sits with the
+non-routine battles. At the cap, each new record evicts the oldest tier-0 record, so a new
+`encounter` evicts itself when no older one is left: the town still plays that meeting, but it adds
+no bond point. That is the ceiling § Encounters and shared meals names.
 
 **Measured 2026-09-24 (`ig-m6o.1` acceptance, `.agent-results/ig-m6o.1/gut_ledger2.log`).** At
 10,000 records, a real save takes 108 ms and a load takes 197 ms. The file is 3.88 MB, about 390
@@ -1038,13 +1042,18 @@ row is a `balance.tres` row except the read cost, which is a measurement.
 Each fact counts at most once per record for a pair, so one long battle full of revives cannot make
 a bond by itself.
 
+Since `ig-m6o.2.2.4` a meeting is a fifth fact, "meetings" (`bond_points_encounter` a record; the
+bond line says "chat"). It counts for both heroes of the record, and a pair's fact line is the
+"met" one only when the pair has no battle fact. It carries the place of the latest meeting.
+
 ### The dream catalogue — *ig-m6o.2.2.7, design 2026-09-24*
 
 Four dreams, all proved by today's records (`battle`, `summoned`, `ranked_up`, `died`). The dream's
 owner is the hero who holds it. X is the other hero it names, and Z the zone. Each keeps slice 1's
 shape: an opening line, a counted milestone, a last milestone, and an end, fulfilled or lost.
-Dreams on `encounter` and `meal` records wait for those records (`ig-m6o.2.2.4`, `ig-m6o.2.2.5`) and
-are `ig-m6o.2.2.10`'s.
+Dreams on `encounter` and `meal` records are `ig-m6o.2.2.10`'s. The `encounter` record exists since
+`ig-m6o.2.2.4`; the `meal` record waits for `ig-m6o.2.2.5`. Until `ig-m6o.2.2.10` lists it in
+`OUT_MARKS`, an evicted encounter is marked as changing no dream.
 Profession dreams are `ig-m6o.2.2.8`'s.
 
 **Repay a life debt** (`life_debt`, slice 1, unchanged). X saved the owner. The owner wants to save
@@ -1156,7 +1165,7 @@ until then. Past it, neither opens nor advances, the same ceiling the meeting an
 have. The fix would be a Ledger budget for tier 0, worth filing only if a real save nears the cap.
 The section's PROVISIONAL covers both rows.
 
-### Encounters and shared meals — *ig-m6o.2.2.4, ig-m6o.2.2.5, design 2026-09-25, not built yet*
+### Encounters and shared meals — *ig-m6o.2.2.4 (meetings) built, ig-m6o.2.2.5 (meals) not built yet, design 2026-09-25*
 
 Two more ways to grow close. Both come from saved state on the live tick only: never in the
 offline catch-up, and never from where walkers stand (`DECISIONS.md` 2026-09-24 "Bonds stay
@@ -1172,7 +1181,7 @@ derived", item 7).
 
 | Row | Value | Why |
 |---|---|---|
-| `encounter_chance_per_minute` | 0.2 | One roll per live minute for the whole town, so at most 12 meetings an hour at any roster size. A chance per pair would grow with the square of the town |
+| `encounter_chance_per_minute` | 0.2 | One roll per live minute for the whole town, so about 12 meetings an hour on average while a pair is free, at most 60 (one a minute), at any roster size. A chance per pair would grow with the square of the town |
 | `encounter_pair_cooldown_minutes` | 60 | A pair meets at most once an hour. The cooldown is unsaved, so a reload resets it |
 | `encounter_neighbour_hexes` | 2 | Houses this close are neighbours. The same House counts |
 | `encounter_coworker_hexes` | 1 | Stations this close are coworkers: the same building, or adjoining ones. The halls stand in a row, so keepers of neighbouring halls are coworkers |
@@ -1181,6 +1190,37 @@ derived", item 7).
 | `meal_house_hexes` | 2 | The same reach as neighbours |
 | `meal_table_size` | 4 | Small, fixed tables. A 30-hero town at one table would make 435 pairs a meal, and everyone would bond with everyone. The same neighbours sit together until someone moves, leaves or comes home |
 | `bond_points_meal` | 1 | The same as a meeting |
+
+**Built for meetings (`ig-m6o.2.2.4`).** Meals are `ig-m6o.2.2.5`'s and are not built.
+- **The clock.** `GameSession._roll_encounters` runs at the end of the live tick's clocks, never in
+  the offline catch-up. Its clock and cooldowns are unsaved; a load resets them and never reseeds
+  the stream. Each whole 60 s of the clock, the cooldowns tick down. If a pair in reach is off
+  cooldown, it makes one roll at `encounter_chance_per_minute` and one pick among them. With no pair
+  off cooldown it rolls nothing, so the stream is not spent.
+- **Who.** In town means on the roster and not `is_hero_busy`; the body counts. Coworkers first
+  (both at built stations: the same building, or within `encounter_coworker_hexes`), else
+  neighbours (both in built Houses: the same House, or within `encounter_neighbour_hexes`). The pair
+  scan is `TownRules.meeting_pairs`, a pure function of saved fields, run once per tick that crosses
+  a minute. A hero with no built House and no built station is dropped before pairing.
+- **The record.** `{heroes: [a, b], place, why}`, `a` the lower id, `place` a's station (coworkers)
+  or a's House (neighbours), `why` "coworkers" or "neighbours". The cooldown is
+  `encounter_pair_cooldown_minutes` × 60 s from the record, so a pair can meet again an hour later.
+- **The town plays it.** `social_recorded` says a tick's records once, after the tick's evictions,
+  and after the commit when the tick commits. The first hero walks up
+  to the second (`CHAT_DISTANCE` 4.5 m: the nearest free ground to a hall's work spot is 3.84 m, so
+  the body's 3 m greeting reach never fits), the second stands still up to `MEETING_SECONDS` 30, and
+  the first says one line from five (72 characters at most). The second answers with a look and no
+  line. Keepers, workers and visitors go back to what they were doing. On the eighth meeting the hub
+  says "X and Y grew close." What it redraws follows the heroes its look at the bonds re-read, not
+  the two a record names: at the cap a new chat evicts the oldest one, and that can end another
+  pair's bond. The roster and the walkers redraw only when one of those heroes' partner sign
+  changed, the body's greeting only when the body is one, and a hero's detail only when that hero
+  is selected.
+- **Cost.** The pair scan at 100 heroes (1,723 pairs in reach) takes 4.2 ms best and 4.5–6.2 ms
+  worst of seven, once a minute, so it fits a frame and needs no bucketing by hex.
+
+> ⚠️ **PROVISIONAL** — the five "met" lines, `CHAT_DISTANCE` 4.5 and `MEETING_SECONDS` 30 ·
+> **Settled by:** the owner watching a town for an evening
 
 The pace this gives:
 - Meetings alone: a 30-hero town has about 45 eligible pairs at a time, so a given pair meets about
@@ -1192,7 +1232,7 @@ The pace this gives:
   to a friend.
 - Three tablemates tie on meals. Their meetings and fights break the tie, then the partner tie rule
   does.
-- Volume, for § The Ledger when the code lands: a 30-hero town adds up to 12 meetings and about
+- Volume, for § The Ledger when the code lands: a 30-hero town adds about 12 meetings (at most 60) and about
   8 meals an hour, beside about 10 battles at `battle_pace` 6. Both go first at the cap.
 
 > ⚠️ **PROVISIONAL** — every row is a desk pick. How many pairs are eligible depends on how a

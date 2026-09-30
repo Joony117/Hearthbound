@@ -20,6 +20,11 @@ const MEET_DISTANCE: float = 3.0
 const REARM_DISTANCE: float = 4.5
 ## The line shows this long, and the walk waits for it.
 const LINE_SECONDS: float = 4.0
+## A meeting (meet) that the two figures have not come together for in this long is dropped.
+const MEETING_SECONDS: float = 30.0
+## How near a figure comes to the one it meets before it speaks: a keeper stands at its work spot, and the
+## nearest free ground to a hall is 3.84 m away, so MEET_DISTANCE would never be reached.
+const CHAT_DISTANCE: float = 4.5
 const MODEL_SCALE: float = TownHero.MODEL_SCALE
 ## The clip played at work, by the station's building type. A station missing here plays
 ## DEFAULT_WORK_CLIP, so a later workplace never breaks a figure; its slice adds its row.
@@ -65,8 +70,10 @@ var facts: Dictionary = {}:
 		if value != facts:
 			_meetings = 0
 		facts = value
-## How many times it has greeted, for tests.
+## How many times it has greeted the body, for tests.
 var greetings: int = 0
+## How many meetings it has had with another figure (meet), for tests.
+var chats: int = 0
 ## Greetings since facts last changed: the next Lines pick. Never saved.
 var _meetings: int = 0
 var _last_line: String = ""
@@ -81,6 +88,10 @@ var _linger_yaw: float = NAN
 var _clip: StringName = &""
 var _following: bool = false
 var _armed: bool = true
+## The figure it walks to or waits for (meet), its line ({} for none) and the seconds left to reach it.
+var _chat_with: Node3D
+var _chat_facts: Dictionary = {}
+var _chat_left: float = 0.0
 var _line_left: float = 0.0
 var _pause_left: float = 0.0
 var _model: Node3D
@@ -188,6 +199,22 @@ func follow(target: Node3D) -> void:
 		_following = true
 
 
+## A one-shot meeting with other (ig-m6o.2.2.4): when other comes within CHAT_DISTANCE it faces it, plays
+## Interact once and says a line of facts ({} for none: the one who waited says nothing), then clears itself.
+## It is armed at once and never goes through follow(): two neighbours at one House door start nearer than
+## REARM_DISTANCE, and follow() would never fire. It leaves greet, facts and _meetings alone, so the
+## partner's next greeting is the one it would have said anyway. Not reached in MEETING_SECONDS: dropped.
+## While it waits, a linger does not end.
+func meet(other: Node3D, meeting_facts: Dictionary) -> void:
+	_chat_with = other
+	_chat_facts = meeting_facts
+	_chat_left = MEETING_SECONDS
+
+
+func is_meeting() -> bool:
+	return _chat_with != null
+
+
 func is_showing_line() -> bool:
 	return _label.visible
 
@@ -222,6 +249,13 @@ func step(delta: float) -> void:
 		_line_left -= delta
 		_label.visible = _line_left > 0.0
 		_sign.visible = not _label.visible and not _sign.text.is_empty()
+	if _chat_with != null:
+		_chat_left -= delta
+		if _chat_left <= 0.0 or not is_instance_valid(_chat_with) or not _chat_with.is_inside_tree():
+			_chat_with = null
+		elif _flat_distance(_chat_with) <= CHAT_DISTANCE:
+			_chat()
+			return
 	# Before the pause, so a body it switches to mid-greeting still gets its own.
 	if _following and is_instance_valid(greet):
 		var distance: float = _flat_distance(greet)
@@ -262,7 +296,7 @@ func step(delta: float) -> void:
 				walk(_to_work, WORK)
 		LINGER:
 			_left -= delta
-			if _left <= 0.0 and planner.is_valid():
+			if _left <= 0.0 and _chat_with == null and planner.is_valid():
 				planner.call()
 
 
@@ -288,10 +322,6 @@ func _face() -> void:
 func _greet() -> void:
 	_armed = false
 	greetings += 1
-	var to_body: Vector3 = greet.global_position - global_position
-	_model.rotation.y = atan2(to_body.x, to_body.z)
-	_animator.play(&"Interact")
-	_animator.queue(&"Idle_A")
 	var said: String = Lines.line(facts, _meetings)
 	_meetings += 1
 	# New facts start over at a pick that may be the line it just said.
@@ -299,10 +329,32 @@ func _greet() -> void:
 		said = Lines.line(facts, _meetings)
 		_meetings += 1
 	_last_line = said
+	_face_and_say(greet, said)
+
+
+## Its meeting with another figure has come: it stops where it is (a walk to the other ends here), says its
+## line (none for the one who waited) and holds like a greeting, then goes back to its own plan.
+func _chat() -> void:
+	var other: Node3D = _chat_with
+	var said: String = Lines.line(_chat_facts, 0)
+	_chat_with = null
+	_chat_facts = {}
+	chats += 1
+	if activity == WALK:
+		_path.clear()
+	_face_and_say(other, said)
+
+
+## Faces target, plays Interact once, and holds the walk for LINE_SECONDS, with said over its head ("" shows none).
+func _face_and_say(target: Node3D, said: String) -> void:
+	var to_target: Vector3 = target.global_position - global_position
+	_model.rotation.y = atan2(to_target.x, to_target.z)
+	_animator.play(&"Interact")
+	_animator.queue(&"Idle_A")
 	_label.text = said
-	_label.visible = true
-	_sign.visible = false
-	_line_left = LINE_SECONDS
+	_label.visible = not said.is_empty()
+	_sign.visible = not _label.visible and not _sign.text.is_empty()
+	_line_left = LINE_SECONDS if not said.is_empty() else 0.0
 	_pause_left = LINE_SECONDS
 
 
