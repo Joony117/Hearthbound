@@ -836,9 +836,15 @@ func _partner_sign(hero_id: String, living: Dictionary) -> String:
 ## The hub's one way to the bond index (GameSession keeps it). A look that finds the ledger key or the
 ## index changed since the last one says the new bonds and forgets the histories read; a load or a
 ## rebuilt index forgets the dreams and known names too (an append or an eviction leaves them to
-## _dream and _known_names, ig-7sn.21). When the index and the roster names are the ones the last look
-## saw, it reads only the heroes whose tallies a fold touched since (ig-7sn.16; a routine win touches
-## none). A load, a rebuilt index or a roster change reads every hero.
+## _dream and _known_names, ig-7sn.21). The look is keyed on the ledger, not the roster: in the game every
+## committed roster change writes a record (summoned, died) or loads a new ledger, and an eviction is in the
+## same commit as its append, before the flush; a rollback of a recorded change lowers ledger_next_seq, so
+## the index is rebuilt. A roster change with no record (add_hero, tests only) is caught
+## up at the next look; a rename alone keeps the candidates (they hold no names) and _partner_signs signs
+## again with the new names. When the index is the one the last look saw and no kept hero was renamed, the
+## look reads only the heroes whose tallies a fold touched since (ig-7sn.16; a routine win touches none) and,
+## when who is on the roster changed, the heroes that change can touch (ig-bnq, _change_membership).
+## A load, a rebuilt index or a rename with a roster change reads every hero.
 func _bond_index() -> Dictionary:
 	var pairs: Dictionary = GameSession.bond_index()
 	var ledger: Array[Dictionary] = GameSession.ledger
@@ -847,11 +853,26 @@ func _bond_index() -> Dictionary:
 	var living: Dictionary = _roster_names()
 	var changes: Dictionary = GameSession.bond_changes()
 	var same_index: bool = is_same(ledger, _bonds_ledger) and is_same(pairs, _bonds_pairs)
-	if same_index and living == _bonds_living:
+	var membership: bool = same_index and living != _bonds_living
+	var gone: Array[String] = []
+	var added: Array[String] = []
+	var name_changed: bool = false
+	if membership:
+		for id: String in _bonds_living:
+			if not living.has(id):
+				gone.append(id)
+			elif living[id] != _bonds_living[id]:
+				name_changed = true
+		for id: String in living:
+			if not _bonds_living.has(id):
+				added.append(id)
+	if same_index and not name_changed:
 		var touched: Dictionary = {}
 		for id: String in changes["touched"]:
 			if int(changes["touched"][id]) > _bonds_version and living.has(id):
 				touched[id] = true
+		if membership:
+			_change_membership(pairs, living, gone, added, touched)
 		_say_new_bonds(_bond_candidates, pairs, touched)
 		for id: String in touched:
 			_bond_candidates[id] = _candidates_of(pairs, id, living)
@@ -876,6 +897,32 @@ func _bond_index() -> Dictionary:
 		_record_names = {}
 	_histories.clear()
 	return pairs
+
+
+## A look at an index the last look saw, with a different roster (ig-bnq; the names of the heroes who stayed
+## are the same): forgets the heroes in gone (candidates, sign, dream) and every sign that names one of them
+## (the heroes who chose them pick again), and adds to touched the heroes in added and the living heroes with
+## a tally toward one of them, so the look reads those and no one else. Says nothing for a hero who left.
+func _change_membership(pairs: Dictionary, living: Dictionary, gone: Array[String], added: Array[String], touched: Dictionary) -> void:
+	if _signs_living != _bonds_living:
+		_signs = {}
+	var gone_signs: Array[String] = []
+	for id: String in gone:
+		_bond_candidates.erase(id)
+		_signs.erase(id)
+		_dreams.erase(id)
+		gone_signs.append(PARTNER_SIGN % _bonds_living[id])
+	for id: String in _bond_candidates:
+		for gone_id: String in gone:
+			(_bond_candidates[id] as Dictionary).erase(gone_id)
+	for id: String in _signs.keys():
+		if gone_signs.has(_signs[id]):
+			_signs.erase(id)
+	for id: String in living:
+		for added_id: String in added:
+			if id == added_id or (pairs.get(id, {}) as Dictionary).has(added_id):
+				touched[id] = true
+	_signs_living = living
 
 
 ## Each living hero's _candidates_of, pairs-shaped: all the last look's bond_from could pick from.

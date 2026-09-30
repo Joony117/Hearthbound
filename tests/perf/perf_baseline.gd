@@ -102,6 +102,11 @@ func _run() -> void:
 			await _measure_battle("frontier_march")
 		"roster":
 			await _measure_roster()
+		"actions":
+			await _measure_actions()
+		"dreams":
+			diagnose = true
+			await _measure_actions()
 		"town":
 			await _measure_town()
 		"load":
@@ -379,12 +384,20 @@ func _settle_case(hub: Node, case: String) -> bool:
 	if not case.begins_with("walking") and not session.step_out():
 		print("SETTLE CASE %s: not run, can't step out (%s)" % [case, session.last_action_error])
 		return false
-	hub._open(&"Forge" if case.begins_with("Forge") else &"")
-	if case.begins_with("Forge"):
+	hub._open(&"Forge" if case.begins_with("Forge") else &"Sanctum" if case.begins_with("Sanctum") else &"")
+	if case.begins_with("Forge") or case.begins_with("Sanctum"):
 		var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+		var row: int = 0
+		if case.begins_with("Sanctum"):
+			# The first row with a bond (ig-bnq): the Sanctum's actions are on the selected hero.
+			var bonded: Dictionary = hub._roster_names()
+			for index: int in range(roster_list.item_count - 1, -1, -1):
+				var member: Hero = roster_list.get_item_metadata(index) as Hero
+				if member != null and not Bonds.bond_from(session.bond_index(), member.instance_id, bonded, preload("res://balance.tres")).is_empty():
+					row = index
 		roster_list.deselect_all()
-		roster_list.select(0)
-		roster_list.multi_selected.emit(0, true)
+		roster_list.select(row)
+		roster_list.multi_selected.emit(row, true)
 	elif case.begins_with("walking"):
 		var living: Dictionary = hub._roster_names()
 		var walker: Hero = null
@@ -403,11 +416,13 @@ func _settle_case(hub: Node, case: String) -> bool:
 
 
 ## Pulses until SETTLES pulses settle a leg (at most 4000 pulses). A zone whose order stopped is sent
-## again first, so each keeps one. Prints each commit's pulse, then the case's TIME lines.
-func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
+## again first, so each keeps one. Prints each commit's pulse, then the case's TIME lines. death (ig-bnq):
+## stage an expedition death (_strand_one) in each pulse that settles a leg.
+func _settle_pulses(label: String, count: int, spent: Dictionary, death: bool = false) -> void:
 	var samples: Dictionary = {}
 	var settles: int = 0
 	var pulses: int = 0
+	var deaths: PackedStringArray = []
 	while settles < SETTLES and pulses < 4000:
 		pulses += 1
 		for zone_id: String in ZONES.slice(0, count):
@@ -425,6 +440,11 @@ func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
 		var saved_at: float = session.saved_at_unix
 		var decodes: Array[int] = [session.pulse_decodes_active, session.pulse_decodes_idle]
 		var dreams: Array[int] = [_hub_counter("dream_reads"), _hub_counter("dream_resumes")]
+		var roster_before: int = session.roster.size()
+		var stranded: String = _strand_one() if death and not due.is_empty() else ""
+		if not stranded.is_empty():
+			deaths.append(stranded)
+		var probe: Dictionary = _dream_probe_before()
 		spent.clear()
 		var started: int = Time.get_ticks_usec()
 		session._pulse(PULSE)
@@ -441,6 +461,7 @@ func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
 			kind = "landed a repeat check"
 		elif session.saved_at_unix != saved_at:
 			kind = "another commit"
+		_dream_probe("%s: %s (settle %d, pulse %d)" % [label, kind, settles, pulses], probe)
 		var head: String = "%s: %s:" % [label, kind]
 		_add(samples, head + " whole pulse (_pulse)", pulse_ms)
 		_add(samples, head + " whole frame", frame_ms)
@@ -458,16 +479,18 @@ func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
 		_add(samples, head + " handlers, all", handler_ms)
 		var zone: String = str(session.expedition_reports.back().get("zone_id", "?")) if settled > 0 else kind
 		var line: String = "%s %s, %s (%d active, %d checking before; %d leg(s)): pulse %.1f ms, whole frame %.1f ms, decodes %d active/%d idle, dream_reads %d, dream_resumes %d; handlers %.1f ms (%s)" % ["SETTLE" if settled > 0 else "COMMIT", label, zone, active, checking, settled, pulse_ms, frame_ms, session.pulse_decodes_active - decodes[0], session.pulse_decodes_idle - decodes[1], _hub_counter("dream_reads") - dreams[0], _hub_counter("dream_resumes") - dreams[1], handler_ms, ", ".join(top)]
+		if not stranded.is_empty():
+			line += "; expedition death of %s (roster %d -> %d)" % [stranded, roster_before, session.roster.size()]
 		if settled > 0 and not parts.is_empty():
 			var rest: float = pulse_ms - handler_ms
 			var side: PackedStringArray = []
 			for part: String in parts:
 				side.append("%s %.1f" % [part, float(parts[part])])
-				_add(samples, "%s side %s" % [head, part], float(parts[part]))
+				_add(samples, "%s %s %s" % [head, "side (twin, no staged death)" if death else "side", part], float(parts[part]))
 				if not part.begins_with("its decode alone") and not part.begins_with("of which"):
 					rest -= float(parts[part])
 			_add(samples, head + " rest (the pulse less its handlers and the side parts)", rest)
-			line += "; side (twin): %s; rest %.1f ms" % [", ".join(side), rest]
+			line += "; side (%s): %s; rest %.1f ms" % ["twin, no staged death" if death else "twin", ", ".join(side), rest]
 		elif settled > 0:
 			line += "; no side split (not due by its route: a wipe)"
 		print(line)
@@ -476,6 +499,210 @@ func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
 	for key: String in labels:
 		_report(key, samples[key])
 	print("%s: %d pulses, %d that settled" % [label, pulses, settles])
+	if death:
+		print("%s: %d expedition death(s) staged (%s)" % [label, deaths.size(), ", ".join(deaths)])
+
+
+## ig-bnq: the roster actions that write a Ledger record (rank up, summon, sacrifice) with the hub shown,
+## in the two cases of ACTION_CASES; then a settle with an expedition death. Each action runs ACTION_REPS
+## times a case. The commit's handlers run inside the call (the flush is synchronous), so the whole action
+## holds them, and its own save; the save alone is timed beside it. The look's kind is read off the hub:
+## a new _bond_candidates dictionary is a full look, the same one with the roster's size changed a
+## membership look, else quiet. Currencies are topped up here, never the roster: a sacrifice goes through
+## kill_hero.
+const ACTION_REPS: int = 5
+const ACTION_CASES: Array[String] = ["Sanctum open, one bonded hero selected", "walking as a bonded hero"]
+const ACTIONS: Array[String] = ["rank up", "summon", "sacrifice"]
+
+
+func _measure_actions() -> void:
+	var hub: Node = await _open_hub()
+	session.set_process(false)
+	var spent: Dictionary = {}
+	var mood: float = session.town_mood
+	for case: String in ACTION_CASES:
+		if await _settle_case(hub, case):
+			_wrap_handlers(spent)
+			for action: String in ACTIONS:
+				await _action_reps(hub, "actions, %s, %s" % [case, action], action, spent)
+			_unwrap_handlers()
+	_dispatch(ZONES[0], _cap(ZONES[0]))
+	session.town_mood = mood
+	if await _settle_case(hub, ACTION_CASES[0]):
+		_wrap_handlers(spent)
+		await _settle_pulses("settle1 with an expedition death, %s" % ACTION_CASES[0], 1, spent, true)
+		_unwrap_handlers()
+	session.set_process(true)
+
+
+func _action_reps(hub: Node, label: String, action: String, spent: Dictionary) -> void:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var samples: Dictionary = {}
+	var kinds: Dictionary = {"quiet": 0, "membership": 0, "full": 0}
+	var over: int = 0
+	var failed: int = 0
+	for rep: int in ACTION_REPS:
+		var target: Hero = session.hero_by_id(session.embodied_hero_id)
+		if target == null:
+			target = hub._selected_hero()
+		var partners: Dictionary = _partner_ids(hub, balance)
+		var hero: Hero = _action_hero(hub, action, target, partners, balance)
+		if hero == null and action != "summon":
+			print("ACTION %s: not run, no hero for it" % label)
+			return
+		var pulled: Hero = Summon.roll(session.building_levels[0]) if action == "summon" else null
+		var who: String = hero.hero_name if hero != null else pulled.hero_name
+		session.essence = 100000
+		session.stones = 300
+		var kept: Dictionary = hub._bond_candidates
+		var members: int = hub._bonds_living.size()
+		var probe: Dictionary = _dream_probe_before()
+		spent.clear()
+		var done: bool = false
+		var started: int = Time.get_ticks_usec()
+		match action:
+			"rank up":
+				done = session.rank_up_hero(hero, balance)
+			"summon":
+				done = session.summon_hero(pulled, balance)
+			"sacrifice":
+				done = session.sacrifice_hero(hero, target, balance)
+		var whole_ms: float = _since(started)
+		var handlers: Dictionary = spent.duplicate()
+		await process_frame
+		_dream_probe("%s: rep %d, %s" % [label, rep + 1, action], probe)
+		if not done:
+			# A refused action is no sample: left out of the stats and the look counts.
+			failed += 1
+			print("ACTION %s: rep %d, %s, NOT DONE (%s): left out of the stats" % [label, rep + 1, who, session.last_action_error])
+			continue
+		var kind: String = "quiet"
+		if not is_same(hub._bond_candidates, kept):
+			kind = "full"
+		elif hub._bonds_living.size() != members:
+			kind = "membership"
+		kinds[kind] = int(kinds[kind]) + 1
+		var keys: Array = handlers.keys()
+		keys.sort_custom(func(a: String, b: String) -> bool: return float(handlers[a]) > float(handlers[b]))
+		var handler_ms: float = 0.0
+		var top: PackedStringArray = []
+		for key: String in keys:
+			handler_ms += float(handlers[key])
+			_add(samples, "%s: handler %s" % [label, key], float(handlers[key]))
+			if float(handlers[key]) >= 0.5:
+				top.append("%s %.1f" % [key, float(handlers[key])])
+		_add(samples, label + ": whole action", whole_ms)
+		_add(samples, label + ": handlers, all", handler_ms)
+		over += 1 if whole_ms > 33.0 else 0
+		var partner_of: String = ""
+		if hero != null and action == "sacrifice":
+			partner_of = " (someone's partner)" if partners.has(hero.instance_id) else " (no one's partner: the fallback fodder)"
+		elif hero != null and partners.has(hero.instance_id):
+			partner_of = " (someone's partner)"
+		print("ACTION %s: rep %d, %s%s, done %s: look: %s; whole action %.1f ms%s, handlers %.1f ms (%s)" % [label, rep + 1, who, partner_of, done, kind, whole_ms, " OVER 33" if whole_ms > 33.0 else "", handler_ms, ", ".join(top)])
+	var keys_out: Array = samples.keys()
+	keys_out.sort()
+	for key: String in keys_out:
+		_report(key, samples[key])
+	_report(label + ": save alone (SaveService.save)", _time(saves.save, 5))
+	print("ACTION SUMMARY %s: %d reps, %d not done (left out); %d over 33 ms; look: %d quiet, %d membership, %d full" % [label, ACTION_REPS, failed, over, kinds["quiet"], kinds["membership"], kinds["full"]])
+
+
+## The hero an action acts on: the shown or walking hero (target) for a rank up, else the first free one
+## under SS (the last rank-up has its own gate); for a sacrifice the first unprotected, unequipped hero
+## that is someone's partner (the re-signing case), else any. null for none. A summon has none.
+func _action_hero(hub: Node, action: String, target: Hero, partners: Dictionary, balance: BalanceTable) -> Hero:
+	var fallback: Hero = null
+	var shown: Hero = hub._selected_hero()
+	var candidates: Array[Hero] = []
+	if action == "rank up" and target != null:
+		candidates.append(target)
+	candidates.append_array(session.roster)
+	for hero: Hero in candidates:
+		if action == "rank up" and not session.is_hero_busy(hero) and hero.rank < balance.rank_names.size() - 2:
+			return hero
+		if action == "sacrifice" and hero != target and hero != shown and hero.equipped.is_empty() and not session.is_hero_protected(hero):
+			if partners.has(hero.instance_id):
+				return hero
+			fallback = fallback if fallback != null else hero
+	return fallback
+
+
+## Every hero id that is some living hero's partner (Bonds.bond_from), as keys.
+func _partner_ids(hub: Node, balance: BalanceTable) -> Dictionary:
+	var living: Dictionary = hub._roster_names()
+	var partners: Dictionary = {}
+	for id: String in living:
+		var partner: String = str(Bonds.bond_from(session.bond_index(), id, living, balance).get("partner", ""))
+		if not partner.is_empty():
+			partners[partner] = true
+	return partners
+
+
+## ig-bnq: one stranded incident for a free bonded hero, not the shown one, that expires on the next pulse:
+## the expedition death of a settle. Only the setup is staged here; the removal is the pulse's own
+## (_expire_stranded_incidents_in_memory -> kill_hero). Returns the hero's name, "" for none.
+func _strand_one() -> String:
+	var hub: Node = current_scene
+	var shown: Hero = hub._selected_hero()
+	var living: Dictionary = hub._roster_names()
+	for hero: Hero in session.roster:
+		if hero != shown and not session.is_hero_busy(hero) and not session.is_embodied(hero) and not Bonds.bond_from(session.bond_index(), hero.instance_id, living, preload("res://balance.tres")).is_empty():
+			session.stranded_incidents.append({"id": "perf_%s" % hero.instance_id, "source_order_id": "perf", "zone_id": ZONES[0], "hero_ids": [hero.instance_id], "paused": false, "created_recovery_seconds": session.rescue_clock_seconds - 1000000.0, "active_rescue_order_id": "", "expiry_pending": false})
+			return hero.hero_name
+	return ""
+
+
+## ig-bnq diagnostic (the "dreams" measure: the actions measure with diagnose on; a diagnostic run, not a
+## window, since it copies the ledger around each timed call): when a call made the hub read a hero's dream
+## in full, one DREAM line says which mark moved (the rule of Hub._dream) and which evicted records moved it.
+var diagnose: bool = false
+
+
+func _dream_probe_before() -> Dictionary:
+	if not diagnose:
+		return {}
+	var marks: Dictionary = session.bond_changes()
+	return {"memos": (current_scene._dreams as Dictionary).duplicate(), "out_all": int(marks["out_all"]), "out_named": (marks["out_named"] as Dictionary).duplicate(), "ledger": session.ledger.duplicate()}
+
+
+func _dream_probe(what: String, before: Dictionary) -> void:
+	if before.is_empty():
+		return
+	var marks: Dictionary = session.bond_changes()
+	var kept: Dictionary = {}
+	for record: Dictionary in session.ledger:
+		kept[int(record.get("seq", 0))] = true
+	var gone: Array[Dictionary] = []
+	var kinds: Dictionary = {}
+	for record: Dictionary in before["ledger"]:
+		if not kept.has(int(record.get("seq", 0))):
+			gone.append(record)
+			kinds[str(record.get("kind", "?"))] = int(kinds.get(str(record.get("kind", "?")), 0)) + 1
+	var memos: Dictionary = before["memos"]
+	var roster: Dictionary = current_scene._roster_names()
+	for id: String in current_scene._dreams:
+		if is_same(current_scene._dreams[id], memos.get(id)):
+			continue
+		var read_at: int = int((memos.get(id, {}) as Dictionary).get("outs", -1))
+		var causes: PackedStringArray = []
+		var all_kinds: PackedStringArray = []
+		var naming: PackedStringArray = []
+		if read_at < 0:
+			causes.append("no memo yet")
+		if read_at >= 0 and int(marks["out_all"]) > read_at:
+			causes.append("out_all %d (was %d, read at %d)" % [marks["out_all"], before["out_all"], read_at])
+		if read_at >= 0 and int((marks["out_named"] as Dictionary).get(id, 0)) > read_at:
+			causes.append("out_named[hero] %d (was %d, read at %d)" % [(marks["out_named"] as Dictionary).get(id, 0), (before["out_named"] as Dictionary).get(id, 0), read_at])
+		for record: Dictionary in gone:
+			if str(record.get("kind", "")) != "battle" or record.has("name"):
+				all_kinds.append("#%d %s%s" % [int(record.get("seq", 0)), record.get("kind", "?"), " with a name" if record.has("name") else ""])
+				continue
+			for key: String in ["team", "rescued", "rescuers"]:
+				if Ledger._array(record, key).has(id):
+					naming.append("#%d %s battle (%s)" % [int(record.get("seq", 0)), "routine" if Ledger.is_routine(record) else "non-routine", key])
+					break
+		print("DREAM %s: %s (%s) read in full; cause: %s; evicted %d (%s); evicted that mark out_all: %s; evicted that name the hero: %s" % [what, roster.get(id, "?"), id, "; ".join(causes) if not causes.is_empty() else "none of the marks", gone.size(), ", ".join(PackedStringArray(kinds.keys().map(func(kind: String) -> String: return "%s %d" % [kind, kinds[kind]]))), ", ".join(all_kinds) if not all_kinds.is_empty() else "none", ", ".join(naming) if not naming.is_empty() else "none"])
 
 
 ## One of the hub's dream counters (dream_resumes is ig-7sn.21's: 0 before the hub has it).

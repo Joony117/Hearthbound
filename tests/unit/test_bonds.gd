@@ -1560,6 +1560,177 @@ func test_the_hubs_kept_dreams_and_names_equal_a_full_read_through_evictions_a_l
 	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records, "the second half evicted")
 
 
+## ---- ig-bnq: the hub's look when only the roster's membership changed
+
+## ACC 3: a summon, a sacrifice or an expedition death changes who is on the roster and nothing else. The hub's
+## look then edits its memos in place (the candidates dictionary is the same one; a sentinel sign on a hero
+## the change cannot touch survives) and the memos, the signs and the notice equal a full look's.
+func test_a_summon_takes_the_hubs_look_in_place_and_equals_a_full_look() -> void:
+	var hub: Node3D = _membership_hub()
+	var kept: Dictionary = hub._bond_candidates
+	hub._signs[D] = "SENTINEL"
+	GameSession.stones = 1000
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	assert_true(GameSession.summon_hero(_new_hero(F, "Fay"), BALANCE), GameSession.last_action_error)
+	assert_true(is_same(hub._bond_candidates, kept), "the look edited the memos in place")
+	assert_eq(hub._signs[D], "SENTINEL", "no one the summon cannot touch was re-signed")
+	hub._signs.erase(D)
+	_assert_look_is_exact(hub, before, "a summon")
+
+
+func test_a_sacrifice_of_someones_partner_moves_that_sign_to_the_next_partner_and_equals_a_full_look() -> void:
+	var hub: Node3D = _membership_hub()
+	var kept: Dictionary = hub._bond_candidates
+	assert_eq(hub._signs[A], "♥ Bea")
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	assert_true(GameSession.sacrifice_hero(GameSession.hero_by_id(B), GameSession.hero_by_id(E), BALANCE))
+	assert_true(is_same(hub._bond_candidates, kept), "the look edited the memos in place")
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "♥ Cal", "Bea is gone; Cal is Ada's next")
+	assert_false(hub._signs.has(B) or hub._bond_candidates.has(B) or hub._dreams.has(B), "nothing of Bea is kept")
+	_assert_look_is_exact(hub, before, "a sacrifice of a partner")
+
+
+func test_a_sacrifice_of_a_second_best_partner_re_signs_no_one() -> void:
+	var hub: Node3D = _membership_hub()
+	var kept: Dictionary = hub._bond_candidates
+	hub._signs[A] = "SENTINEL"
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	assert_true(GameSession.sacrifice_hero(GameSession.hero_by_id(C), GameSession.hero_by_id(E), BALANCE))
+	assert_true(is_same(hub._bond_candidates, kept), "the look edited the memos in place")
+	assert_eq(hub._signs[A], "SENTINEL", "Bea is still Ada's closest, so her sign was not read again")
+	assert_false((hub._bond_candidates[A] as Dictionary).has(C), "Cal is gone from Ada's candidates")
+	hub._signs.erase(A)
+	_assert_look_is_exact(hub, before, "a sacrifice of a second-best partner")
+
+
+## Three battles that stranded Ada, Bea and Cal are only three hard battles: no bond. Cal's death, of the
+## order that stranded them, is a death Ada and Bea saw together: they cross the threshold in the same look
+## that drops Cal. The look reads the touched heroes (a death with tallies), not only who joined.
+func test_an_expedition_death_that_touches_tallies_says_the_new_bond_and_equals_a_full_look() -> void:
+	for pair: Array in [[A, "Ada"], [B, "Bea"], [C, "Cal"], [D, "Dov"]]:
+		_hero(pair[0], pair[1])
+	for _index: int in 3:
+		_battle_in(GameSession.ledger, [A, B, C], "stranded", {"order": "o"})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "", "three hard battles are no bond")
+	var status: Label = hub.get_node("%Status") as Label
+	status.text = ""
+	var kept: Dictionary = hub._bond_candidates
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	GameSession.kill_hero(GameSession.hero_by_id(C), StringName(ZONE), BALANCE, "expedition", "", "o")
+	assert_eq(status.text, "Ada and Bea grew close.", "the death they saw together")
+	assert_true(is_same(hub._bond_candidates, kept), "the look edited the memos in place")
+	assert_false(hub._bond_candidates.has(C), "Cal is gone")
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "♥ Bea")
+	_assert_look_is_exact(hub, before, "an expedition death that touches tallies")
+
+
+## Ada, Bea, Cal and Dov saw three hard fights with Eve, who was stranded; Eve's death, of that order, is a
+## death all four saw together: six pairs cross the threshold in the look that drops Eve. Ada and Bea are
+## a mutual pair; Cal and Dov each grow close to Ada (the lowest id on a tie). Three news: the first, and
+## "(+2 more)", as a full look over every hero says them.
+func test_a_membership_look_with_several_new_bonds_says_the_first_and_how_many_more() -> void:
+	for pair: Array in [[A, "Ada"], [B, "Bea"], [C, "Cal"], [D, "Dov"], [E, "Eve"]]:
+		_hero(pair[0], pair[1])
+	for _index: int in 3:
+		_battle_in(GameSession.ledger, [A, B, C, D, E], "stranded", {"order": "o"})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "", "three hard battles are no bond")
+	var status: Label = hub.get_node("%Status") as Label
+	status.text = ""
+	var kept: Dictionary = hub._bond_candidates
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	GameSession.kill_hero(GameSession.hero_by_id(E), StringName(ZONE), BALANCE, "expedition", "", "o")
+	assert_true(is_same(hub._bond_candidates, kept), "the look edited the memos in place")
+	assert_eq(status.text, "Ada and Bea grew close. (+2 more)")
+	_assert_look_is_exact(hub, before, "an expedition death with several new bonds")
+
+
+## A roster change with no record (add_hero: only tests do it) skips the look, which is keyed on the ledger.
+## The next action that writes a record is a look against the older roster: it reads the hero that came
+## in, says the delayed news and is exact.
+func test_a_roster_change_with_no_record_is_caught_up_at_the_next_look() -> void:
+	_hero(A, "Ada")
+	_hero(D, "Dov")
+	_saves_between(A, "hero:n", 2)
+	var hub: Node3D = _hub()
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "", "Nia is not here yet")
+	var status: Label = hub.get_node("%Status") as Label
+	status.text = ""
+	var kept: Dictionary = hub._bond_candidates
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	GameSession.add_hero(_new_hero("hero:n", "Nia"))
+	assert_eq(hub._bonds_living.size(), 2, "no record, no look")
+	assert_eq(status.text, "", "nothing said yet")
+	GameSession.stones = 1000
+	assert_true(GameSession.summon_hero(_new_hero(F, "Fay"), BALANCE), GameSession.last_action_error)
+	assert_eq(hub._bonds_living.size(), 4, "the look saw both new heroes")
+	assert_eq(status.text, "Ada and Nia grew close.", "the delayed news")
+	assert_true(is_same(hub._bond_candidates, kept), "the look edited the memos in place")
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "♥ Nia")
+	_assert_look_is_exact(hub, before, "a roster change with no record")
+
+
+## A hero the ledger knows from before (a rollback's or a load's past) joins the roster: every hero with a
+## tally toward it is read again, and the news is said in the look that adds it.
+func test_a_hero_that_joins_with_tallies_says_the_bond_and_equals_a_full_look() -> void:
+	_hero(A, "Ada")
+	_hero(D, "Dov")
+	_saves_between(A, "hero:n", 2)
+	var hub: Node3D = _hub()
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "", "Nia is not here yet")
+	var status: Label = hub.get_node("%Status") as Label
+	status.text = ""
+	var kept: Dictionary = hub._bond_candidates
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	GameSession.stones = 1000
+	assert_true(GameSession.summon_hero(_new_hero("hero:n", "Nia"), BALANCE), GameSession.last_action_error)
+	assert_eq(status.text, "Ada and Nia grew close.")
+	assert_true(is_same(hub._bond_candidates, kept), "the look edited the memos in place")
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "♥ Nia")
+	_assert_look_is_exact(hub, before, "a hero that joins with tallies")
+
+
+## A failed save takes an action back after the hub looked at the half-done roster: the hero is on the
+## roster again and the memos are a full look's. (The rebuilt index takes the full look here.) The notice is
+## measured from what the hub last saw, the half-done roster, so Ada and Bea "grow close" again, as they
+## always did after a rollback.
+func test_a_rollback_that_puts_a_hero_back_equals_a_full_look() -> void:
+	var hub: Node3D = _membership_hub()
+	var seen: Dictionary = {}
+	var mutation := func() -> bool:
+		GameSession.kill_hero(GameSession.hero_by_id(B), &"", BALANCE, "expedition", "", "")
+		GameSession.roster_changed.emit()
+		seen["candidates"] = hub._bond_candidates.duplicate(true)
+		return false
+	assert_false(GameSession._commit_profile_mutation(mutation))
+	assert_not_null(GameSession.hero_by_id(B), "the rollback put Bea back")
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "♥ Bea")
+	_assert_look_is_exact(hub, seen["candidates"], "a rollback")
+
+
+## A kept hero that was renamed, and a load, are not a membership look: nothing keeps a name apart from the
+## roster, so they take the full one.
+func test_a_rename_with_a_membership_change_and_a_load_take_the_full_look() -> void:
+	var hub: Node3D = _membership_hub()
+	var kept: Dictionary = hub._bond_candidates
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	GameSession.hero_by_id(B).hero_name = "Bee"
+	GameSession.stones = 1000
+	assert_true(GameSession.summon_hero(_new_hero(F, "Fay"), BALANCE), GameSession.last_action_error)
+	assert_false(is_same(hub._bond_candidates, kept), "a rename takes the full look")
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "♥ Bee")
+	_assert_look_is_exact(hub, before, "a rename with a summon")
+	before = hub._bond_candidates.duplicate(true)
+	var data: Dictionary = GameSession.to_dict()
+	data["ledger"] = GameSession.ledger.duplicate(true)
+	GameSession.from_dict(data)
+	GameSession.roster_changed.emit()
+	_assert_look_is_exact(hub, before, "a load")
+
+
 ## ---- helpers
 
 ## The perf seed's ledger (tests/perf/seed_perf.gd: its rng, 5-hero teams and mix) at the cap.
@@ -1911,12 +2082,62 @@ func _living() -> Dictionary:
 	return {A: true, B: true, C: true}
 
 
+## Ada, Bea, Cal, Dov and Eve on the roster. Bea is Ada's closest (three saves, 12 points) and Cal her
+## next (two, the threshold); Dov and Eve have no bond. The hub has looked once, holds the warm signs and a
+## dream of Bea, and its status line is empty.
+func _membership_hub() -> Node3D:
+	for pair: Array in [[A, "Ada"], [B, "Bea"], [C, "Cal"], [D, "Dov"], [E, "Eve"]]:
+		_hero(pair[0], pair[1])
+	_saves_between(A, B, 3)
+	_saves_between(A, C, 2)
+	var hub: Node3D = _hub()
+	assert_eq(hub._partner_signs(hub._roster_names())[A], "♥ Bea")
+	hub._dream(B)
+	(hub.get_node("%Status") as Label).text = ""
+	return hub
+
+
+## count battles of one and other, each with one save: 4 points a battle, so two reach the threshold (8).
+func _saves_between(one: String, other: String, count: int) -> void:
+	for _index: int in count:
+		_battle_in(GameSession.ledger, [one, other], "victory", {"moments": [_moment("revived", one, other)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+
+
+## ig-bnq: after an action's look, the hub's memos are a full look's. before is the candidates, deep-copied
+## before the action. The candidates equal _living_candidates, every sign equals a fresh _partner_sign (and
+## there is no other), no hero that left keeps a dream, and the notice the action's look said is the one a
+## full look over every hero says.
+func _assert_look_is_exact(hub: Node3D, before: Dictionary, what: String) -> void:
+	var status: Label = hub.get_node("%Status") as Label
+	var told: String = status.text
+	var living: Dictionary = hub._roster_names()
+	var pairs: Dictionary = GameSession.bond_index()
+	var signs: Dictionary = hub._partner_signs(living)
+	var fresh: Dictionary = {}
+	for id: String in living:
+		fresh[id] = hub._partner_sign(id, living)
+	assert_eq(hub._bond_candidates, hub._living_candidates(pairs, living), "%s: the candidates" % what)
+	assert_eq(signs, fresh, "%s: the signs" % what)
+	for id: String in hub._dreams:
+		assert_true(living.has(id), "%s: %s left and kept a dream" % [what, id])
+	status.text = ""
+	hub._say_new_bonds(before, pairs, living)
+	assert_eq(told, status.text, "%s: the notice" % what)
+
+
 func _hero(id: String, hero_name: String) -> Hero:
+	var hero: Hero = _new_hero(id, hero_name)
+	GameSession.add_hero(hero)
+	return hero
+
+
+## A hero that is not on the roster yet (a summon adds it).
+func _new_hero(id: String, hero_name: String) -> Hero:
 	var hero := Hero.new(hero_name, 7)
 	hero.def_id = &"knight"
 	hero.instance_id = id
 	hero.level = 80
-	GameSession.add_hero(hero)
 	return hero
 
 

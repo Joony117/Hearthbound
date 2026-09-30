@@ -14,7 +14,7 @@ ROOT=$(cygpath -w "$PWD")
 PFX=""; [ "$MODE" = headless ] && PFX=headless_
 OUT=.agent-results/$2; shift 2
 for m in "$@"; do
-	case "$m" in pulse1|pulse5|pulse_split|settle1|settle5|hub|battle_citadel|battle_frontier|roster|town|load|preview) ;; *) echo "unknown measure: $m"; exit 2;; esac
+	case "$m" in pulse1|pulse5|pulse_split|settle1|settle5|hub|battle_citadel|battle_frontier|roster|actions|dreams|town|load|preview) ;; *) echo "unknown measure: $m"; exit 2;; esac
 done
 mkdir -p "$OUT"
 COMMIT=$(git rev-parse --short HEAD)
@@ -29,5 +29,5 @@ for m in "$@"; do
 	APPDATA="$(cygpath -w "$RUN")" timeout 1000 ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --$MODE -s res://tests/perf/perf_baseline.gd -- "$m" "$COMMIT" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$OUT/$PFX$m.log"
 	echo "$PFX$m exit=${PIPESTATUS[0]}"
 	reap
-	grep -E "^(MEASURE|APPDATA|CPU|SAVE|FRAMES|TIME|ORDER|SETTLE|load|roster|bond|DONE)|SCRIPT ERROR|ERROR|WARNING" "$OUT/$PFX$m.log" | cut -c1-260
+	grep -E "^(MEASURE|APPDATA|CPU|SAVE|FRAMES|TIME|ORDER|SETTLE|ACTION|DREAM|load|roster|bond|DONE)|SCRIPT ERROR|ERROR|WARNING" "$OUT/$PFX$m.log" | cut -c1-260
 done
