@@ -42,6 +42,25 @@ func test_v3_validation_rejects_non_string_rng_without_mutating_profile() -> voi
 	assert_string_contains(Session.validate_saved_state(saved, 3), "rng_state")
 
 
+## ig-8w1: a field object whose kind is not a String is refused by name (it used to be a script error in the
+## validator, which returned "" and let the checkpoint through).
+func test_v3_validation_rejects_non_string_field_object_kind() -> void:
+	var hero := Hero.new("Persistent", 0)
+	hero.def_id = &"mage"
+	hero.instance_id = "hero:persistent"
+	GameSession.roster.append(hero)
+	var preset_id: String = GameSession.save_team_preset("", "Persistent", [hero.instance_id], "verdant_outskirts")
+	GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, {"healing": 0, "revival": 0, "keep_healing": 0, "keep_revival": 0})
+	var saved: Dictionary = GameSession.to_dict()
+	var battle: Dictionary = saved["expedition_orders"][0]["battle"] as Dictionary
+	var zone: Dictionary = {"id": "field:1", "kind": 3.0, "skill_id": "mage_rime_circle", "owner_actor_id": str(((battle["actors"] as Array)[0] as Dictionary)["id"]), "faction": "ally", "center": [0.0, 0.0], "radius": 2.0, "remaining_seconds": 3.0, "atk": 10.0, "heal_scale": 0.0}
+	battle["field_sequence"] = 1.0
+	battle["field_objects"] = [zone]
+	assert_string_contains(Session.validate_saved_state(saved, 3), "field object kind")
+	zone["kind"] = "zone"
+	assert_eq(Session.validate_saved_state(saved, 3), "", "the same object with its kind a String is accepted")
+
+
 func test_v3_validation_rejects_order_checkpoint_identity_actor_and_nullable_contract_breaks() -> void:
 	var hero := Hero.new("Validator", 7)
 	hero.def_id = &"knight"

@@ -388,10 +388,14 @@ func _field_rows() -> Array[Array]:
 		var wall: Dictionary = _wall_object(d)
 		wall["kind"] = "zone"
 		_fields(d, [wall])])
-	# Not "kind": a non-String kind never reaches this check. The shape check's get("kind") == "wall" is a
-	# script error on a number, and the validator returns "" (a finding at HEAD, reported with ig-7sn.10).
-	for key: String in ["id", "skill_id", "owner_actor_id", "faction"]:
+	for key: String in ["id", "kind", "skill_id", "owner_actor_id", "faction"]:
 		rows.append([v, "Battle field object %s must be a String." % key, func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({key: 3}, true)])])
+	# ig-8w1: a kind that is not a String, as the save's parse gives it (a float, null, an Array). The shape check
+	# compared it to "wall" raw, a script error that returned "" and let the checkpoint through. A wall-shaped
+	# object with such a kind is 9 keys, so it gets the shape message.
+	for bad: Variant in [3.0, null, ["wall"]]:
+		rows.append([v, "Battle field object kind must be a String.", func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({"kind": bad}, true)])])
+	rows.append([v, shape, func(d: Dictionary) -> void: _fields(d, [_wall_object(d).merged({"kind": 3.0}, true)])])
 	var ids: String = "Battle field object ids must be unique, field:<1 to field_sequence>."
 	for bad: String in ["field:9", "field:0", "zone:1", "field:01", "field:x"]:
 		rows.append([v, ids, func(d: Dictionary) -> void: _fields(d, [_zone_object(d).merged({"id": bad}, true)])])

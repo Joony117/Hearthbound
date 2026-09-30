@@ -491,7 +491,7 @@ static func _validate_field_objects(data: Dictionary, zone: ZoneDefinition, acto
 	var sequence: int = int(data.get("field_sequence", 0))
 	var ids: Dictionary[String, bool] = {}
 	for entry: Variant in data.get("field_objects") as Array:
-		if not entry is Dictionary or (entry as Dictionary).size() != (9 if (entry as Dictionary).get("kind") == "wall" else 10):
+		if not entry is Dictionary or (entry as Dictionary).size() != (9 if str((entry as Dictionary).get("kind")) == "wall" else 10):
 			return "Every battle field object must be a zone {id, kind, skill_id, owner_actor_id, faction, center, radius, remaining_seconds, atk, heal_scale} or a wall {id, kind, skill_id, owner_actor_id, faction, start, end, thickness, remaining_seconds}."
 		var field: Dictionary = entry as Dictionary
 		for key: String in _FIELD_STRING_KEYS:
