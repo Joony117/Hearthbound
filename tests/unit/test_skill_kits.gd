@@ -289,7 +289,7 @@ func test_iron_cut_then_follow_through_lands_the_combo_inside_its_window() -> vo
 		var before: float = enemy.hp
 		SIM._use_weaponskill(state, knight, SIM._pick_weaponskill(state, knight, enemy), enemy, null)
 		landed.append(snappedf(before - enemy.hp, 0.0001))
-	assert_eq(landed, [13.0, 18.0, 13.0], "Iron Cut, Follow-Through at 1.8, then the chain restarts")
+	assert_eq(landed, [10.0, 18.0, 10.0], "Iron Cut (a plain swing since ig-gy0.9), Follow-Through at 1.8, then the chain restarts")
 	state.tick += 60
 	assert_eq(SIM._pick_weaponskill(state, knight, enemy), SIM.ABILITIES["knight_follow_through"], "6 s is still inside")
 	state.tick += 1

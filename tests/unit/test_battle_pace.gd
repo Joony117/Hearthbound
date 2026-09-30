@@ -89,6 +89,46 @@ func test_a_weaponskill_the_windup_a_telegraph_and_the_dodge_window_stay_real() 
 		assert_eq(float(dodges[0]["remaining"]), _slip_seconds(), "pace %d: the dodge window" % pace)
 
 
+## ig-gy0.9 (SYSTEMS.md § Counters): the AI answers a telegraph once it has run skill_reaction_delay_seconds
+## (0.2 s), and the tick expires statuses before it resolves a telegraph. Crushing Blow's 1.2 s telegraph would
+## meet a 1.0 s dodge exactly as it ends: a tie, and a tie is a hit. Slip's and Dust Roll's 1.2 s leave 0.2 s to
+## spare, and the seconds are real at any pace. The circle sits so that Slip's step away leaves the Rogue inside
+## it: the dodge, not the step, is what saves it.
+func test_a_dodge_answered_after_the_reaction_delay_outlasts_crushing_blow_and_a_one_second_dodge_would_not() -> void:
+	for skill_id: String in ["rogue_slip", "general_tumble"]:
+		for effect: Dictionary in (SIM.ABILITIES[skill_id] as AbilityDefinition).effects:
+			if str(effect.get("status", "")) == "dodge":
+				assert_eq(float(effect["seconds"]), 1.2, skill_id)
+	for pace: int in [1, PACE]:
+		var dodged: BattleActor = _rogue_meets_crushing_blow(pace, 0.0)
+		assert_eq(dodged.hp, dodged.max_hp, "pace %d: a 1.2 s dodge answered at 0.2 s takes no damage" % pace)
+		var tied: BattleActor = _rogue_meets_crushing_blow(pace, 1.0)
+		assert_lt(tied.hp, tied.max_hp, "pace %d: a 1.0 s dodge from the same answer ends as the blow lands, and it hits" % pace)
+
+
+## A Rogue with Slip at 2 units from a Knight whose Crushing Blow (1.2 s) is aimed 1.5 units behind it. Runs
+## the 0.2 s reaction delay, checks the answer and its real-seconds dodge, then (dodge_seconds above 0) shortens
+## the dodge to what a shorter one would have left, and runs the rest of the telegraph. Returns the Rogue.
+func _rogue_meets_crushing_blow(pace: int, dodge_seconds: float) -> BattleActor:
+	var state: BattleState = _battle([_unit("hero:g", "rogue", "ally", Vector2(2, -16)), _unit("enemy:1", "knight", "enemy", Vector2(0, -16))], pace)
+	var rogue: BattleActor = state.actors[0]
+	var knight: BattleActor = state.actors[1]
+	_give(rogue, ["rogue_slip"])
+	_give(knight, ["enemy_knight_crushing_blow"])
+	SIM._start_telegraph(state, knight, SIM.ABILITIES["enemy_knight_crushing_blow"], Vector2(3.5, -16), 1.2)
+	SIM.advance(state, BALANCE.skill_reaction_delay_seconds)
+	assert_gt(rogue.skill_cooldowns["rogue_slip"], 0.0, "pace %d: answered after the reaction delay" % pace)
+	var dodges: Array = rogue.statuses.filter(func(status: Dictionary) -> bool: return status["kind"] == "dodge")
+	assert_eq(dodges.size(), 1, "pace %d" % pace)
+	assert_eq(float(dodges[0]["remaining"]), _slip_seconds(), "pace %d: the dodge is real seconds" % pace)
+	assert_lte(rogue.position.distance_to(Vector2(3.5, -16)), 1.5, "pace %d: still inside the circle after the step" % pace)
+	if dodge_seconds > 0.0:
+		dodges[0]["remaining"] = dodge_seconds
+	SIM.advance(state, 1.0)
+	assert_eq(knight.effect_state["telegraph_kind"], "", "pace %d: the blow has landed" % pace)
+	return rogue
+
+
 func test_a_battle_orders_rewards_scale_by_its_own_pace() -> void:
 	var zone: ZoneDefinition = ZoneDefinition.definition_for(&"verdant_outskirts")
 	var xp: Array[int] = []

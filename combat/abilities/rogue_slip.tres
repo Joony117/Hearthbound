@@ -17,7 +17,7 @@ effects = Array[Dictionary]([{
 "type": "status",
 "target": "self",
 "status": "dodge",
-"seconds": 1.0
+"seconds": 1.2
 }, {
 "type": "move",
 "to": "away",

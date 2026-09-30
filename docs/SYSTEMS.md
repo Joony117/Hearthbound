@@ -314,6 +314,28 @@ multiplies. The enemy multipliers above stand.
 Evidence: `.agent-results/ig-9gf/balance_head.log` and `balance_final.log`;
 `.agent-results/ig-el4/table.txt` (the grid) and `balance_final.log` (the real `balance.tres`).
 
+**Restated 2026-09-29, after the skill balance pass (`ig-gy0.9`).** The band above (62.9–78.6 s,
+Knights 112.2–116.4 s) is a **default-kit** measurement: the gate's heroes in `ig-el4` had no skills,
+though the game's had. The gate's `--kit=default` run at P = 6, taken before the pass, matches the last
+default-kit log line for line (seeds 1 and 2, `.agent-results/ig-85w/balance_final.log`).
+`--kit=default` changes only the heroes: enemies take the shared starters, so a default-kit run on
+today's tree would differ, and no default-kit band after the pass is claimed. The kits landed before the retune, and
+the owner played real kits. The real-kit numbers now stand beside it, level-1 heroes, seeds 1–4,
+Verdant:
+
+| Kit, pace | Mixed (s) | Three starter Knights (s) |
+|---|---|---|
+| Default, P = 1 (the el4 band, seeds 1, 2) | 62.9–78.6 | 112.2–116.4 |
+| Real, P = 1, after the pass | 63.3–70.5 | 108.5–114.0 |
+| Real, P = 6, before the pass | 255.3–275.6 | 433.8–460.2 |
+| Real, P = 6, after the pass | 305.6–343.7 | 552.7–579.0 |
+| Default, P = 6, before the pass | 308.9–379.5 | 559.4–629.1 |
+
+The real kit at P = 6 had run 16–28% faster than the default kit (mixed) and 20–27% faster
+(Knights). The pass brought it back inside the default kit's band from before the pass, 1% under at the
+fast edge (305.6 s against 308.9 s), and above the 296 s floor (4.7 × 62.9 s). § What the kits cost the balance has the
+change, and § Battle pace the ratio.
+
 | Hero kit | Signature | Passive |
 |---|---|---|
 | Knight | Stand Fast: 16s cooldown; revive a downed ally within 3 to 25% HP, otherwise guard allies within radius 3 for 4s with 30% damage reduction | 10% damage reduction within 3 of another living ally; multiplicative with one Stand Fast effect |
@@ -391,6 +413,19 @@ baseline from here). Every case wins. Clears are 4.7–5.1x of pace 1: mixed 316
 under 561 s. `mixed:1` had two more downings (3 → 5), which is seed noise: `mixed:2` went 3 → 1,
 and no supplied case got a downing. P = 7 was worse (`balance_p7.log`: a 504 s mixed case, a 704 s
 Knights case and a new supplied downing), so P stays 6.
+
+**Real kits at P = 6** (`ig-gy0.9`; `.agent-results/ig-gy0.9/gate_real_p6.log` and `gate_real_p1.log`,
+seeds 1–4, level-1 heroes with their real bars). The numbers above measure a default kit. The
+owner played real kits, which cleared 16–28% faster (mixed) before the balance pass, so the ratio
+that counts is real-kit P6 over real-kit P1 on the same seed:
+- Mixed: 4.57–5.18x, median 4.74 (P1: 63.3–70.5 s; P6: 305.6–343.7 s). Four of the eight cases sit
+  under 4.7, the worst by 2.8%. Before the pass, six of eight sat under, the worst at 4.23.
+- Three starter Knights: 4.85–5.34x (P1: 108.5–114.0 s; P6: 552.7–579.0 s).
+- The director's ruling: keep P = 6 and record the band, about 4.6–5.2, median 4.7. The shortfall is
+  not skill numbers. It is the part of a clear that does not scale with pace (walking, spawn and
+  telegraph timers). A two-point model per case, T = S×P + U, on the P1 and P6 times of four cases
+  puts U at 22–29% of the P1 time, and 4.7x needs U at or under 26%. **That is an estimate from two
+  runs per case, not a measurement of the timers.**
 
 > ⚠️ **PROVISIONAL** — 6 and every row above are measured on the balance gate, not played. The two feel risks: a 9 s
 > stun may read as dead time, and six times as many small swing numbers may read as busy
@@ -660,13 +695,20 @@ CRIT_DMG.
 | `stun` | Stuns the caster. A stun already cancels a pending action today, so the telegraph is gone |
 | `interrupt` | Cancels the caster's windup or telegraph, with no stun |
 | `shield` | Shields or protects the ally or allies inside the telegraph |
-| `dodge` | The user steps out, and the telegraph misses it if it resolves within 1 s |
+| `dodge` | The user steps out, and the telegraph misses it if it resolves within 1.2 s |
 
 **The AI's answer.** When an enemy telegraph has run `skill_reaction_delay_seconds`, each hero in
 stable spawn order may claim it. The first hero with a stun or interrupt in range claims it and
 fires. If none, the first with a shield covering someone inside it does. If none, each hero
 inside it with a dodge uses it. Everyone else in it walks out, as today. Among a hero's usable
 counters it picks the shortest cooldown. One claim per telegraph.
+
+**The dodge's margin (`ig-gy0.9`).** Slip and Dust Roll dodge for 1.2 s, real seconds at any pace.
+The AI answers 0.2 s into a telegraph, and Crushing Blow's is 1.2 s, so a 1.0 s dodge would end as
+the blow lands. The tick expires a status before it resolves a telegraph, and a tie is a hit
+(proved by the test below). At 1.2 s the dodge has 0.2 s to spare. Test:
+`test_a_dodge_answered_after_the_reaction_delay_outlasts_crushing_blow_and_a_one_second_dodge_would_not`
+(`test_battle_pace.gd`, at pace 1 and 6).
 
 **Amended 2026-09-24 (director ruling): shields and self damage reduction sit in the heal band.**
 Stone Posture, Anvilheart, Sheltering Word and Warding Glyph answer a low ally, in the picker's heal
@@ -808,7 +850,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 |---|---|---|---|---|---|---|
 | Close Ranks | Passive | 1 | — | Today's: 10% less damage within 3 of another living ally | always | — |
 | Stand Fast | Ability | 1 | 16 s | Today's: revive a downed ally within 3 to 25% HP, else allies within 3 take 30% less damage for 4 s | revive first; else 2+ allies within 3 | `shield` |
-| Iron Cut | Weaponskill | 1 | — | 1.3×, starts the combo | default | — |
+| Iron Cut | Weaponskill | 1 | — | 1.0×, starts the combo | default | — |
 | Follow-Through | Weaponskill | 5 | — | 1.8× right after Iron Cut, else 1.1× | after Iron Cut | — |
 | Buckler Blow | Ability | 5 | 20 s | Range 1.6: 0.8×, 1.5 s stun | a telegraph in range | `stun` |
 | Gauntlet Toss | Ability | 15 | 15 s | Range 6: taunt for 4 s, so that enemy targets the Knight | the Knight's covered threat (§ Hero AI on auto); else an enemy on a back-row or lower-HP ally | — |
@@ -823,7 +865,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 |---|---|---|---|---|---|---|
 | Knave's Angle | Passive | 1 | — | Today's: +25% basic damage from behind | always | — |
 | Turncoat Cut | Ability | 1 | 10 s | Today's: move to a rear slot, 0.3 s stun, 1.6× | today's rule; also a telegraph in range | `interrupt` |
-| Quick Cut | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
+| Quick Cut | Weaponskill | 1 | — | 1.0×, starts the combo | default | — |
 | Gutting Strike | Weaponskill | 5 | — | After Quick Cut: 1.5× and bleed 0.2 ATK/s for 6 s, else 1.0× | after Quick Cut | — |
 | Slip | Ability | 5 | 12 s | Self: dodge (see Counters), dash 2 out of the danger | the Rogue is inside a telegraph | `dodge` |
 | Venom Edge | Ability | 15 | 30 s | Self: ATK +15% for 10 s | a fight is on | — |
@@ -836,7 +878,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 |---|---|---|---|---|---|---|
 | Long Sight | Passive | 1 | — | Today's: +20% basic range | always | — |
 | Threadneedle | Ability | 1 | 10 s | Today's: range 10, line width 1, 1.8× | today's rule | — |
-| Heron Shot | Weaponskill | 1 | — | 1.2×, starts the combo | default | — |
+| Heron Shot | Weaponskill | 1 | — | 1.0×, starts the combo | default | — |
 | True Mark | Weaponskill | 5 | — | 1.7× right after Heron Shot, else 1.1× | after Heron Shot | — |
 | Burr Arrow | Ability | 5 | 15 s | Range 10: 0.5×, interrupt, 1 s root | a telegraph in range | `interrupt` |
 | Barbed Arrow | Weaponskill | 15 | — | 1.0× and bleed 0.15 ATK/s for 8 s | target not bleeding | — |
@@ -849,7 +891,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 |---|---|---|---|---|---|---|
 | Arcane Flow | Passive | 1 | — | Today's: Arcane Bloom cooldown −10%. From the kit slice, every Mage ability | always | — |
 | Arcane Bloom | Ability | 1 | 12 s | Today's: range 8, radius 2.5, 1.5× | today's rule: 3+ enemies or an elite | — |
-| Ember Bolt | Weaponskill | 1 | — | 1.3×, starts the combo | default | — |
+| Ember Bolt | Weaponskill | 1 | — | 1.0×, starts the combo | default | — |
 | Tinder Hex | Weaponskill | 5 | — | After Ember Bolt: 1.6× and burn 0.2 ATK/s for 6 s, else 1.1× | after Ember Bolt | — |
 | Frost Bind | Ability | 5 | 18 s | Range 8: 0.5×, 1.5 s stun | a telegraph in range | `stun` |
 | Chain Spark | Weaponskill | 15 | — | 1.0×, then jumps to 2 more enemies within 3 at 0.6× | 2+ enemies within 3 | — |
@@ -864,7 +906,7 @@ these skills. The last six rows come from the one-time web-checked sweep, `ig-x8
 |---|---|---|---|---|---|---|
 | Grace | Passive | 1 | — | +20% to the Cleric's own heals and shields | always | — |
 | Mend | Ability | 1 | 8 s | Range 6: heal 3.0 ATK to one ally | an ally below `heal_below` (35%) | — |
-| Censer Swing | Weaponskill | 1 | — | 1.1× | default | — |
+| Censer Swing | Weaponskill | 1 | — | 1.0× | default | — |
 | Hush | Ability | 5 | 20 s | Range 8: interrupt, 1.5 s silence (no skills) | a telegraph in range | `interrupt` |
 | Sheltering Word | Ability | 5 | 20 s | Range 6: shield 2.5 ATK for 8 s | an ally inside a telegraph, else the tank below 50% | `shield` |
 | Wellspring | Ability | 15 | 12 s | Range 6: heal 0.3 ATK a second for 10 s | an ally below 70% without it | — |
@@ -948,14 +990,72 @@ patch an ally. That is roughly +20–30% effective HP over a one-minute fight. I
 time but the forecast: `safe` means no downings, so more survival means more orders qualify for
 unlimited repeats, sooner.
 
-> ⚠️ **PROVISIONAL** — the kits' effect on clear time is unmeasured · **Settled by:** the balance
-> pass, which retunes skill multipliers (not the six stats, not zone power) until five mixed
-> F-rank level-1 heroes clear Verdant in the current band again (62.9–78.6 s over seeds 1 and 2,
-> restated after `ig-el4` in § Provisional shared combat numbers; at P = 6, § Battle pace's
-> 315–472 s), and three starter Knights win
-> Verdant bare on seeds 1–4. General skills get their own check: a C-rank level-30 team of all five classes with
-> full class kits, run at Sundered with and without all six general skills each. With them, clear
-> time may fall by at most 10%, and any change in the `safe` verdict is reported to the director.
+**Measured 2026-09-29 (`ig-gy0.9`, the balance pass).** Level-1 heroes with their real bars, Verdant,
+seeds 1–4, `tests/balance/balance_gate.gd` at `--kit=real` (P = 1 and 6) and `--kit=default` (P = 6).
+Logs in `.agent-results/ig-gy0.9/`: `gate_real_p6_before.log`, `gate_real_p1_before.log`,
+`gate_default_p6.log` (before), `gate_real_p6.log`, `gate_real_p1.log` (after), `trial_v110`,
+`trial_v105` and `trial_v100` (`.log` and `_p1.log`), `bars.log`, `general_check.log`,
+`yard1_ashfall_c30.log`, `yard2_sundered_b40.log`, `starter_safe.log`. Real-kit bands per kit and
+pace are in the "Restated" note in § Provisional shared combat numbers.
+- **The problem was real.** At P = 6 the real kit cleared mixed in 255.3–275.6 s (default kit:
+  308.9–379.5) and the Knights in 433.8–460.2 s (default: 559.4–629.1). Six of eight mixed cases
+  ran under 4.7x of their pace-1 time. The real bar is the default kit plus a starter weaponskill
+  (1.1–1.3×) and, for Knight, Mage and Cleric, level-1 abilities (Charge, Ground Slam, Rime Circle,
+  Rime Wall, Hearthward; `bars.log`). The enemy kits share the weaponskills.
+- **The fix moves five multipliers and two dodge lengths, and no other number.** The level-1
+  weaponskill becomes a plain swing:
+
+  | Skill | Was | Now |
+  |---|---|---|
+  | Iron Cut (`knight_iron_cut`) | 1.3× | 1.0× |
+  | Ember Bolt (`mage_ember_bolt`) | 1.3× | 1.0× |
+  | Heron Shot (`ranger_heron_shot`) | 1.2× | 1.0× |
+  | Quick Cut (`rogue_quick_cut`) | 1.2× | 1.0× |
+  | Censer Swing (`cleric_censer_swing`) | 1.1× | 1.0× |
+
+  Slip and Dust Roll (`general_tumble`) also go from a 1.0 s to a 1.2 s dodge (§ Counters). Enemies
+  lose the same on their swings, since the starters are shared. The combo layer (Follow-Through,
+  Gutting Strike, True Mark, Tinder Hex) and every ability are unchanged.
+- **Why 1.0×.** The floor was 296 s (4.7 × 62.9 s) on every mixed case, with 3% of margin. 1.10× gave
+  mixed 278.3–293.3 s, under the floor on every case. 1.05× gave 288.7–341.1 s and one supplied
+  downing more than the default kit (`mixed_suggested:2`). 1.00× is the only setting that keeps
+  every case above the floor (fastest 305.6 s).
+- **b)** Every real-kit P6 mixed case wins, and no supplied case gains a downing over the default
+  kit's P6 run: supplied mixed 0, 0, 0, 0 in both; supplied Knights 0 in both. **c)** All eight Knights
+  win, 552.7–579.0 s, under the 1,080 s limit.
+- **a)** The mixed ratio is 4.57–5.18x, median 4.74. It misses 4.7 on four of eight cases, by at most
+  2.8%; before the pass, six of eight, the worst 4.23. The director accepted the band and kept
+  P = 6 (§ Battle pace, "Real kits at P = 6"), which has the two-point model and marks it as an
+  estimate.
+- **d) The general skills' clear-time check has no usable yardstick, and is dropped to a report.**
+  The rule for a yardstick: the bare team wins 4 of 4 under 80% of the time limit, and its forecast
+  is not safe on every seed (so a flip can show). Two tries, none qualifies. Ashfall Reaches, C-rank
+  level 30: the bare team wins 4 of 4, slowest 255.5 s (24% of the limit), safe on 4 of 4. Sundered
+  Vault, B-rank level 40: 4 of 4, slowest 567.2 s (53%), safe on 4 of 4. Fallback, the check as
+  first written, C-rank level 30 at Sundered with all six generals (`general_check.log`): without,
+  1057.8, 1071.2 and 1041.8 s, and seed 4 times out at 1,080 s; with, 1054.6, 1060.8, 1076.8 and
+  1073.4 s (4 of 4). Medians 1057.8 (3 wins) and 1067.1 s, with/without 1.009. The forecast is not safe
+  on any seed in either configuration (its stress leg always times out). So the clear time sits at the
+  limit, pinned by the zone, and the check cannot show a general skill's effect; the safe verdict
+  cannot show a flip. It reports, and does not gate.
+- **e)** The forecast's safe verdicts on the eight starter cases (seeds 1 and 2) with Catch Breath and
+  Field Dressing on every hero: 2 flip to safe (`mixed:1`, `mixed:2`), where the rule allowed 1; the
+  baseline had 1 (`mixed:2`). Over seeds 1–4: 4 flips (`mixed:1`–`mixed:4`, all bare mixed cases),
+  none away; the baseline had 3, and 1 away (`mixed_suggested:1`). Across the tried values the
+  eight-case count was 1 (before), 2 (1.10×), 3 (1.05×), 2 (1.00×): no trend, so it is noise, not
+  the weaponskill. The director accepted it (no heal cut, no heroes-only cut). Safe without heals is
+  unchanged: 0 of 8 bare cases, 8 of 8 supplied, before and after. What flips is that two level-1 heals
+  make a bare mixed team safe, which is what they are for.
+- **Not built:** a heroes-only cut. The starters are shared with enemies through `enemy_kit`, and it
+  would need a kit filter and four enemy skills. It was not needed.
+
+> ⚠️ **PROVISIONAL** — the level-1 weaponskill is now a plain swing (1.0×), a feel change: a hero's
+> first swing hits 9–23% softer than the game the owner played (Knight and Mage 23%, Ranger and Rogue
+> 17%, Cleric 9%), and enemies' swings the same. The gate says it is the only setting that clears the
+> 296 s floor · **Settled by:** the owner's answer. If they pick 1.10×, the confirm and checks d) and
+> e) are re-run at 1.10× and the floor becomes the measured value.
+
+> ⚠️ **PROVISIONAL** — the level-5-and-up combo layer remains unmeasured against zone power · **Settled by:** a balance measurement using teams with those combos.
 
 **Forecast cost.** `BattleSimulation.forecast` runs two full battles per commit, and more skills
 mean more work per tick. The first slice measures forecast wall time for a five-hero Verdant
