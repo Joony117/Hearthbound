@@ -779,7 +779,7 @@ func _refresh_partner() -> void:
 		var bond: Dictionary = Bonds.bond_from(_bond_index(), walker.instance_id, living, BALANCE)
 		if not bond.is_empty():
 			_partner_id = bond["partner"]
-			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, _known_names(living))
+			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, _known_names(living), GameSession.hero_by_id(_partner_id).quirks)
 	_show_partner()
 	# The walkers ran first on this roster_changed, against the old partner, who may have been cut by
 	# the wanderer cap.
@@ -1082,14 +1082,14 @@ func _hero_stats_text(hero: Hero) -> String:
 	]
 
 
-## Passions, every profession skill and the station (GAME_SPEC.md § Heroes staff the buildings).
+## Passions, the quirk, every profession skill and the station (GAME_SPEC.md § Heroes staff the buildings).
 func _profession_text(hero: Hero) -> String:
 	var skills: PackedStringArray = []
 	for profession: StringName in Hero.PROFESSIONS:
 		skills.append("%s %d" % [str(profession).capitalize(), Hero.profession_skill(hero, profession, BALANCE)])
 	var station: String = "none" if hero.station == Hero.NO_STATION else str(hero.station).capitalize()
 	var home: String = "none" if hero.home == Hero.NO_HOME else str(hero.home).capitalize()
-	return "Passions: %s\nSkills: %s\nStation: %s\nHome: %s" % [_passions_text(hero), ", ".join(skills), station, home]
+	return "Passions: %s\nQuirk: %s\nSkills: %s\nStation: %s\nHome: %s" % [_passions_text(hero), Hero.QUIRKS[hero.quirks[0]], ", ".join(skills), station, home]
 
 
 func _passions_text(hero: Hero) -> String:

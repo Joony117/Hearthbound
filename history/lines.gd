@@ -11,6 +11,8 @@ const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five"
 ## {name}; watch_over {name} {place}; carry_name {name} {place} {dead}; be_worthy {name} {dead}. The
 ## first line of the first four kinds is the old one-line greeting, word for word. The last three
 ## are the partner's dream (ig-m6o.2.2.7): their {place} and {dead} are the dream's, not the bond's.
+## Then one "quirk:<id>" kind per Hero.QUIRKS id (ig-m6o.2.2.3), 3 lines each, at most {name}, and no
+## {place} or {dead}: a quirk is the partner's own habit, not a fact of the bond.
 const BANK: Dictionary = {
 	"saved_by": [
 		"I'd come for you again. {place} or anywhere.",
@@ -68,6 +70,76 @@ const BANK: Dictionary = {
 		"{dead} paid for me to stand here, {name}.",
 		"Win one hard fight for {dead}, {name}.",
 	],
+	"quirk:hums": [
+		"Was I humming again? Tell me if it grates, {name}.",
+		"I hum when my hands are busy. Just ignore me.",
+		"There's a tune stuck in my head. Want to hear it?",
+	],
+	"quirk:counts_steps": [
+		"Four hundred steps from the well to here. I counted.",
+		"Don't talk to me, {name}. I'm counting my steps.",
+		"Counting steps helps me think. Twelve to the gate.",
+	],
+	"quirk:collects_pebbles": [
+		"Look, {name}. I found this one by the road. A beauty.",
+		"My pockets are full of pebbles again. Don't tell anyone.",
+		"I'll keep the round ones. You can have the flat one.",
+	],
+	"quirk:names_weapon": [
+		"My weapon has a name, {name}. I won't say it out loud.",
+		"I named my weapon. Don't laugh, {name}. It listens.",
+		"Ask my weapon's name, {name}. It likes the attention.",
+	],
+	"quirk:early_riser": [
+		"Up before dawn again. The town is lovely and quiet then.",
+		"You slept in, {name}. I've been up since before dawn.",
+		"I watched the sun come up over the wall. Try it.",
+	],
+	"quirk:whittles": [
+		"I whittled a little fox. Want it, {name}?",
+		"Wood shavings in my pockets again. I can't stop whittling.",
+		"Give me a stick and an hour and I'll give you a bird.",
+	],
+	"quirk:bad_puns": [
+		"I'd tell you a pun about swords, but it's pointless.",
+		"I tried a pun on the guards. They didn't stand for it.",
+		"Don't groan, {name}. I'm only just warming up.",
+	],
+	"quirk:sweet_tooth": [
+		"Got any honey cakes, {name}? Asking for a friend.",
+		"I'd trade my best boots for one more honey cake.",
+		"I owe the baker a great deal, {name}. Mostly cakes.",
+	],
+	"quirk:lucky_charm": [
+		"I never go out without my lucky charm, {name}. Not once.",
+		"This charm has never let me down. Not yet.",
+		"Want to borrow my lucky charm? Just bring it back.",
+	],
+	"quirk:hates_wet_boots": [
+		"Puddles. Why are there always puddles, {name}?",
+		"Wet boots all day. I'd rather fight three goblins.",
+		"Mind the mud, {name}. I only just dried my boots.",
+	],
+	"quirk:sketches": [
+		"Hold still, {name}. I'm drawing you.",
+		"I filled a page with faces today. Yours is on it.",
+		"Don't move. There. That's your good side, {name}.",
+	],
+	"quirk:tidies": [
+		"Someone left the barrels crooked. I straightened them.",
+		"I can't leave a mess, {name}. It itches at me.",
+		"Tidy hands, tidy head. That's what I always say.",
+	],
+	"quirk:cloud_names": [
+		"See that cloud, {name}? That's Gerald. Long day for him.",
+		"I named the clouds again. The big one is Old Mabel.",
+		"Rain soon. Gerald is looking grey, {name}.",
+	],
+	"quirk:afraid_of_moths": [
+		"Was that a moth? Tell me it wasn't a moth, {name}.",
+		"I've faced worse than moths. I just don't like them.",
+		"Moths follow lanterns. That's why I avoid lanterns.",
+	],
 }
 
 
@@ -104,8 +176,9 @@ static func candidates(facts: Dictionary) -> Array[String]:
 ## What the partner says to the body, as facts: bond is the body's bond (Bonds.bond_from, toward the
 ## partner), dream the partner's (Bonds.dream), names hero ids to display names. {} for no bond.
 ## own holds, for the dream kinds only, the slots that kind's lines fill from the dream (line() lays
-## them over slots), so a bond's {place} or {dead} never speaks for the dream's.
-static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String, names: Dictionary) -> Dictionary:
+## them over slots), so a bond's {place} or {dead} never speaks for the dream's. quirks are the partner's
+## (Hero.quirks); their kinds come last, and a quirk adds no own entry.
+static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String, names: Dictionary, quirks: Array[StringName] = []) -> Dictionary:
 	if bond.is_empty():
 		return {}
 	var fact: Dictionary = bond["fact"]
@@ -133,6 +206,8 @@ static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String,
 		elif dream_id == "be_worthy":
 			kinds.append(dream_id)
 			own[dream_id] = {"dead": _name(who, names)}
+	for quirk: StringName in quirks:
+		kinds.append("quirk:%s" % quirk)
 	var partner: String = str(bond["partner"])
 	var facts: Dictionary = {"kinds": kinds, "slots": slots, "start": absi(("%s:%s" % [body_id, partner]).hash())}
 	if not own.is_empty():

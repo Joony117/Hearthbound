@@ -29,24 +29,28 @@ func before_each() -> void:
 
 
 func test_the_bank_fills_every_line_from_only_its_kinds_slots() -> void:
-	assert_eq(Lines.BANK.keys().size(), SLOTS.size())
+	var slots: Dictionary = _slots()
+	assert_eq(Lines.BANK.keys().size(), slots.size())
 	var slot := RegEx.create_from_string("\\{(\\w+)\\}")
 	# The worst case for length: a 14-letter name, the longest zone name, the fallback dead name.
 	var worst: Dictionary = {"name": "Maximilianusss", "place": Ledger.zone_name(ZONE), "dead": "a hero now forgotten", "count": "Twelve"}
-	for kind: String in SLOTS:
+	for kind: String in slots:
+		var quirk: bool = kind.begins_with("quirk:")
 		var lines: Array = Lines.BANK[kind]
-		assert_gte(lines.size(), 5, kind)
+		assert_gte(lines.size(), 3 if quirk else 5, kind)
 		for text: String in lines:
 			var used: Array[String] = []
 			for found: RegExMatch in slot.search_all(text):
 				used.append(found.get_string(1))
-			assert_false(used.is_empty(), "uses a slot: %s" % text)
+			# A quirk line may name no one: it is the partner's own habit.
+			if not quirk:
+				assert_false(used.is_empty(), "uses a slot: %s" % text)
 			if kind in ["death", "carry_name", "be_worthy"]:
 				assert_has(used, "dead", "a %s line names the dead hero: %s" % [kind, text])
 			if kind == "carry_name":
 				assert_has(used, "place", "a carry_name line names the place: %s" % text)
 			for slot_name: String in used:
-				assert_has(SLOTS[kind], slot_name, "%s may use {%s}: %s" % [kind, slot_name, text])
+				assert_has(slots[kind], slot_name, "%s may use {%s}: %s" % [kind, slot_name, text])
 			var filled: String = text.format(worst)
 			assert_false(filled.contains("{"), filled)
 			assert_lte(filled.length(), 72, filled)
@@ -160,6 +164,24 @@ func test_a_dream_kind_fills_its_own_place_and_dead_not_the_bonds() -> void:
 	assert_eq(Lines.greeting_facts(bond, {"dream": "be_worthy", "state": "open", "who": "hero:gone", "count": 0}, A, NAMES)["own"], {"be_worthy": {"dead": "a hero now forgotten"}})
 
 
+# ig-m6o.2.2.3: the partner's quirk speaks last, after the bond and the dream, and changes nothing else.
+func test_the_partners_quirk_kind_comes_last_and_adds_its_three_lines() -> void:
+	_saves()
+	var bond: Dictionary = Bonds.bond(_ledger, A, {A: true, B: true}, BALANCE)
+	var dream: Dictionary = Bonds.dream(_ledger, B)
+	var plain: Dictionary = Lines.greeting_facts(bond, dream, A, NAMES)
+	var quirky: Dictionary = Lines.greeting_facts(bond, dream, A, NAMES, [&"hums"])
+	assert_eq(quirky["kinds"], _kinds(["saved_by", "watch_over", "quirk:hums"]), "the bond's kind first, the dream's, the quirk last")
+	assert_eq(Lines.greeting_facts(bond, dream, A, NAMES, [] as Array[StringName]), plain, "no quirks passed: the old result")
+	assert_eq(quirky["slots"], plain["slots"], "the slots are the bond's")
+	assert_eq(quirky["own"], plain["own"], "a quirk adds no own entry")
+	assert_eq(Lines.candidates(quirky).size(), Lines.candidates(plain).size() + 3)
+	assert_eq(Lines.candidates(quirky).slice(-3), Lines.candidates({"kinds": _kinds(["quirk:hums"])}), "its 3 lines, after the rest")
+	assert_eq(Lines.greeting_facts({}, {}, A, NAMES, [&"hums"]), {}, "no bond, no words, quirk or not")
+	for pick: int in Lines.candidates(quirky).size():
+		assert_false(Lines.line(quirky, pick).contains("{"), Lines.line(quirky, pick))
+
+
 # The owner's case (ig-m6o.2.1's seeded save, rebuilt): Dunn has at least 10 lines for Mara.
 func test_the_owners_case_gives_dunn_ten_lines_for_mara() -> void:
 	var mara: String = "hero:mara"
@@ -187,6 +209,14 @@ func test_the_owners_case_gives_dunn_ten_lines_for_mara() -> void:
 
 
 ## ---- helpers
+
+## SLOTS plus every quirk kind (ig-m6o.2.2.3), which may use {name} and nothing else.
+func _slots() -> Dictionary:
+	var slots: Dictionary = SLOTS.duplicate()
+	for quirk: StringName in Hero.QUIRKS:
+		slots["quirk:%s" % quirk] = ["name"]
+	return slots
+
 
 ## Two battles where Bea revives Ada: a bond, and Ada's dream owes Bea.
 func _saves() -> void:

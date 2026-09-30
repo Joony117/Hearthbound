@@ -666,6 +666,7 @@ func test_the_keeper_row_assigns_shows_away_and_unassigns() -> void:
 	roster_list.multi_selected.emit(0, true)
 	var detail: String = (hub.get_node("%HeroDetail") as Label).text
 	assert_string_contains(detail, "Passions: Smithing, Drill")
+	assert_string_contains(detail, "Passions: Smithing, Drill\nQuirk: %s\nSkills:" % Hero.QUIRKS[mira.quirks[0]], "the quirk sits right under the passions")
 	assert_string_contains(detail, "Skills: Smithing %d, Rites 0, Drill 0, Tracking 0, Alchemy 0" % skill)
 	assert_string_contains(detail, "Station: Forge")
 	assert_string_contains((hub.get_node("%HeroAvailability") as Label).text, "Keeps the Forge")

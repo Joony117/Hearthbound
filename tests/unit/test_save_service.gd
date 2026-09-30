@@ -686,6 +686,67 @@ func test_a_calling_save_on_disk_migrates_to_passions_and_reloads_identically() 
 	assert_push_warning_count(0)
 
 
+func test_quirks_survive_a_disk_round_trip() -> void:
+	var hero := Hero.new("Quirky", 0)
+	# Not the derived one, so a loader that ignores the saved quirk fails here.
+	var quirks: Array[StringName] = [&"hums" if hero.quirks[0] != &"hums" else &"tidies"]
+	hero.quirks = quirks
+	GameSession.add_hero(hero)
+	assert_true(SaveService.save())
+
+	_reload_from_disk()
+	assert_eq(GameSession.hero_by_id(hero.instance_id).quirks, quirks)
+	assert_push_warning_count(0)
+
+
+## Boundary #1: a file from before quirks (no "quirks" key). Each hero derives its quirk from its SAVED
+## id, with no warning, the next save writes the key, and a second load and save changes nothing.
+func test_a_save_with_no_quirks_on_disk_derives_them_and_reloads_identically() -> void:
+	var first := Hero.new("First", 0)
+	var second := Hero.new("Second", 0)
+	GameSession.add_hero(first)
+	GameSession.add_hero(second)
+	var state: Dictionary = GameSession.to_dict()
+	state["version"] = SaveService.SAVE_VERSION
+	for entry: Dictionary in state["roster"]:
+		assert_true(entry.erase("quirks"), "the hero wrote the key we now take out")
+	GameSession.from_dict({"roster": []})
+	_write_save(SaveService.SAVE_PATH, JSON.stringify(state).to_utf8_buffer())
+	assert_true(SaveService.load_game())
+	assert_eq(GameSession.hero_by_id(first.instance_id).quirks, Hero.quirks_for(first.instance_id))
+	assert_eq(GameSession.hero_by_id(second.instance_id).quirks, Hero.quirks_for(second.instance_id))
+	assert_true(SaveService.save())
+	var on_disk: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
+	assert_eq(on_disk["roster"][0]["quirks"], [str(Hero.quirks_for(first.instance_id)[0])], "the resave writes the key")
+	assert_eq(on_disk["roster"][1]["quirks"], [str(Hero.quirks_for(second.instance_id)[0])])
+	on_disk.erase("saved_at_unix")
+
+	_reload_from_disk()
+	assert_eq(GameSession.hero_by_id(first.instance_id).quirks, Hero.quirks_for(first.instance_id))
+	assert_true(SaveService.save())
+	var resaved: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
+	resaved.erase("saved_at_unix")
+	assert_eq(resaved, on_disk, "a second load and save changes nothing")
+	assert_push_warning_count(0)
+
+
+func test_an_invalid_quirks_key_on_disk_re_derives_with_a_warning_and_the_resave_is_valid() -> void:
+	var hero := Hero.new("Odd", 0)
+	GameSession.add_hero(hero)
+	var state: Dictionary = GameSession.to_dict()
+	state["version"] = SaveService.SAVE_VERSION
+	state["roster"][0]["quirks"] = ["hums", "tidies"]
+	GameSession.from_dict({"roster": []})
+	_write_save(SaveService.SAVE_PATH, JSON.stringify(state).to_utf8_buffer())
+	assert_true(SaveService.load_game())
+	assert_push_warning("Invalid hero quirks")
+	assert_eq(GameSession.hero_by_id(hero.instance_id).quirks, Hero.quirks_for(hero.instance_id))
+	assert_true(SaveService.save())
+	var on_disk: Dictionary = JSON.parse_string(_read_file_bytes(SaveService.SAVE_PATH).get_string_from_utf8()) as Dictionary
+	assert_eq(on_disk["roster"][0]["quirks"], [str(Hero.quirks_for(hero.instance_id)[0])], "the resave writes one valid quirk")
+	assert_push_warning_count(1, "one warning for the load, none from the resave")
+
+
 func test_the_embodied_hero_survives_a_disk_round_trip() -> void:
 	var walker := Hero.new("Walker", 0)
 	GameSession.add_hero(walker)

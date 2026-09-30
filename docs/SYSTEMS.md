@@ -1243,7 +1243,7 @@ saver's partner may be someone else. `bond_points_saved`'s "either way round" ch
 
 ---
 
-## Quirks — *ig-m6o.2.2.3, design 2026-09-25, not built yet*
+## Quirks — *ig-m6o.2.2.3, built 2026-09-30*
 
 Every hero has one quirk: a small habit they're known for. It's rolled from the hero's id when the
 hero is made, like passions, and saved on the hero. It shows on the detail panel under the
@@ -1268,9 +1268,12 @@ are constants in code, not `balance.tres` rows.
 | `cloud_names` | Names the clouds |
 | `afraid_of_moths` | Afraid of moths |
 
-- One quirk per hero, not two. One habit is what a hero is known for. A partner's lines stay
-  5 from the bond and 3 from the quirk, so the bond is still the main voice.
+- One quirk per hero, not two. One habit is what a hero is known for. A quirk adds 3 lines to
+  the partner's pool, next to 5 from the bond and 5 from the dream, so it stays the smallest voice.
 - The list is append-only. A quirk removed later re-rolls every hero who had it.
+- Saved as `quirks`, an additive key with no save version bump. A save without it (from before
+  quirks) derives the quirk from the saved hero id, and the next save writes it. A saved value that
+  is not exactly one known id is re-derived with a warning.
 
 > ⚠️ **PROVISIONAL** — the 14 quirks and one per hero are desk picks · **Settled by:** the owner
 > meeting them in town

@@ -30,6 +30,25 @@ const PROFESSIONS: Dictionary[StringName, StringName] = {
 	&"tracking": &"Reliquary",
 	&"alchemy": &"Apothecary",
 }
+## Every quirk a hero can have: id -> the label on the detail panel (SYSTEMS.md § Quirks). Append
+## only: the roll indexes this list in order, so a removed or moved id changes every hero's quirk.
+## Each id has a "quirk:<id>" kind in Lines.BANK.
+const QUIRKS: Dictionary[StringName, String] = {
+	&"hums": "Hums while working",
+	&"counts_steps": "Counts every step",
+	&"collects_pebbles": "Pockets pretty pebbles",
+	&"names_weapon": "Names their weapon",
+	&"early_riser": "Up before dawn",
+	&"whittles": "Whittles little figures",
+	&"bad_puns": "Makes terrible puns",
+	&"sweet_tooth": "Has a sweet tooth",
+	&"lucky_charm": "Carries a lucky charm",
+	&"hates_wet_boots": "Hates wet boots",
+	&"sketches": "Sketches everyone",
+	&"tidies": "Can't leave a mess",
+	&"cloud_names": "Names the clouds",
+	&"afraid_of_moths": "Afraid of moths",
+}
 
 var hero_name: String
 var rank: int
@@ -44,6 +63,9 @@ var favorite: bool = false
 ## Born with two different ALL_PROFESSIONS: the ones this hero learns fastest and the only ones it
 ## can make masterwork in.
 var passions: Array[StringName] = []
+## The habit this hero is known for: one QUIRKS id, rolled from instance_id. An Array so a second
+## quirk later is not a save-format change. No number reads it; it shows on the panel and speaks in town.
+var quirks: Array[StringName] = []
 ## Plain XP seconds per profession. The passion multiplier is applied when XP is earned, not here.
 var profession_xp: Dictionary[StringName, float] = {}
 ## The town building this hero keeps (a PROFESSIONS value), or NO_STATION. It leaves with the hero,
@@ -66,6 +88,7 @@ func _init(p_name: String = "", p_rank: int = 0) -> void:
 	rank = p_rank
 	instance_id = Item.new_instance_id()
 	passions = passions_for(instance_id)
+	quirks = quirks_for(instance_id)
 
 
 ## Stable per hero and uniform (instance_id is 16 random bytes); no summon RNG draw, so seeded
@@ -82,6 +105,13 @@ static func _second_passion(p_instance_id: String, first: StringName) -> StringN
 		if profession != first:
 			others.append(profession)
 	return others[posmod((p_instance_id + "#2").hash(), others.size())]
+
+
+## One QUIRKS id, stable per hero and uniform; no RNG draw. It hashes with md5, not String.hash():
+## passions come from that hash, and a salted djb2 would tie each quirk to a passion.
+static func quirks_for(p_instance_id: String) -> Array[StringName]:
+	var quirk: StringName = QUIRKS.keys()[("%s#quirk" % p_instance_id).md5_buffer().decode_u32(0) % QUIRKS.size()]
+	return [quirk]
 
 
 ## Skill 0..profession_skill_cap from plain XP. The scale is the same for every hero and profession.
@@ -375,6 +405,7 @@ func to_dict() -> Dictionary:
 		"taught_traits": taught_trait_ids,
 		"equipped": equipped_entries,
 		"passions": passions.map(func(profession: StringName) -> String: return str(profession)),
+		"quirks": quirks.map(func(quirk: StringName) -> String: return str(quirk)),
 		"profession_xp": xp_by_profession,
 		"station": str(station),
 		"home": str(home),
@@ -518,6 +549,23 @@ static func _read_professions(hero: Hero, data: Dictionary) -> void:
 		hero.profession_xp[profession] = seconds
 
 
+## Additive key (no SAVE_VERSION bump). A present "quirks" loads as saved when it is exactly one known
+## id, else it re-derives from instance_id with a warning. Absent (a legacy save) derives silently, so
+## the hero keeps its quirk across every load until it is saved, and the next save writes the key.
+## Read after instance_id is restored, so the derive is from the saved id.
+static func _read_quirks(hero: Hero, data: Dictionary) -> void:
+	hero.quirks = quirks_for(hero.instance_id)
+	if not data.has("quirks"):
+		return
+	# Save-file fields remain Variant until their types are validated.
+	var raw: Variant = data["quirks"]
+	var only: Variant = (raw as Array)[0] if raw is Array and (raw as Array).size() == 1 else null
+	if only is String and QUIRKS.has(StringName(only as String)):
+		hero.quirks = [StringName(only as String)]
+	else:
+		push_warning("Invalid hero quirks %s; re-derived." % str(raw))
+
+
 ## Two different known professions, or empty.
 static func _valid_passions(raw: Variant) -> Array[StringName]:
 	var result: Array[StringName] = []
@@ -558,6 +606,7 @@ static func from_dict(data: Dictionary) -> Hero:
 	elif raw_instance_id != null:
 		push_error("Invalid hero instance_id: expected a non-empty String.")
 	_read_professions(hero, data)
+	_read_quirks(hero, data)
 	_read_station(hero, data)
 	var raw_favorite: Variant = data.get("favorite")
 	if raw_favorite is bool:

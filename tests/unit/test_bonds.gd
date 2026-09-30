@@ -459,8 +459,8 @@ func test_the_partner_stands_in_town_greets_once_per_approach_and_leaves_with_an
 	assert_eq(town.partner.greetings, 1)
 	assert_true(town.partner.is_showing_line())
 	assert_eq((town.partner.get_node("Line") as Label3D).text, Lines.line(town.partner.facts, 0), "the first approach shows the pair's first line")
-	assert_eq(town.partner.facts["kinds"], Lines.greeting_facts(Bonds.bond(GameSession.ledger, A, {A: true, B: true}, BALANCE), Bonds.dream(GameSession.ledger, B), A, {}).get("kinds"), "saved_by, from Ada's bond, and Bea's dream")
-	assert_eq(town.partner.facts["kinds"], _kinds(["saved_by", "watch_over"]), "Bea revived Ada, so Bea watches over Ada, who is the one she says it to")
+	assert_eq(town.partner.facts["kinds"], Lines.greeting_facts(Bonds.bond(GameSession.ledger, A, {A: true, B: true}, BALANCE), Bonds.dream(GameSession.ledger, B), A, {}, bea.quirks).get("kinds"), "saved_by, from Ada's bond, Bea's dream and Bea's quirk")
+	assert_eq(town.partner.facts["kinds"], _kinds(["saved_by", "watch_over", "quirk:%s" % bea.quirks[0]]), "Bea revived Ada, so Bea watches over Ada, who is the one she says it to; her quirk comes last")
 	assert_eq(town.partner.facts["own"], {"watch_over": {"place": Ledger.zone_name(ZONE)}}, "and the dream's own place")
 	await _frames(5)
 	assert_eq(town.partner.greetings, 1, "once per approach")
@@ -1118,10 +1118,11 @@ func test_the_hub_gives_the_partner_its_debt_lines() -> void:
 	assert_true(GameSession.embody_hero(B), "Bea is the body; Ada, whom she saved, is the partner")
 	assert_eq(town.partner.hero_id, A)
 	var facts: Dictionary = town.partner.facts
-	assert_eq(facts["kinds"].size(), 2)
+	assert_eq(facts["kinds"].size(), 3)
 	assert_eq([facts["kinds"][0], facts["kinds"][1]], ["saved", "debt"], "Ada's open dream owes Bea")
+	assert_eq(facts["kinds"][2], "quirk:%s" % GameSession.hero_by_id(A).quirks[0], "and Ada's own quirk, last")
 	assert_eq(facts["slots"]["name"], "Bea")
-	assert_eq(Lines.candidates(facts).size(), 10)
+	assert_eq(Lines.candidates(facts).size(), 13, "5 + 5 + 3")
 
 
 ## ---- ig-7sn.16: the settle's readers, exact after the speed-ups

@@ -163,7 +163,7 @@ beliefs about the Door. Returning reveals an extra chair, a changed route or an 
 
 Every hero has one **quirk**, a small habit they're known for, like humming at work or naming
 their weapon. It shows on their panel and flavours what they say. It changes no number
-(`SYSTEMS.md` § Quirks, `ig-m6o.2.2.3`, designed, not built yet).
+(`SYSTEMS.md` § Quirks, `ig-m6o.2.2.3`, built).
 
 Joy uses that same machinery:
 
