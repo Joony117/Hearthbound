@@ -744,6 +744,10 @@ func _measure_encounter() -> void:
 ## clocks at 0, timed beside it) plus that roll. Also timed: the table scan alone and the hub's social handler done
 ## again on the same records (they are seated, so a repeat look is quiet). A rep counts only when one record was
 ## written per table the scan found (and at least one); any other rep is VOID, left out of the stats, and an error.
+## ig-7sn.24: a diner sits MEAL_SECONDS (20 s) and play_meal seats no one who is_meeting(), so each rep first stands the
+## last meal's diners up the way a sit ends (the walker's planner) and every rep is then a real meal time. A rep is VOID
+## too when a walker still is_meeting() before the roll, or fewer than 2 do after the roll's frame; each rep prints the
+## diners seated.
 const MEAL_REPS: int = 5
 
 
@@ -757,7 +761,11 @@ func _measure_meal() -> void:
 	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
 	var samples: Dictionary = {}
 	var void_reps: int = 0
+	var town: TownView = hub.get_node("%Town") as TownView
 	for rep: int in MEAL_REPS:
+		for walker: TownWalker in town.walkers.values():
+			if walker.is_meeting() and walker.planner.is_valid():
+				walker.planner.call()
 		var eaters: Array[Array] = []
 		for hero: Hero in session.starvation_candidates():
 			eaters.append([hero.instance_id, String(hero.home)])
@@ -776,6 +784,11 @@ func _measure_meal() -> void:
 				roster_list.multi_selected.emit(row, true)
 		await _wait(5)
 		var shown: Hero = hub._selected_hero()
+		var sitting: int = _meeting_count(town)
+		if sitting > 0:
+			void_reps += 1
+			print("MEAL rep %d: VOID, left out of the stats (%d walker(s) still meeting before the roll)" % [rep + 1, sitting])
+			continue
 		session._encounter_clock = 0.0
 		session._meal_clock = 0.0
 		var started: int = Time.get_ticks_usec()
@@ -790,9 +803,10 @@ func _measure_meal() -> void:
 		await process_frame
 		var frame_ms: float = _since(started)
 		var wrote: int = session.ledger_next_seq - seq
-		if wrote != tables.size():
+		var seated: int = _meeting_count(town)
+		if wrote != tables.size() or seated < 2:
 			void_reps += 1
-			print("MEAL rep %d: VOID, left out of the stats (%d record(s) written, %d tables found)" % [rep + 1, wrote, tables.size()])
+			print("MEAL rep %d: VOID, left out of the stats (%d record(s) written, %d tables found, %d diners seated)" % [rep + 1, wrote, tables.size(), seated])
 			continue
 		var records: Array[Dictionary] = []
 		records.assign(session.ledger.slice(session.ledger.size() - wrote))
@@ -803,7 +817,7 @@ func _measure_meal() -> void:
 		_add(samples, "MEAL: whole frame of the roll", frame_ms)
 		_add(samples, "MEAL: the hub's social handler, again", handler_ms)
 		_add(samples, "MEAL: the table scan alone (TownRules.meal_tables)", scan_ms)
-		print("MEAL rep %d: %d eaters, %d tables, %s selected: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms" % [rep + 1, eaters.size(), tables.size(), shown.hero_name if shown != null else "no one", roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms])
+		print("MEAL rep %d: %d eaters, %d tables, %d diners seated, %s selected: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms" % [rep + 1, eaters.size(), tables.size(), seated, shown.hero_name if shown != null else "no one", roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms])
 	var labels: Array = samples.keys()
 	labels.sort()
 	for key: String in labels:
@@ -811,6 +825,15 @@ func _measure_meal() -> void:
 	if void_reps > 0:
 		push_error("MEAL: %d of %d reps were void; the stats are of the rest" % [void_reps, MEAL_REPS])
 	session.set_process(true)
+
+
+## How many of the town's walkers is_meeting() (in a chat, or on the way to or at a meal's seat).
+func _meeting_count(town: TownView) -> int:
+	var count: int = 0
+	for walker: TownWalker in town.walkers.values():
+		if walker.is_meeting():
+			count += 1
+	return count
 
 
 ## ig-bnq: one stranded incident for a free bonded hero, not the shown one, that expires on the next pulse:
