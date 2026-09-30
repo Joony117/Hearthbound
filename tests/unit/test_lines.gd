@@ -19,6 +19,8 @@ const SLOTS: Dictionary = {
 	"watch_over": ["name", "place"],
 	"carry_name": ["name", "place", "dead"],
 	"be_worthy": ["name", "dead"],
+	"welcome_home": ["name"],
+	"fight_beside": ["name"],
 	"met": ["name", "place"],
 	"meal": ["name"],
 	"rival": ["name"],
@@ -140,7 +142,7 @@ func test_a_death_line_names_the_dead_hero_or_the_fallback() -> void:
 
 
 func test_two_picks_in_a_row_differ_and_the_pick_wraps() -> void:
-	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"], ["watch_over"], ["carry_name"], ["be_worthy"], ["met"], ["meal"]]:
+	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"], ["watch_over"], ["carry_name"], ["be_worthy"], ["welcome_home"], ["fight_beside"], ["met"], ["meal"]]:
 		var facts: Dictionary = {"kinds": _kinds(kinds), "slots": {"name": "Ada", "place": "Here", "dead": "Cal", "count": "Two"}, "start": 7}
 		var size: int = Lines.candidates(facts).size()
 		for pick: int in size:
@@ -185,6 +187,28 @@ func test_watch_over_speaks_only_to_the_hero_watched_and_only_while_open() -> vo
 	var bond: Dictionary = Bonds.bond(_ledger, B, {A: true, B: true}, BALANCE)
 	assert_eq(Lines.greeting_facts(bond, Bonds.dream(_ledger, A), B, NAMES)["kinds"], _kinds(["saved", "debt"]), "Ada's is the life debt")
 	assert_false(Lines.greeting_facts(bond, {"dream": "watch_over", "state": "open", "who": C, "zone": ZONE, "count": 0}, B, NAMES)["kinds"].has("watch_over"), "she watches over Cal, not Bea")
+
+
+# ig-m6o.2.2.10: the two dreams on meals and meetings speak to the hero they are about (the listener), while open, and
+# fill {name} only.
+func test_welcome_home_and_fight_beside_speak_to_the_hero_they_are_about_while_open() -> void:
+	_saves()
+	var bond: Dictionary = Bonds.bond(_ledger, A, {A: true, B: true}, BALANCE)
+	var plain: Dictionary = Lines.greeting_facts(bond, {}, A, NAMES)
+	for dream_id: String in ["welcome_home", "fight_beside"]:
+		var open: Dictionary = {"dream": dream_id, "state": "open", "who": A, "zone": ZONE, "count": 0}
+		var facts: Dictionary = Lines.greeting_facts(bond, open, A, NAMES)
+		assert_eq(facts["kinds"], _kinds(plain["kinds"] + [dream_id]), "%s: said to the hero it is about" % dream_id)
+		assert_false(facts.has("own"), "%s fills {name} only" % dream_id)
+		assert_eq(Lines.candidates(facts).size(), Lines.candidates(plain).size() + 5)
+		assert_eq(Lines.greeting_facts(bond, open, C, NAMES)["kinds"], plain["kinds"], "%s: not said to someone else" % dream_id)
+		for state: String in ["fulfilled", "lost", "faded"]:
+			assert_eq(Lines.greeting_facts(bond, {"dream": dream_id, "state": state, "who": A}, A, NAMES)["kinds"], plain["kinds"], "%s %s: quiet" % [dream_id, state])
+		var own: Dictionary = facts.duplicate()
+		own["kinds"] = _kinds([dream_id])
+		for pick: int in 5:
+			var said: String = Lines.line(own, pick)
+			assert_true(said.contains("Ada") and not said.contains("{"), said)
 
 
 func test_a_dream_kind_fills_its_own_place_and_dead_not_the_bonds() -> void:

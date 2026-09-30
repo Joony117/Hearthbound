@@ -285,5 +285,7 @@ extends Resource
 @export var dream_name_victories: int = 3
 @export var dream_worthy_hard_victories: int = 2
 @export var dream_worthy_fade_battles: int = 30
+@export var dream_welcome_meals: int = 3
+@export var dream_along_meetings: int = 4
 # SYSTEMS.md § Casters: a Mage's or Cleric's HP, ATK and DEF x stat_multipliers[1]^this.
 @export var caster_rank_offset: float = 0.0

@@ -229,4 +229,6 @@ dream_fight_beside_battles = 3
 dream_name_victories = 3
 dream_worthy_hard_victories = 2
 dream_worthy_fade_battles = 30
+dream_welcome_meals = 3
+dream_along_meetings = 4
 caster_rank_offset = 0.0

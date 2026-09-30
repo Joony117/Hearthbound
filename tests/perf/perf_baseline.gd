@@ -36,6 +36,9 @@ extends SceneTree
 ## the Ledger at its cap; tests/perf/seed_perf.gd puts chats in the Ledger). Read it headless (MODE=headless).
 ## Since ig-m6o.2.2.5: meal (the pulse a meal time lands on: every table of the seeded town sits and one record is written
 ## per table, the hub plays them; the Ledger at its cap, meals in it beside the chats). Read it headless too.
+## Since ig-m6o.2.2.10: a marked or never-read hero's dream is read a frame after the redraw that asks for it (the hub's
+## _process), so the meal rep and every SETTLE and COMMIT line time the frame after too, and print the dream_reads of the
+## settle's own frame and of the next.
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -463,6 +466,8 @@ func _settle_pulses(label: String, count: int, spent: Dictionary, death: bool = 
 		var handlers: Dictionary = spent.duplicate()
 		await process_frame
 		var frame_ms: float = _since(started)
+		var settle_reads: int = _hub_counter("dream_reads") - dreams[0]
+		var settle_resumes: int = _hub_counter("dream_resumes") - dreams[1]
 		var settled: int = _new_reports(last_report)
 		var kind: String = "no commit"
 		if settled > 0:
@@ -478,6 +483,13 @@ func _settle_pulses(label: String, count: int, spent: Dictionary, death: bool = 
 		_add(samples, head + " whole frame", frame_ms)
 		if kind == "no commit":
 			continue
+		# ig-m6o.2.2.10: the frame after the commit's. The harness resumes at the start of a frame, before the nodes'
+		# _process, so it holds the hub's deferred read of a marked or never-read hero in full.
+		var next_started: int = Time.get_ticks_usec()
+		await process_frame
+		var next_ms: float = _since(next_started)
+		var next_reads: int = _hub_counter("dream_reads") - dreams[0] - settle_reads
+		_add(samples, head + " the frame after", next_ms)
 		var keys: Array = handlers.keys()
 		keys.sort_custom(func(a: String, b: String) -> bool: return float(handlers[a]) > float(handlers[b]))
 		var handler_ms: float = 0.0
@@ -489,7 +501,7 @@ func _settle_pulses(label: String, count: int, spent: Dictionary, death: bool = 
 				top.append("%s %.1f" % [key, float(handlers[key])])
 		_add(samples, head + " handlers, all", handler_ms)
 		var zone: String = str(session.expedition_reports.back().get("zone_id", "?")) if settled > 0 else kind
-		var line: String = "%s %s, %s (%d active, %d checking before; %d leg(s)): pulse %.1f ms, whole frame %.1f ms, decodes %d active/%d idle, dream_reads %d, dream_resumes %d; handlers %.1f ms (%s)" % ["SETTLE" if settled > 0 else "COMMIT", label, zone, active, checking, settled, pulse_ms, frame_ms, session.pulse_decodes_active - decodes[0], session.pulse_decodes_idle - decodes[1], _hub_counter("dream_reads") - dreams[0], _hub_counter("dream_resumes") - dreams[1], handler_ms, ", ".join(top)]
+		var line: String = "%s %s, %s (%d active, %d checking before; %d leg(s)): pulse %.1f ms, whole frame %.1f ms, decodes %d active/%d idle, dream_reads %d, dream_resumes %d; handlers %.1f ms (%s)" % ["SETTLE" if settled > 0 else "COMMIT", label, zone, active, checking, settled, pulse_ms, frame_ms, session.pulse_decodes_active - decodes[0], session.pulse_decodes_idle - decodes[1], settle_reads, settle_resumes, handler_ms, ", ".join(top)]
 		if not stranded.is_empty():
 			line += "; expedition death of %s (roster %d -> %d)" % [stranded, roster_before, session.roster.size()]
 		if settled > 0 and not parts.is_empty():
@@ -504,7 +516,7 @@ func _settle_pulses(label: String, count: int, spent: Dictionary, death: bool = 
 			line += "; side (%s): %s; rest %.1f ms" % ["twin, no staged death" if death else "twin", ", ".join(side), rest]
 		elif settled > 0:
 			line += "; no side split (not due by its route: a wipe)"
-		print(line)
+		print(line + " | the frame after %.1f ms, dream_reads on it %d" % [next_ms, next_reads])
 	var labels: Array = samples.keys()
 	labels.sort()
 	for key: String in labels:
@@ -803,6 +815,13 @@ func _measure_meal() -> void:
 		var roll_ms: float = _since(started)
 		await process_frame
 		var frame_ms: float = _since(started)
+		# ig-m6o.2.2.10: a marked hero's dream is read a frame later (the hub's _process), so time the frame after too: the
+		# harness resumes at the start of a frame, before the nodes' _process, so this one covers the whole of it.
+		var notice_reads: int = _hub_counter("dream_reads") - reads
+		var next_started: int = Time.get_ticks_usec()
+		await process_frame
+		var next_ms: float = _since(next_started)
+		var next_reads: int = _hub_counter("dream_reads") - reads - notice_reads
 		var wrote: int = session.ledger_next_seq - seq
 		var seated: int = _meeting_count(town)
 		if wrote != tables.size() or seated < 2:
@@ -816,9 +835,10 @@ func _measure_meal() -> void:
 		_add(samples, "MEAL: the roll a meal time lands on (_roll_meals, the hub's handler inside)", roll_ms)
 		_add(samples, "MEAL: derived, that pulse plus the roll", quiet_ms + roll_ms)
 		_add(samples, "MEAL: whole frame of the roll", frame_ms)
+		_add(samples, "MEAL: the frame after the roll's", next_ms)
 		_add(samples, "MEAL: the hub's social handler, again", handler_ms)
 		_add(samples, "MEAL: the table scan alone (TownRules.meal_tables)", scan_ms)
-		print("MEAL rep %d: %d eaters, %d tables, %d diners seated, %s selected, dream_reads %d: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms" % [rep + 1, eaters.size(), tables.size(), seated, shown.hero_name if shown != null else "no one", _hub_counter("dream_reads") - reads, roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms])
+		print("MEAL rep %d: %d eaters, %d tables, %d diners seated, %s selected, dream_reads %d: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms | reads on the notice's frame %d, on the next %d, the next frame %.1f ms" % [rep + 1, eaters.size(), tables.size(), seated, shown.hero_name if shown != null else "no one", _hub_counter("dream_reads") - reads, roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms, notice_reads, next_reads, next_ms])
 	var labels: Array = samples.keys()
 	labels.sort()
 	for key: String in labels:

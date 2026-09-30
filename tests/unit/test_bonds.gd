@@ -341,7 +341,7 @@ func test_a_hand_edited_encounter_counts_nothing_in_a_build_a_fold_in_and_a_fold
 	assert_eq([_nonempty(folded["pairs"]), folded["version"], folded["touched"]], [{}, 0, {}], "a fold in counts none and touches no one")
 	for record: Dictionary in _ledger:
 		assert_true(Bonds.fold_out(folded, record, _counting), "a fold out takes out what was never counted")
-	assert_eq([_nonempty(folded["pairs"]), folded["outs"], folded["out_named"], folded["out_all"]], [{}, bad.size(), {}, 0], "and marks no one")
+	assert_eq([_nonempty(folded["pairs"]), folded["outs"], folded["out_all"], folded["out_named"]], [{}, bad.size(), 0, {A: 7, B: 1, C: 1, "": 5, "5": 6, "<null>": 7}], "and marks the strings it holds, everyone none")
 
 
 ## Folding encounters in, then out oldest first (as the eviction tiers do), equals a rebuild of what is left at
@@ -367,24 +367,25 @@ func test_folding_encounters_in_and_out_equals_a_rebuild_and_touches_both_heroes
 	assert_false(Bonds.fold_out(folded, _ledger[1], BALANCE), "the newest of two is the pair's latest, and the one before it is unknown")
 
 
-## ig-7sn.21's marks: an encounter and a meal name no dream today, so evicting one marks no one; an encounter that
-## carries a name, and a kind the table does not list, mark everyone.
-func test_folding_out_an_encounter_or_a_meal_marks_no_one_and_a_named_one_or_an_unlisted_kind_marks_everyone() -> void:
+## ig-7sn.21's marks, widened by ig-m6o.2.2.10: an encounter marks its two heroes and a meal its diners (welcome_home and
+## fight_beside read them); an encounter that carries a name, one that says it rescued someone, and a kind the table does
+## not list mark everyone.
+func test_folding_out_an_encounter_or_a_meal_marks_its_heroes_and_a_named_one_or_an_unlisted_kind_marks_everyone() -> void:
 	_meeting(A, B)
 	_record("encounter", {"heroes": [A, C], "name": "odd"})
 	_meal([A, B, C])
 	_record("gossip", {"heroes": [A, B]})
 	var folded: Dictionary = Bonds.index_state(_ledger, _counting)
 	Bonds.fold_out(folded, _ledger[0], _counting)
-	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [1, {}, 0], "an encounter marks no one")
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [1, {A: 1, B: 1}, 0], "an encounter marks its two heroes")
 	Bonds.fold_out(folded, _ledger[1], _counting)
 	assert_eq([folded["outs"], folded["out_all"]], [2, 2], "an encounter with a name marks everyone")
 	Bonds.fold_out(folded, _ledger[2], _counting)
-	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [3, {}, 2], "a meal marks no one")
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [3, {A: 3, B: 3, C: 3}, 2], "a meal marks its diners")
 	Bonds.fold_out(folded, _ledger[3], _counting)
 	assert_eq([folded["outs"], folded["out_all"]], [4, 4], "a kind not listed marks everyone")
-	assert_eq(Bonds.OUT_MARKS["encounter"], [], "ig-m6o.2.2.10 changes this to [\"heroes\"] when the dream reads encounters")
-	assert_eq(Bonds.OUT_MARKS["meal"], [], "and this to [\"diners\"]")
+	assert_eq(Bonds.OUT_MARKS["encounter"], ["heroes"])
+	assert_eq(Bonds.OUT_MARKS["meal"], ["diners"])
 
 
 ## The cover order counts meeting points, as it counts every point of the bond index: a Knight's back row is
@@ -489,7 +490,10 @@ func test_a_hand_edited_meal_counts_nothing_in_a_build_a_fold_in_and_a_fold_out(
 	assert_eq([_nonempty(folded["pairs"]), folded["version"], folded["touched"]], [{}, 0, {}], "a fold in counts none and touches no one")
 	for record: Dictionary in _ledger:
 		assert_true(Bonds.fold_out(folded, record, _counting), "a fold out takes out what was never counted")
-	assert_eq([_nonempty(folded["pairs"]), folded["outs"], folded["out_named"], folded["out_all"]], [{}, bad.size(), {}, 0], "and marks no one")
+	var named: Dictionary = {A: 7, B: 7, "": 4, "5": 5, "<null>": 6}
+	for id: String in crowd:
+		named[id] = bad.size()
+	assert_eq([_nonempty(folded["pairs"]), folded["outs"], folded["out_all"], folded["out_named"]], [{}, bad.size(), 0, named], "and marks the strings it holds, everyone none")
 	_ledger = []
 	_record("meal", {"diners": crowd.slice(0, Bonds.MAX_DINERS), "place": "House_1"})
 	var pairs: Dictionary = Bonds.index(_ledger, _counting)
@@ -751,6 +755,217 @@ func test_three_sacrifices_in_one_rank_up_open_be_worthy_on_the_first() -> void:
 	assert_eq(Bonds.dream(_ledger, A), {"dream": "be_worthy", "state": "open", "who": B, "count": 0}, "the others add nothing")
 
 
+## ---- ig-m6o.2.2.10: the two dreams on meal and meeting records (SYSTEMS.md § The dream catalogue)
+
+func test_welcome_home_opens_on_a_rescue_that_names_the_owner_nowhere_when_the_freed_heros_last_meal_was_at_the_owners_table() -> void:
+	_meal([A, B, C])
+	_battle([D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	var found: Dictionary = {"dream": "welcome_home", "state": "open", "who": B, "zone": ZONE, "count": 0}
+	assert_eq(Bonds.dream(_ledger, A), found, "under the default read, which drops a battle that names no one")
+	assert_eq(Bonds.dream(_ledger, A, null, false), found, "and reading every record")
+	assert_eq(Bonds.dream(_ledger, C), found, "Cal sat at that table too")
+	assert_eq(Bonds.dream(_ledger, D)["dream"], "watch_over", "the rescuer watches over Bea, and welcomes no one home")
+	assert_eq(Bonds.dream(_ledger, B)["dream"], "life_debt", "the rescued owes the rescuer")
+	assert_eq(Bonds.dream_lines(found, A, NAMES, BALANCE), [
+		"Dream: welcome Bea home.",
+		"  [x] Bea was carried home from %s." % Ledger.zone_name(ZONE),
+		"  [ ] Eat with Bea again (0/3).",
+	] as Array[String], "three lines: the dream ends at its count")
+
+
+func test_welcome_home_does_not_open_when_the_owner_is_named_or_the_last_meal_was_elsewhere_or_there_was_none() -> void:
+	_meal([A, B])
+	_battle([A, B], "stranded", {"rescued": [A, B]})
+	assert_eq(Bonds.dream(_ledger, A), {}, "the owner was stranded with Bea, even in a record with no rescuers")
+	_ledger = []
+	_meal([A, B])
+	_battle([A, D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A), {}, "the owner fought in it")
+	_battle([A, B], "victory", {"rescued": [B], "rescuers": [A]})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "watch_over", "the owner among the rescuers watches over, and welcomes no one")
+	_ledger = []
+	_meal([A, B])
+	_meal([B, C])
+	_battle([D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A), {}, "Bea's latest meal was at another table, though an older one seated them")
+	assert_eq(Bonds.dream(_ledger, C)["who"], B, "and Cal, who sat at it, does welcome her home")
+	assert_eq(Bonds.dream(_ledger, E), {}, "a hero who never ate with Bea")
+	_ledger = []
+	_battle([D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A), {}, "Bea never dined")
+	_meal([A, B])
+	assert_eq(Bonds.dream(_ledger, A), {}, "a meal after the rescue is not the meal before it")
+
+
+func test_welcome_home_names_the_first_freed_hero_whose_last_meal_was_at_the_owners_table() -> void:
+	_meal([A, B, C])
+	_battle([D, B, C], "victory", {"rescued": [B, C], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A)["who"], B, "the first in rescued")
+	_ledger = []
+	_meal([A, C])
+	_meal([B, D])
+	_battle([D, B, C], "victory", {"rescued": [B, C], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A)["who"], C, "Bea ate elsewhere, so the next one")
+
+
+func test_welcome_home_counts_meals_seating_both_after_the_rescue_and_is_fulfilled_at_the_count() -> void:
+	_meal([A, B, C])
+	_battle([D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	_meal([A, C, D])
+	_meal([B, C, D])
+	_meal([A, D])
+	assert_eq(Bonds.dream(_ledger, A)["count"], 0, "a meal seating only one of them adds nothing")
+	_meal([A, B])
+	_meal([D, B, A])
+	assert_eq(Bonds.dream(_ledger, A)["count"], 2)
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE)[2], "  [ ] Eat with Bea again (2/3).")
+	var short: Array[Dictionary] = _ledger.duplicate()
+	_record("died", {"hero": B, "name": "Bea", "cause": "starvation"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "welcome_home", "state": "lost", "who": B}, "Bea dies before the third meal")
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream lost: Bea died before coming back to the table."] as Array[String])
+	_ledger = short
+	_meal([B, A, C])
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "welcome_home", "state": "fulfilled", "who": B})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream fulfilled: Bea is back at the table."] as Array[String])
+	assert_eq(Bonds.dream(_ledger, A, null, false), Bonds.dream(_ledger, A), "the skip changes nothing")
+
+
+func test_a_rejected_meal_an_encounter_with_no_heroes_and_a_rescue_with_no_rescued_read_as_nothing() -> void:
+	_record("meal", {"diners": [A], "place": "House_1"})
+	_record("meal", {"diners": [A, B, B], "place": "House_1"})
+	_record("meal", {"diners": [A, B, ""], "place": "House_1"})
+	_record("meal", {"place": "House_1"})
+	_record("encounter", {"place": "House_1"})
+	_record("encounter", {"heroes": [A], "place": "House_1", "why": "neighbours"})
+	_record("encounter", {"heroes": [A, A], "place": "House_1", "why": "neighbours"})
+	_record("encounter", {"heroes": [A, B, C], "place": "House_1", "why": "neighbours"})
+	_battle([D, B], "victory", {"rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A), {}, "no diners seated Bea at Ada's table, and a rescue that freed no one welcomes no one")
+	assert_eq(Bonds.dream(_ledger, A, null, false), {})
+	for _index: int in 6:
+		_record("encounter", {"heroes": [A, A], "place": "House_1", "why": "neighbours"})
+		_record("encounter", {"heroes": [A], "place": "House_1", "why": "neighbours"})
+	assert_eq(Bonds.dream(_ledger, A), {}, "and no meeting counts toward fight_beside")
+	_battle([D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A), {}, "a rejected meal sets no table")
+
+
+func test_fight_beside_opens_on_the_fourth_meeting_when_they_never_fought_together() -> void:
+	_meetings(A, B, 3)
+	assert_eq(Bonds.dream(_ledger, A), {}, "three meetings: not yet")
+	_meeting(B, A)
+	var found: Dictionary = {"dream": "fight_beside", "state": "open", "who": B, "count": 0, "chats": 4}
+	assert_eq(Bonds.dream(_ledger, A), found, "the fourth, whichever of them is first in the record")
+	assert_eq(Bonds.dream(_ledger, B), {"dream": "fight_beside", "state": "open", "who": A, "count": 0, "chats": 4}, "and Bea wants the same")
+	assert_eq(Bonds.dream(_ledger, C), {}, "Cal is no part of it")
+	assert_eq(Bonds.dream_lines(found, A, NAMES, BALANCE), [
+		"Dream: fight beside Bea.",
+		"  [x] Got to know Bea in town (4 chats).",
+		"  [ ] Fight beside Bea (0/3).",
+	] as Array[String], "three lines: the dream ends at its count")
+	_meeting(A, C)
+	_meeting(C, B)
+	assert_eq(Bonds.dream(_ledger, A), found, "meetings with others change nothing")
+
+
+func test_fight_beside_counts_battles_with_both_in_the_team_routine_too_and_is_fulfilled_without_opening_a_life_debt() -> void:
+	_meetings(A, B, 4)
+	_battle([A, C], "victory")
+	_battle([B, C], "victory")
+	assert_eq(Bonds.dream(_ledger, A)["count"], 0, "a battle with only one of them adds nothing")
+	_battle([A, B], "victory")
+	_battle([A, B, C], "retreated")
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE)[2], "  [ ] Fight beside Bea (2/3).")
+	_battle([A, B], "victory", {"moments": [_moment("revived", A, C)]})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "fight_beside", "state": "fulfilled", "who": B}, "the third; the battle that fulfils it opens no life debt though Cal saved Ada in it")
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream fulfilled: fought beside Bea."] as Array[String])
+	_battle([A, C], "victory", {"moments": [_moment("revived", A, C)]})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "life_debt", "the next formative record does")
+
+
+func test_fight_beside_is_lost_to_the_deaths_of_the_other_hero() -> void:
+	_meetings(A, B, 4)
+	_record("died", {"hero": B, "name": "Bea", "cause": "starvation"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "fight_beside", "state": "lost", "who": B})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream lost: Bea died before they fought together."] as Array[String])
+
+
+func test_fight_beside_fades_after_more_meetings_with_no_battle_together_and_a_faded_pair_is_not_reopened() -> void:
+	_meetings(A, B, 4)
+	_meetings(A, B, 3)
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "fight_beside", "state": "open", "who": B, "count": 0, "chats": 4}, "seven meetings: three since the opening")
+	var before: Array[Dictionary] = _ledger.duplicate()
+	_meeting(A, B)
+	var faded: Dictionary = {"dream": "fight_beside", "state": "faded", "who": B}
+	assert_eq(Bonds.dream(_ledger, A), faded, "the eighth is dream_along_meetings after the fourth")
+	assert_eq(Bonds.dream_lines(faded, A, NAMES, BALANCE), ["Dream faded: never fought beside Bea."] as Array[String])
+	_meetings(A, B, 3)
+	assert_eq(Bonds.dream(_ledger, A), faded, "no meeting after it reopens it")
+	_ledger = before
+	_battle([A, B], "victory")
+	_meetings(A, B, 8)
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "fight_beside", "state": "open", "who": B, "count": 1, "chats": 4}, "one battle together and it never fades")
+
+
+func test_a_pair_that_fought_together_never_opens_fight_beside_and_a_new_one_does() -> void:
+	_battle([A, B, C], "victory")
+	_meetings(A, B, 5)
+	assert_eq(Bonds.dream(_ledger, A), {}, "Ada fought beside Bea earlier")
+	_meetings(A, C, 5)
+	assert_eq(Bonds.dream(_ledger, A), {}, "and beside Cal")
+	_meetings(A, D, 4)
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "fight_beside", "state": "open", "who": D, "count": 0, "chats": 4})
+	assert_eq(Bonds.dream(_ledger, A, null, false), Bonds.dream(_ledger, A), "the skip changes nothing")
+
+
+func test_meetings_held_while_another_dream_is_open_count_and_the_pair_opens_it_when_the_slot_frees_until_the_seventh() -> void:
+	for free_after: int in [3, 6, 7]:
+		_ledger = []
+		_battle([A, C], "victory", {"moments": [_moment("revived", A, C)]})
+		_meetings(A, B, free_after)
+		assert_eq(Bonds.dream(_ledger, A)["dream"], "life_debt", "the slot is held")
+		_battle([A, C], "victory", {"moments": [_moment("revived", C, A)]})
+		assert_eq(Bonds.dream(_ledger, A)["state"], "paid")
+		_meeting(A, B)
+		var found: Dictionary = Bonds.dream(_ledger, A)
+		if free_after == 7:
+			assert_eq(found["dream"], "life_debt", "the eighth meeting is past the window: the chance is gone")
+			_meeting(A, B)
+			assert_eq(Bonds.dream(_ledger, A)["dream"], "life_debt", "and it stays gone")
+		else:
+			assert_eq([found["dream"], found["who"], found["chats"]], ["fight_beside", B, free_after + 1], "opened at meeting %d, the first once the slot freed" % (free_after + 1))
+	_ledger = []
+	_meetings(A, B, 4)
+	_battle([A, C], "victory", {"moments": [_moment("revived", A, C)]})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "fight_beside", "an open fight_beside keeps the slot from a life debt")
+	_meal([A, C])
+	_battle([D, C], "victory", {"rescued": [C], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "fight_beside", "and from welcome_home")
+
+
+func test_a_death_that_loses_welcome_home_does_not_open_carry_name() -> void:
+	_meal([A, B])
+	_battle([D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "welcome_home")
+	_battle([A, B], "stranded", {"order": "order:x"})
+	_record("died", {"hero": B, "name": "Bea", "cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "welcome_home", "state": "lost", "who": B}, "Bea's witnessed death loses it and does not open Carry their name")
+	_battle([A, C, D], "stranded", {"order": "order:y"})
+	_record("died", {"hero": D, "name": "Dov", "cause": "expedition", "zone": ZONE, "battle_order": "order:y"})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "carry_name", "the next formative record after the end opens one")
+
+
+func test_the_dreams_on_meals_and_meetings_read_the_same_with_or_without_the_skip() -> void:
+	_meal([A, B, C])
+	_meetings(A, C, 5)
+	_battle([D, B], "victory", {"rescued": [B], "rescuers": [D]})
+	_battle([E, D], "victory")
+	_battle([A, C], "victory")
+	_meal([A, B])
+	for id: String in [A, B, C, D, E]:
+		assert_eq(Bonds.dream(_ledger, id), Bonds.dream(_ledger, id, null, false), "%s: the default read equals reading every record" % id)
+
+
 func test_legacy_records_open_no_catalogue_dream_and_change_none() -> void:
 	_battle([A, B], "stranded")
 	_record("died", {"hero": C, "name": "Cal"})
@@ -780,15 +995,20 @@ func test_a_dead_hero_keeps_its_name_in_the_dream_lines() -> void:
 
 func test_no_dream_is_saved_and_a_disk_round_trip_gives_the_same_dreams() -> void:
 	_hero(A, "Ada")
-	var owners: Array[String] = [A, B, D, F]
+	var owners: Array[String] = [A, B, D, F, "hero:m", "hero:q"]
 	GameSession._record("battle", {"order": "order:1", "zone": ZONE, "team": [A, B], "result": "victory", "moments": [_moment("revived", A, B)]})
 	GameSession._record("battle", {"order": "order:2", "zone": ZONE, "team": [D, E], "result": "stranded", "moments": []})
 	GameSession._record("died", {"hero": E, "name": "Eve", "cause": "expedition", "zone": ZONE, "battle_order": "order:2"})
 	GameSession._record("died", {"hero": C, "name": "Cal", "cause": "sacrifice", "by": F})
+	# ig-m6o.2.2.10: a meal then a rescue that names hero:m nowhere (welcome_home), and four chats of two who never fought together.
+	GameSession._record("meal", {"diners": ["hero:m", "hero:n", "hero:o"], "place": "House_1"})
+	GameSession._record("battle", {"order": "order:3", "zone": ZONE, "team": ["hero:o", "hero:p"], "result": "victory", "moments": [], "rescued": ["hero:n"], "rescuers": ["hero:p"]})
+	for _index: int in 4:
+		GameSession._record("encounter", {"heroes": ["hero:q", "hero:r"], "place": "House_1", "why": "neighbours"})
 	var before: Dictionary = {}
 	for id: String in owners:
 		before[id] = Bonds.dream(GameSession.ledger, id)
-	assert_eq([before[A]["dream"], before[B]["dream"], before[D]["dream"], before[F]["dream"]], ["life_debt", "watch_over", "carry_name", "be_worthy"])
+	assert_eq([before[A]["dream"], before[B]["dream"], before[D]["dream"], before[F]["dream"], before["hero:m"]["dream"], before["hero:q"]["dream"]], ["life_debt", "watch_over", "carry_name", "be_worthy", "welcome_home", "fight_beside"])
 	for key: String in GameSession.to_dict():
 		assert_false(key.contains("dream"), "no saved dream: %s" % key)
 	assert_true(SaveService.save(), SaveService.last_write_error)
@@ -820,6 +1040,12 @@ func test_read_cost_at_the_cap() -> void:
 		5000: ["battle", {"order": "order:5000", "zone": ZONE, "team": ["own:carry", "own:y"], "result": "stranded", "moments": []}],
 		5001: ["died", {"hero": "own:y", "name": "Y", "cause": "expedition", "zone": ZONE, "battle_order": "order:5000"}],
 		7500: ["died", {"hero": "own:z", "name": "Z", "cause": "sacrifice", "by": "own:worthy"}],
+		6000: ["meal", {"diners": ["own:m", "own:n", "own:o"], "place": "House_1"}],
+		6001: ["battle", {"order": "order:6001", "zone": ZONE, "team": ["own:o", "own:p"], "result": "victory", "moments": [], "rescued": ["own:n"], "rescuers": ["own:p"]}],
+		8000: ["encounter", {"heroes": ["own:f", "own:g"], "place": "House_1", "why": "neighbours"}],
+		8001: ["encounter", {"heroes": ["own:f", "own:g"], "place": "House_1", "why": "neighbours"}],
+		8002: ["encounter", {"heroes": ["own:f", "own:g"], "place": "House_1", "why": "neighbours"}],
+		8003: ["encounter", {"heroes": ["own:f", "own:g"], "place": "House_1", "why": "neighbours"}],
 	}
 	for index: int in BALANCE.ledger_max_records:
 		var team: Array[String] = []
@@ -827,6 +1053,15 @@ func test_read_cost_at_the_cap() -> void:
 			team.append(heroes[rng.randi_range(0, heroes.size() - 1)])
 		if scripted.has(index):
 			_record(scripted[index][0], scripted[index][1])
+			continue
+		if index % 3 == 0:
+			# A third of the ledger is chats and meals, alternating, as the perf seed's is (ig-m6o.2.2.10: the dream reads them now).
+			var table: Array[String] = _team(rng, heroes, 2 if index % 6 == 0 else 4)
+			table.sort()
+			if index % 6 == 0:
+				_record("encounter", {"heroes": table, "place": "House_1", "why": "neighbours"})
+			else:
+				_record("meal", {"diners": table, "place": "House_1"})
 			continue
 		var roll: int = rng.randi_range(0, 9)
 		var fields: Dictionary = {"order": "order:%d" % index, "zone": ZONE, "team": team, "result": "victory", "moments": []}
@@ -856,6 +1091,44 @@ func test_read_cost_at_the_cap() -> void:
 	assert_eq(Bonds.dream(_ledger, "own:watch")["dream"], "watch_over")
 	assert_eq(Bonds.dream(_ledger, "own:carry")["dream"], "carry_name")
 	assert_eq(Bonds.dream(_ledger, "own:worthy")["dream"], "be_worthy")
+	assert_eq(Bonds.dream(_ledger, "own:m")["dream"], "welcome_home")
+	assert_eq(Bonds.dream(_ledger, "own:f")["dream"], "fight_beside")
+	var worst_usec: int = 0
+	for hero_id: String in heroes.slice(0, 8):
+		var started: int = Time.get_ticks_usec()
+		Bonds.dream(_ledger, hero_id)
+		worst_usec = maxi(worst_usec, Time.get_ticks_usec() - started)
+	gut.p("DREAM READ COST: the slowest of eight heroes' full reads at the cap: %.2f ms" % [worst_usec / 1000.0])
+
+
+## ig-m6o.2.2.10: the notice that marks two shown heroes at once (the selected one and the partner) costs two full reads
+## if both are read on the notice's frame; deferred they are one a frame. A measurement, not a gate: two heroes' full
+## reads at the real cap over the same mixed ledger, worst of 7.
+func test_two_full_dream_reads_at_the_cap_are_a_measurement() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var heroes: Array[String] = []
+	for index: int in 40:
+		heroes.append("hero:%d" % index)
+	for index: int in BALANCE.ledger_max_records:
+		if index % 3 == 0:
+			var table: Array[String] = _team(rng, heroes, 2 if index % 6 == 0 else 4)
+			table.sort()
+			if index % 6 == 0:
+				_record("encounter", {"heroes": table, "place": "House_1", "why": "neighbours"})
+			else:
+				_record("meal", {"diners": table, "place": "House_1"})
+		else:
+			var team: Array[String] = _team(rng, heroes, 5)
+			_battle_in(_ledger, team, "victory", _mix(rng, index, team))
+	var runs: Array[int] = []
+	for run: int in 7:
+		var started: int = Time.get_ticks_usec()
+		Bonds.dream_fold(_ledger, heroes[run])
+		Bonds.dream_fold(_ledger, heroes[run + 1])
+		runs.append(Time.get_ticks_usec() - started)
+	gut.p("DREAM READ COST: %d records, two full reads in one notice (the selected hero and the partner), best %.2f ms, worst %.2f ms of 7" % [_ledger.size(), runs.min() / 1000.0, runs.max() / 1000.0])
+	assert_eq(_ledger.size(), BALANCE.ledger_max_records)
 
 
 ## ---- the hub
@@ -873,6 +1146,7 @@ func test_the_detail_panel_shows_the_bond_and_dream_above_history() -> void:
 		if roster.get_item_text(index).contains("  Ada — "):
 			roster.select(index)
 			roster.multi_selected.emit(index, true)
+	await _dreams_read(hub)
 	var text: String = (hub.get_node("%HeroDetail") as Label).text
 	assert_string_contains(text, "Closest to Bea: 2 hard fights, 2 saves.\nFriends: Bea.\n\nDream: repay Bea.\n  [x] Bea revived Ada at")
 	assert_string_contains(text, "  [ ] Fight beside Bea again (1/3).\n  [ ] Save Bea.\n\nHistory:\n")
@@ -1606,8 +1880,8 @@ func test_an_eviction_the_fold_cannot_take_out_rebuilds() -> void:
 
 
 ## ACC 4 and ACC 10 at the real cap: a new record evicts an encounter before any routine battle or filler,
-## oldest first. Taking one out is a fold out (no rebuild) and marks no dream, so the hub's kept dream resumes.
-func test_encounters_go_first_at_the_cap_and_evicting_them_rebuilds_nothing_and_marks_no_dream() -> void:
+## oldest first. Taking one out is a fold out (no rebuild) and marks its two heroes (ig-m6o.2.2.10), so the hub reads their dreams in full.
+func test_encounters_go_first_at_the_cap_and_evicting_them_rebuilds_nothing_and_marks_their_heroes() -> void:
 	_fill_to_cap(20)
 	_hero(A, "Ada")
 	_hero(B, "Bea")
@@ -1616,7 +1890,7 @@ func test_encounters_go_first_at_the_cap_and_evicting_them_rebuilds_nothing_and_
 	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
 	assert_eq(int(GameSession.bond_index()[A][B]["meetings"]), 20)
 	var hub: Node3D = _hub()
-	var dream: Dictionary = hub._dream(A)
+	hub._dream(A)
 	var builds: int = GameSession.bond_builds
 	var reads: int = hub.dream_reads
 	var first_chat: int = int(GameSession.ledger[BALANCE.ledger_max_records - 20]["seq"])
@@ -1637,8 +1911,10 @@ func test_encounters_go_first_at_the_cap_and_evicting_them_rebuilds_nothing_and_
 	assert_eq(GameSession.ledger.filter(func(record: Dictionary) -> bool: return record["kind"] == "encounter").size(), 0)
 	assert_eq(GameSession.bond_builds, builds, "nothing rebuilt")
 	_assert_index_is_a_rebuild("after")
-	assert_eq(hub._dream(A), dream, "the dream is as it was")
-	assert_eq(hub.dream_reads, reads, "an eviction of chats marked no dream, so it resumed")
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A, null, false), "the dream is what a full read says")
+	assert_eq(hub.dream_reads, reads + 1, "an eviction of Ada's chats marked her, so it was read in full, once")
+	assert_eq(hub._dream(B), Bonds.dream(GameSession.ledger, B, null, false), "and Bea's too")
+	assert_eq(hub.dream_reads, reads + 2)
 
 
 ## ig-m6o.2.2.4: one encounter in at the cap of a ledger a third of encounters, as the perf seed's is: append,
@@ -1721,9 +1997,11 @@ func test_a_meal_time_in_at_the_cap_costs_under_a_frame() -> void:
 	gut.p("BOND COST: all-pairs rebuild with chats and meals (a load), %d records, best %.2f ms, worst %.2f ms of 7" % [GameSession.ledger.size(), rebuilds.min() / 1000.0, rebuilds.max() / 1000.0])
 
 
-## ACC 10 with meals: at the real cap, one meal time (eight tables) evicts the eight oldest meals as folds out, marks
-## no dream, and the hub's look at the bonds after it, with the hero of the first table selected, reads no dream.
-func test_a_meal_time_at_the_cap_marks_no_dream_and_the_hubs_look_reads_none() -> void:
+## ACC 10 with meals, as ig-m6o.2.2.10 changes it: at the real cap, one meal time (eight tables) evicts the eight oldest
+## meals as folds out, and each marks its diners (welcome_home and fight_beside read a meal). Ada sat at the first table, so
+## she is marked: the hub's look after it draws her panel from the dream it kept and reads no dream in full on that frame;
+## the next frame reads hers once, and what it reads is what a full read of every record says.
+func test_a_meal_time_at_the_cap_marks_its_diners_and_the_hubs_look_reads_the_selected_one_a_frame_later() -> void:
 	_fill_to_cap(40)
 	_hero(A, "Ada")
 	_hero(B, "Bea")
@@ -1735,7 +2013,7 @@ func test_a_meal_time_at_the_cap_marks_no_dream_and_the_hubs_look_reads_none() -
 	var hub: Node3D = _hub()
 	hub._open(&"Forge")
 	_select(hub, "Ada")
-	var dream: Dictionary = hub._dream(A)
+	await _dreams_read(hub)
 	var builds: int = GameSession.bond_builds
 	var reads: int = hub.dream_reads
 	var records: Array[Dictionary] = []
@@ -1747,10 +2025,491 @@ func test_a_meal_time_at_the_cap_marks_no_dream_and_the_hubs_look_reads_none() -
 	assert_eq(GameSession.bond_builds, builds, "eight take-outs rebuilt nothing")
 	_assert_index_is_a_rebuild("after the meal time")
 	GameSession._notify_social_recorded(records)
-	assert_eq(hub.dream_reads, reads, "the look after a meal time read no dream")
-	assert_eq(hub._dream(A), dream, "the dream is as it was")
-	assert_eq(hub.dream_reads, reads, "and asking for it read none either")
-	assert_eq(GameSession.bond_builds, builds, "the look rebuilt nothing")
+	assert_eq(hub.dream_reads, reads, "the notice's frame read no dream in full: Ada is marked and keeps hers")
+	assert_eq(hub._marked_queue, [A] as Array[String], "and queued her once")
+	assert_true(hub.is_processing())
+	await _frames(2)
+	assert_eq(hub.dream_reads, reads + 1, "the frame after read it once")
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A, null, false), "and it is what a full read says")
+	assert_eq(hub.dream_reads, reads + 1, "asking again read none")
+	assert_true(hub._marked_queue.is_empty())
+	assert_false(hub.is_processing(), "the process is off again")
+	assert_eq(GameSession.bond_builds, builds, "nothing rebuilt")
+
+
+## ig-m6o.2.2.10 (b): the reads a notice marked wait for later frames. Ada walks and Bea is her partner; Dov is the
+## selected hero. Two notices in one frame, each evicting an old meal that seated Bea and Dov, mark both twice. Neither
+## notice reads a dream; each hero is queued once however many notices marked it; the next frame reads one of them in
+## full and the frame after it the other (at most one a frame), and each is what a full read says. Then nothing more.
+func test_a_notices_marked_dreams_are_read_once_each_and_one_a_frame() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(D, "Dov")
+	_fill_to_cap(8 + 2)
+	for _index: int in 4:
+		_battle_in(GameSession.ledger, [A, B], "retreated", {"kills": {A: 0, B: 2}})
+		_battle_in(GameSession.ledger, [A, B], "retreated", {"kills": {A: 2, B: 0}})
+	Ledger.append(GameSession.ledger, GameSession.ledger.size() + 1, 0, "meal", {"diners": [B, D, "hero:g", "hero:h"], "place": "House_1"})
+	Ledger.append(GameSession.ledger, GameSession.ledger.size() + 1, 0, "meal", {"diners": [B, D, "hero:g", "hero:h"], "place": "House_1"})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	var hub: Node3D = _hub()
+	assert_true(GameSession.embody_hero(A))
+	assert_eq(hub._partner_id, B)
+	hub._open(&"Forge")
+	_select(hub, "Dov")
+	await _dreams_read(hub)
+	var reads: int = hub.dream_reads
+	for table: Array in [[B, D, "hero:i", "hero:j"], [B, D, "hero:k", "hero:l"]]:
+		var records: Array[Dictionary] = [GameSession._record("meal", {"diners": table, "place": "House_1"})]
+		GameSession._notify_social_recorded(records)
+	assert_eq(hub.dream_reads, reads, "neither notice read a dream in full")
+	assert_eq(hub._marked_queue.size(), 2, "Bea and Dov are queued once each, though two notices marked both")
+	assert_true(hub._marked_queue.has(B) and hub._marked_queue.has(D))
+	await _frames(2)
+	assert_eq(hub.dream_reads, reads + 1, "the next frame read one hero in full")
+	await _frames(1)
+	assert_eq(hub.dream_reads, reads + 2, "and the one after it the other")
+	await _frames(3)
+	assert_eq(hub.dream_reads, reads + 2, "then no more: each marked hero was read once")
+	assert_false(hub.is_processing())
+	for id: String in [B, D]:
+		assert_eq(hub._dream(id), Bonds.dream(GameSession.ledger, id, null, false), "%s's dream is what a full read says" % id)
+	assert_eq(hub.dream_reads, reads + 2, "asking read none")
+
+
+## A queued hero that is neither the selected one nor the partner any more is dropped without a read (ig-m6o.2.2.10: a
+## pick queues a hero who was never read too, so picking Ada queues her, and picking Bea queues Bea).
+func test_a_queued_hero_who_is_no_longer_shown_is_dropped_without_a_read() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_fill_to_cap(1)
+	Ledger.append(GameSession.ledger, GameSession.ledger.size() + 1, 0, "meal", {"diners": [A, B, C, D], "place": "House_1"})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	var reads: int = hub.dream_reads
+	_select(hub, "Ada")
+	assert_eq(hub._marked_queue, [A] as Array[String], "picking Ada queued her")
+	_select(hub, "Bea")
+	assert_eq(hub._selected_hero().instance_id, B)
+	assert_eq(hub._marked_queue, [A, B] as Array[String], "and picking Bea queued her too")
+	assert_eq(hub.dream_reads, reads, "neither pick read a dream in full")
+	await _frames(4)
+	assert_eq(hub.dream_reads, reads + 1, "Bea, who is on show, was read once; Ada is not on show any more, so she never was")
+	assert_true(hub._marked_queue.is_empty())
+	assert_false(hub.is_processing())
+	assert_eq(hub._dream(B), Bonds.dream(GameSession.ledger, B, null, false))
+
+
+## ig-m6o.2.2.10 (R7): a view redraw never reads a dream in full on its own frame. A pick of a hero the hub never read
+## draws the panel without the dream; the next frame reads it once and the panel then says what a full read says.
+func test_picking_a_never_read_hero_reads_no_dream_on_its_frame_and_shows_it_the_next() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	var label: Label = hub.get_node("%HeroDetail") as Label
+	var reads: int = hub.dream_reads
+	_select(hub, "Ada")
+	assert_eq(hub.dream_reads, reads, "no dream was read in full on the pick's frame")
+	assert_string_contains(label.text, "Closest to Bea")
+	assert_false(label.text.contains("Dream:"), "the panel shows no dream yet")
+	assert_eq(hub._marked_queue, [A] as Array[String], "and Ada is queued")
+	assert_true(hub.is_processing())
+	await _frames(2)
+	assert_eq(hub.dream_reads, reads + 1, "the frame after read it once")
+	assert_string_contains(label.text, "Dream: repay Bea.")
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A, null, false), "and it is what a full read says")
+	var shown: String = label.text
+	hub._refresh_hero_detail()
+	assert_eq(label.text, shown, "a redraw from the dream it read draws the same panel")
+	assert_eq(hub.dream_reads, reads + 1)
+	assert_true(hub._marked_queue.is_empty())
+	assert_false(hub.is_processing())
+
+
+## R7: a settle at the cap whose eviction marked the walking hero's partner, who is the selected hero too. The redraws of
+## the greeting and of the panel draw the dream the hub kept, nothing is read in full on the settle's frame, the partner
+## is queued once for both views, and the frame after reads it once and redraws both.
+func test_a_settle_that_marks_the_partner_reads_no_dream_on_its_frame() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_fill_to_cap(8 + 1)
+	for _index: int in 4:
+		_battle_in(GameSession.ledger, [A, B], "retreated", {"kills": {A: 0, B: 2}})
+		_battle_in(GameSession.ledger, [A, B], "retreated", {"kills": {A: 2, B: 0}})
+	Ledger.append(GameSession.ledger, GameSession.ledger.size() + 1, 0, "encounter", {"heroes": [B, "hero:g"], "place": "House_1", "why": "neighbours"})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	var hub: Node3D = _hub()
+	assert_true(GameSession.embody_hero(A))
+	assert_eq(hub._partner_id, B)
+	hub._open(&"Forge")
+	_select(hub, "Bea")
+	await _dreams_read(hub)
+	var reads: int = hub.dream_reads
+	var facts: Dictionary = hub._partner_facts.duplicate(true)
+	var panel: String = (hub.get_node("%HeroDetail") as Label).text
+	GameSession._record("summoned", {"hero": "hero:h", "name": "Hal", "rank": 0})
+	assert_false(GameSession.ledger.any(func(record: Dictionary) -> bool: return record["kind"] == "encounter"), "Bea's chat went")
+	GameSession.roster_changed.emit()
+	assert_eq(hub.dream_reads, reads, "the settle's frame read no dream in full")
+	assert_eq(hub._marked_queue, [B] as Array[String], "Bea is queued once, for the greeting and the panel")
+	assert_eq(hub._partner_facts, facts, "the greeting was drawn again from the kept dream")
+	assert_eq((hub.get_node("%HeroDetail") as Label).text, panel, "and so was the panel")
+	await _frames(2)
+	assert_eq(hub.dream_reads, reads + 1, "the frame after read her once")
+	assert_eq(hub._dream(B), Bonds.dream(GameSession.ledger, B, null, false), "what a full read says")
+	assert_true(hub._marked_queue.is_empty())
+	assert_false(hub.is_processing())
+
+
+## R7: a settle that hands the walker a partner the hub never read (Cal's saves pass Bea's) draws the greeting without
+## Cal's dream and reads nothing in full on its frame; the next frame reads it once and the greeting then carries it.
+func test_a_settle_that_gives_the_walker_a_never_read_partner_reads_no_dream_on_its_frame() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(C, "Cal")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	assert_true(GameSession.embody_hero(A))
+	assert_eq(hub._partner_id, B)
+	await _dreams_read(hub)
+	var reads: int = hub.dream_reads
+	for step: int in 4:
+		GameSession._record("battle", {"order": "order:c%d" % step, "zone": ZONE, "team": [A, C], "result": "victory", "moments": [_moment("revived", C, A)]})
+	GameSession.roster_changed.emit()
+	assert_eq(hub._partner_id, C, "Cal's four saves pass Bea's two")
+	assert_eq(hub.dream_reads, reads, "the settle's frame read no dream in full")
+	assert_eq(hub._marked_queue, [C] as Array[String])
+	assert_false((hub._partner_facts["kinds"] as Array).has("debt"), "the greeting has no dream of Cal's yet")
+	await _frames(2)
+	assert_eq(hub.dream_reads, reads + 1, "the frame after read Cal once")
+	assert_true((hub._partner_facts["kinds"] as Array).has("debt"), "and the greeting carries Cal's open dream, which owes Ada")
+	assert_eq(hub._dream(C), Bonds.dream(GameSession.ledger, C, null, false), "what a full read says")
+	assert_true(hub._marked_queue.is_empty())
+	assert_false(hub.is_processing())
+
+
+## ig-m6o.2.2.10: a notice that touches the walking hero's partner but not the walking hero redraws the greeting too (a
+## partner's dream can now change on a meal or a chat). One that touches neither does not.
+func test_a_notice_that_touches_the_partner_redraws_the_greeting_and_one_that_touches_neither_does_not() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(C, "Cal")
+	for _index: int in 4:
+		_battle_in(GameSession.ledger, [A, B], "retreated", {"kills": {A: 0, B: 2}})
+		_battle_in(GameSession.ledger, [A, B], "retreated", {"kills": {A: 2, B: 0}})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	assert_true(GameSession.embody_hero(A))
+	assert_eq(hub._partner_id, B)
+	hub._partner_facts = {"sentinel": true}
+	var records: Array[Dictionary] = [GameSession._record("meal", {"diners": [C, "hero:g", "hero:h", "hero:i"], "place": "House_1"})]
+	GameSession._notify_social_recorded(records)
+	assert_eq(hub._partner_facts, {"sentinel": true}, "a meal that seats neither of them leaves the greeting")
+	records = [GameSession._record("meal", {"diners": [B, C, "hero:g", "hero:h"], "place": "House_1"})]
+	GameSession._notify_social_recorded(records)
+	assert_ne(hub._partner_facts, {"sentinel": true}, "a meal that seats the partner alone draws it again")
+	assert_true((hub._partner_facts as Dictionary).has("kinds"))
+
+
+## ig-m6o.2.2.10 (R8): a hero queued on one frame and asked for again on the next is not read in full on that next frame.
+## Ada is queued on the pick's frame; a redraw asks for her again on the frame after, ahead of the hub's _process (an
+## awaited frame resumes before the nodes' _process, as GameSession's own _process does), so her read waits one more.
+func test_a_hero_queued_a_frame_ago_and_asked_again_is_not_read_on_that_frame() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	var reads: int = hub.dream_reads
+	_select(hub, "Ada")
+	assert_eq(hub._marked_queue, [A] as Array[String], "the pick queued Ada")
+	await _frames(1)
+	hub._refresh_hero_detail()
+	assert_eq(hub._marked_queue, [A] as Array[String], "asking again queued her no second time")
+	await _frames(1)
+	assert_eq(hub.dream_reads, reads, "the frame she was asked on read no dream in full")
+	await _frames(1)
+	assert_eq(hub.dream_reads, reads + 1, "the frame after read her once")
+	assert_string_contains((hub.get_node("%HeroDetail") as Label).text, "Dream: repay Bea.")
+	assert_true(hub._marked_queue.is_empty())
+
+
+## R8: a frame that carries a notice the hub redraws on reads no queued hero in full, whatever the notice touches. Ada is
+## queued on the pick's frame and the notice comes on the next one; it does not touch her, so nothing asks for her again,
+## and her read still waits a frame.
+func _assert_a_notice_defers_the_read(what: String, notice: Callable) -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(C, "Cal")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	var reads: int = hub.dream_reads
+	_select(hub, "Ada")
+	assert_eq(hub._marked_queue, [A] as Array[String], "%s: the pick queued Ada" % what)
+	await _frames(1)
+	notice.call()
+	await _frames(1)
+	assert_eq(hub.dream_reads, reads, "%s: the notice's frame read no dream in full" % what)
+	await _frames(1)
+	assert_eq(hub.dream_reads, reads + 1, "%s: the frame after read her once" % what)
+	assert_true(hub._marked_queue.is_empty())
+
+
+func test_a_pulse_on_the_frame_after_a_pick_defers_the_read_a_frame() -> void:
+	await _assert_a_notice_defers_the_read("a pulse", func() -> void: GameSession.expeditions_changed.emit())
+
+
+func test_a_settle_on_the_frame_after_a_pick_defers_the_read_a_frame() -> void:
+	await _assert_a_notice_defers_the_read("a settle", func() -> void: GameSession.roster_changed.emit())
+
+
+func test_a_meal_of_others_on_the_frame_after_a_pick_defers_the_read_a_frame() -> void:
+	await _assert_a_notice_defers_the_read("a meal of others", _meal_of_others)
+
+
+## A meal that seats neither Ada nor Bea (Cal and three heroes who are not on the roster), told to the hub.
+func _meal_of_others() -> void:
+	var records: Array[Dictionary] = [GameSession._record("meal", {"diners": [C, "hero:g", "hero:h", "hero:i"], "place": "House_1"})]
+	GameSession._notify_social_recorded(records)
+
+
+## Ada walking, bonded to Bea (Ada's partner), the ledger holding records ([kind, fields] pairs, oldest first). at_cap puts a
+## chat of Cal and Dov before them, the oldest tier-0 record, which the next append evicts (it names neither of the two),
+## and pads the ledger to the real cap with summons after them. Returns the hub, Bea's dream read once.
+func _walker_with_partner(records: Array, at_cap: bool) -> Node3D:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(C, "Cal")
+	var seq: int = 0
+	var seeded: Array = []
+	if at_cap:
+		seeded.append(["encounter", {"heroes": [C, D], "place": "House_1", "why": "neighbours"}])
+	seeded.append_array(records)
+	for entry: Array in seeded:
+		seq += 1
+		Ledger.append(GameSession.ledger, seq, 0, entry[0], entry[1])
+	while at_cap and GameSession.ledger.size() < BALANCE.ledger_max_records:
+		seq += 1
+		Ledger.append(GameSession.ledger, seq, 0, "summoned", {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
+	GameSession.ledger_next_seq = seq + 1
+	var hub: Node3D = _hub()
+	assert_true(GameSession.embody_hero(A))
+	assert_eq(hub._partner_id, B, "Bea is Ada's partner")
+	await _dreams_read(hub)
+	return hub
+
+
+## What a tick that changes the partner's dream does to the greeting (ACC 6, through social_recorded and no roster_changed):
+## the lines of `kind` are in the greeting's candidates or not, the refresh resumed her kept dream and read none in full,
+## and her dream is what a full read says.
+func _assert_greeting_moved(hub: Node3D, kind: String, gained: bool, reads: int, resumes: int, before: Array[String]) -> void:
+	assert_signal_not_emitted(GameSession, "roster_changed")
+	var after: Array[String] = Lines.candidates(hub._partner_facts)
+	assert_eq((hub._partner_facts["kinds"] as Array).has(kind), gained, "%s is in the greeting's kinds: %s" % [kind, gained])
+	var lines: Array = Lines.BANK[kind]
+	assert_eq(after.size(), before.size() + (lines.size() if gained else -lines.size()), "the candidates moved by %s's lines" % kind)
+	for line: String in lines:
+		assert_eq(after.has(line), gained, "%s's line is in the candidates: %s" % [kind, gained])
+	assert_eq(hub.dream_reads, reads, "the refresh read no dream in full")
+	assert_eq(hub.dream_resumes, resumes + 1, "it resumed Bea's kept dream once")
+	assert_eq(hub._dream(B), Bonds.dream(GameSession.ledger, B, null, false), "and the dream is what a full read says")
+
+
+## A chat that is the fourth of Ada and Bea (the bond is at the threshold from three chats and five meals) opens Bea's
+## fight_beside toward Ada, and her greeting gains its lines.
+func _assert_a_meeting_opens_fight_beside(at_cap: bool) -> void:
+	var records: Array = []
+	for _index: int in 3:
+		records.append(["encounter", {"heroes": [A, B], "place": "House_1", "why": "neighbours"}])
+	for _index: int in 5:
+		records.append(["meal", {"diners": [A, B], "place": "House_1"}])
+	var hub: Node3D = await _walker_with_partner(records, at_cap)
+	assert_false((hub._partner_facts["kinds"] as Array).has("fight_beside"), "three chats: no dream yet")
+	var before: Array[String] = Lines.candidates(hub._partner_facts)
+	var reads: int = hub.dream_reads
+	var resumes: int = hub.dream_resumes
+	watch_signals(GameSession)
+	var tick: Array[Dictionary] = [GameSession._record("encounter", {"heroes": [A, B], "place": "House_1", "why": "neighbours"})]
+	assert_eq(GameSession.ledger.size() == BALANCE.ledger_max_records and int(GameSession.ledger[0]["seq"]) == 2, at_cap, "at the cap the tick evicted Cal and Dov's chat")
+	GameSession._notify_social_recorded(tick)
+	_assert_greeting_moved(hub, "fight_beside", true, reads, resumes, before)
+
+
+func test_a_meeting_that_opens_the_partners_fight_beside_adds_its_lines_to_the_greeting() -> void:
+	await _assert_a_meeting_opens_fight_beside(false)
+
+
+func test_a_meeting_at_the_cap_that_opens_the_partners_fight_beside_resumes_her_dream() -> void:
+	await _assert_a_meeting_opens_fight_beside(true)
+
+
+## A meal that is the third at Ada's table since Ada was carried home fulfils Bea's welcome_home, and her greeting drops
+## its lines. The rescue names Bea nowhere (Cal carried Ada home), and Ada's latest meal before it was at Bea's table.
+func _assert_a_meal_fulfils_welcome_home(at_cap: bool) -> void:
+	var records: Array = []
+	for _index: int in 3:
+		records.append(["encounter", {"heroes": [A, B], "place": "House_1", "why": "neighbours"}])
+	for _index: int in 4:
+		records.append(["meal", {"diners": [A, B], "place": "House_1"}])
+	records.append(["battle", {"order": "order:rescue", "zone": ZONE, "team": [A, C], "result": "victory", "moments": [], "rescued": [A], "rescuers": [C]}])
+	for _index: int in 2:
+		records.append(["meal", {"diners": [A, B], "place": "House_1"}])
+	var hub: Node3D = await _walker_with_partner(records, at_cap)
+	assert_eq(hub._dream(B)["dream"], "welcome_home", "Bea's dream is to welcome Ada home")
+	assert_true((hub._partner_facts["kinds"] as Array).has("welcome_home"))
+	var before: Array[String] = Lines.candidates(hub._partner_facts)
+	var reads: int = hub.dream_reads
+	var resumes: int = hub.dream_resumes
+	watch_signals(GameSession)
+	var tick: Array[Dictionary] = [GameSession._record("meal", {"diners": [A, B], "place": "House_1"})]
+	assert_eq(GameSession.ledger.size() == BALANCE.ledger_max_records and int(GameSession.ledger[0]["seq"]) == 2, at_cap, "at the cap the tick evicted Cal and Dov's chat")
+	GameSession._notify_social_recorded(tick)
+	assert_eq(hub._dream(B)["state"], "fulfilled", "the third meal fulfilled it")
+	_assert_greeting_moved(hub, "welcome_home", false, reads, resumes, before)
+
+
+func test_a_meal_that_fulfils_the_partners_welcome_home_drops_its_lines_from_the_greeting() -> void:
+	await _assert_a_meal_fulfils_welcome_home(false)
+
+
+func test_a_meal_at_the_cap_that_fulfils_the_partners_welcome_home_resumes_her_dream() -> void:
+	await _assert_a_meal_fulfils_welcome_home(true)
+
+
+## The premise of ig-m6o.2.2.10's meal marks (Bonds.OUT_MARKS): Ledger.evict takes meals oldest first, so an evicted meal
+## is the oldest meal the ledger holds. Over a random mix of every kind at a small cap, each meal that goes is older than
+## every meal that stays.
+func test_evicting_takes_meals_oldest_first() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var kinds: Array[String] = ["meal", "meal", "encounter", "battle", "battle", "summoned", "died", "ranked_up"]
+	var ledger: Array[Dictionary] = []
+	var tier_list: Array[int] = []
+	var meals_evicted: int = 0
+	for seq: int in range(1, 601):
+		var kind: String = kinds[rng.randi() % kinds.size()]
+		var fields: Dictionary = {"hero": A, "team": [A, B], "result": "victory", "moments": [], "name": "x"}
+		if kind == "meal":
+			fields = {"diners": [A, B], "place": "House_1"}
+		elif kind == "encounter":
+			fields = {"heroes": [A, B], "place": "House_1"}
+		Ledger.append(ledger, seq, 0, kind, fields)
+		tier_list.append(Ledger.tier(ledger.back()))
+		for gone: Dictionary in Ledger.evict(ledger, tier_list, 30):
+			if gone["kind"] != "meal":
+				continue
+			meals_evicted += 1
+			for kept: Dictionary in ledger:
+				if kept["kind"] == "meal":
+					assert_gt(int(kept["seq"]), int(gone["seq"]), "meal %d went while the older meal %d stayed" % [int(gone["seq"]), int(kept["seq"])])
+	assert_gt(meals_evicted, 20, "the run evicted meals")
+
+
+## A meal taken out marks its diners; every other owner's kept dream stays what a full read of what is left says.
+## Ada sat at Bea's latest meal, which is the oldest meal too: taking it out un-sets her flag, so a rescue of Bea
+## that follows opens a welcome home for Ada on her kept read and not on a full one, which is why Ada is marked. Dov's
+## flag for Bea was false (Bea's latest meal did not seat him), and stays false without a mark.
+func test_a_meal_taken_out_marks_its_diners_and_leaves_the_others_kept_dreams_as_a_full_read_says() -> void:
+	_meal([A, B])
+	_meal([C, D])
+	var kept_ada: Dictionary = Bonds.dream_fold(_ledger, A)
+	var kept_dov: Dictionary = Bonds.dream_fold(_ledger, D)
+	_battle([C, B], "victory", {"rescued": [B], "rescuers": [C]})
+	var gone: Array[Dictionary] = Ledger.evict(_ledger, Ledger.tiers(_ledger), _ledger.size() - 1)
+	assert_eq(gone.size(), 1, "a cap one short took one record out")
+	assert_eq(gone[0]["diners"], [A, B], "the oldest meal")
+	var state: Dictionary = Bonds.index_state(gone, _counting)
+	Bonds.fold_out(state, gone[0], _counting)
+	assert_eq(state["out_named"].keys(), [A, B], "the meal marks its two diners and no one else")
+	var full_ada: Dictionary = Bonds.dream(_ledger, A, null, false)
+	var resumed_ada: Dictionary = Bonds.dream_of(Bonds.dream_fold(_ledger, A, kept_ada))
+	assert_eq(full_ada, {}, "Ada, read in full without the meal, has no dream")
+	assert_eq(resumed_ada["dream"], "welcome_home", "and her kept read would say one")
+	assert_eq(Bonds.dream_of(Bonds.dream_fold(_ledger, D, kept_dov)), Bonds.dream(_ledger, D, null, false), "Dov's kept read is as a full one")
+	_ledger = []
+	_meal([A, B])
+	_meal([B, D])
+	kept_dov = Bonds.dream_fold(_ledger, D)
+	_battle([C, B], "victory", {"rescued": [B], "rescuers": [C]})
+	assert_eq(Ledger.evict(_ledger, Ledger.tiers(_ledger), _ledger.size() - 1)[0]["diners"], [A, B], "the oldest meal went")
+	var found: Dictionary = Bonds.dream(_ledger, D, null, false)
+	assert_eq(found["dream"], "welcome_home", "Dov sat at Bea's latest meal, which stays")
+	assert_eq(Bonds.dream_of(Bonds.dream_fold(_ledger, D, kept_dov)), found, "and his kept read is the same without a mark")
+
+
+## The panel names an ended dream (a dream that ended says so instead of its goals), which failed with a typed-array
+## error before ig-m6o.2.2.10 fixed Bonds.dream_lines' return.
+func test_the_panel_says_an_ended_dream() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	GameSession._record("battle", {"order": "order:1", "zone": ZONE, "team": [A, B], "result": "victory", "moments": [_moment("revived", A, B)]})
+	GameSession._record("died", {"hero": B, "name": "Bea", "cause": "expedition", "zone": ZONE})
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	_select(hub, "Ada")
+	await _dreams_read(hub)
+	assert_string_contains((hub.get_node("%HeroDetail") as Label).text, "Dream lost: Bea died before the debt was paid.")
+
+
+## The two dreams of ig-m6o.2.2.10 on the panel, and a ledger change below the cap resumes each (a read of the records
+## since, not a read in full).
+func test_the_panel_shows_fight_beside_and_a_refresh_resumes_it() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	for _index: int in 4:
+		GameSession._record("encounter", {"heroes": [A, B], "place": "House_1", "why": "neighbours"})
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	_select(hub, "Ada")
+	await _dreams_read(hub)
+	var label: Label = hub.get_node("%HeroDetail") as Label
+	assert_string_contains(label.text, "Dream: fight beside Bea.
+  [x] Got to know Bea in town (4 chats).
+  [ ] Fight beside Bea (0/3).")
+	var reads: int = hub.dream_reads
+	var resumes: int = hub.dream_resumes
+	GameSession._record("battle", {"order": "order:1", "zone": ZONE, "team": [A, B], "result": "victory", "moments": []})
+	GameSession.roster_changed.emit() # a battle settles with a roster change
+	assert_string_contains(label.text, "  [ ] Fight beside Bea (1/3).")
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads, resumes + 1], "the refresh resumed and read nothing in full")
+
+
+func test_the_panel_shows_welcome_home_and_a_meal_tick_resumes_it() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_hero(C, "Cal")
+	GameSession._record("meal", {"diners": [A, B, C], "place": "House_1"})
+	GameSession._record("battle", {"order": "order:2", "zone": ZONE, "team": [C, B], "result": "victory", "moments": [], "rescued": [B], "rescuers": [C]})
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	_select(hub, "Ada")
+	await _dreams_read(hub)
+	var label: Label = hub.get_node("%HeroDetail") as Label
+	assert_string_contains(label.text, "Dream: welcome Bea home.
+  [x] Bea was carried home from %s.
+  [ ] Eat with Bea again (0/3)." % Ledger.zone_name(ZONE))
+	var reads: int = hub.dream_reads
+	var resumes: int = hub.dream_resumes
+	var tick: Array[Dictionary] = [GameSession._record("meal", {"diners": [A, B, C], "place": "House_1"})]
+	watch_signals(GameSession)
+	GameSession._notify_social_recorded(tick) # a meal is no roster change: the notice alone redraws the panel
+	assert_signal_not_emitted(GameSession, "roster_changed")
+	assert_string_contains(label.text, "  [ ] Eat with Bea again (1/3).")
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads, resumes + 1], "the refresh resumed and read nothing in full")
 
 
 ## ig-7sn.24: pick is bond_from's choice by the one order (points, then the later fact, then the lower id) over candidates
@@ -1827,16 +2586,19 @@ func test_the_detail_panel_reads_a_dream_once_and_resumes_it_on_a_ledger_change(
 	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
 	var hub: Node3D = _hub()
 	hub._open(&"Forge")
-	_select(hub, "Ada")
 	var reads: int = hub.dream_reads
+	_select(hub, "Ada")
+	assert_eq(hub.dream_reads, reads, "picking Ada read no dream in full")
+	await _dreams_read(hub)
+	assert_eq(hub.dream_reads, reads + 1, "the frame after read it once")
 	var resumes: int = hub.dream_resumes
 	hub._refresh_hero_detail()
 	hub._refresh_hero_detail()
-	assert_eq([hub.dream_reads, hub.dream_resumes], [reads, resumes], "no ledger change: the kept dream")
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 1, resumes], "no ledger change: the kept dream")
 	GameSession._record("battle", {"order": "order:new", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
 	hub._refresh_hero_detail()
 	hub._refresh_hero_detail()
-	assert_eq([hub.dream_reads, hub.dream_resumes], [reads, resumes + 1], "an append: the kept dream resumes once, no read in full (ig-7sn.21)")
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 1, resumes + 1], "an append: the kept dream resumes once, no read in full (ig-7sn.21)")
 	assert_string_contains((hub.get_node("%HeroDetail") as Label).text, "Fight beside Bea again (2/3).")
 
 
@@ -1849,6 +2611,7 @@ func test_the_detail_panel_names_a_fallen_hero_from_its_died_record() -> void:
 	var hub: Node3D = _hub()
 	hub._open(&"Forge")
 	_select(hub, "Ada")
+	await _dreams_read(hub)
 	var text: String = (hub.get_node("%HeroDetail") as Label).text
 	var zone: String = Ledger.zone_name(ZONE)
 	for line: String in ["Dream: carry Cal's name.", "  [x] Ada saw Cal fall at %s." % zone, "  [ ] Win at %s (0/3)." % zone]:
@@ -1892,6 +2655,7 @@ func test_the_hub_gives_the_partner_its_debt_lines() -> void:
 	var town: TownView = _bonded_town(false, 4)
 	assert_true(GameSession.embody_hero(B), "Bea is the body; Ada, whom she saved four times, is the partner")
 	assert_eq(town.partner.hero_id, A)
+	await _dreams_read(town.owner)
 	var facts: Dictionary = town.partner.facts
 	assert_eq(facts["kinds"].size(), 3)
 	assert_eq([facts["kinds"][0], facts["kinds"][1]], ["saved", "debt"], "Ada's open dream owes Bea")
@@ -1922,7 +2686,7 @@ func test_the_dream_that_skips_equals_the_dream_that_read_every_record() -> void
 		rng.seed = seed_value
 		var ledger: Array[Dictionary] = []
 		for seq: int in range(1, 801):
-			var made: Array = _random_record(rng, eight, seq, true)
+			var made: Array = _random_record(rng, eight, seq, true, true)
 			Ledger.append(ledger, seq, 0, made[0], made[1])
 			if seq % 50 == 0:
 				for hero_id: String in eight:
@@ -1931,7 +2695,8 @@ func test_the_dream_that_skips_equals_the_dream_that_read_every_record() -> void
 						fail_test("seed %d, %s at seq %d" % [seed_value, hero_id, seq])
 						return
 					states["%s:%s" % [dream.get("dream", "none"), dream.get("state", "none")]] = true
-	for opened: String in ["life_debt:open", "watch_over:open", "carry_name:open", "be_worthy:open"]:
+	# fight_beside:open is not among them: a random ledger of eight heroes puts a pair in a fight together before its fourth chat.
+	for opened: String in ["life_debt:open", "watch_over:open", "carry_name:open", "be_worthy:open", "welcome_home:open"]:
 		assert_has(states, opened, "every dream compared: %s" % [states.keys()])
 	assert_gte(states.keys().filter(func(state: String) -> bool: return not state.ends_with(":open") and not state.begins_with("none")).size(), 3, "and some ended: %s" % [states.keys()])
 
@@ -2074,28 +2839,31 @@ func test_the_hubs_look_at_the_touched_heroes_equals_a_full_look() -> void:
 
 ## ---- ig-7sn.21: the kept dreams and names
 
-## ACC 3, the marks: folding out a battle marks its team, rescued and rescuers and no one else; any
-## other kind marks everyone (it can change any hero's dream). They are stamped even when the fold
-## refuses the take-out, because a refusal rebuilds the index and starts them over.
-func test_folding_out_marks_the_heroes_a_battle_names_and_everyone_for_any_other_kind() -> void:
-	_battle([A, B], "victory", {"rescued": [C], "rescuers": [D]})
+## ACC 3, the marks: folding out a battle marks its team, rescued and rescuers and no one else, a chat its two and a
+## meal its diners (OUT_MARKS); any other kind, and a battle that rescued someone, marks everyone (it can change any hero's
+## dream). They are stamped even when the fold refuses the take-out, because a refusal rebuilds the index and starts them over.
+func test_folding_out_marks_the_heroes_a_record_names_and_everyone_for_any_other_kind_or_a_rescue() -> void:
+	_battle([A, B], "victory", {"rescuers": [D]})
 	_battle([E], "victory")
 	_record("ranked_up", {"hero": A, "from": 0, "to": 1})
 	_record("died", {"hero": B, "name": "Bea"})
 	_record("summoned", {"hero": F, "name": "Fay", "rank": 0})
 	_meal([A, B])
+	_battle([A, B], "victory", {"rescued": [C], "rescuers": [D]})
 	var folded: Dictionary = Bonds.index_state(_ledger, BALANCE)
 	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [0, {}, 0], "a build starts them over")
 	Bonds.fold_out(folded, _ledger[0], BALANCE)
-	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [1, {A: 1, B: 1, C: 1, D: 1}, 0], "a battle marks its team, rescued and rescuers")
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [1, {A: 1, B: 1, D: 1}, 0], "a battle marks its team and rescuers")
 	Bonds.fold_out(folded, _ledger[1], BALANCE)
-	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [2, {A: 1, B: 1, C: 1, D: 1, E: 2}, 0], "a routine win marks its team")
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [2, {A: 1, B: 1, D: 1, E: 2}, 0], "a routine win marks its team")
 	for at: int in range(2, 5):
 		Bonds.fold_out(folded, _ledger[at], BALANCE)
 		assert_eq([folded["outs"], folded["out_all"]], [at + 1, at + 1], "a %s record marks everyone" % _ledger[at]["kind"])
-	assert_eq((folded["out_named"] as Dictionary).size(), 5, "and no one in particular")
+	assert_eq((folded["out_named"] as Dictionary).size(), 4, "and no one in particular")
 	Bonds.fold_out(folded, _ledger[5], BALANCE)
-	assert_eq([folded["outs"], folded["out_all"], (folded["out_named"] as Dictionary).size()], [6, 5, 5], "a meal marks no one")
+	assert_eq([folded["outs"], folded["out_all"], folded["out_named"]], [6, 5, {A: 6, B: 6, D: 1, E: 2}], "a meal marks its diners")
+	Bonds.fold_out(folded, _ledger[6], BALANCE)
+	assert_eq([folded["outs"], folded["out_all"]], [7, 7], "a battle that rescued someone marks everyone (welcome_home reads it)")
 
 
 ## Ledger.first_after: the index of the first record past a seq, through gaps the evictions leave.
@@ -2134,7 +2902,7 @@ func test_a_resumed_dream_equals_the_dream_read_in_full() -> void:
 		var kept: Dictionary = {}
 		var read_at: Dictionary = {}
 		for seq: int in range(1, 601):
-			var made: Array = _random_record(rng, twelve, seq, true)
+			var made: Array = _random_record(rng, twelve, seq, true, true)
 			Ledger.append(ledger, seq, 0, made[0], made[1])
 			tiers.append(Ledger.tier(ledger.back()))
 			Bonds.fold_in(folded, ledger.back(), BALANCE)
@@ -2160,6 +2928,8 @@ func test_a_resumed_dream_equals_the_dream_read_in_full() -> void:
 	gut.p("KEPT DREAMS: %s; %s" % [counts, states.keys()])
 	assert_gt(counts["resumed"], 100, "many resumed")
 	assert_gt(counts["full"], 100, "many read again in full")
+	for reached: String in ["welcome_home:open", "welcome_home:fulfilled", "welcome_home:lost"]:
+		assert_has(states, reached, "meals and chats reach welcome_home, and the kept read equals a full one: %s" % [states.keys()])
 	assert_gte(states.keys().filter(func(state: String) -> bool: return not state.ends_with(":open") and not state.begins_with("none")).size(), 3, "and some ended: %s" % [states.keys()])
 
 
@@ -2930,6 +3700,12 @@ func _meeting(one: String, other: String, place: String = "House_1", why: String
 	_record("encounter", {"heroes": [one, other], "place": place, "why": why})
 
 
+## count meetings of the same pair.
+func _meetings(one: String, other: String, count: int) -> void:
+	for _index: int in count:
+		_meeting(one, other)
+
+
 ## hero_id's roles over the whole ledger, among living (everyone, A to C, when it is null).
 func _roles(hero_id: String, living: Variant = null) -> Dictionary:
 	return Bonds.roles(Bonds.index(_ledger, BALANCE), hero_id, _living() if living == null else living as Dictionary, BALANCE)
@@ -3046,4 +3822,13 @@ func _set_key(key: Key, pressed: bool) -> void:
 
 func _frames(count: int) -> void:
 	for _frame: int in count:
+		await get_tree().process_frame
+
+
+## Lets the hub's deferred dream reads run, one a frame, until none is queued (ig-m6o.2.2.10): a view redraw shows the
+## kept dream, or none, on its own frame, and the frames after show what a full read says.
+func _dreams_read(hub: Node) -> void:
+	for _frame: int in 12:
+		if hub._marked_queue.is_empty():
+			return
 		await get_tree().process_frame

@@ -180,6 +180,13 @@ var _signs_living: Dictionary = {}
 ## How many dreams were read in full, and how many resumed from a kept one, for tests and the perf measure.
 var dream_reads: int = 0
 var dream_resumes: int = 0
+## ig-m6o.2.2.10: a view redraw (the hero detail, the partner's greeting) never reads a dream in full on its own frame.
+## A hero whose dream is not kept, or was marked by an eviction (see _dream), shows the kept dream or none and is queued
+## in _marked_queue, once however many redraws asked; _process reads it in full on a later frame, at most one hero a
+## frame, and redraws. _deferred_frame is Engine.get_process_frames() at the last deferred ask (queued or not), deferred
+## read or notice the hub redraws on (_note_notice): a deferred read never shares a frame with any of them.
+var _marked_queue: Array[String] = []
+var _deferred_frame: int = -1
 var _order_structure_key: String = ""
 ## How many times an order card and the hero detail were refreshed, for tests (ig-7sn.3).
 var order_card_updates: int = 0
@@ -196,6 +203,7 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
+	set_process(false) # on only while _marked_queue holds a hero (ig-m6o.2.2.10)
 	_connect_ui_signals()
 	GameSession.roster_changed.connect(_refresh_roster)
 	GameSession.roster_changed.connect(_refresh_essence)
@@ -226,6 +234,9 @@ func _ready() -> void:
 	GameSession.expeditions_changed.connect(_show_partner)
 	GameSession.battle_changed.connect(_on_battle_changed)
 	GameSession.social_recorded.connect(_on_social_recorded)
+	GameSession.roster_changed.connect(_note_notice)
+	GameSession.expeditions_changed.connect(_note_notice)
+	GameSession.social_recorded.connect(_note_notice.unbind(1))
 	GameSession.preview_forecast_ready.connect(_refresh_dispatch_summary)
 	_populate_rank_filter(_roster_rank_filter)
 	_populate_rank_filter(_inventory_rank_filter)
@@ -716,7 +727,7 @@ func _refresh_equipped() -> void:
 func _refresh_hero_detail() -> void:
 	detail_refreshes += 1
 	var hero: Hero = _selected_hero()
-	_hero_detail.text = "" if hero == null else "%s\n\n%sHistory:\n%s" % [_hero_detail_text(hero), _bond_text(hero), "\n".join(_history_lines(hero))]
+	_show_hero_detail_text(hero)
 	_hero_availability.text = "Select exactly one hero." if hero == null else _hero_state_text(hero)
 	_favorite_hero.disabled = hero == null
 	_favorite_hero.set_pressed_no_signal(hero.favorite if hero != null else false)
@@ -736,6 +747,12 @@ func _refresh_hero_detail() -> void:
 	else:
 		%Unequip.tooltip_text = ""
 		%UnequipAll.tooltip_text = ""
+
+
+## The detail text alone (no text for a null hero); _process redraws just this once a deferred dream is read
+## (ig-m6o.2.2.10), so the frame after a selection does not rebuild the skill panel or the buttons.
+func _show_hero_detail_text(hero: Hero) -> void:
+	_hero_detail.text = "" if hero == null else "%s\n\n%sHistory:\n%s" % [_hero_detail_text(hero), _bond_text(hero), "\n".join(_history_lines(hero))]
 
 
 func _hero_state_text(hero: Hero) -> String:
@@ -765,8 +782,9 @@ func _history_lines(hero: Hero) -> Array[String]:
 
 ## The bond and dream lines above History (SYSTEMS.md § Bonds and dreams, slice 1), each block
 ## followed by a blank line; "" when the hero has neither. The bond comes from the kept index; the
-## dream is still read for the selected hero only, on refresh, never per row. The roles line
-## (ig-m6o.2.2.6) sits under "Closest to", and alone when the hero holds a role but has no partner.
+## dream is still read for the selected hero only, on refresh, never per row; on the refresh's own frame it is the kept
+## one, or none (see _dream). The roles line (ig-m6o.2.2.6) sits under "Closest to", and alone when the hero holds a
+## role but has no partner.
 func _bond_text(hero: Hero) -> String:
 	var living: Dictionary = _roster_names()
 	var names: Dictionary = _known_names(living)
@@ -781,7 +799,7 @@ func _bond_text(hero: Hero) -> String:
 		block.append(held)
 	if not block.is_empty():
 		text += "%s\n\n" % "\n".join(block)
-	var dream: Array[String] = Bonds.dream_lines(_dream(hero.instance_id), hero.instance_id, names, BALANCE)
+	var dream: Array[String] = Bonds.dream_lines(_dream(hero.instance_id, true), hero.instance_id, names, BALANCE)
 	if not dream.is_empty():
 		text += "%s\n\n" % "\n".join(dream)
 	return text
@@ -811,8 +829,9 @@ func _role_kind(one: String, other: String, living: Dictionary) -> String:
 
 ## The walking hero's bonded partner and greeting facts, from the kept index and the partner's
 ## dream memo, on roster_changed (every settle that writes a record also changes the roster) and on
-## social_recorded when a meeting or its eviction touched the body's tallies (ig-m6o.2.2.4); never per
-## frame or per pulse.
+## social_recorded when a meeting, a meal or an eviction touched the body's tallies or the partner's (ig-m6o.2.2.4;
+## the partner's since ig-m6o.2.2.10, whose new dreams a meal or a chat can open or advance); never per frame or per
+## pulse. The partner's dream may be the kept one, or none yet, until _process reads it (see _dream).
 func _refresh_partner() -> void:
 	var old_partner: String = _partner_id
 	_partner_id = ""
@@ -827,7 +846,7 @@ func _refresh_partner() -> void:
 			var role: String = _role_kind(walker.instance_id, _partner_id, living)
 			if not role.is_empty():
 				roles.append(role)
-			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, _known_names(living), GameSession.hero_by_id(_partner_id).quirks, roles)
+			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id, true), walker.instance_id, _known_names(living), GameSession.hero_by_id(_partner_id).quirks, roles)
 	_show_partner()
 	# The walkers ran first on this roster_changed, against the old partner, who may have been cut by
 	# the wanderer cap.
@@ -1023,13 +1042,21 @@ func _candidates_of(pairs: Dictionary, hero_id: String, living: Dictionary) -> D
 ## comes first, so a load or a rebuilt index has already emptied the memo. A hero not read yet, or one an
 ## eviction since could have changed (the marks: out_all, or out_named for the hero, past the count it
 ## was read at), is read in full; after an append only the records after the last one read are folded in.
-func _dream(hero_id: String) -> Dictionary:
+## ig-m6o.2.2.10: with view on (a redraw asking), a hero that needs a full read gets the kept dream as it is (the append
+## too waits), or {} when none is kept, and is queued for _process, so no redraw's frame reads a dream in full. Off, the
+## read is exact and now (_process, tests).
+func _dream(hero_id: String, view: bool = false) -> Dictionary:
 	_bond_index()
 	var marks: Dictionary = GameSession.bond_changes()
 	var ledger: Array[Dictionary] = GameSession.ledger
 	var memo: Dictionary = _dreams.get(hero_id, {})
-	var read_at: int = int(memo.get("outs", -1))
-	if memo.is_empty() or int(marks["out_all"]) > read_at or int((marks["out_named"] as Dictionary).get(hero_id, 0)) > read_at:
+	if _is_marked(hero_id, memo, marks):
+		if view:
+			_deferred_frame = Engine.get_process_frames() # every deferred ask, so a hero queued a frame ago and asked again waits too
+			if not _marked_queue.has(hero_id):
+				_marked_queue.append(hero_id)
+				set_process(true)
+			return memo.get("dream", {})
 		var fold: Dictionary = Bonds.dream_fold(ledger, hero_id)
 		memo = {"fold": fold, "outs": int(marks["outs"]), "dream": Bonds.dream_of(fold)}
 		_dreams[hero_id] = memo
@@ -1039,6 +1066,47 @@ func _dream(hero_id: String) -> Dictionary:
 		memo["dream"] = Bonds.dream_of(memo["fold"])
 		dream_resumes += 1
 	return memo["dream"]
+
+
+## Whether hero_id's kept dream (memo, {} for none) has to be read again in full: none kept, or an eviction past the
+## count it was read at marked everyone (out_all) or the hero (out_named).
+func _is_marked(hero_id: String, memo: Dictionary, marks: Dictionary) -> bool:
+	var read_at: int = int(memo.get("outs", -1))
+	return memo.is_empty() or int(marks["out_all"]) > read_at or int((marks["out_named"] as Dictionary).get(hero_id, 0)) > read_at
+
+
+## The deferred reads (ig-m6o.2.2.10), on the first frame after a deferred ask, a deferred read or a notice: one queued hero
+## whose kept dream is still marked and who is still the selected hero or the walking body's partner is read in full and
+## redrawn, the rest wait for the next frame. A hero neither of those any more, or already read by another path, is
+## dropped without a read. The process is off while the queue is empty (it is off by default).
+func _process(_delta: float) -> void:
+	if Engine.get_process_frames() <= _deferred_frame:
+		return
+	var selected: Hero = _selected_hero()
+	while not _marked_queue.is_empty():
+		var hero_id: String = _marked_queue.pop_front()
+		var is_selected: bool = selected != null and selected.instance_id == hero_id
+		if not (is_selected or hero_id == _partner_id) or not _is_marked(hero_id, _dreams.get(hero_id, {}), GameSession.bond_changes()):
+			continue
+		_dream(hero_id)
+		_deferred_frame = Engine.get_process_frames() # the redraws below queue any other hero, so a frame reads one
+		if is_selected and not _skip_hidden(&"hero_detail"):
+			_show_hero_detail_text(selected)
+		if hero_id == _partner_id:
+			_refresh_partner()
+		break
+	if _marked_queue.is_empty():
+		set_process(false)
+
+
+## A GameSession notice the hub redraws on (roster_changed, expeditions_changed, social_recorded) moves _deferred_frame
+## to its frame, so a queued hero is never read in full on a frame that carries one: the notice's own redraws ran there,
+## and GameSession's _process (the autoload) runs before the hub's. battle_changed stays out, it can fire every frame.
+## Two ceilings, left as they are: at 4 fps or less (every frame 0.25 s or more) every frame is a pulse's
+## (expeditions_changed), so a read waits until the frames come faster; and a periodic save that lands carries no notice
+## on its own frame, so that frame can still carry one read (ig-az6's margin).
+func _note_notice() -> void:
+	_deferred_frame = Engine.get_process_frames()
 
 
 ## Ledger.known_names(GameSession.ledger, living), with the ledger's part kept like a dream: it takes in
@@ -2766,9 +2834,9 @@ func _on_battle_changed(order_id: String) -> void:
 ## pulse's path, so the 15-handler roster cascade never runs for a chat. The look at the index says a bond that
 ## just formed ("X and Y grew close."), and what to redraw follows the heroes that look re-read (_look_touched),
 ## not the ones the records name: at the cap a new chat evicts the oldest one, which can end another pair's bond.
-## The roster rows and the walkers' signs redraw only if one of those heroes' partner sign changed, the body's
-## greeting only if the body is one, the open detail only if the selected hero is one; then the town plays each
-## meeting. In the commit path the flush's roster_changed already redrew everything, and this look finds nothing.
+## The roster rows and the walkers' signs redraw only if one of those heroes' partner sign changed, the greeting only if
+## the body or the partner is one (a greeting shows the dream, so it can change with a chat or a meal), the open detail
+## only if the selected hero is one; then the town plays each meeting. In the commit path the flush's roster_changed already redrew everything, and this look finds nothing.
 ## A meeting between rivals says a "rival" line, else between collaborators a "collaborator" line, else "met".
 ## A meal (ig-m6o.2.2.5) redraws by the same look, then the town seats its diners (play_meal); a meal too is no roster
 ## change.
@@ -2782,7 +2850,7 @@ func _on_social_recorded(records: Array[Dictionary]) -> void:
 	if signs_changed:
 		_refresh_roster()
 		_refresh_walkers()
-	if looked.has(GameSession.embodied_hero_id):
+	if looked.has(GameSession.embodied_hero_id) or looked.has(_partner_id):
 		_refresh_partner()
 	var selected: Hero = _selected_hero()
 	if selected != null and looked.has(selected.instance_id) and not _skip_hidden(&"hero_detail"):

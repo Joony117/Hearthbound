@@ -38,10 +38,14 @@ const LINE_NOUNS: Dictionary = {"hard": "hard fight", "saves": "save", "rescues"
 ## squared pairs at every load and eviction.
 const MAX_DINERS: int = 8
 ## What an evicted record of each kind can change in a kept dream (_mark_out): the keys of the record that
-## name the heroes whose dreams it can touch. A kind not listed here can touch any hero's. An encounter and a meal
-## touch none today, since dream_fold reads only battle and died records; ig-m6o.2.2.10 (dreams proved by
-## encounter and meal records) makes it read them, and must change these to ["heroes"] and ["diners"].
-const OUT_MARKS: Dictionary = {"battle": ["team", "rescued", "rescuers"], "encounter": [], "meal": []}
+## name the heroes whose dreams it can touch. A kind not listed here can touch any hero's, and so can a battle that
+## rescued someone: welcome_home opens on a rescue that names the owner nowhere (ig-m6o.2.2.10).
+## A meeting moves fight_beside's counts for its two heroes only. A meal moves welcome_home's table flags and count
+## for its diners only, and that holds only while a meal evicted is the oldest meal left: meals and encounters
+## share tier 0, and Ledger.evict takes a tier's oldest first (test_evicting_takes_meals_oldest_first). For an owner
+## not at that table, the oldest meal only turns a diner's "latest meal was at my table" flag from false to unset,
+## which reads as false. A later tier-0 budget, or a meal tier out of age order, must revisit "meal".
+const OUT_MARKS: Dictionary = {"battle": ["team", "rescued", "rescuers"], "encounter": ["heroes"], "meal": ["diners"]}
 ## How each dream ends, in one line: {who} and {zone} are its names, {count} the fade's battles.
 const ENDINGS: Dictionary = {
 	"life_debt:paid": "Dream fulfilled: repaid {who} at {zone}.",
@@ -53,6 +57,11 @@ const ENDINGS: Dictionary = {
 	"be_worthy:fulfilled": "Dream fulfilled: {who}'s life was worth it.",
 	"be_worthy:lost": "Dream lost: carried home before {who}'s life was repaid.",
 	"be_worthy:faded": "Dream faded: {count} battles without a hard win.",
+	"welcome_home:fulfilled": "Dream fulfilled: {who} is back at the table.",
+	"welcome_home:lost": "Dream lost: {who} died before coming back to the table.",
+	"fight_beside:fulfilled": "Dream fulfilled: fought beside {who}.",
+	"fight_beside:lost": "Dream lost: {who} died before they fought together.",
+	"fight_beside:faded": "Dream faded: never fought beside {who}.",
 }
 ## How a save is told, by whoever saved and whoever was saved.
 const SAVE_LINES: Dictionary = {
@@ -62,6 +71,8 @@ const SAVE_LINES: Dictionary = {
 }
 ## The goals dream() reads when it is given no table.
 const _SHIPPED: BalanceTable = preload("res://balance.tres")
+## The ids of a record that seats or pairs no one (dream_fold's default): read, never changed.
+const _NO_IDS: Array[String] = []
 
 
 ## hero_id's bond: the living hero (a key of living) with the most points, at or over
@@ -168,18 +179,19 @@ static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTab
 	return true
 
 
-## Says which kept dreams and names an evicted record could change (ig-7sn.21). dream reads only the
-## battles that name its hero in team, rescued or rescuers, so taking out any other battle leaves that
-## hero's dream as it was, and taking out one of those changes only the heroes it names. A kind in
-## OUT_MARKS changes only the heroes under the keys listed there (an encounter, none). Every other kind
-## (died, ranked_up, summoned, and one not yet known) can change any hero's dream. So can a record of any
-## kind that carries a "name" (a load accepts a battle that does), since Ledger.record_names reads every
-## one. A hero named here has out_named[hero] past the outs it was read at; out_all past it means every one.
+## Says which kept dreams and names an evicted record could change (ig-7sn.21). dream reads the battles that
+## name its hero in team, rescued or rescuers, and every battle with someone in rescued (ig-m6o.2.2.10), so taking out
+## any other battle leaves that hero's dream as it was, and taking out one of those changes only the heroes it names,
+## or every hero's when it rescued someone. A kind in OUT_MARKS changes only the heroes under the keys listed there
+## (an encounter its two, a meal its diners). Every other kind (died, ranked_up, summoned, and one not yet known)
+## can change any hero's dream. So can a record of any kind that carries a "name" (a load accepts a battle that
+## does), since Ledger.record_names reads every one. A hero named here has out_named[hero] past the outs it was
+## read at; out_all past it means every one.
 static func _mark_out(folded: Dictionary, record: Dictionary) -> void:
 	var outs: int = int(folded["outs"]) + 1
 	folded["outs"] = outs
 	var kind: String = str(record.get("kind", ""))
-	if not OUT_MARKS.has(kind) or record.has("name"):
+	if not OUT_MARKS.has(kind) or record.has("name") or not _array(record, "rescued").is_empty():
 		folded["out_all"] = outs
 		return
 	var named: Dictionary = folded["out_named"]
@@ -638,13 +650,21 @@ static func _ahead(tally: Dictionary, chosen: Dictionary) -> bool:
 ## - be_worthy: X was sacrificed for the owner. open adds who and count (hard victories since);
 ##   fulfilled at dream_worthy_hard_victories, lost when the owner is carried home in a rescue,
 ##   faded after dream_worthy_fade_battles battles in a row without a hard win.
+## - welcome_home (ig-m6o.2.2.10): a rescue named the owner nowhere and freed X, whose latest meal before it was at
+##   the owner's table. open adds who, zone and count (meals seating both since); fulfilled at dream_welcome_meals,
+##   lost when X dies.
+## - fight_beside (ig-m6o.2.2.10): the 4th to 7th meeting of the owner and X (dream_along_meetings), when they never
+##   shared a team. open adds who, count (battles with both in the team since) and chats (their meetings); fulfilled
+##   at dream_fight_beside_battles, lost when X dies, faded after dream_along_meetings more meetings with no battle
+##   together.
 ## One dream is open at a time; the record that ends one never opens the next. balance is the
 ## table for the goals, the shipped one when null (hub.gd asks with two arguments).
-## A battle naming hero_id in none of team, rescued and rescuers is skipped (ig-7sn.16): every
-## dream reads only battles that name its owner, since a moment's hero and by are actors in its
-## fight and team is every allied actor, downed or not (_record_battle). Dropping allies from team
-## would break this. skip false reads every record: the exactness test's reference.
-## The skip reads the three keys inline: three _array calls per record doubled the dream's cost.
+## A battle naming hero_id in none of team, rescued and rescuers is skipped (ig-7sn.16), unless it rescued someone
+## (welcome_home opens on one): every other dream reads only battles that name its owner, since a moment's hero and by
+## are actors in its fight and team is every allied actor, downed or not (_record_battle). Dropping allies from team
+## would break this. skip false reads every record: the exactness test's reference. Meals and meetings are never
+## skipped: a meal sets the table flags of its diners, a meeting counts toward a pair.
+## The skip reads the keys inline: an _array call per key per record doubled the dream's cost.
 static func dream(ledger: Array[Dictionary], hero_id: String, balance: BalanceTable = null, skip: bool = true) -> Dictionary:
 	return dream_of(dream_fold(ledger, hero_id, {}, balance, skip))
 
@@ -653,35 +673,60 @@ static func dream(ledger: Array[Dictionary], hero_id: String, balance: BalanceTa
 static func dream_of(state: Dictionary) -> Dictionary:
 	var current: Dictionary = (state["current"] as Dictionary).duplicate()
 	current.erase("quiet")
+	current.erase("since")
 	return current
 
 
-## dream()'s fold as a state {current, fought, seq} (seq the last record's, 0 for none), to keep. kept is
+## dream()'s fold as a state {current, fought, seq, table, meets, mates} (seq the last record's, 0 for none), to keep.
+## fought holds the order ids of the battles the owner was in; table, per other hero, whether its latest meal was at
+## the owner's table (a hero with no meal read has no entry, and reads as false); meets, the owner's meetings with each
+## other hero; mates, every hero that shared a battle team with the owner. kept is
 ## an earlier state of the same hero's fold, or {}: the fold resumes with the records after kept["seq"],
 ## and returns kept itself, changed. It is a left fold and an append goes to the back with a higher seq,
 ## so a resume equals a fresh read as long as no record it read has since been taken out. The caller
 ## tells that by _mark_out's marks (ig-7sn.21), and a load or rebuilt index starts over.
 static func dream_fold(ledger: Array[Dictionary], hero_id: String, kept: Dictionary = {}, balance: BalanceTable = null, skip: bool = true) -> Dictionary:
 	var rules: BalanceTable = balance if balance != null else _SHIPPED
-	var state: Dictionary = kept if not kept.is_empty() else {"current": {}, "fought": {}, "seq": 0}
+	var state: Dictionary = kept if not kept.is_empty() else {"current": {}, "fought": {}, "seq": 0, "table": {}, "meets": {}, "mates": {}}
 	var current: Dictionary = state["current"]
 	var fought: Dictionary = state["fought"]
+	var table: Dictionary = state["table"]
+	var meets: Dictionary = state["meets"]
+	var mates: Dictionary = state["mates"]
 	for at: int in range(Ledger.first_after(ledger, int(state["seq"])), ledger.size()):
 		var record: Dictionary = ledger[at]
 		var kind: String = str(record.get("kind", ""))
+		# The heroes a meal seats, or the pair of a meeting the owner is in, once each is checked: [] for any other record.
+		var ids: Array[String] = _NO_IDS
 		if kind == "battle":
 			var team: Variant = record.get("team")
 			if team is Array and (team as Array).has(hero_id):
 				fought[str(record.get("order", ""))] = true
+				for mate: Variant in team as Array:
+					mates[str(mate)] = true
 			elif skip:
 				var rescued: Variant = record.get("rescued")
-				var rescuers: Variant = record.get("rescuers")
-				if not (rescued is Array and (rescued as Array).has(hero_id) or rescuers is Array and (rescuers as Array).has(hero_id)):
-					continue
+				if not (rescued is Array and not (rescued as Array).is_empty()):
+					var rescuers: Variant = record.get("rescuers")
+					if not (rescuers is Array and (rescuers as Array).has(hero_id)):
+						continue
+		elif kind == "meal":
+			ids = _diners(record)
+			var at_table: bool = ids.has(hero_id)
+			for id: String in ids:
+				table[id] = at_table
+		elif kind == "encounter":
+			# No other meeting can touch this owner's counts, so it is checked before it is validated.
+			var raw: Variant = record.get("heroes")
+			if raw is Array and (raw as Array).has(hero_id):
+				ids = _meeting_pair(record)
+				if not ids.is_empty():
+					var other: String = ids[1] if ids[0] == hero_id else ids[0]
+					meets[other] = int(meets.get(other, 0)) + 1
 		if current.get("state", "") == "open":
-			current = _advance(current, record, kind, hero_id, rules, fought)
+			current = _advance(current, record, kind, hero_id, rules, state, ids)
 		else:
-			var opened: Dictionary = _open(record, kind, hero_id, fought)
+			var opened: Dictionary = _open(record, kind, hero_id, rules, state, ids)
 			if not opened.is_empty():
 				current = opened
 	state["current"] = current
@@ -690,8 +735,10 @@ static func dream_fold(ledger: Array[Dictionary], hero_id: String, kept: Diction
 
 
 ## The dream record opens for hero_id, or {}. A battle opens life_debt (the owner was saved) before
-## watch_over (the owner saved someone); a died record opens carry_name or be_worthy, at most one.
-static func _open(record: Dictionary, kind: String, hero_id: String, fought: Dictionary) -> Dictionary:
+## watch_over (the owner saved someone), and both before welcome_home (a rescue that names the owner nowhere); a
+## meeting opens fight_beside; a died record opens carry_name or be_worthy, at most one. state is the fold's
+## (ids: the meeting's pair), rules the goals.
+static func _open(record: Dictionary, kind: String, hero_id: String, rules: BalanceTable, state: Dictionary, ids: Array[String]) -> Dictionary:
 	var zone: String = str(record.get("zone", ""))
 	if kind == "battle":
 		var saved_by: Dictionary = _save(record, hero_id, "")
@@ -700,7 +747,17 @@ static func _open(record: Dictionary, kind: String, hero_id: String, fought: Dic
 		var saved: Dictionary = _saved(record, hero_id)
 		if not saved.is_empty():
 			return {"dream": "watch_over", "state": "open", "who": saved["who"], "what": saved["what"], "zone": zone, "count": 0}
+		var home: String = _welcomed(record, hero_id, state["table"])
+		if not home.is_empty():
+			return {"dream": "welcome_home", "state": "open", "who": home, "zone": zone, "count": 0}
+	elif kind == "encounter":
+		if not ids.is_empty():
+			var other: String = ids[1] if ids[0] == hero_id else ids[0]
+			var chats: int = int((state["meets"] as Dictionary).get(other, 0))
+			if chats >= rules.dream_along_meetings and chats < 2 * rules.dream_along_meetings and not (state["mates"] as Dictionary).has(other):
+				return {"dream": "fight_beside", "state": "open", "who": other, "count": 0, "chats": chats, "since": 0}
 	elif kind == "died" and str(record.get("hero", "")) != hero_id and not str(record.get("hero", "")).is_empty():
+		var fought: Dictionary = state["fought"]
 		if not zone.is_empty() and _witnessed(record, fought):
 			return {"dream": "carry_name", "state": "open", "who": str(record["hero"]), "zone": zone, "count": 0}
 		if str(record.get("cause", "")) == "sacrifice" and str(record.get("by", "")) == hero_id:
@@ -709,7 +766,8 @@ static func _open(record: Dictionary, kind: String, hero_id: String, fought: Dic
 
 
 ## current, an open dream, after record: the same dict counted on, or a new one that ends it.
-static func _advance(current: Dictionary, record: Dictionary, kind: String, hero_id: String, rules: BalanceTable, fought: Dictionary) -> Dictionary:
+static func _advance(current: Dictionary, record: Dictionary, kind: String, hero_id: String, rules: BalanceTable, state: Dictionary, ids: Array[String]) -> Dictionary:
+	var fought: Dictionary = state["fought"]
 	var dream_id: String = current["dream"]
 	var who: String = str(current.get("who", current.get("owed", "")))
 	var hero: String = str(record.get("hero", ""))
@@ -754,6 +812,24 @@ static func _advance(current: Dictionary, record: Dictionary, kind: String, hero
 				current["quiet"] += 1
 				if current["quiet"] >= rules.dream_worthy_fade_battles:
 					return {"dream": dream_id, "state": "faded", "who": who}
+		"welcome_home":
+			if kind == "died" and hero == who:
+				return {"dream": dream_id, "state": "lost", "who": who}
+			if kind == "meal" and ids.has(hero_id) and ids.has(who):
+				current["count"] += 1
+				if current["count"] >= rules.dream_welcome_meals:
+					return {"dream": dream_id, "state": "fulfilled", "who": who}
+		"fight_beside":
+			if kind == "died" and hero == who:
+				return {"dream": dream_id, "state": "lost", "who": who}
+			if beside:
+				current["count"] += 1
+				if current["count"] >= rules.dream_fight_beside_battles:
+					return {"dream": dream_id, "state": "fulfilled", "who": who}
+			elif kind == "encounter" and current["count"] == 0 and ids.has(who):
+				current["since"] += 1
+				if current["since"] >= rules.dream_along_meetings:
+					return {"dream": dream_id, "state": "faded", "who": who}
 	return current
 
 
@@ -787,6 +863,19 @@ static func _saved(record: Dictionary, saver: String) -> Dictionary:
 		if str(moment.get("what", "")) in SAVES and str(moment.get("by", "")) == saver and not saved.is_empty() and not saved.begins_with("enemy:") and saved != saver:
 			return {"who": saved, "what": str(moment["what"])}
 	return {}
+
+
+## Whom record, a battle, freed for hero_id to welcome home: the first hero in rescued whose latest meal was at hero_id's
+## table (table, the fold's), "" for no one. Only a rescue that names hero_id nowhere (not in team, rescuers or
+## rescued) counts: with hero_id in it, it is Watch over, the life debt, or a rescue hero_id was stranded in.
+static func _welcomed(record: Dictionary, hero_id: String, table: Dictionary) -> String:
+	var rescued: Array = _array(record, "rescued")
+	if rescued.is_empty() or rescued.has(hero_id) or _array(record, "team").has(hero_id) or _array(record, "rescuers").has(hero_id):
+		return ""
+	for id: Variant in rescued:
+		if table.get(str(id), false):
+			return str(id)
+	return ""
 
 
 ## Whether record, a died record, is an expedition death of a named hero in a battle the owner was in
@@ -823,7 +912,10 @@ static func dream_lines(found: Dictionary, hero_id: String, names: Dictionary, b
 	var zone: String = Ledger.zone_name(str(found.get("zone", "")))
 	if found["state"] != "open":
 		var ending: String = str(ENDINGS.get("%s:%s" % [dream_id, found["state"]], ""))
-		return [ending.format({"who": who, "zone": zone, "count": balance.dream_worthy_fade_battles})] if not ending.is_empty() else []
+		var said: Array[String] = []
+		if not ending.is_empty():
+			said.append(ending.format({"who": who, "zone": zone, "count": balance.dream_worthy_fade_battles}))
+		return said
 	match dream_id:
 		"life_debt":
 			var told: String = str(SAVE_LINES[found["what"]]).format({"by": who, "saved": hero, "zone": zone})
@@ -835,17 +927,24 @@ static func dream_lines(found: Dictionary, hero_id: String, names: Dictionary, b
 			return _milestones("Dream: carry %s's name." % who, "%s saw %s fall at %s." % [hero, who, zone], "Win at %s" % zone, found["count"], balance.dream_name_victories, "Carry %s's name." % who)
 		"be_worthy":
 			return _milestones("Dream: be worth %s's life." % who, "%s was given up for %s." % [who, hero], "Win hard fights", found["count"], balance.dream_worthy_hard_victories, "Repay %s's life." % who)
+		"welcome_home":
+			return _milestones("Dream: welcome %s home." % who, "%s was carried home from %s." % [who, zone], "Eat with %s again" % who, found["count"], balance.dream_welcome_meals, "")
+		"fight_beside":
+			return _milestones("Dream: fight beside %s." % who, "Got to know %s in town (%d chats)." % [who, found["chats"]], "Fight beside %s" % who, found["count"], balance.dream_fight_beside_battles, "")
 	return []
 
 
+## last is "" for a dream that ends at its count (welcome_home, fight_beside): three lines, not four.
 static func _milestones(headline: String, opened: String, counted: String, count: int, goal: int, last: String) -> Array[String]:
 	var shown: int = mini(count, goal)
-	return [
+	var lines: Array[String] = [
 		headline,
 		"  [x] %s" % opened,
 		"  [%s] %s (%d/%d)." % ["x" if shown >= goal else " ", counted, shown, goal],
-		"  [ ] %s" % last,
 	]
+	if not last.is_empty():
+		lines.append("  [ ] %s" % last)
+	return lines
 
 
 static func _name(id: String, names: Dictionary) -> String:

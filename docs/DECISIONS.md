@@ -444,22 +444,23 @@ for 100+ hours at the guessed 60 records an hour.
      § Bonds and dreams, the Bond read cost row). The index now folds each appended record in and
      each evicted record out. A load or a rolled-back append rebuilds, as does an eviction the fold
      cannot take out exactly (none under today's tiers). The dream stays out of the fold (items 2
-     and 6); the hub keeps each hero's dream until the ledger changes.
+     and 6); the hub keeps each hero's dream (how it reads one again: item 6's 2026-09-30
+     amendments).
    - *Amended 2026-09-30 (`ig-m6o.2.2.4`):* the first live-tick record is built: an `encounter`,
      one per meeting, written by `GameSession._roll_encounters` at the end of the pulse's clocks.
      The fold takes it in and out exactly. An encounter's append and its oldest-first eviction fold
      without a rebuild; a load, a rolled-back append and a fold-out the fold refuses still rebuild,
      as above. A meeting is a fifth counted fact ("meetings") of both heroes of the record, and a
      pair with only meetings is a pair: the retally's "no count left" sum reads every fact slot,
-     not the first four. An encounter's eviction touches both heroes and marks no dream
-     (`OUT_MARKS["encounter"]` is empty until `ig-m6o.2.2.10` names the heroes a meeting can
+     not the first four. An encounter's eviction touches both heroes and marks both
+     (`OUT_MARKS["encounter"]` is `["heroes"]`: `ig-m6o.2.2.10` named the heroes a meeting can
      change). The pair scan (which pairs may meet) is a pure static in `TownRules`, run once per
      tick that crosses a minute. At 100 heroes it costs 4.2 ms best and at most 6.2 ms worst of
      seven, under the 16.7 ms line, so it is not bucketed by hex.
    - *Amended 2026-09-30 (`ig-m6o.2.2.5`):* the second live-tick record is built: a `meal`, one
      per table of two or more, written by `GameSession._roll_meals` right after
      `_roll_encounters`. The fold takes it in and out exactly: every ordered pair of its diners.
-     Its eviction touches every diner and marks no dream (`OUT_MARKS["meal"]` is empty until
+     Its eviction touches every diner and marks them (`OUT_MARKS["meal"]` is `["diners"]` since
      `ig-m6o.2.2.10`). A meal is a sixth counted fact ("meals"). Meetings and meals are both
      social (`Bonds.SOCIAL`): neither is a pair's fact while the pair has any battle fact,
      whatever order the slots are read in, and between the two the ordinary rule picks (more
@@ -479,6 +480,40 @@ for 100+ hours at the guessed 60 records an hour.
    becomes saved per-hero state only when something that is not a record can choose or revise it:
    new knowledge (`GAME_SPEC.md` § Direction § 5) or a player's choice. That lands with the
    knowledge slice and its own amendment.
+   - *Amended 2026-09-30 (`ig-m6o.2.2.10`):* two dreams read the social records. `welcome_home`
+     opens on a rescue that names the owner nowhere, when the freed hero's latest meal before it
+     seated the owner, and counts the meals seating both after it. `fight_beside` opens on the
+     pair's 4th to 7th meeting while they never shared a battle team, and counts the battles with
+     both in the team. Both stay derived: nothing is saved, and a load reads them again. The hub
+     keeps each hero's dream and folds the appended records into it (`ig-7sn.21`); an eviction
+     marks the kept dreams it could have changed (`Bonds._mark_out`), and a marked dream is read
+     again in full. An encounter marks its two heroes, a meal its diners, and a battle with a
+     non-empty `rescued` marks everyone (a `welcome_home` can open on it for any owner). The meal
+     marks rest on one premise: `Ledger.evict` takes a tier's oldest record first, and meals and
+     encounters share tier 0, so an evicted meal is the oldest meal left. For an owner not at that
+     table it only turns the owner's flag for each diner (was its latest meal at my table?) from
+     false to unset, which reads as false. `test_evicting_takes_meals_oldest_first` pins it. A
+     tier-0 budget, or meals evicted out of age order, must revisit the meal marks.
+   - *Amended 2026-09-30 (`ig-m6o.2.2.10`, director ruling):* a view redraw never reads a dream in
+     full on its own frame. The selected hero's panel and the walking hero's partner greeting, from
+     every caller (`roster_changed`, `social_recorded`, a selection), show the kept dream, or none
+     for a hero not read yet, and queue the hero. `hub.gd`'s `_process` reads one queued hero a
+     frame and redraws its view, and drops a hero no longer shown without reading it. It never
+     reads on a frame whose redraw queued a hero or asked again for a queued one, nor on a frame
+     that carries a pulse or a notice the hub redraws on (`roster_changed`, `expeditions_changed`,
+     `social_recorded`; not `battle_changed`, which can fire every frame), since `GameSession` runs
+     before the hub on every frame. A resume still runs on the redraw's frame, and a direct read
+     stays exact. One full read at the cap costs 13.7–16.1 ms, and a settle that read the walker's
+     partner on its own frame took 43.9 ms against the 33 ms no-hitch line (`SYSTEMS.md` §
+     Performance budgets). The price is a view that shows the kept dream, or none, for a frame per
+     hero ahead of it in the queue and for each frame it skips. Two ceilings stay: at 4 fps or less
+     (every frame 0.25 s or more) every frame is a pulse's, so the reads wait for a faster frame,
+     and a periodic save that lands carries no notice on its own frame, so that frame can carry one
+     read. Item 4's "never per frame" still holds: `_process` is off unless a hero waits, and a
+     change reads each queued hero once, not once a frame; one hero a frame keeps item 6's one hero
+     at a time. A notice's partner redraw now also runs when the notice touches the partner alone.
+     No fourth autoload; ARCHITECTURE rule 1 holds, since the hub reads `GameSession` and `Bonds`
+     and neither reads the hub.
 7. **Meals and encounters are settled events.** `meal` (reserved in the Ledger ADR, item 5) and
    `encounter` are records, one per event, never one per tick or per hero.
    - The `GameSession` mutator that settles the event writes it, on the live tick only. Never in

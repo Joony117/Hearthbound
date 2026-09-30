@@ -8,9 +8,11 @@ extends RefCounted
 const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"]
 ## Spoken by the partner to the body. Each kind's lines use only the slots it always gives:
 ## saved_by, saved {name} {place}; death {name} {place} {dead}; hard {name} {place} {count}; debt
-## {name}; watch_over {name} {place}; carry_name {name} {place} {dead}; be_worthy {name} {dead}. The
-## first line of the first four kinds is the old one-line greeting, word for word. The last three
-## are the partner's dream (ig-m6o.2.2.7): their {place} and {dead} are the dream's, not the bond's.
+## {name}; watch_over {name} {place}; carry_name {name} {place} {dead}; be_worthy {name} {dead}; welcome_home and
+## fight_beside {name} only. The first line of the first four kinds is the old one-line greeting, word for word. The
+## last five are the partner's dream (ig-m6o.2.2.7, .10): their {place} and {dead} are the dream's, not the bond's, and
+## welcome_home and fight_beside are said only to the hero the dream is about. PROVISIONAL: their words are settled by
+## the owner reading them in play.
 ## Then one "quirk:<id>" kind per Hero.QUIRKS id (ig-m6o.2.2.3), 3 lines each, at most {name}, and no
 ## {place} or {dead}: a quirk is the partner's own habit, not a fact of the bond.
 ## "met" (ig-m6o.2.2.4) is what a hero says to another when they meet, and what a partner whose bond is only
@@ -80,6 +82,20 @@ const BANK: Dictionary = {
 		"I have to be worth {dead}'s life, {name}.",
 		"{dead} paid for me to stand here, {name}.",
 		"Win one hard fight for {dead}, {name}.",
+	],
+	"welcome_home": [
+		"Good to have you back at the table, {name}.",
+		"Eat something, {name}. You're still pale from that place.",
+		"Your seat waited for you, {name}. So did we.",
+		"Slow down, {name}. There's more soup where that came from.",
+		"We kept your bowl, {name}. Nobody else got to use it.",
+	],
+	"fight_beside": [
+		"Take me with you next time, {name}. I mean it.",
+		"All this talk, {name}. I'd like to see you fight for once.",
+		"Put in a word for me, {name}? I want to march out with you.",
+		"One day we'll stand in the same line, {name}. Soon, I hope.",
+		"You tell a good story, {name}. I'd rather be in the next one.",
 	],
 	"met": [
 		"Morning, {name}. Quiet around {place} today.",
@@ -246,6 +262,8 @@ static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String,
 		elif dream_id == "be_worthy":
 			kinds.append(dream_id)
 			own[dream_id] = {"dead": _name(who, names)}
+		elif (dream_id == "welcome_home" or dream_id == "fight_beside") and who == body_id:
+			kinds.append(dream_id)
 	kinds.append_array(roles)
 	for quirk: StringName in quirks:
 		kinds.append("quirk:%s" % quirk)
