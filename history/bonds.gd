@@ -7,14 +7,23 @@ extends RefCounted
 
 const SAVES: Array[String] = ["revived", "carried"]
 ## The fact kinds in the order a record scores them, and the tally keys that count them.
-const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths", "meetings"]
-## Where the meetings slot sits in FACTS. It is last, so every battle fact is scored before it.
+const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths", "meetings", "meals"]
+## Where the meetings and meals slots sit in FACTS. They come after the battle facts, so every battle fact is scored
+## before them.
 const MEETINGS: int = 4
+const MEALS: int = 5
+## The slots that are not battle facts (ig-m6o.2.2.5): a pair's strongest fact is one of these only when it has no
+## battle fact at all (_tally), so a newer chat or meal never displaces an older hard fight.
+const SOCIAL: Array[int] = [MEETINGS, MEALS]
+## Most diners one meal record may name and still count. TownRules.meal_tables seats meal_table_size (four when
+## shipped), and a load accepts any record, so a hand-edited one with a hundred diners must not fold a hundred
+## squared pairs at every load and eviction.
+const MAX_DINERS: int = 8
 ## What an evicted record of each kind can change in a kept dream (_mark_out): the keys of the record that
-## name the heroes whose dreams it can touch. A kind not listed here can touch any hero's. An encounter
-## touches none today, since dream_fold reads only battle and died records; ig-m6o.2.2.10 (dreams proved by
-## encounter and meal records) makes it read encounters, and must change this to ["heroes"].
-const OUT_MARKS: Dictionary = {"battle": ["team", "rescued", "rescuers"], "encounter": []}
+## name the heroes whose dreams it can touch. A kind not listed here can touch any hero's. An encounter and a meal
+## touch none today, since dream_fold reads only battle and died records; ig-m6o.2.2.10 (dreams proved by
+## encounter and meal records) makes it read them, and must change these to ["heroes"] and ["diners"].
+const OUT_MARKS: Dictionary = {"battle": ["team", "rescued", "rescuers"], "encounter": [], "meal": []}
 ## How each dream ends, in one line: {who} and {zone} are its names, {count} the fade's battles.
 const ENDINGS: Dictionary = {
 	"life_debt:paid": "Dream fulfilled: repaid {who} at {zone}.",
@@ -100,7 +109,7 @@ static func fold_in(folded: Dictionary, record: Dictionary, balance: BalanceTabl
 ## Takes one evicted record out of a kept index_state(). False when it cannot, and the caller then
 ## rebuilds: a count left over whose latest record was this one (the one before is unknown), or a
 ## death whose battle is still in. Under today's eviction tiers neither happens: every scoring record
-## is an encounter or a non-routine battle, each goes oldest first within its tier, and died records go
+## is an encounter, a meal or a non-routine battle, each goes oldest first within its tier, and died records go
 ## only after every battle.
 static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTable) -> bool:
 	_mark_out(folded, record)
@@ -119,6 +128,14 @@ static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTab
 					return false
 				touched[pair[0]] = true
 				touched[pair[1]] = true
+		"meal":
+			var diners: Array[String] = _diners(record)
+			var counts: Dictionary = folded["counts"]
+			for id: String in diners:
+				for other: String in diners:
+					if other != id and not _uncount(counts[id][other][MEALS], record):
+						return false
+				touched[id] = true
 		"died":
 			if record.has("battle_order"):
 				var battle_order: String = str(record["battle_order"])
@@ -161,6 +178,8 @@ static func _fold(folded: Dictionary, record: Dictionary) -> Dictionary:
 				return _witness(folded, record)
 		"encounter":
 			return _meet(folded["counts"], record)
+		"meal":
+			return _dine(folded["counts"], record)
 	return {}
 
 
@@ -190,6 +209,34 @@ static func _meeting_pair(record: Dictionary) -> Array[String]:
 	if pair[0] == pair[1]:
 		return [] as Array[String]
 	return pair
+
+
+## Counts one meal in, for every ordered pair of its diners, as the latest record of the meals slot of the pair. Returns
+## every diner, since each one's bond can change. A record that names no valid table counts nothing.
+static func _dine(counts: Dictionary, record: Dictionary) -> Dictionary:
+	var diners: Array[String] = _diners(record)
+	var touched: Dictionary = {}
+	for id: String in diners:
+		var others: Dictionary = _others(counts, id)
+		for other: String in diners:
+			if other != id:
+				_count(_slots(others, other)[MEALS], record, "meal", "")
+		touched[id] = true
+	return touched
+
+
+## The diners of a meal record, or [] unless "diners" is a list of 2 to MAX_DINERS different, non-empty strings. The
+## one rule for fold_in, fold_out and a rebuild, like _meeting_pair.
+static func _diners(record: Dictionary) -> Array[String]:
+	var raw: Variant = record.get("diners")
+	var diners: Array[String] = []
+	if not raw is Array or (raw as Array).size() < 2 or (raw as Array).size() > MAX_DINERS:
+		return diners
+	for id: Variant in raw as Array:
+		if not id is String or (id as String).is_empty() or diners.has(id):
+			return [] as Array[String]
+		diners.append(id as String)
+	return diners
 
 
 ## Counts one battle in as the latest record of its pairs' slots: each fact at most once per pair.
@@ -372,7 +419,7 @@ static func _retally(folded: Dictionary, touched: Dictionary, balance: BalanceTa
 			if not others.has(other):
 				continue
 			var slots: Array = others[other]
-			# Every slot counts: a pair with only meetings is a pair (a sum over the first four erased it).
+			# Every slot counts: a pair with only meetings or meals is a pair (a sum over the first four erased it).
 			var counted: int = 0
 			for slot: Array in slots:
 				counted += slot[0]
@@ -392,7 +439,7 @@ static func _others(counts: Dictionary, hero_id: String) -> Dictionary:
 ## One pair's slots, one per kind in FACTS order.
 static func _slots(others: Dictionary, other: String) -> Array:
 	if not others.has(other):
-		others[other] = [[0, null, "hard", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""]]
+		others[other] = [[0, null, "hard", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""]]
 	return others[other]
 
 
@@ -414,14 +461,19 @@ static func _uncount(slot: Array, record: Dictionary) -> bool:
 
 ## One pair's counted slots as the tally bond() returns. The strongest fact is the last one with the
 ## most points, as an oldest-first running best with >= keeps it: a later record wins a tie, and
-## within one record the later kind in FACTS order does. Meetings are the exception: they are the fact
-## only for a pair with no battle fact, so a newer chat (1 point) never displaces an older hard fight
-## (1 point). They still count for points and last_seq.
+## within one record the later kind in FACTS order does. Meetings and meals (SOCIAL) are the exception: they are the
+## fact only for a pair with no battle fact, so a newer chat or meal (1 point) never displaces an older hard fight
+## (1 point), whatever order the slots are read in. A pair with only meetings and meals picks by the ordinary rule: the
+## most points, else the later record. They all still count for points and last_seq.
 static func _tally(other: String, slots: Array, balance: BalanceTable) -> Dictionary:
-	var points: Array[int] = [balance.bond_points_hard_battle, balance.bond_points_saved, balance.bond_points_rescued, balance.bond_points_death_witnessed, balance.bond_points_encounter]
+	var points: Array[int] = [balance.bond_points_hard_battle, balance.bond_points_saved, balance.bond_points_rescued, balance.bond_points_death_witnessed, balance.bond_points_encounter, balance.bond_points_meal]
 	var tally: Dictionary = {"partner": other, "points": 0, "last_seq": 0}
 	var best: int = -1
 	var best_seq: int = 0
+	var has_battle: bool = false
+	for kind: int in FACTS.size():
+		if not SOCIAL.has(kind) and slots[kind][0] > 0:
+			has_battle = true
 	for kind: int in FACTS.size():
 		var slot: Array = slots[kind]
 		tally[FACTS[kind]] = slot[0]
@@ -430,7 +482,7 @@ static func _tally(other: String, slots: Array, balance: BalanceTable) -> Dictio
 		tally["points"] += slot[0] * points[kind]
 		var seq: int = int((slot[1] as Dictionary).get("seq", 0))
 		tally["last_seq"] = maxi(tally["last_seq"], seq)
-		if kind == MEETINGS and best >= 0:
+		if has_battle and SOCIAL.has(kind):
 			continue
 		if best < 0 or points[kind] > points[best] or points[kind] == points[best] and seq >= best_seq:
 			best = kind
@@ -617,13 +669,13 @@ static func _witnessed(record: Dictionary, fought: Dictionary) -> bool:
 	return str(record.get("cause", "")) == "expedition" and not str(record.get("hero", "")).is_empty() and not order.is_empty() and fought.has(order)
 
 
-## "Closest to Mara: 4 hard fights, 1 rescue, 1 death seen together, 8 chats." names holds display names.
+## "Closest to Mara: 4 hard fights, 1 rescue, 1 death seen together, 8 chats, 3 meals." names holds display names.
 static func bond_line(found: Dictionary, names: Dictionary, away: bool) -> String:
 	var parts: PackedStringArray = []
 	for key: String in FACTS:
 		var count: int = found[key]
 		if count > 0:
-			var noun: String = {"hard": "hard fight", "saves": "save", "rescues": "rescue", "deaths": "death", "meetings": "chat"}[key]
+			var noun: String = {"hard": "hard fight", "saves": "save", "rescues": "rescue", "deaths": "death", "meetings": "chat", "meals": "meal"}[key]
 			parts.append("%d %s%s%s" % [count, noun, "" if count == 1 else "s", " seen together" if key == "deaths" else ""])
 	return "Closest to %s%s: %s." % [_name(found["partner"], names), " (away)" if away else "", ", ".join(parts)]
 

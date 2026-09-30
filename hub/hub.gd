@@ -2678,6 +2678,8 @@ func _on_battle_changed(order_id: String) -> void:
 ## The roster rows and the walkers' signs redraw only if one of those heroes' partner sign changed, the body's
 ## greeting only if the body is one, the open detail only if the selected hero is one; then the town plays each
 ## meeting. In the commit path the flush's roster_changed already redrew everything, and this look finds nothing.
+## A meal (ig-m6o.2.2.5) redraws by the same look, then the town seats its diners (play_meal); a meal too is no roster
+## change.
 func _on_social_recorded(records: Array[Dictionary]) -> void:
 	var signs_before: Dictionary = _signs.duplicate()
 	_bond_index()
@@ -2694,6 +2696,9 @@ func _on_social_recorded(records: Array[Dictionary]) -> void:
 	if selected != null and looked.has(selected.instance_id) and not _skip_hidden(&"hero_detail"):
 		_refresh_hero_detail()
 	for record: Dictionary in records:
+		if record.get("kind", "") == "meal":
+			%Town.play_meal(record["diners"], str(record["place"]), Lines.meal_facts(record, living))
+			continue
 		var facts: Dictionary = Lines.meeting_facts(record, living)
 		if not facts.is_empty():
 			%Town.play_meeting(str(record["heroes"][0]), str(record["heroes"][1]), facts)

@@ -12,6 +12,8 @@ const E: String = "hero:e"
 const F: String = "hero:f"
 const G: String = "hero:g"
 const NAMES: Dictionary = {A: "Ada", B: "Bea", C: "Cal"}
+## Tables in the one meal time the cost and read checks below take (ig-m6o.2.2.5, ACC 5 and 10).
+const MEAL_TABLES: int = 8
 
 var _ledger: Array[Dictionary] = []
 ## A threshold of 1, so a tally shows for every fact.
@@ -191,20 +193,24 @@ func test_folding_encounters_in_and_out_equals_a_rebuild_and_touches_both_heroes
 	assert_false(Bonds.fold_out(folded, _ledger[1], BALANCE), "the newest of two is the pair's latest, and the one before it is unknown")
 
 
-## ig-7sn.21's marks: an encounter names no dream today, so evicting one marks no one; an encounter that
-## carries a name, and a kind the table does not list (a meal, until ig-m6o.2.2.5 lists it), mark everyone.
-func test_folding_out_an_encounter_marks_no_one_and_a_named_one_or_an_unlisted_kind_marks_everyone() -> void:
+## ig-7sn.21's marks: an encounter and a meal name no dream today, so evicting one marks no one; an encounter that
+## carries a name, and a kind the table does not list, mark everyone.
+func test_folding_out_an_encounter_or_a_meal_marks_no_one_and_a_named_one_or_an_unlisted_kind_marks_everyone() -> void:
 	_meeting(A, B)
 	_record("encounter", {"heroes": [A, C], "name": "odd"})
-	_record("meal", {"heroes": [A, B]})
+	_meal([A, B, C])
+	_record("gossip", {"heroes": [A, B]})
 	var folded: Dictionary = Bonds.index_state(_ledger, _counting)
 	Bonds.fold_out(folded, _ledger[0], _counting)
 	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [1, {}, 0], "an encounter marks no one")
 	Bonds.fold_out(folded, _ledger[1], _counting)
 	assert_eq([folded["outs"], folded["out_all"]], [2, 2], "an encounter with a name marks everyone")
 	Bonds.fold_out(folded, _ledger[2], _counting)
-	assert_eq([folded["outs"], folded["out_all"]], [3, 3], "a kind not listed marks everyone")
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [3, {}, 2], "a meal marks no one")
+	Bonds.fold_out(folded, _ledger[3], _counting)
+	assert_eq([folded["outs"], folded["out_all"]], [4, 4], "a kind not listed marks everyone")
 	assert_eq(Bonds.OUT_MARKS["encounter"], [], "ig-m6o.2.2.10 changes this to [\"heroes\"] when the dream reads encounters")
+	assert_eq(Bonds.OUT_MARKS["meal"], [], "and this to [\"diners\"]")
 
 
 ## The cover order counts meeting points, as it counts every point of the bond index: a Knight's back row is
@@ -223,6 +229,145 @@ func test_the_cover_order_counts_meeting_points() -> void:
 	for _index: int in 8:
 		GameSession._record("encounter", {"heroes": [A, C], "place": "House_1", "why": "neighbours"})
 	assert_eq(GameSession._cover_orders(team, BALANCE)[A], [C, B] as Array[String], "11 points of chats, and the bond of 8 or more goes first")
+
+
+## ---- ig-m6o.2.2.5: meals are bond points
+
+## Every diner scores every other diner: a table of three is three pairs, each way round, one meal each. Eight
+## meals are a bond, and its fact is "meal" with the host's House of the latest one.
+func test_eight_meals_make_a_bond_with_every_tablemate_and_the_pair_fact_is_meal_with_its_house() -> void:
+	for _index: int in 7:
+		_meal([A, B, C])
+	assert_eq(Bonds.bond(_ledger, A, _living(), BALANCE), {}, "7 meals, one short of 8")
+	_meal([A, B, C], "House_2")
+	var found: Dictionary = Bonds.bond(_ledger, A, _living(), BALANCE)
+	assert_eq([found["partner"], found["points"], found["meals"], found["meetings"], found["hard"], found["last_seq"]], [B, 8, 8, 0, 0, 8])
+	assert_eq(found["fact"], {"kind": "meal", "points": 1, "seq": 8, "zone": "", "dead": "", "place": "House_2"})
+	assert_eq(Bonds.bond(_ledger, C, _living(), BALANCE)["partner"], A, "Cal sat with Ada and Bea alike: the lower id wins the tie")
+	assert_eq(Bonds.bond_line(found, NAMES, false), "Closest to Bea: 8 meals.")
+	assert_eq(Bonds.index(_ledger, BALANCE)[B][C]["meals"], 8, "and every pair of the table, each way round")
+
+
+## A meal is 1 point, the same as a hard fight, and it counts toward the points and the last shared fact, but a pair
+## with a battle fact keeps that as the fact whichever is newer, and so with a chat.
+func test_a_meal_never_displaces_a_battle_fact_but_still_counts() -> void:
+	_battle([A, B], "retreated")
+	_meal([A, B])
+	_meal([A, B])
+	_meeting(A, B)
+	_meal([A, B])
+	var found: Dictionary = _bond(A)
+	assert_eq([found["points"], found["hard"], found["meals"], found["meetings"], found["last_seq"]], [5, 1, 3, 1, 5], "the meals and the chat count")
+	assert_eq([found["fact"]["kind"], found["fact"]["seq"], found["fact"]["place"]], ["hard", 1, ""], "the older hard fight stays the fact, though every meal is newer")
+	_ledger = []
+	_meal([A, B])
+	_battle([A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	assert_eq(_bond(A)["fact"]["kind"], "saved_by", "a newer save beats an older meal")
+
+
+## A pair with only chats and meals picks its fact by the ordinary rule: the most points, else the later record.
+func test_a_pair_with_only_chats_and_meals_picks_its_fact_by_the_ordinary_rule() -> void:
+	_meeting(A, B)
+	_meal([A, B])
+	assert_eq(_bond(A)["fact"]["kind"], "meal", "same points: the later record")
+	_ledger = []
+	_meal([A, B])
+	_meeting(A, B)
+	assert_eq(_bond(A)["fact"]["kind"], "met", "the later record, the other way round")
+	var dear: BalanceTable = _counting.duplicate() as BalanceTable
+	dear.bond_points_meal = 2
+	_ledger = []
+	_meal([A, B])
+	_meeting(A, B)
+	var found: Dictionary = Bonds.bond(_ledger, A, _living(), dear)
+	assert_eq([found["points"], found["fact"]["kind"], found["fact"]["points"]], [3, "meal", 2], "more points beat a later record")
+	dear.bond_points_meal = 1
+	dear.bond_points_encounter = 2
+	assert_eq(Bonds.bond(_ledger, A, _living(), dear)["fact"]["kind"], "met", "and the other way round")
+
+
+func test_the_bond_line_counts_meals_after_chats() -> void:
+	_meal([A, B])
+	assert_eq(Bonds.bond_line(_bond(A), NAMES, false), "Closest to Bea: 1 meal.")
+	_battle([A, B], "retreated")
+	_battle([A, B], "retreated")
+	_meeting(A, B)
+	_meal([A, B])
+	assert_eq(Bonds.bond_line(_bond(A), NAMES, false), "Closest to Bea: 2 hard fights, 1 chat, 2 meals.")
+
+
+## A load accepts any record with a seq and a kind, so a meal that does not name 2 to MAX_DINERS different non-empty
+## strings counts nothing: in a build, a fold in and a fold out, by one rule. The largest table still counts.
+func test_a_hand_edited_meal_counts_nothing_in_a_build_a_fold_in_and_a_fold_out() -> void:
+	var crowd: Array = []
+	for index: int in Bonds.MAX_DINERS + 1:
+		crowd.append("hero:%d" % index)
+	var bad: Array[Dictionary] = [
+		{"diners": [A]}, {"diners": []}, {"diners": [A, A]}, {"diners": [A, ""]}, {"diners": [A, 5]}, {"diners": [A, null]},
+		{"diners": [A, B, A]}, {"diners": "ab"}, {"diners": {A: B}}, {"heroes": [A, B]}, {"place": "House_1"}, {"diners": crowd},
+	]
+	for fields: Dictionary in bad:
+		_record("meal", fields)
+	assert_eq(_nonempty(Bonds.index(_ledger, _counting)), {}, "a build counts none")
+	var folded: Dictionary = Bonds.index_state([] as Array[Dictionary], _counting)
+	for record: Dictionary in _ledger:
+		Bonds.fold_in(folded, record, _counting)
+	assert_eq([_nonempty(folded["pairs"]), folded["version"], folded["touched"]], [{}, 0, {}], "a fold in counts none and touches no one")
+	for record: Dictionary in _ledger:
+		assert_true(Bonds.fold_out(folded, record, _counting), "a fold out takes out what was never counted")
+	assert_eq([_nonempty(folded["pairs"]), folded["outs"], folded["out_named"], folded["out_all"]], [{}, bad.size(), {}, 0], "and marks no one")
+	_ledger = []
+	_record("meal", {"diners": crowd.slice(0, Bonds.MAX_DINERS), "place": "House_1"})
+	var pairs: Dictionary = Bonds.index(_ledger, _counting)
+	assert_eq([pairs.size(), (pairs["hero:0"] as Dictionary).size()], [Bonds.MAX_DINERS, Bonds.MAX_DINERS - 1], "the largest table counts")
+	assert_lte(BALANCE.meal_table_size, Bonds.MAX_DINERS, "the shipped table fits the largest the reader counts")
+
+
+## Folding meals in, then out oldest first (as the eviction tiers do), equals a rebuild of what is left at every step.
+## A fold in touches every diner, so the hub's look (ig-7sn.16) re-reads them, and no one else. Taking out the newest of
+## two meals of a pair, which the eviction never does, is refused so the caller rebuilds.
+func test_folding_meals_in_and_out_equals_a_rebuild_and_touches_every_diner() -> void:
+	var folded: Dictionary = Bonds.index_state(_ledger, BALANCE)
+	var tables: Array = [[A, B, C], [A, B], [B, C, D], [A, C, D, E]]
+	for index: int in 10:
+		_meal(tables[index % 4])
+		Bonds.fold_in(folded, _ledger.back(), BALANCE)
+		assert_eq(_nonempty(folded["pairs"]), _nonempty(Bonds.index(_ledger, BALANCE)), "in %d" % index)
+		assert_eq(folded["version"], index + 1)
+		for id: String in tables[index % 4]:
+			assert_eq((folded["touched"] as Dictionary).get(id), index + 1, "%s sat down at meal %d" % [id, index])
+	assert_false((folded["touched"] as Dictionary).has(F), "Fay sat nowhere")
+	assert_eq(folded["pairs"][A][B]["meals"], 6, "6 of the 10 tables had Ada and Bea")
+	var oldest: Dictionary = _ledger.pop_front()
+	assert_true(Bonds.fold_out(folded, oldest, BALANCE))
+	assert_eq([folded["version"], folded["touched"][A], folded["touched"][B], folded["touched"][C], folded["touched"][D]], [11, 11, 11, 11, 8], "the take-out stamps the table it took out, and only it (Dov last sat at meal 7)")
+	assert_eq(_nonempty(folded["pairs"]), _nonempty(Bonds.index(_ledger, BALANCE)), "out 1")
+	while not _ledger.is_empty():
+		oldest = _ledger.pop_front()
+		assert_true(Bonds.fold_out(folded, oldest, BALANCE))
+		assert_eq(_nonempty(folded["pairs"]), _nonempty(Bonds.index(_ledger, BALANCE)), "out %d" % oldest["seq"])
+	assert_eq(_nonempty(folded["pairs"]), {}, "every meal is out")
+	_meal([A, B])
+	_meal([A, B])
+	folded = Bonds.index_state(_ledger, BALANCE)
+	assert_false(Bonds.fold_out(folded, _ledger[1], BALANCE), "the newest of two is the pair's latest, and the one before it is unknown")
+
+
+## The cover order counts meal points, as it counts every point of the bond index.
+func test_the_cover_order_counts_meal_points() -> void:
+	var knight: Hero = _hero(A, "Ada")
+	knight.def_id = &"knight"
+	for pair: Array in [[B, "Bea"], [C, "Cal"]]:
+		_hero(pair[0], pair[1]).def_id = &"mage"
+	_battle_in(GameSession.ledger, [A, B], "victory", {"rescued": [B], "rescuers": [A]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	for _index: int in 3:
+		GameSession._record("meal", {"diners": [A, C], "place": "House_1"})
+	var team: Array[Hero] = [knight, GameSession.hero_by_id(B), GameSession.hero_by_id(C)]
+	assert_eq(GameSession._cover_orders(team, BALANCE)[A], [B, C] as Array[String], "6 points of a rescue and a hard fight, then 3 of meals")
+	for _index: int in 8:
+		GameSession._record("meal", {"diners": [A, C], "place": "House_1"})
+	assert_eq(GameSession._cover_orders(team, BALANCE)[A], [C, B] as Array[String], "11 points of meals, and the bond of 8 or more goes first")
 
 
 ## ---- the dream
@@ -1236,6 +1381,88 @@ func test_an_encounter_in_at_the_cap_costs_under_a_frame() -> void:
 	assert_lt(runs.min() / 1000.0, 16.7, "one meeting fits a frame")
 
 
+## ig-m6o.2.2.5: one meal time in at the cap of a ledger a third of chats and meals, alternating, as the perf seed's
+## is: eight tables of four (the ACC fixture's), each one append, fold in (12 pair counts), evict the oldest tier-0
+## record, fold it out. Each of seven runs times one whole meal time, and must write eight records, keep the ledger at
+## the cap and rebuild nothing. Best and worst of seven: a measurement, and the best must fit a frame. Then seven
+## rebuilds of that ledger (a load), printed and not gated.
+func test_a_meal_time_in_at_the_cap_costs_under_a_frame() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var heroes: Array[String] = []
+	for index: int in 50:
+		heroes.append("hero:%d" % index)
+	for index: int in BALANCE.ledger_max_records:
+		if index % 3 == 0:
+			var pair: Array[String] = _team(rng, heroes, 2 if index % 6 == 0 else 4)
+			pair.sort()
+			if index % 6 == 0:
+				Ledger.append(GameSession.ledger, index + 1, 0, "encounter", {"heroes": pair, "place": "House_1", "why": "neighbours"})
+			else:
+				Ledger.append(GameSession.ledger, index + 1, 0, "meal", {"diners": pair, "place": "House_1"})
+		else:
+			var team: Array[String] = _team(rng, heroes, 5)
+			_battle_in(GameSession.ledger, team, "victory", _mix(rng, index, team))
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	GameSession.bond_index()
+	var builds: int = GameSession.bond_builds
+	var runs: Array[int] = []
+	for run: int in 7:
+		var meal_time: Array[Array] = []
+		for _table: int in MEAL_TABLES:
+			var sitting: Array[String] = _team(rng, heroes, 4)
+			sitting.sort()
+			meal_time.append(sitting)
+		var seq: int = GameSession.ledger_next_seq
+		var started: int = Time.get_ticks_usec()
+		for table: Array in meal_time:
+			GameSession._record("meal", {"diners": table, "place": "House_1"})
+		runs.append(Time.get_ticks_usec() - started)
+		assert_eq(GameSession.ledger_next_seq, seq + MEAL_TABLES, "run %d wrote one record a table" % (run + 1))
+		assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records, "and stayed at the cap")
+	assert_eq(GameSession.bond_builds, builds, "no run rebuilt the index")
+	_print_cost("one meal time in (%d tables of 4): append, fold in, evict the oldest chat or meal, fold it out" % MEAL_TABLES, runs)
+	assert_lt(runs.min() / 1000.0, 16.7, "one meal time fits a frame")
+	var rebuilds: Array[int] = []
+	for _run: int in 7:
+		var started: int = Time.get_ticks_usec()
+		Bonds.index(GameSession.ledger, BALANCE)
+		rebuilds.append(Time.get_ticks_usec() - started)
+	gut.p("BOND COST: all-pairs rebuild with chats and meals (a load), %d records, best %.2f ms, worst %.2f ms of 7" % [GameSession.ledger.size(), rebuilds.min() / 1000.0, rebuilds.max() / 1000.0])
+
+
+## ACC 10 with meals: at the real cap, one meal time (eight tables) evicts the eight oldest meals as folds out, marks
+## no dream, and the hub's look at the bonds after it, with the hero of the first table selected, reads no dream.
+func test_a_meal_time_at_the_cap_marks_no_dream_and_the_hubs_look_reads_none() -> void:
+	_fill_to_cap(40)
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	var tables: Array[Array] = _meal_time()
+	for index: int in 40:
+		GameSession._record("meal", {"diners": tables[index % MEAL_TABLES], "place": "House_1"})
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	var first_meal: int = int(GameSession.ledger[BALANCE.ledger_max_records - 40]["seq"])
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	_select(hub, "Ada")
+	var dream: Dictionary = hub._dream(A)
+	var builds: int = GameSession.bond_builds
+	var reads: int = hub.dream_reads
+	var records: Array[Dictionary] = []
+	for table: Array in tables:
+		records.append(GameSession._record("meal", {"diners": table, "place": "House_1"}))
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	assert_eq(int(GameSession.ledger[BALANCE.ledger_max_records - 40]["seq"]), first_meal + MEAL_TABLES, "the eight oldest meals went")
+	assert_eq(int(GameSession.ledger[0]["seq"]), 1, "no filler went")
+	assert_eq(GameSession.bond_builds, builds, "eight take-outs rebuilt nothing")
+	_assert_index_is_a_rebuild("after the meal time")
+	GameSession._notify_social_recorded(records)
+	assert_eq(hub.dream_reads, reads, "the look after a meal time read no dream")
+	assert_eq(hub._dream(A), dream, "the dream is as it was")
+	assert_eq(hub.dream_reads, reads, "and asking for it read none either")
+	assert_eq(GameSession.bond_builds, builds, "the look rebuilt nothing")
+
+
 func test_the_detail_panel_reads_a_dream_once_and_resumes_it_on_a_ledger_change() -> void:
 	_hero(A, "Ada")
 	_hero(B, "Bea")
@@ -1497,6 +1724,7 @@ func test_folding_out_marks_the_heroes_a_battle_names_and_everyone_for_any_other
 	_record("ranked_up", {"hero": A, "from": 0, "to": 1})
 	_record("died", {"hero": B, "name": "Bea"})
 	_record("summoned", {"hero": F, "name": "Fay", "rank": 0})
+	_meal([A, B])
 	var folded: Dictionary = Bonds.index_state(_ledger, BALANCE)
 	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [0, {}, 0], "a build starts them over")
 	Bonds.fold_out(folded, _ledger[0], BALANCE)
@@ -1507,6 +1735,8 @@ func test_folding_out_marks_the_heroes_a_battle_names_and_everyone_for_any_other
 		Bonds.fold_out(folded, _ledger[at], BALANCE)
 		assert_eq([folded["outs"], folded["out_all"]], [at + 1, at + 1], "a %s record marks everyone" % _ledger[at]["kind"])
 	assert_eq((folded["out_named"] as Dictionary).size(), 5, "and no one in particular")
+	Bonds.fold_out(folded, _ledger[5], BALANCE)
+	assert_eq([folded["outs"], folded["out_all"], (folded["out_named"] as Dictionary).size()], [6, 5, 5], "a meal marks no one")
 
 
 ## Ledger.first_after: the index of the first record past a seq, through gaps the evictions leave.
@@ -2054,9 +2284,13 @@ func _mix(rng: RandomNumberGenerator, index: int, team: Array[String]) -> Dictio
 ## no one or any hero; with by_in_team, a teammate instead of any hero, as a real fight writes it, and
 ## a death has a cause (with a zone or a by, from the seq, so no rng draw differs) as kill_hero writes it.
 ## ig-m6o.2.2.4: with encounters, one record in five is a meeting of two different heroes (drawn first, so a
-## seed without them makes the records it always made).
+## seed without them makes the records it always made). ig-m6o.2.2.5: half of those are a meal of two to four instead.
 func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int, by_in_team: bool = false, with_encounters: bool = false) -> Array:
 	if with_encounters and rng.randi_range(0, 4) == 0:
+		if rng.randi_range(0, 1) == 0:
+			var table: Array[String] = _team(rng, heroes, rng.randi_range(2, mini(4, heroes.size())))
+			table.sort()
+			return ["meal", {"diners": table, "place": "House_%d" % (seq % 3 + 1)}]
 		var first: int = rng.randi_range(0, heroes.size() - 1)
 		var second: int = (first + rng.randi_range(1, heroes.size() - 1)) % heroes.size()
 		var pair: Array[String] = [heroes[first], heroes[second]]
@@ -2144,13 +2378,22 @@ func _nonempty(pairs: Dictionary) -> Dictionary:
 	return out
 
 
+## One meal time of the ACC fixture: eight tables of four. The first is A, B, C and D; the others are made-up ids.
+func _meal_time() -> Array[Array]:
+	var tables: Array[Array] = []
+	for table: int in MEAL_TABLES:
+		var sitting: Array = [A, B, C, D] if table == 0 else ["hero:t%d_0" % table, "hero:t%d_1" % table, "hero:t%d_2" % table, "hero:t%d_3" % table]
+		tables.append(sitting)
+	return tables
+
+
 func _print_cost(what: String, runs: Array[int]) -> void:
 	gut.p("BOND COST: %s, %d records, best %.2f ms, worst %.2f ms of 7" % [what, GameSession.ledger.size(), runs.min() / 1000.0, runs.max() / 1000.0])
 
 
 ## ig-m6o.2.1's per-hero reader, kept verbatim as the answer the one-pass index must give. It reads battles
-## and deaths only, so it covers a ledger with no encounter in it; the two constants ig-m6o.2.2.4 added
-## ("meetings" 0 and the fact's "place" "") are the tally's new fields for such a ledger.
+## and deaths only, so it covers a ledger with no encounter or meal in it; the constants ig-m6o.2.2.4 and .5 added
+## ("meetings" 0, "meals" 0 and the fact's "place" "") are the tally's new fields for such a ledger.
 static func _slice1_bond(ledger: Array[Dictionary], hero_id: String, living: Dictionary, balance: BalanceTable) -> Dictionary:
 	var dead_by_order: Dictionary = {}
 	for record: Dictionary in ledger:
@@ -2199,7 +2442,7 @@ static func _slice1_bond(ledger: Array[Dictionary], hero_id: String, living: Dic
 			if facts.is_empty():
 				continue
 			if not tallies.has(other):
-				tallies[other] = {"partner": other, "points": 0, "hard": 0, "saves": 0, "rescues": 0, "deaths": 0, "meetings": 0, "last_seq": 0, "fact": {}}
+				tallies[other] = {"partner": other, "points": 0, "hard": 0, "saves": 0, "rescues": 0, "deaths": 0, "meetings": 0, "meals": 0, "last_seq": 0, "fact": {}}
 			var tally: Dictionary = tallies[other]
 			tally["last_seq"] = seq
 			for fact: Dictionary in facts:
@@ -2270,6 +2513,13 @@ func _record(kind: String, fields: Dictionary) -> void:
 ## One encounter record of GameSession's shape, the pair as given.
 func _meeting(one: String, other: String, place: String = "House_1") -> void:
 	_record("encounter", {"heroes": [one, other], "place": place, "why": "neighbours"})
+
+
+## One meal record of GameSession's shape, the diners as given and sorted, as the roll writes them.
+func _meal(diners: Array, place: String = "House_1") -> void:
+	var sitting: Array = diners.duplicate()
+	sitting.sort()
+	_record("meal", {"diners": sitting, "place": place})
 
 
 func _moment(what: String, hero: String, by: String) -> Dictionary:

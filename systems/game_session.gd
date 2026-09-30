@@ -10,8 +10,9 @@ signal expeditions_changed
 signal battle_changed(order_id: String)
 ## ig-7sn.14: a dispatch preview's forecast landed (or its cache was dropped): refresh the preview.
 signal preview_forecast_ready
-## ig-m6o.2.2.4: the "encounter" records the live tick wrote (a meeting each), once per tick, deferred like the
-## other notifications so it goes out after the commit and the eviction, and never for a tick that rolled back.
+## ig-m6o.2.2.4, ig-m6o.2.2.5: the "encounter" (a meeting each) and "meal" (a table each) records the live tick wrote,
+## each record once: after its roll's evictions, or, deferred like the other notifications, in one batch after the
+## commit and the eviction when the tick commits. Never for a tick that rolled back.
 signal social_recorded(records: Array[Dictionary])
 
 ## A fresh save must afford at least one pull or the game is unplayable from boot: the roster
@@ -107,7 +108,7 @@ var _notification_deferred_depth: int = 0
 var _roster_notification_pending: bool = false
 var _expeditions_notification_pending: bool = false
 var _battle_notifications_pending: Dictionary[String, bool] = {}
-## ig-m6o.2.2.4: the encounter records written inside a deferral, for social_recorded. Unsaved; from_dict
+## ig-m6o.2.2.4: the encounter and meal records written inside a deferral, for social_recorded. Unsaved; from_dict
 ## clears it, and a rollback puts back its value from before the transaction (_rollback_kept).
 var _social_pending: Array[Dictionary] = []
 ## ig-m6o.2.2.4: the live seconds the encounter roll has not yet spent (it rolls once per 60), and the seconds
@@ -117,6 +118,10 @@ var _encounter_clock: float = 0.0
 var _encounter_cooldowns: Dictionary[String, float] = {}
 ## The draw for whether two heroes meet and which. A stream of its own, not the global one, so a test seeds it.
 var _encounter_rng := RandomNumberGenerator.new()
+## ig-m6o.2.2.5: the live seconds since the last meal time (it rolls every meal_interval_minutes). Unsaved like the
+## encounter clock: from_dict starts it over, so the first meal comes an interval after a load, and a rollback puts it
+## back. A meal draws nothing, so it has no generator.
+var _meal_clock: float = 0.0
 var _expedition_pulse_accumulator: float = 0.0
 var _periodic_save_accumulator: float = 0.0
 ## ig-7sn.10: a pulse crossed PERIODIC_SAVE_SECONDS; the next _process call runs the save. Unsaved.
@@ -2606,6 +2611,7 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	for working: Array in _working_keepers():
 		Hero.add_profession_xp(working[0] as Hero, working[1] as StringName, delta_seconds, preload("res://balance.tres"))
 	_roll_encounters(delta_seconds, preload("res://balance.tres"))
+	_roll_meals(delta_seconds, preload("res://balance.tres"))
 
 
 ## ig-m6o.2.2.4 (SYSTEMS.md § Encounters and shared meals). Live tick only, like the wood: the offline catch-up
@@ -2614,9 +2620,9 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 ## meet: with chance encounter_chance_per_minute one pair that is off cooldown is drawn, and one "encounter"
 ## record is written for it. The scan runs once for a tick that crosses a minute (none under 60 s of clock) and
 ## serves every minute the tick crosses, so one 3,600 s tick draws exactly as 3,600 one-second ticks do. A
-## tick with no pair off cooldown draws nothing. social_recorded says the records after the commit. The table
-## comes in as an argument, like the other rules' (ARCHITECTURE.md: no autoload holds a shared Resource); a test
-## passes its own copy.
+## tick with no pair off cooldown draws nothing. social_recorded says the records once: after this roll's
+## evictions, or in one batch after the commit when the tick commits. The table comes in as an argument, like the
+## other rules' (ARCHITECTURE.md: no autoload holds a shared Resource); a test passes its own copy.
 func _roll_encounters(delta_seconds: float, balance: BalanceTable) -> void:
 	_encounter_clock += delta_seconds
 	if _encounter_clock < 60.0:
@@ -2642,6 +2648,32 @@ func _roll_encounters(delta_seconds: float, balance: BalanceTable) -> void:
 		var meeting: Dictionary = open[_encounter_rng.randi() % open.size()]
 		records.append(_record("encounter", {"heroes": [meeting["a"], meeting["b"]], "place": meeting["place"], "why": meeting["why"]}))
 		_encounter_cooldowns[meeting["key"]] = balance.encounter_pair_cooldown_minutes * 60.0
+	_notify_social_recorded(records)
+
+
+## ig-m6o.2.2.5 (SYSTEMS.md § Encounters and shared meals). Live tick only, like the encounter roll: every
+## meal_interval_minutes of live clock, the heroes who are in town (starvation_candidates: on the roster and not busy)
+## and have a finished House sit at tables (TownRules.meal_tables, from saved homes and no RNG) and one "meal" record
+## is written per table of two or more. No meal while there is no food, and the clock still runs then: a town that has
+## just eaten its last does not feast the tick the granary fills. A tick that crosses several intervals is one meal
+## time, not several, since the tables do not change between them (the clock keeps its remainder). A meal never
+## touches the food, which the tick's own drain has already counted. social_recorded says the records once: after
+## this roll's evictions, or in one batch after the commit when the tick commits. The table comes in as an argument,
+## like the other rules' (a test passes its own copy).
+func _roll_meals(delta_seconds: float, balance: BalanceTable) -> void:
+	var interval: float = maxi(balance.meal_interval_minutes, 1) * 60.0
+	_meal_clock += delta_seconds
+	if _meal_clock < interval:
+		return
+	_meal_clock = fmod(_meal_clock, interval)
+	if float(town_resources["food"]) <= 0.0:
+		return
+	var eaters: Array[Array] = []
+	for hero: Hero in starvation_candidates():
+		eaters.append([hero.instance_id, String(hero.home)])
+	var records: Array[Dictionary] = []
+	for table: Dictionary in TownRules.meal_tables(eaters, town_buildings, balance.meal_house_hexes, balance.meal_table_size):
+		records.append(_record("meal", {"diners": table["diners"], "place": table["place"]}))
 	_notify_social_recorded(records)
 
 
@@ -3160,6 +3192,7 @@ func _rollback_kept() -> Dictionary:
 		"command_errors": _command_errors.duplicate(), "checks": checks, "current": current,
 		"town_notice": _town_notice.duplicate(true),
 		"social": _social_pending.duplicate(), "encounter_clock": _encounter_clock, "encounter_cooldowns": _encounter_cooldowns.duplicate(),
+		"meal_clock": _meal_clock,
 	}
 
 
@@ -3186,6 +3219,7 @@ func _roll_back(snapshot: Dictionary, kept: Dictionary) -> void:
 	_social_pending = kept["social"]
 	_encounter_clock = float(kept["encounter_clock"])
 	_encounter_cooldowns = kept["encounter_cooldowns"]
+	_meal_clock = float(kept["meal_clock"])
 	_battle_checks = kept["checks"]
 	for order_id: String in _battle_checks.keys():
 		# A check the mutation ended (its jobs cancelled) stays ended: a job that finished first still holds
@@ -3349,6 +3383,7 @@ func from_dict(data: Dictionary) -> void:
 	_social_pending = []
 	_encounter_clock = 0.0
 	_encounter_cooldowns = {}
+	_meal_clock = 0.0
 	_read_profile(data)
 
 

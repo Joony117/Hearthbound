@@ -22,6 +22,8 @@ const REARM_DISTANCE: float = 4.5
 const LINE_SECONDS: float = 4.0
 ## A meeting (meet) that the two figures have not come together for in this long is dropped.
 const MEETING_SECONDS: float = 30.0
+## How long a diner (dine) sits at its seat before it goes back to its own plan. PROVISIONAL, like the meal lines.
+const MEAL_SECONDS: float = 20.0
 ## How near a figure comes to the one it meets before it speaks: a keeper stands at its work spot, and the
 ## nearest free ground to a hall is 3.84 m away, so MEET_DISTANCE would never be reached.
 const CHAT_DISTANCE: float = 4.5
@@ -85,6 +87,12 @@ var _to_home := PackedVector3Array()
 var _linger_clip: StringName = &"Idle_B"
 ## NAN keeps the facing it walked in with.
 var _linger_yaw: float = NAN
+## How long the linger at the end of a wander (wander's seconds) lasts.
+var _linger_seconds: float = LINGER_SECONDS
+## Walking to or sitting at a meal's seat (dine): the line it says on sitting down ("" for none), and the one flag
+## that keeps it from greeting the body and from another meeting until the seat is left.
+var _seated: bool = false
+var _arrival_line: String = ""
 var _clip: StringName = &""
 var _following: bool = false
 var _armed: bool = true
@@ -162,6 +170,7 @@ func has_loop() -> bool:
 
 ## Walks path, then works (then = WORK) or rests (REST) at its end.
 func walk(path: PackedVector3Array, then: StringName) -> void:
+	_seated = false
 	_path = path.duplicate()
 	_then = then
 	heading_home = then == REST
@@ -169,15 +178,27 @@ func walk(path: PackedVector3Array, then: StringName) -> void:
 	_play(&"Walking_A")
 
 
-## A wanderer's trip: walks path, then lingers playing clip, facing yaw (NAN: as it walked in).
-func wander(path: PackedVector3Array, clip_name: StringName, yaw: float) -> void:
+## A wanderer's trip: walks path, then lingers seconds playing clip, facing yaw (NAN: as it walked in).
+func wander(path: PackedVector3Array, clip_name: StringName, yaw: float, seconds: float = LINGER_SECONDS) -> void:
 	_linger_clip = clip_name
 	_linger_yaw = yaw
+	_linger_seconds = seconds
 	walk(path, LINGER)
+
+
+## A meal's seat (ig-m6o.2.2.5): walks path, then sits MEAL_SECONDS facing yaw and says said as it sits ("" for none:
+## the other diners say nothing). No Interact and no pause, so a diner speaks while it eats. While it walks or sits it
+## does not greet the body and is_meeting() says so, so a meeting will not take it from the table. When the time is up
+## the planner takes it back to its own plan, as after a linger.
+func dine(path: PackedVector3Array, yaw: float, said: String) -> void:
+	wander(path, &"Sit_Floor_Idle", yaw, MEAL_SECONDS)
+	_seated = true
+	_arrival_line = said
 
 
 ## Stands at spot lingering, seconds_left before its next trip.
 func linger_at(spot: Vector3, clip_name: StringName, yaw: float, seconds_left: float) -> void:
+	_seated = false
 	position = spot
 	_path.clear()
 	_linger_clip = clip_name
@@ -211,8 +232,9 @@ func meet(other: Node3D, meeting_facts: Dictionary) -> void:
 	_chat_left = MEETING_SECONDS
 
 
+## In a meeting with another figure, or on its way to (or at) a meal's seat: neither takes on another.
 func is_meeting() -> bool:
-	return _chat_with != null
+	return _chat_with != null or _seated
 
 
 func is_showing_line() -> bool:
@@ -230,6 +252,7 @@ func facing() -> float:
 
 ## Stands at spot working, seconds_left before it heads home (if it has a loop).
 func work_at(spot: Vector3, seconds_left: float) -> void:
+	_seated = false
 	position = spot
 	_path.clear()
 	_settle(WORK, seconds_left)
@@ -256,8 +279,8 @@ func step(delta: float) -> void:
 		elif _flat_distance(_chat_with) <= CHAT_DISTANCE:
 			_chat()
 			return
-	# Before the pause, so a body it switches to mid-greeting still gets its own.
-	if _following and is_instance_valid(greet):
+	# Before the pause, so a body it switches to mid-greeting still gets its own. A diner at its seat greets no one.
+	if _following and not _seated and is_instance_valid(greet):
 		var distance: float = _flat_distance(greet)
 		if _armed and distance <= MEET_DISTANCE:
 			_greet()
@@ -284,7 +307,9 @@ func step(delta: float) -> void:
 					_model.rotation.y = atan2(to.x, to.z)
 					move = 0.0
 			if _path.is_empty():
-				_settle(_then, {WORK: WORK_SECONDS, REST: HOME_SECONDS, LINGER: LINGER_SECONDS}[_then])
+				_settle(_then, {WORK: WORK_SECONDS, REST: HOME_SECONDS, LINGER: _linger_seconds}[_then])
+				if _seated:
+					_say(_arrival_line)
 		WORK:
 			if has_loop():
 				_left -= delta
@@ -296,8 +321,10 @@ func step(delta: float) -> void:
 				walk(_to_work, WORK)
 		LINGER:
 			_left -= delta
-			if _left <= 0.0 and _chat_with == null and planner.is_valid():
-				planner.call()
+			if _left <= 0.0:
+				_seated = false
+				if _chat_with == null and planner.is_valid():
+					planner.call()
 
 
 func _settle(what: StringName, seconds: float) -> void:
@@ -351,11 +378,16 @@ func _face_and_say(target: Node3D, said: String) -> void:
 	_model.rotation.y = atan2(to_target.x, to_target.z)
 	_animator.play(&"Interact")
 	_animator.queue(&"Idle_A")
+	_say(said)
+	_pause_left = LINE_SECONDS
+
+
+## Shows said over its head for LINE_SECONDS ("" shows none), and moves nothing.
+func _say(said: String) -> void:
 	_label.text = said
 	_label.visible = not said.is_empty()
 	_sign.visible = not _label.visible and not _sign.text.is_empty()
 	_line_left = LINE_SECONDS if not said.is_empty() else 0.0
-	_pause_left = LINE_SECONDS
 
 
 ## After a greeting: back to what it was doing, facing as it did.

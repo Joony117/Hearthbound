@@ -444,6 +444,19 @@ for 100+ hours at the guessed 60 records an hour.
      change). The pair scan (which pairs may meet) is a pure static in `TownRules`, run once per
      tick that crosses a minute. At 100 heroes it costs 4.2 ms best and at most 6.2 ms worst of
      seven, under the 16.7 ms line, so it is not bucketed by hex.
+   - *Amended 2026-09-30 (`ig-m6o.2.2.5`):* the second live-tick record is built: a `meal`, one
+     per table of two or more, written by `GameSession._roll_meals` right after
+     `_roll_encounters`. The fold takes it in and out exactly: every ordered pair of its diners.
+     Its eviction touches every diner and marks no dream (`OUT_MARKS["meal"]` is empty until
+     `ig-m6o.2.2.10`). A meal is a sixth counted fact ("meals"). Meetings and meals are both
+     social (`Bonds.SOCIAL`): neither is a pair's fact while the pair has any battle fact,
+     whatever order the slots are read in, and between the two the ordinary rule picks (more
+     points, then the later record). Both still count for the points and the Knight cover order.
+     A meal record counts only when it names 2 to `Bonds.MAX_DINERS` (8) different ids. Any
+     other, as a hand-edited save may hold, counts no one, in a rebuild, a fold-in and a fold-out
+     alike, and a test holds the shipped `meal_table_size` under the cap. One meal time at the
+     cap (eight tables of four) folds in and out in 1.2 ms best of seven, with no rebuild. The
+     table scan (who sits where) at 100 heroes costs 1.6 ms, so it is not bucketed by hex.
 6. **Dreams stay derived too.** A hero's dream is read from its records by a fixed rule, for one
    hero at a time (the detail panel), as the slice does. The dream catalogue keeps that. A dream
    becomes saved per-hero state only when something that is not a record can choose or revise it:
@@ -463,14 +476,25 @@ for 100+ hours at the guessed 60 records an hour.
      routine victories would, which is why those score nothing.
    - Built by `ig-m6o.2.2.4`: `Ledger.tier()` and `TIER_BY_KIND` put `encounter` at tier 0, a
      routine battle at tier 1 (`ROUTINE_TIER`), other `battle` records and any kind not listed at
-     tier 2 (`UNKNOWN_TIER`), `ranked_up` 3, `summoned` 4 and `died` 5. The `meal` kind, when
-     `ig-m6o.2.2.5` adds it, is listed at tier 0.
+     tier 2 (`UNKNOWN_TIER`), `ranked_up` 3, `summoned` 4 and `died` 5. `ig-m6o.2.2.5` lists the
+     `meal` kind at tier 0 too.
    - Meetings come from saved state only. A hero is in town when on the roster and not
      `is_hero_busy` (the body counts). A pair is coworkers (both at built stations: the same
      building, or within `encounter_coworker_hexes`), else neighbours (both in built Houses: the
      same House, or within `encounter_neighbour_hexes`). Where a walker stands is never read. The
-     town's walk is a show played after the record: `GameSession.social_recorded` says a tick's
-     records once, after the tick's evictions, and after the commit when the tick commits.
+     town's walk is a show played after the record: `GameSession.social_recorded` says each
+     record once, after its roll's evictions, or in one batch after the commit when the tick
+     commits (the notice rule is in the meals bullet below).
+   - Meals come from saved state only (`ig-m6o.2.2.5`). The eaters are `starvation_candidates()`
+     with their saved homes (a finished House), seated by `TownRules.meal_tables`, a pure rule
+     with no RNG, so tablemates stay tablemates until someone moves, leaves or comes home. One
+     meal time per `meal_interval_minutes` of the live tick; a tick that crosses several is one.
+     No meal while food is 0 or less, and the clock still runs. A meal eats no food. Its clock is
+     unsaved: a load clears it and a rollback restores it. Each roll says its own records, each
+     record once and never merged: a bare tick that meets and dines sends two notices, each after
+     its roll's evictions; a committing tick sends one, after the commit; a rolled-back one sends
+     none. A seated diner counts as in a meeting (`is_meeting`): it greets no one and takes no
+     meeting until it stands.
 
 **Testimony against the Ledger (architecture note 9).**
 
@@ -592,7 +616,9 @@ that is not recorded when it happens can never be told later, so the record come
      records. *Director amendment, corrected 2026-09-24.* It is an order id, not a `seq`,
      because the incident already holds one and legacy incidents do too.
    - `ranked_up`: `rank_up_hero`.
-   - `meal` is reserved for step 2. Eating ticks are not events.
+   - `encounter`: `GameSession._roll_encounters` (`ig-m6o.2.2.4`), one per meeting.
+   - `meal`: `GameSession._roll_meals` (`ig-m6o.2.2.5`), one per table of two or more. Eating
+     ticks are still not events.
 6. **Permadeath keeps one writer.** `kill_hero()` gains optional `cause` (`expedition`,
    `sacrifice` or `starvation`) and `by` arguments and writes the `died` record itself. A
    sacrifice is one `died` record with `by` = the keeper. Rule 8 is unchanged: `kill_hero()` is
@@ -613,20 +639,20 @@ that is not recorded when it happens can never be told later, so the record come
    - `ledger_max_records` caps the list, and `battle_max_moments` caps each battle; past it,
      `moments_truncated` is set.
    - Over the cap, eviction is tiered, and within a tier the oldest record goes first:
-     1. `encounter` records (and `meal`, when it lands)
+     1. `encounter` and `meal` records
      2. routine battles: a victory `battle` with no moments and no rescued heroes
      3. other `battle` records, and any kind not listed
      4. `ranked_up`
      5. `summoned`
      6. `died`, last of all. A game about remembering the dead forgets them last.
      *Director amendment.*
-     *Amended 2026-09-24 by "Bonds stay derived" (item 7), built 2026-09-30 in `ig-m6o.2.2.4`:
-     `encounter` records go first, as a new tier ahead of routine battles.* At the cap each new
-     record evicts the oldest record of the lowest tier present. So every other new record evicts
-     an encounter while one is left, and a new `encounter` evicts itself when no older one is left:
-     the town still plays that meeting and says its line, but the bond gains no point (the ceiling
-     `SYSTEMS.md` § Encounters and shared meals names). An encounter is one more line of the side
-     file: no new save key and no `SAVE_VERSION` bump.
+     *Amended 2026-09-24 by "Bonds stay derived" (item 7), built 2026-09-30 in `ig-m6o.2.2.4` and
+     `ig-m6o.2.2.5`: `encounter` and `meal` records go first, as a new tier ahead of routine
+     battles.* At the cap each new record evicts the oldest record of the lowest tier present. So
+     every other new record evicts an encounter or a meal while one is left, and a new one of
+     either evicts itself when no older one is left: the town still plays it, but the bond gains
+     no point (the ceiling `SYSTEMS.md` § Encounters and shared meals names). Each is one more
+     line of the side file: no new save key and no `SAVE_VERSION` bump.
    - Every reader tolerates gaps ("arrived before the records begin"). Legacy saves need that
      anyway.
    - *Amended 2026-09-24 (`ig-m6o.9`, save budget): eviction stays in-memory, on the list held
@@ -686,7 +712,8 @@ that is not recorded when it happens can never be told later, so the record come
 
 - The cap numbers (`SYSTEMS.md`, PROVISIONAL, settled by measuring records per hour and save
   write time on a full ledger).
-- The shape of `meal` (step 2).
+- The shape of `meal` (step 2). *Settled 2026-09-30 by `ig-m6o.2.2.5`:* `{diners: [ids, sorted],
+  place: the host's House}`.
 - Stable enemy identity for nemeses (step 7, its own ADR).
 - Whether the Ledger carries into the next town in the Old World (step 8, its own ADR).
 

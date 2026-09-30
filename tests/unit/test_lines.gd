@@ -20,6 +20,7 @@ const SLOTS: Dictionary = {
 	"carry_name": ["name", "place", "dead"],
 	"be_worthy": ["name", "dead"],
 	"met": ["name", "place"],
+	"meal": ["name"],
 }
 
 var _ledger: Array[Dictionary] = []
@@ -91,7 +92,7 @@ func test_a_death_line_names_the_dead_hero_or_the_fallback() -> void:
 
 
 func test_two_picks_in_a_row_differ_and_the_pick_wraps() -> void:
-	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"], ["watch_over"], ["carry_name"], ["be_worthy"], ["met"]]:
+	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"], ["watch_over"], ["carry_name"], ["be_worthy"], ["met"], ["meal"]]:
 		var facts: Dictionary = {"kinds": _kinds(kinds), "slots": {"name": "Ada", "place": "Here", "dead": "Cal", "count": "Two"}, "start": 7}
 		var size: int = Lines.candidates(facts).size()
 		for pick: int in size:
@@ -239,6 +240,42 @@ func test_meeting_facts_name_the_second_hero_and_the_place_and_start_at_the_seq(
 	assert_eq(Lines.meeting_facts({"heroes": "ab"}, NAMES), {}, "not a list")
 	assert_eq(Lines.meeting_facts({}, NAMES), {}, "no heroes")
 	assert_eq(Lines.meeting_facts({"seq": 3, "heroes": [A, "hero:gone"]}, NAMES)["slots"]["name"], "a hero now forgotten")
+
+
+# ig-m6o.2.2.5: a bond that is only meals speaks the "meal" kind, and its lines name no place.
+func test_a_bond_that_is_only_meals_speaks_the_meal_kind() -> void:
+	for _index: int in 8:
+		_record("meal", {"diners": [A, B, C], "place": "House_2"})
+	var bond: Dictionary = Bonds.bond(_ledger, A, {A: true, B: true, C: true}, BALANCE)
+	assert_eq(bond["fact"]["kind"], "meal")
+	var facts: Dictionary = Lines.greeting_facts(bond, Bonds.dream(_ledger, B), A, NAMES)
+	assert_eq(facts["kinds"], _kinds(["meal"]), "no dream, no quirk: the bond's own kind")
+	assert_eq(facts["slots"]["name"], "Ada")
+	assert_eq(Lines.candidates(facts).size(), 5)
+	for pick: int in 5:
+		var said: String = Lines.line(facts, pick)
+		assert_false(said.contains("{"), said)
+		assert_false(said.contains("an unknown place"), "a meal line names no place: %s" % said)
+
+
+func test_meal_facts_name_the_second_diner_and_start_at_the_seq() -> void:
+	var record: Dictionary = {"seq": 41, "time": 0, "kind": "meal", "diners": [A, B, C], "place": "House_1"}
+	var facts: Dictionary = Lines.meal_facts(record, NAMES)
+	assert_eq(facts["kinds"], _kinds(["meal"]))
+	assert_eq(facts["slots"], {"name": "Bea"}, "the first diner speaks to the second")
+	assert_eq(facts["start"], 41)
+	var lines: Dictionary = {}
+	for pick: int in 5:
+		var said: String = Lines.line(facts, pick)
+		assert_false(said.contains("{"), said)
+		lines[said] = true
+	assert_eq(lines.size(), 5, "five different lines")
+	var next: Dictionary = Lines.meal_facts({"seq": 42, "diners": [A, B]}, NAMES)
+	assert_ne(Lines.line(facts, 0), Lines.line(next, 0), "the next meal reads the next line")
+	assert_eq(Lines.meal_facts({"diners": [A]}, NAMES), {}, "one diner")
+	assert_eq(Lines.meal_facts({"diners": "ab"}, NAMES), {}, "not a list")
+	assert_eq(Lines.meal_facts({}, NAMES), {}, "no diners")
+	assert_eq(Lines.meal_facts({"seq": 3, "diners": [A, "hero:gone"]}, NAMES)["slots"]["name"], "a hero now forgotten")
 
 
 # The owner's case (ig-m6o.2.1's seeded save, rebuilt): Dunn has at least 10 lines for Mara.

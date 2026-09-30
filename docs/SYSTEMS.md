@@ -973,12 +973,13 @@ The record of settled events that every history reader derives from. The ADR is 
 | History lines in hero detail | 10 | Newest first. Routine victories at one zone collapse into one line |
 | Ledger save budget | ≤ 2 ms | What the ledger may add to any save or profile action, at any size up to the cap. A save's cost must not grow with history. Load compaction and the one-time recovery rewrite are exempt (`DECISIONS.md` The Ledger, item 8) |
 
-The eviction order is tiered, oldest first within each tier: `encounter` records (a meeting in
-town, built in `ig-m6o.2.2.4`), then routine victory `battle` records (no moments, no rescued
+The eviction order is tiered, oldest first within each tier: `encounter` and `meal` records (a
+meeting or a shared meal in town, built in `ig-m6o.2.2.4` and `ig-m6o.2.2.5`, one tier, so the
+two go together by age), then routine victory `battle` records (no moments, no rescued
 heroes), then other `battle` records, then `ranked_up`, then `summoned`, and `died` last
 (`DECISIONS.md` 2026-09-24, director amendment). A kind the table does not list sits with the
 non-routine battles. At the cap, each new record evicts the oldest tier-0 record, so a new
-`encounter` evicts itself when no older one is left: the town still plays that meeting, but it adds
+`encounter` or `meal` evicts itself when no older one is left: the town still plays it, but it adds
 no bond point. That is the ceiling § Encounters and shared meals names.
 
 **Measured 2026-09-24 (`ig-m6o.1` acceptance, `.agent-results/ig-m6o.1/gut_ledger2.log`).** At
@@ -1046,14 +1047,21 @@ Since `ig-m6o.2.2.4` a meeting is a fifth fact, "meetings" (`bond_points_encount
 bond line says "chat"). It counts for both heroes of the record, and a pair's fact line is the
 "met" one only when the pair has no battle fact. It carries the place of the latest meeting.
 
+Since `ig-m6o.2.2.5` a shared meal is a sixth fact, "meals" (`bond_points_meal` a record; the bond
+line says "meal"). It counts for every ordered pair of diners in the record, so a table of four
+adds a point to twelve tallies. Meetings and meals are both social: a pair's fact line is the
+social one only when the pair has no battle fact, and between a chat and a meal the ordinary rule
+picks: more points, then the later record. It carries the place of
+the latest meal, the host's House.
+
 ### The dream catalogue — *ig-m6o.2.2.7, design 2026-09-24*
 
 Four dreams, all proved by today's records (`battle`, `summoned`, `ranked_up`, `died`). The dream's
 owner is the hero who holds it. X is the other hero it names, and Z the zone. Each keeps slice 1's
 shape: an opening line, a counted milestone, a last milestone, and an end, fulfilled or lost.
 Dreams on `encounter` and `meal` records are `ig-m6o.2.2.10`'s. The `encounter` record exists since
-`ig-m6o.2.2.4`; the `meal` record waits for `ig-m6o.2.2.5`. Until `ig-m6o.2.2.10` lists it in
-`OUT_MARKS`, an evicted encounter is marked as changing no dream.
+`ig-m6o.2.2.4`, and the `meal` record since `ig-m6o.2.2.5`. Until `ig-m6o.2.2.10` lists them in
+`OUT_MARKS`, an evicted encounter or meal is marked as changing no dream.
 Profession dreams are `ig-m6o.2.2.8`'s.
 
 **Repay a life debt** (`life_debt`, slice 1, unchanged). X saved the owner. The owner wants to save
@@ -1165,7 +1173,7 @@ until then. Past it, neither opens nor advances, the same ceiling the meeting an
 have. The fix would be a Ledger budget for tier 0, worth filing only if a real save nears the cap.
 The section's PROVISIONAL covers both rows.
 
-### Encounters and shared meals — *ig-m6o.2.2.4 (meetings) built, ig-m6o.2.2.5 (meals) not built yet, design 2026-09-25*
+### Encounters and shared meals — *ig-m6o.2.2.4 (meetings) and ig-m6o.2.2.5 (meals) built, design 2026-09-25*
 
 Two more ways to grow close. Both come from saved state on the live tick only: never in the
 offline catch-up, and never from where walkers stand (`DECISIONS.md` 2026-09-24 "Bonds stay
@@ -1191,7 +1199,7 @@ derived", item 7).
 | `meal_table_size` | 4 | Small, fixed tables. A 30-hero town at one table would make 435 pairs a meal, and everyone would bond with everyone. The same neighbours sit together until someone moves, leaves or comes home |
 | `bond_points_meal` | 1 | The same as a meeting |
 
-**Built for meetings (`ig-m6o.2.2.4`).** Meals are `ig-m6o.2.2.5`'s and are not built.
+**Built for meetings (`ig-m6o.2.2.4`).**
 - **The clock.** `GameSession._roll_encounters` runs at the end of the live tick's clocks, never in
   the offline catch-up. Its clock and cooldowns are unsaved; a load resets them and never reseeds
   the stream. Each whole 60 s of the clock, the cooldowns tick down. If a pair in reach is off
@@ -1229,6 +1237,51 @@ derived", item 7).
 > ⚠️ **PROVISIONAL** — the five "met" lines, `CHAT_DISTANCE` 4.5 and `MEETING_SECONDS` 30 ·
 > **Settled by:** the owner watching a town for an evening
 
+**Built for meals (`ig-m6o.2.2.5`).**
+- **The clock.** `GameSession._roll_meals` runs right after `_roll_encounters`, at the end of the
+  live tick's clocks and so after the food step, never in the offline catch-up. Its clock is
+  unsaved: a load clears it. Each tick adds its seconds; at `meal_interval_minutes` × 60 s it is a
+  meal time and the clock keeps its remainder. A tick that crosses several intervals (a long stall)
+  is one meal time, since the tables do not change between them. With no food (0 or less) there is
+  no meal, and the clock still runs, so a town that has just eaten its last does not feast the tick
+  the granary fills. It draws no random number, and never touches the food: the tick's own drain
+  has already counted every hero.
+- **Who.** The eaters are `starvation_candidates()` (on the roster and not `is_hero_busy`; the body
+  counts), each with its saved home. A hero whose home is not a finished House (none, a hall or
+  workplace, or a House still going up) is skipped. The tables are
+  `TownRules.meal_tables`, a pure function of the eaters, the buildings, `meal_house_hexes` and
+  `meal_table_size`, with no RNG: the host is the first eater not yet seated, by the hex of its
+  House then id; it seats the nearest others within reach (the same House is distance 0), ties by
+  hex then id, up to the table size; then the next unseated eater hosts. A host with no one to
+  seat eats alone and writes no record. The same neighbours sit together every meal time until
+  someone moves, leaves or comes home.
+- **The record.** `{diners: [ids, sorted], place}`, `place` the host's House. One record per table
+  of two or more, so 100 housed heroes side by side (the scan test's fixture) make 25 an hour; the
+  perf seed's own count comes from the meal measure. Each is written and said on its own, never
+  merged. It adds `bond_points_meal` to every ordered pair at
+  the table. `Bonds.MAX_DINERS` (8) is the most a table may name when a save is read; the shipped
+  table size stays under it (a test holds them together).
+- **The town plays it.** The hub hands each meal record to `TownView.play_meal`. The diners who are
+  shown, not in a meeting and not the body walk to seats on a ring of `MEAL_RING` 1.5 m around the
+  free ground beside the host's House (seat `i` of `n` at angle `TAU * i / n`, so a diner who is
+  missing leaves a gap), sit facing the table (`Sit_Floor_Idle`) for `MEAL_SECONDS` 20, and then go
+  back to their own plan (work, or wandering). When the first diner (the lowest id) sits it says one
+  line from five to the second (72 characters at most, `{name}` only); it says nothing if it is not shown. A seated
+  diner greets no one and takes no meeting until it stands. With fewer than two able to sit, no
+  one is touched. On the eighth shared meal the hub says "X and Y grew close." like a meeting, and
+  redraws what the bond look re-read, as meetings do.
+- **Cost.** The table scan at 100 heroes (25 tables) takes 1.6 ms best and 1.6 worst of seven, once
+  an hour. One meal time's records at the cap (eight tables of four, each appended, folded in, with
+  the oldest chat or meal evicted and folded out; a ledger a third of chats and meals; GUT) take
+  1.2 ms best and 9.7 worst of seven, and rebuild nothing. A load's all-pairs rebuild of that
+  ledger takes 106.4 ms best and 108.7 worst of seven (printed, not gated). The frame a meal time
+  lands on, on the perf seed (`tests/perf/`, `perf_baseline.gd meal`, `--headless`; the seed's
+  Ledger at its cap has a meal or a chat in every third record), is measured in the perf pass after
+  review; its numbers are the next commit's.
+
+> ⚠️ **PROVISIONAL** — the five "meal" lines, `MEAL_SECONDS` 20 and `MEAL_RING` 1.5 · **Settled by:**
+> the owner watching a town for an evening
+
 The pace this gives:
 - Meetings alone: a 30-hero town has about 45 eligible pairs at a time, so a given pair meets about
   0.27 times an hour, and a bond takes about 30 live hours. A two-hero town meets once an hour:
@@ -1239,7 +1292,7 @@ The pace this gives:
   to a friend.
 - Three tablemates tie on meals. Their meetings and fights break the tie, then the partner tie rule
   does.
-- Volume, for § The Ledger when the code lands: a 30-hero town adds about 12 meetings (at most 60) and about
+- Volume, for § The Ledger: a 30-hero town adds about 12 meetings (at most 60) and about
   8 meals an hour, beside about 10 battles at `battle_pace` 6. Both go first at the cap.
 
 > ⚠️ **PROVISIONAL** — every row is a desk pick. How many pairs are eligible depends on how a
@@ -6155,6 +6208,9 @@ Design: `GAME_SPEC.md` § Heroes eat, and can starve to death.
 
 **Who eats.** Every hero, wherever it is: housed or not, at home, away on an order or stranded
 (owner ruling 2026-09-25, `ig-0og`). Only a hero at home can starve (below).
+
+**Shared meals** (`ig-m6o.2.2.5`) eat no extra food: the drain above has counted every hero. They
+only sit the neighbours at tables, and only while food is above 0 (§ Encounters and shared meals).
 
 **One clock, per live tick.** Food and the clock move only in `_advance_clocks_in_memory`, never in
 the catch-up that resolves orders after the game was closed.

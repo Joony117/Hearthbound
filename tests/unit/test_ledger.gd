@@ -175,13 +175,46 @@ func test_eviction_is_tiered_oldest_first_and_seq_is_never_reused() -> void:
 	assert_eq(next_seq, 13)
 
 
-## ig-m6o.2.2.4: encounters go first, then routine battles, then the other battles and any kind not listed.
-func test_tiers_put_encounters_first_and_an_unlisted_kind_with_the_battles() -> void:
+## ig-m6o.2.2.4 and .5: encounters and meals go first, then routine battles, then the other battles and any kind
+## not listed.
+func test_tiers_put_encounters_and_meals_first_and_an_unlisted_kind_with_the_battles() -> void:
 	var routine: Dictionary = {"kind": "battle", "result": "victory", "moments": [], "team": ["h"]}
 	var hard: Dictionary = {"kind": "battle", "result": "retreated", "moments": [], "team": ["h"]}
-	var records: Array[Dictionary] = [{"kind": "encounter"}, routine, hard, {"kind": "meal"}, {"kind": "ranked_up"}, {"kind": "summoned"}, {"kind": "died"}]
-	assert_eq(Ledger.tiers(records), [0, 1, 2, 2, 3, 4, 5] as Array[int], "encounter, routine, battle, unknown, ranked_up, summoned, died")
-	assert_eq(Ledger.TIER_BY_KIND.size() + 1, 6, "evict scans tiers 0 to 5")
+	var records: Array[Dictionary] = [{"kind": "encounter"}, {"kind": "meal"}, routine, hard, {"kind": "gossip"}, {"kind": "ranked_up"}, {"kind": "summoned"}, {"kind": "died"}]
+	assert_eq(Ledger.tiers(records), [0, 0, 1, 2, 2, 3, 4, 5] as Array[int], "encounter, meal, routine, battle, unknown, ranked_up, summoned, died")
+	assert_true(Ledger.TIER_BY_KIND.size() + 1 > 5, "evict scans up to tier 5 (the last pass is empty)")
+
+
+## ig-m6o.2.2.5: a meal is tier 0 with the encounters, so the two go together, oldest first, before any battle.
+func test_eviction_takes_meals_and_encounters_together_oldest_first_before_any_battle() -> void:
+	var ledger: Array[Dictionary] = []
+	var next_seq: int = 1
+	var routine: Dictionary = {"result": "victory", "moments": [], "team": ["h"]}
+	for entry: Array in [["died", {}], ["meal", {"diners": ["a", "b"]}], ["battle", routine], ["encounter", {"heroes": ["a", "b"]}], ["meal", {"diners": ["a", "b"]}], ["battle", routine]]:
+		next_seq = Ledger.append(ledger, next_seq, 0, entry[0], entry[1])
+	var evicted: Array[Dictionary] = Ledger.evict(ledger, Ledger.tiers(ledger), 3)
+	assert_eq(evicted.map(func(record: Dictionary) -> int: return record["seq"]), [2, 4, 5], "meals and the encounter by age, before both routine battles")
+	assert_eq(ledger.map(func(record: Dictionary) -> int: return record["seq"]), [1, 3, 6])
+
+
+## At the real cap (padded, the cap is folded in at compile) 20 battles evict 20 tier-0 records, never a battle.
+func test_at_the_cap_new_battles_evict_meals_and_encounters_first() -> void:
+	var cap: int = BALANCE.ledger_max_records
+	for seq: int in range(1, cap - 19):
+		Ledger.append(GameSession.ledger, seq, 0, "summoned", {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
+	GameSession.ledger_next_seq = cap - 19
+	for index: int in 20:
+		if index % 2 == 0:
+			GameSession._record("meal", {"diners": ["hero:ada", "hero:bea"], "place": "House_1"})
+		else:
+			GameSession._record("encounter", {"heroes": ["hero:ada", "hero:bea"], "place": "House_1", "why": "neighbours"})
+	assert_eq(GameSession.ledger.size(), cap)
+	for index: int in 20:
+		GameSession._record("battle", {"order": "order:%d" % index, "zone": "verdant_outskirts", "team": ["hero:ada", "hero:bea"], "result": "retreated", "moments": []})
+		assert_eq(GameSession.ledger.size(), cap)
+	assert_eq(_kinds().count("meal") + _kinds().count("encounter"), 0, "twenty battles took the twenty tier-0 records")
+	assert_eq(_kinds().count("battle"), 20, "and no battle went")
+	assert_eq(GameSession.ledger[0]["hero"], "filler:1", "no filler went")
 
 
 func test_eviction_takes_encounters_before_routine_battles_oldest_first() -> void:
@@ -214,6 +247,54 @@ func test_encounters_survive_a_disk_reload_as_whole_ints_and_make_the_same_bond_
 	assert_eq([bond["partner"], bond["fact"]["kind"], bond["fact"]["place"]], [other, "met", "House_1"], "eight chats and a quiet battle: the pair fact is the chat")
 
 
+## ig-m6o.2.2.5 (the save round trip): a meal is one more Ledger record too, and the main save gets no key for it.
+func test_meals_survive_a_disk_reload_as_whole_ints_and_strings_and_make_the_same_bond_as_a_rebuild() -> void:
+	var one: String = "hero:ada"
+	var other: String = "hero:bea"
+	for _meal: int in 8:
+		GameSession._record("meal", {"diners": [one, other, "hero:cal"], "place": "House_1"})
+	GameSession._record("meal", {"diners": [other, "hero:cal"], "place": "House_2"})
+	GameSession._record("battle", {"order": "order:1", "zone": "verdant_outskirts", "team": [one, other], "result": "victory", "moments": []})
+	var before: String = JSON.stringify(GameSession.ledger)
+	var saved: String = _disk_save()
+	assert_false(saved.contains("meal"), "no new key, and no meal, in the main save")
+	assert_eq(FileAccess.get_file_as_string(SaveService.LEDGER_PATH).count("\"kind\":\"meal\""), 9, "nine lines of the side file")
+	assert_true(_disk_load())
+	assert_eq(JSON.stringify(GameSession.ledger), before, "ints stay ints, in the same order")
+	assert_eq(GameSession.ledger_next_seq, 11)
+	for record: Dictionary in GameSession.ledger.slice(0, 9):
+		assert_true(record["seq"] is int and record["time"] is int, "seq and time came back whole")
+		assert_true(record["diners"].all(func(diner: Variant) -> bool: return diner is String), "diners are Strings")
+	var pairs: Dictionary = GameSession.bond_index()
+	assert_eq(pairs, Bonds.index(GameSession.ledger, BALANCE), "the kept index is a rebuild")
+	assert_eq([int(pairs[one][other]["meals"]), int(pairs[other]["hero:cal"]["meals"]), int(pairs[one]["hero:cal"]["meals"])], [8, 9, 8], "every ordered pair at a table counts")
+	var bond: Dictionary = Bonds.bond_from(pairs, one, {one: true, other: true}, BALANCE)
+	assert_eq([bond["partner"], bond["fact"]["kind"], bond["fact"]["place"]], [other, "meal", "House_1"], "eight meals and a quiet battle: the pair fact is the meal")
+
+
+## A save from before meals loads clean, reads no meal anywhere, and a resave changes nothing.
+func test_a_save_from_before_meals_loads_clean_and_a_resave_changes_nothing() -> void:
+	GameSession._record("summoned", {"hero": "hero:ada", "name": "Ada", "rank": 0, "archetype": "knight"})
+	GameSession._record("encounter", {"heroes": ["hero:ada", "hero:bea"], "place": "House_1", "why": "neighbours"})
+	GameSession._record("battle", {"order": "order:1", "zone": "verdant_outskirts", "team": ["hero:ada", "hero:bea"], "result": "victory", "moments": []})
+	var before: String = JSON.stringify(GameSession.ledger)
+	var first: String = _disk_save()
+	var first_lines: String = FileAccess.get_file_as_string(SaveService.LEDGER_PATH)
+	assert_false(first.contains("meal") or first_lines.contains("meal"), "none written")
+	assert_true(_disk_load())
+	assert_eq(JSON.stringify(GameSession.ledger), before)
+	var pairs: Dictionary = GameSession.bond_index()
+	assert_eq(int(pairs["hero:ada"]["hero:bea"]["meals"]), 0, "no meals counted")
+	assert_eq(pairs, Bonds.index(GameSession.ledger, BALANCE))
+	var second: Dictionary = JSON.parse_string(_disk_save()) as Dictionary
+	var original: Dictionary = JSON.parse_string(first) as Dictionary
+	second.erase("saved_at_unix")
+	original.erase("saved_at_unix")
+	assert_eq(second, original, "the resave is the same save")
+	assert_eq(FileAccess.get_file_as_string(SaveService.LEDGER_PATH), first_lines, "and the same side file")
+	assert_push_warning_count(0)
+
+
 ## Ruling 6 of ig-m6o.2.2.4: at the cap an encounter is the first record to go, and a load in between changes
 ## nothing. GameSession's cap is folded in when it compiles, so the ledger is padded to the real one.
 func test_encounters_are_evicted_first_at_the_cap_through_a_disk_reload_and_the_kept_index_follows() -> void:
@@ -221,8 +302,10 @@ func test_encounters_are_evicted_first_at_the_cap_through_a_disk_reload_and_the_
 	for seq: int in range(1, cap - 2):
 		Ledger.append(GameSession.ledger, seq, 0, "summoned", {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
 	GameSession.ledger_next_seq = cap - 2
-	for _meeting: int in 3:
-		GameSession._record("encounter", {"heroes": ["hero:ada", "hero:bea"], "place": "House_1", "why": "neighbours"})
+	# Two meetings and a meal (ig-m6o.2.2.5): tier 0 is both kinds, by age.
+	GameSession._record("encounter", {"heroes": ["hero:ada", "hero:bea"], "place": "House_1", "why": "neighbours"})
+	GameSession._record("meal", {"diners": ["hero:ada", "hero:bea", "hero:cal"], "place": "House_1"})
+	GameSession._record("encounter", {"heroes": ["hero:ada", "hero:bea"], "place": "House_1", "why": "neighbours"})
 	assert_eq(GameSession.ledger.size(), cap)
 	_disk_save()
 	assert_true(_disk_load())
@@ -231,14 +314,16 @@ func test_encounters_are_evicted_first_at_the_cap_through_a_disk_reload_and_the_
 	for step: int in 3:
 		GameSession._record("summoned", {"hero": "new:%d" % step, "name": "N", "rank": 0})
 		assert_eq(GameSession.ledger.size(), cap)
-		assert_eq(_kinds().count("encounter"), 2 - step, "one encounter goes for each new record")
+		assert_eq(_kinds().count("encounter") + _kinds().count("meal"), 2 - step, "one tier-0 record goes for each new record")
 	assert_eq(GameSession.ledger[0]["hero"], "filler:1", "no other record went")
 	assert_eq(_nonempty(GameSession.bond_index()), _nonempty(Bonds.index(GameSession.ledger, BALANCE)), "the kept index followed each eviction")
 	var kept: String = JSON.stringify(GameSession.ledger)
-	assert_false(_disk_save().contains("encounter"))
+	var saved: String = _disk_save()
+	assert_false(saved.contains("encounter") or saved.contains("\"meal\""))
 	assert_true(_disk_load())
 	assert_eq(JSON.stringify(GameSession.ledger), kept, "the load leaves the ledger as it was")
-	assert_eq(FileAccess.get_file_as_string(SaveService.LEDGER_PATH).count("\"kind\":\"encounter\""), 0, "the load cut the side file")
+	var side: String = FileAccess.get_file_as_string(SaveService.LEDGER_PATH)
+	assert_eq(side.count("\"kind\":\"encounter\"") + side.count("\"kind\":\"meal\""), 0, "the load cut the side file")
 	assert_eq(_nonempty(GameSession.bond_index()), _nonempty(Bonds.index(GameSession.ledger, BALANCE)))
 
 

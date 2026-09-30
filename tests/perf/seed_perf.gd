@@ -64,13 +64,24 @@ func _seed() -> void:
 	# 6 in 10 routine wins, the rest hard with a revive, 1 in 10 a rescue; 5-hero teams.
 	var chats := RandomNumberGenerator.new()
 	chats.seed = 8
+	var meals := RandomNumberGenerator.new()
+	meals.seed = 9
 	for index: int in BALANCE.ledger_max_records:
-		# 1 record in 3 is a neighbours' chat (ig-m6o.2.2.4), from its own stream so the battles keep their draw order.
-		if index % 3 == 1:
+		# 1 record in 3 is social, from their own streams so the battles keep their draw order: a neighbours' chat
+		# (ig-m6o.2.2.4) and a shared meal of four (ig-m6o.2.2.5) by turns.
+		if index % 6 == 1:
 			var first: int = chats.randi_range(0, ids.size() - 1)
 			var pair: Array[String] = [ids[first], ids[(first + chats.randi_range(1, ids.size() - 1)) % ids.size()]]
 			pair.sort()
 			session._record("encounter", {"heroes": pair, "place": "House_1", "why": "neighbours"})
+			continue
+		if index % 3 == 1:
+			var table: Array[String] = []
+			while table.size() < 4:
+				var diner: String = ids[meals.randi_range(0, ids.size() - 1)]
+				if not table.has(diner):
+					table.append(diner)
+			session._record("meal", {"diners": table, "place": "House_1"})
 			continue
 		var team: Array[String] = []
 		while team.size() < 5:

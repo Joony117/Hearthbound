@@ -268,6 +268,12 @@ extends Resource
 @export var encounter_neighbour_hexes: int = 2
 @export var encounter_coworker_hexes: int = 1
 @export var bond_points_encounter: int = 1
+# Shared meals (ig-m6o.2.2.5; every row PROVISIONAL): one meal time per live interval, how close Houses share a table,
+# a table's size (at most Bonds.MAX_DINERS) and a meal's bond points.
+@export var meal_interval_minutes: int = 60
+@export var meal_house_hexes: int = 2
+@export var meal_table_size: int = 4
+@export var bond_points_meal: int = 1
 @export var dream_fight_beside_battles: int = 3
 @export var dream_name_victories: int = 3
 @export var dream_worthy_hard_victories: int = 2

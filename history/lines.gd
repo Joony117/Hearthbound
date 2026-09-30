@@ -17,6 +17,9 @@ const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five"
 ## chats says to the body: {name} and {place}, the place being one place_name gives ("the Forge", or "here"),
 ## so a line uses it after "near", "around" or "in". PROVISIONAL: the five lines are a first pass; settled by
 ## the owner reading them in play.
+## "meal" (ig-m6o.2.2.5) is what the first hero at a table says to the second, and what a partner whose bond is only
+## chats and meals says to the body when the last of them was a meal: {name} only, since a table's place is one of the
+## Houses and a meal line does not name it. PROVISIONAL like "met".
 const BANK: Dictionary = {
 	"saved_by": [
 		"I'd come for you again. {place} or anywhere.",
@@ -80,6 +83,13 @@ const BANK: Dictionary = {
 		"Good to see you, {name}. Walk with me a moment?",
 		"Nothing like a chat in {place}, {name}.",
 		"{name}! Tell me the news from around {place}.",
+	],
+	"meal": [
+		"Pass the bread, {name}. And leave me the crust.",
+		"Good soup, {name}. Don't tell the cook I said so.",
+		"Food tastes better with company. Sit by me, {name}.",
+		"{name}, you've got crumbs on your chin. Other side.",
+		"Save me a seat at the next meal, {name}.",
 	],
 	"quirk:hums": [
 		"Was I humming again? Tell me if it grates, {name}.",
@@ -235,6 +245,17 @@ static func meeting_facts(record: Dictionary, names: Dictionary) -> Dictionary:
 		return {}
 	var kinds: Array[String] = ["met"]
 	return {"kinds": kinds, "slots": {"name": _name(str((heroes as Array)[1]), names), "place": place_name(str(record.get("place", "")))}, "start": int(record.get("seq", 0))}
+
+
+## What the first diner of a table says to the second when a meal starts (ig-m6o.2.2.5), as facts for line(): the
+## "meal" kind and the name of the record's second diner (the first, the lowest id, speaks). The start is the record's
+## seq, so meal after meal reads the next line. {} for a record that names fewer than two diners.
+static func meal_facts(record: Dictionary, names: Dictionary) -> Dictionary:
+	var diners: Variant = record.get("diners")
+	if not diners is Array or (diners as Array).size() < 2:
+		return {}
+	var kinds: Array[String] = ["meal"]
+	return {"kinds": kinds, "slots": {"name": _name(str((diners as Array)[1]), names)}, "start": int(record.get("seq", 0))}
 
 
 ## A building's id as a place in a sentence: "the Forge" for a hall, "the House" for "House_3" and "here" for

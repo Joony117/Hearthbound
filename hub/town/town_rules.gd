@@ -198,6 +198,56 @@ static func meeting_pairs(heroes: Array[Hero], buildings: Array[Dictionary], bal
 	return pairs
 
 
+## Who eats together at a meal time (ig-m6o.2.2.5, SYSTEMS.md § Encounters and shared meals), a pure rule of saved
+## fields and no RNG: the same town gives the same tables, so tablemates stay tablemates until one moves, leaves or
+## comes home. eaters is [[hero id, home building id], ...]; each House's hex comes from buildings, and an eater whose
+## home is not a finished House (none, a hall or workplace, or still building) is skipped. Eaters are sorted by their
+## House's hex (x, then y), then id. Each one not yet seated hosts a table at its House and seats up to size - 1
+## unseated eaters whose Houses are within reach hexes (ring_distance of the difference), nearest first, then by hex,
+## then by id. Returns {place: the host's House id, diners: sorted ids} for each table of two or more; a lone host is
+## no meal, and stays alone (reach is symmetric, so no later host can reach it).
+## ponytail: every unseated eater is scanned for each host, about 19 hosts over 76 heroes in the perf town. Bucket by
+## hex if the meal measure says so.
+static func meal_tables(eaters: Array[Array], buildings: Array[Dictionary], reach: int, size: int) -> Array[Dictionary]:
+	var hexes: Dictionary[StringName, Vector2i] = building_hexes(buildings)
+	var placed: Array[Dictionary] = []
+	for eater: Array in eaters:
+		var home := StringName(str(eater[1]))
+		if hexes.has(home) and type_of(home) == HOUSE:
+			placed.append({"id": str(eater[0]), "home": home, "hex": hexes[home]})
+	placed.sort_custom(_eater_before)
+	var seated: Dictionary[String, bool] = {}
+	var tables: Array[Dictionary] = []
+	for host: Dictionary in placed:
+		if seated.has(host["id"]):
+			continue
+		seated[host["id"]] = true
+		var near: Array[Dictionary] = []
+		for other: Dictionary in placed:
+			if not seated.has(other["id"]) and ring_distance((other["hex"] as Vector2i) - (host["hex"] as Vector2i)) <= reach:
+				near.append(other)
+		near.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+			var to_left: int = ring_distance((left["hex"] as Vector2i) - (host["hex"] as Vector2i))
+			var to_right: int = ring_distance((right["hex"] as Vector2i) - (host["hex"] as Vector2i))
+			return to_left < to_right if to_left != to_right else _eater_before(left, right))
+		var diners: Array[String] = [host["id"]]
+		for other: Dictionary in near.slice(0, size - 1):
+			seated[other["id"]] = true
+			diners.append(other["id"])
+		if diners.size() >= 2:
+			diners.sort()
+			tables.append({"place": String(host["home"]), "diners": diners})
+	return tables
+
+
+static func _eater_before(left: Dictionary, right: Dictionary) -> bool:
+	var a: Vector2i = left["hex"]
+	var b: Vector2i = right["hex"]
+	if a != b:
+		return a.x < b.x if a.x != b.x else a.y < b.y
+	return str(left["id"]) < str(right["id"])
+
+
 ## Why a building cannot go on hex; "" when the hex is free.
 static func hex_refusal(hex: Vector2i, buildings: Array[Dictionary], balance: BalanceTable) -> String:
 	if ring_distance(hex) > balance.town_map_radius:

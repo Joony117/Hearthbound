@@ -34,6 +34,8 @@ extends SceneTree
 ## frontier_march runs end with a "wall split": the walls' work in an advance, replayed on a twin (_wall_replay).
 ## Since ig-m6o.2.2.4: encounter (the pulse a neighbours' chat lands on, the Sanctum open and its hero's detail drawn,
 ## the Ledger at its cap; tests/perf/seed_perf.gd puts chats in the Ledger). Read it headless (MODE=headless).
+## Since ig-m6o.2.2.5: meal (the pulse a meal time lands on: every table of the seeded town sits and one record is written
+## per table, the hub plays them; the Ledger at its cap, meals in it beside the chats). Read it headless too.
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -114,6 +116,8 @@ func _run() -> void:
 			await _measure_actions()
 		"encounter":
 			await _measure_encounter()
+		"meal":
+			await _measure_meal()
 		"town":
 			await _measure_town()
 		"load":
@@ -728,6 +732,84 @@ func _measure_encounter() -> void:
 		_report(key, samples[key])
 	if void_reps > 0:
 		push_error("ENCOUNTER: %d of %d reps were void; the stats are of the rest" % [void_reps, ENCOUNTER_REPS])
+	session.set_process(true)
+
+
+## ig-m6o.2.2.5: the frame a meal time lands on. The Sanctum open with a diner of the first table selected (its detail
+## panel drawn) and the Ledger at its cap. Each rep sets the meal clock a hair short of the interval and times
+## GameSession._roll_meals(PULSE, the shipped table) alone, with the hub's social handler inside it (the signal is said
+## at once outside a commit), then the whole frame to the next frame's start: every table of the town sits down (one
+## "meal" record each) and the first diner of each shown table speaks. The game's own pulse rolls nothing until the
+## meal time, so the pulse a meal time lands on is derived: a pulse that rolls nothing (GameSession._pulse with the
+## clocks at 0, timed beside it) plus that roll. Also timed: the table scan alone and the hub's social handler done
+## again on the same records (they are seated, so a repeat look is quiet). A rep counts only when one record was
+## written per table the scan found (and at least one); any other rep is VOID, left out of the stats, and an error.
+const MEAL_REPS: int = 5
+
+
+func _measure_meal() -> void:
+	var hub: Node = await _open_hub()
+	session.set_process(false)
+	if not await _settle_case(hub, ACTION_CASES[0]):
+		return
+	var balance: BalanceTable = preload("res://balance.tres")
+	var interval: float = balance.meal_interval_minutes * 60.0
+	var roster_list: ItemList = hub.get_node("%RosterList") as ItemList
+	var samples: Dictionary = {}
+	var void_reps: int = 0
+	for rep: int in MEAL_REPS:
+		var eaters: Array[Array] = []
+		for hero: Hero in session.starvation_candidates():
+			eaters.append([hero.instance_id, String(hero.home)])
+		var scan_started: int = Time.get_ticks_usec()
+		var tables: Array[Dictionary] = TownRules.meal_tables(eaters, session.town_buildings, balance.meal_house_hexes, balance.meal_table_size)
+		var scan_ms: float = _since(scan_started)
+		if tables.is_empty():
+			print("MEAL: not run, no table could sit")
+			return
+		var named: String = str(tables[0]["diners"][0])
+		for row: int in roster_list.item_count:
+			var member: Hero = roster_list.get_item_metadata(row) as Hero
+			if member != null and member.instance_id == named:
+				roster_list.deselect_all()
+				roster_list.select(row)
+				roster_list.multi_selected.emit(row, true)
+		await _wait(5)
+		var shown: Hero = hub._selected_hero()
+		session._encounter_clock = 0.0
+		session._meal_clock = 0.0
+		var started: int = Time.get_ticks_usec()
+		session._pulse(PULSE)
+		var quiet_ms: float = _since(started)
+		await process_frame
+		var seq: int = session.ledger_next_seq
+		session._meal_clock = interval - PULSE / 2.0
+		started = Time.get_ticks_usec()
+		session._roll_meals(PULSE, balance)
+		var roll_ms: float = _since(started)
+		await process_frame
+		var frame_ms: float = _since(started)
+		var wrote: int = session.ledger_next_seq - seq
+		if wrote != tables.size():
+			void_reps += 1
+			print("MEAL rep %d: VOID, left out of the stats (%d record(s) written, %d tables found)" % [rep + 1, wrote, tables.size()])
+			continue
+		var records: Array[Dictionary] = []
+		records.assign(session.ledger.slice(session.ledger.size() - wrote))
+		var handler_ms: float = _time(hub._on_social_recorded.bind(records), 1)[0]
+		_add(samples, "MEAL: a pulse that rolls nothing (_pulse)", quiet_ms)
+		_add(samples, "MEAL: the roll a meal time lands on (_roll_meals, the hub's handler inside)", roll_ms)
+		_add(samples, "MEAL: derived, that pulse plus the roll", quiet_ms + roll_ms)
+		_add(samples, "MEAL: whole frame of the roll", frame_ms)
+		_add(samples, "MEAL: the hub's social handler, again", handler_ms)
+		_add(samples, "MEAL: the table scan alone (TownRules.meal_tables)", scan_ms)
+		print("MEAL rep %d: %d eaters, %d tables, %s selected: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms" % [rep + 1, eaters.size(), tables.size(), shown.hero_name if shown != null else "no one", roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms])
+	var labels: Array = samples.keys()
+	labels.sort()
+	for key: String in labels:
+		_report(key, samples[key])
+	if void_reps > 0:
+		push_error("MEAL: %d of %d reps were void; the stats are of the rest" % [void_reps, MEAL_REPS])
 	session.set_process(true)
 
 

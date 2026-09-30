@@ -83,6 +83,9 @@ const WALKER_PICK_LAYER: int = 4
 const AMBIENT_HERO_CAP: int = 16
 ## A wanderer with a House ends every HOME_EVERY-th trip at its door.
 const HOME_EVERY: int = 4
+## How far from the centre of a meal's table (the free ground nearest the host's House) each diner sits, in metres. A
+## hex is far wider, so every seat is on the table's own hex. PROVISIONAL, like the meal lines.
+const MEAL_RING: float = 1.5
 ## Where a new body stands, in town space: the open ground in front of the Training Hall.
 const BODY_SPAWN: Vector3 = Vector3(0.0, 0.0, 5.0)
 ## Close enough to a building's centre to count as there. A body stopped on a corner of a 4.5 m
@@ -562,6 +565,49 @@ func play_meeting(a_id: String, b_id: String, facts: Dictionary) -> bool:
 	b.linger_at(b.position, &"Idle_B", NAN, TownWalker.MEETING_SECONDS)
 	a.meet(b, facts)
 	b.meet(a, {})
+	return true
+
+
+## Plays one meal the town saw recorded (ig-m6o.2.2.5): the diners walk to seats on a ring of MEAL_RING metres around
+## the free ground nearest place_id (the host's House) and sit there for TownWalker.MEAL_SECONDS, then go back to their
+## own plans (_replan). Diner i of the record's n sits at TAU * i / n, so one who is not shown leaves a gap and the
+## others do not shift. The record's first diner says its line of facts ({} for none) as it sits; if that diner is
+## not shown, no one does. A diner is left out when it is not shown, is the body, is in a meeting or already seated,
+## or has no way to its seat. False, touching no one, when the place is not placed or fewer than two are left: a
+## walker _lead had to step off a building hex is put back where it stood, whenever it is not seated in the end.
+func play_meal(diner_ids: Array, place_id: String, facts: Dictionary) -> bool:
+	if not _placed.has(place_id):
+		return false
+	var centre: Vector3 = free_point(work_spot(StringName(place_id)))
+	var seated: Array[TownWalker] = []
+	var leads: Array[PackedVector3Array] = []
+	var yaws: Array[float] = []
+	var lines: Array[String] = []
+	var tried: Array[TownWalker] = []
+	var stood: Array[Vector3] = []
+	for index: int in diner_ids.size():
+		var walker: TownWalker = walkers.get(str(diner_ids[index]))
+		if walker == null or walker.is_meeting() or (body != null and body.hero_id == walker.hero_id):
+			continue
+		var angle: float = TAU * index / diner_ids.size()
+		var seat: Vector3 = centre + MEAL_RING * Vector3(sin(angle), 0.0, cos(angle))
+		tried.append(walker)
+		stood.append(walker.position)
+		var lead: PackedVector3Array = _lead(walker, seat)
+		if lead.is_empty():
+			continue
+		seated.append(walker)
+		leads.append(lead)
+		yaws.append(_yaw(seat, centre))
+		lines.append(Lines.line(facts, 0) if index == 0 else "")
+	var refused: bool = seated.size() < 2
+	for index: int in tried.size():
+		if refused or not seated.has(tried[index]):
+			tried[index].position = stood[index]
+	if refused:
+		return false
+	for index: int in seated.size():
+		seated[index].dine(leads[index], yaws[index], lines[index])
 	return true
 
 
