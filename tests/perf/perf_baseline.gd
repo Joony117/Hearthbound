@@ -797,6 +797,7 @@ func _measure_meal() -> void:
 		await process_frame
 		var seq: int = session.ledger_next_seq
 		session._meal_clock = interval - PULSE / 2.0
+		var reads: int = _hub_counter("dream_reads")
 		started = Time.get_ticks_usec()
 		session._roll_meals(PULSE, balance)
 		var roll_ms: float = _since(started)
@@ -817,7 +818,7 @@ func _measure_meal() -> void:
 		_add(samples, "MEAL: whole frame of the roll", frame_ms)
 		_add(samples, "MEAL: the hub's social handler, again", handler_ms)
 		_add(samples, "MEAL: the table scan alone (TownRules.meal_tables)", scan_ms)
-		print("MEAL rep %d: %d eaters, %d tables, %d diners seated, %s selected: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms" % [rep + 1, eaters.size(), tables.size(), seated, shown.hero_name if shown != null else "no one", roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms])
+		print("MEAL rep %d: %d eaters, %d tables, %d diners seated, %s selected, dream_reads %d: roll %.1f ms, a pulse that rolls nothing %.1f (derived pulse %.1f), whole frame of the roll %.1f ms, handler again %.1f ms, scan %.1f ms" % [rep + 1, eaters.size(), tables.size(), seated, shown.hero_name if shown != null else "no one", _hub_counter("dream_reads") - reads, roll_ms, quiet_ms, quiet_ms + roll_ms, frame_ms, handler_ms, scan_ms])
 	var labels: Array = samples.keys()
 	labels.sort()
 	for key: String in labels:

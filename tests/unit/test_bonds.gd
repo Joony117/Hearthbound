@@ -1753,6 +1753,72 @@ func test_a_meal_time_at_the_cap_marks_no_dream_and_the_hubs_look_reads_none() -
 	assert_eq(GameSession.bond_builds, builds, "the look rebuilt nothing")
 
 
+## ig-7sn.24: pick is bond_from's choice by the one order (points, then the later fact, then the lower id) over candidates
+## that are already the living ones at the threshold; it hands back the candidate itself and {} for none.
+func test_pick_takes_the_points_then_the_later_fact_then_the_lower_id() -> void:
+	assert_eq(Bonds.pick({}), {}, "no candidates, no pick")
+	var one: Dictionary = {"partner": "hero:b", "points": 9, "last_seq": 4}
+	var two: Dictionary = {"partner": "hero:c", "points": 9, "last_seq": 6}
+	var three: Dictionary = {"partner": "hero:d", "points": 8, "last_seq": 9}
+	var candidates: Dictionary = {"hero:d": three, "hero:c": two, "hero:b": one}
+	assert_eq(Bonds.pick(candidates)["partner"], "hero:c", "more points, then the later fact")
+	two["last_seq"] = 4
+	assert_eq(Bonds.pick(candidates)["partner"], "hero:b", "the same points and fact: the lower id")
+	one["points"] = 8
+	assert_eq(Bonds.pick(candidates)["partner"], "hero:c", "a tally with fewer points is behind")
+	assert_true(is_same(Bonds.pick(candidates), two), "the candidate itself, not a copy")
+
+
+## ig-7sn.24 ACC 7: the hub keeps each hero's partner beside its candidates and reads that, not the tallies again, after
+## a meal time. One meal time at the real cap, two tables, the two oldest records (Cal and Dov's meals) evicted in the
+## same roll: a meal's +1 lifts Ada and Bea to the threshold (a new bond, said); a meal's +1 ties Eve's partner Fay on
+## points and wins on last_seq (Fay's id is the lower, so only the fact's seq decides it); the eviction drops Cal and Dov
+## under the threshold (a bond that ends says nothing). The look is a full look's: candidates, kept partners, signs, notice.
+func test_a_meal_time_at_the_cap_that_makes_a_bond_wins_a_tie_and_ends_one_is_a_full_look() -> void:
+	var names: Dictionary = {A: "Ada", B: "Bea", C: "Cal", D: "Dov", E: "Eve", F: "Fay", G: "Gus"}
+	for id: String in names:
+		_hero(id, names[id])
+	var earlier: Array[Array] = [[[C, D], 8], [[A, B], 7], [[E, F], 8], [[E, G], 7]]
+	var seq: int = 0
+	for entry: Array in earlier:
+		for _count: int in entry[1]:
+			seq += 1
+			Ledger.append(GameSession.ledger, seq, 0, "meal", {"diners": entry[0], "place": "House_1"})
+	while GameSession.ledger.size() < BALANCE.ledger_max_records:
+		seq += 1
+		Ledger.append(GameSession.ledger, seq, 0, "summoned", {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	var living: Dictionary = hub._roster_names()
+	var signs: Dictionary = hub._partner_signs(living)
+	assert_eq([signs[A], signs[C], signs[D], signs[E], signs[F], signs[G]], ["", "♥ Dov", "♥ Cal", "♥ Fay", "♥ Eve", ""], "the bonds before the meal time")
+	var builds: int = GameSession.bond_builds
+	var reads: int = hub.dream_reads
+	var before: Dictionary = hub._bond_candidates.duplicate(true)
+	var status: Label = hub.get_node("%Status") as Label
+	status.text = ""
+	var records: Array[Dictionary] = []
+	records.append(GameSession._record("meal", {"diners": [A, B], "place": "House_1"}))
+	records.append(GameSession._record("meal", {"diners": [E, G], "place": "House_1"}))
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records, "still at the cap")
+	assert_eq(int(GameSession.ledger[0]["seq"]), 3, "Cal and Dov's two oldest meals went in the roll")
+	var pairs: Dictionary = GameSession.bond_index()
+	assert_eq(pairs[A][B]["points"], BALANCE.bond_threshold, "a meal's +1 lifts Ada and Bea to the threshold")
+	assert_eq([pairs[E][G]["points"], pairs[E][F]["points"]], [BALANCE.bond_threshold, BALANCE.bond_threshold], "Gus ties Fay for Eve on points")
+	assert_gt(pairs[E][G]["last_seq"], pairs[E][F]["last_seq"], "and his fact is the later")
+	assert_true(F < G, "so the ids alone would have kept Fay")
+	assert_lt(pairs[C][D]["points"], BALANCE.bond_threshold, "the eviction took Cal and Dov under it")
+	GameSession._notify_social_recorded(records)
+	assert_eq(status.text, "Ada and Bea grew close. (+1 more)", "the two new bonds, the ended one unsaid")
+	assert_eq([hub._bond_partners[A], hub._bond_partners[E], hub._bond_partners[F], hub._bond_partners[G]], [B, G, E, E], "Eve's partner is Gus now, Fay's still Eve")
+	assert_eq([hub._bond_partners[C], hub._bond_partners[D]], ["", ""], "Cal and Dov have no partner")
+	signs = hub._partner_signs(living)
+	assert_eq([signs[A], signs[C], signs[E], signs[F], signs[G]], ["♥ Bea", "", "♥ Gus", "♥ Eve", "♥ Eve"])
+	_assert_look_is_exact(hub, before, "a meal time at the cap")
+	assert_eq(GameSession.bond_builds, builds, "no rebuild")
+	assert_eq(hub.dream_reads, reads, "and no dream read")
+
+
 func test_the_detail_panel_reads_a_dream_once_and_resumes_it_on_a_ledger_change() -> void:
 	_hero(A, "Ada")
 	_hero(B, "Bea")
@@ -1997,6 +2063,9 @@ func test_the_hubs_look_at_the_touched_heroes_equals_a_full_look() -> void:
 			full_signs[id] = hub._partner_sign(id, living)
 		if told != status.text or hub._bond_candidates != hub._living_candidates(pairs, living) or signs != full_signs:
 			fail_test("record %d (%s): said %s, a full look says %s" % [seq, made[0], told, status.text])
+			return
+		if hub._bond_partners != _full_partners(pairs, living):
+			fail_test("record %d (%s): the kept partners %s are not a full read's" % [seq, made[0], hub._bond_partners])
 			return
 	gut.p("HUB LOOKS: %s" % looks)
 	assert_true(looks["quiet"] > 0 and looks["partial"] > 0 and looks["said"] > 0, "quiet looks, looks at a few heroes, and news: %s" % looks)
@@ -2377,6 +2446,18 @@ func test_a_roster_change_with_no_record_is_caught_up_at_the_next_look() -> void
 	GameSession.add_hero(_new_hero("hero:n", "Nia"))
 	assert_eq(hub._bonds_living.size(), 2, "no record, no look")
 	assert_eq(status.text, "", "nothing said yet")
+	# ig-7sn.24: the signs asked for now are a full read of the new roster (the kept partners are the last look's, and
+	# know no Nia), and the ask changes nothing the look keeps.
+	var living_now: Dictionary = hub._roster_names()
+	var partners_before: Dictionary = hub._bond_partners.duplicate()
+	var between: Dictionary = hub._partner_signs(living_now).duplicate()
+	var full_between: Dictionary = {}
+	for id: String in living_now:
+		full_between[id] = hub._partner_sign(id, living_now)
+	assert_eq(between, full_between, "no record, no look: the signs are a full read of the roster")
+	assert_eq(between[A], "♥ Nia", "and the kept partners did not answer it")
+	assert_eq(hub._bonds_living.size(), 2, "still no look")
+	assert_eq([hub._bond_partners, hub._bond_candidates], [partners_before, before], "the ask left the kept partners and candidates alone")
 	GameSession.stones = 1000
 	assert_true(GameSession.summon_hero(_new_hero(F, "Fay"), BALANCE), GameSession.last_action_error)
 	assert_eq(hub._bonds_living.size(), 4, "the look saw both new heroes")
@@ -2904,7 +2985,7 @@ func _saves_between(one: String, other: String, count: int) -> void:
 ## ig-bnq: after an action's look, the hub's memos are a full look's. before is the candidates, deep-copied
 ## before the action. The candidates equal _living_candidates, every sign equals a fresh _partner_sign (and
 ## there is no other), no hero that left keeps a dream, and the notice the action's look said is the one a
-## full look over every hero says.
+## full look over every hero says. ig-7sn.24: and the kept partners are bond_from's for exactly the living heroes.
 func _assert_look_is_exact(hub: Node3D, before: Dictionary, what: String) -> void:
 	var status: Label = hub.get_node("%Status") as Label
 	var told: String = status.text
@@ -2915,12 +2996,22 @@ func _assert_look_is_exact(hub: Node3D, before: Dictionary, what: String) -> voi
 	for id: String in living:
 		fresh[id] = hub._partner_sign(id, living)
 	assert_eq(hub._bond_candidates, hub._living_candidates(pairs, living), "%s: the candidates" % what)
+	assert_eq(hub._bond_partners, _full_partners(pairs, living), "%s: the kept partners" % what)
 	assert_eq(signs, fresh, "%s: the signs" % what)
 	for id: String in hub._dreams:
 		assert_true(living.has(id), "%s: %s left and kept a dream" % [what, id])
 	status.text = ""
 	hub._say_new_bonds(before, pairs, living)
 	assert_eq(told, status.text, "%s: the notice" % what)
+
+
+## ig-7sn.24: {hero_id: partner id or ""} for every living hero, each a full bond_from over the index: what the hub's kept
+## partners must equal, keys and all.
+func _full_partners(pairs: Dictionary, living: Dictionary) -> Dictionary:
+	var partners: Dictionary = {}
+	for id: String in living:
+		partners[id] = str(Bonds.bond_from(pairs, id, living, BALANCE).get("partner", ""))
+	return partners
 
 
 func _hero(id: String, hero_name: String) -> Hero:

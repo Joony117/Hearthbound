@@ -148,6 +148,12 @@ var _partner_facts: Dictionary = {}
 var _bonds_ledger: Variant = null
 var _bonds_seq: int = -1
 var _bond_candidates: Dictionary = {}
+## ig-7sn.24: each living hero's partner id ("" for none), {hero_id: partner}, kept beside the candidates and written
+## wherever they are: _bond_partners[id] == Bonds.pick(_bond_candidates[id]).partner for every key of them, and the keys
+## are the living heroes the last look saw. It lets a look say who is close to whom, and the signs read it, without a
+## walk over each touched hero's tallies again. View state, never saved; the full readers (_partner_sign,
+## _say_new_bonds, _candidates_of) stay the references it is tested against.
+var _bond_partners: Dictionary = {}
 ## ig-7sn.16: the index's pairs, its version (GameSession.bond_changes) and the roster names at that
 ## look. A look that finds all three the same re-reads only the heroes the folds since touched.
 var _bonds_pairs: Variant = null
@@ -862,16 +868,26 @@ func _partner_signs(living: Dictionary) -> Dictionary:
 		_signs = {}
 		_signs_living = living
 	if _signs.size() != living.size():
-		# Only the heroes the look dropped (ig-7sn.16), or every hero after a full look.
+		# Only the heroes the look dropped (ig-7sn.16), or every hero after a full look. When living is the roster the
+		# look saw, each sign comes from the kept partners (ig-7sn.24); a roster change with no record (tests only) is
+		# read in full, once per call.
+		var kept: bool = living == _bonds_living
 		for hero_id: String in living:
 			if not _signs.has(hero_id):
-				_signs[hero_id] = _partner_sign(hero_id, living)
+				_signs[hero_id] = _kept_sign(hero_id, living) if kept else _partner_sign(hero_id, living)
 	return _signs
 
 
-## "♥ Mara" for a hero bonded to Mara (a key of living), or "" for none. Stays while Mara is away.
+## "♥ Mara" for a hero bonded to Mara (a key of living), or "" for none. Stays while Mara is away. The full read: a
+## bond_from over the index.
 func _partner_sign(hero_id: String, living: Dictionary) -> String:
 	var partner: String = str(Bonds.bond_from(_bond_index(), hero_id, living, BALANCE).get("partner", ""))
+	return "" if partner.is_empty() else PARTNER_SIGN % living[partner]
+
+
+## _partner_sign from the kept partners, for a living that is the roster the last look saw (ig-7sn.24).
+func _kept_sign(hero_id: String, living: Dictionary) -> String:
+	var partner: String = _bond_partners[hero_id]
 	return "" if partner.is_empty() else PARTNER_SIGN % living[partner]
 
 
@@ -886,7 +902,8 @@ func _partner_sign(hero_id: String, living: Dictionary) -> String:
 ## again with the new names. When the index is the one the last look saw and no kept hero was renamed, the
 ## look reads only the heroes whose tallies a fold touched since (ig-7sn.16; a routine win touches none) and,
 ## when who is on the roster changed, the heroes that change can touch (ig-bnq, _change_membership).
-## A load, a rebuilt index or a rename with a roster change reads every hero.
+## A load, a rebuilt index or a rename with a roster change reads every hero. A hero read is walked once: its candidates,
+## and its pick in _bond_partners, which the notice and the signs then read (ig-7sn.24).
 func _bond_index() -> Dictionary:
 	var pairs: Dictionary = GameSession.bond_index()
 	var ledger: Array[Dictionary] = GameSession.ledger
@@ -917,15 +934,24 @@ func _bond_index() -> Dictionary:
 		_look_touched = touched
 		if membership:
 			_change_membership(pairs, living, gone, added, touched)
-		_say_new_bonds(_bond_candidates, pairs, touched)
+		# Each touched hero's candidates and pick are read again in full, once (ig-7sn.24); its partner before the look
+		# is the kept one, which _change_membership has already brought to the roster.
+		var before: Dictionary = {}
+		for id: String in touched:
+			before[id] = _bond_partners.get(id, "")
 		for id: String in touched:
 			_bond_candidates[id] = _candidates_of(pairs, id, living)
+			_bond_partners[id] = str(Bonds.pick(_bond_candidates[id]).get("partner", ""))
 			_signs.erase(id)
+		_say_kept_bonds(before, touched, living)
 	else:
 		# The first look and a load (a new array) say nothing: those bonds formed before this session saw them.
 		if is_same(ledger, _bonds_ledger):
 			_say_new_bonds(_bond_candidates, pairs, living)
 		_bond_candidates = _living_candidates(pairs, living)
+		_bond_partners = {}
+		for id: String in living:
+			_bond_partners[id] = str(Bonds.pick(_bond_candidates[id]).get("partner", ""))
 		_signs = {}
 		_look_touched = living
 		# A hero that left the roster keeps no dream (the roster changed, or the index is new).
@@ -954,12 +980,17 @@ func _change_membership(pairs: Dictionary, living: Dictionary, gone: Array[Strin
 	var gone_signs: Array[String] = []
 	for id: String in gone:
 		_bond_candidates.erase(id)
+		_bond_partners.erase(id)
 		_signs.erase(id)
 		_dreams.erase(id)
 		gone_signs.append(PARTNER_SIGN % _bonds_living[id])
 	for id: String in _bond_candidates:
+		var mine: Dictionary = _bond_candidates[id]
 		for gone_id: String in gone:
-			(_bond_candidates[id] as Dictionary).erase(gone_id)
+			mine.erase(gone_id)
+		# A hero whose kept partner left picks again from what is left (ig-7sn.24); one who lost another candidate keeps it.
+		if gone.has(_bond_partners[id]):
+			_bond_partners[id] = str(Bonds.pick(mine).get("partner", ""))
 	for id: String in _signs.keys():
 		if gone_signs.has(_signs[id]):
 			_signs.erase(id)
@@ -1048,6 +1079,29 @@ func _say_new_bonds(before: Dictionary, after: Dictionary, ids: Dictionary) -> v
 		if not partners.has(partner):
 			partners[partner] = str(Bonds.bond_from(after, partner, living, BALANCE).get("partner", ""))
 		if partners[partner] == id:
+			news.append("%s and %s grew close." % [living[id], living[partner]])
+			said[partner] = true
+		else:
+			news.append("%s grew close to %s." % [living[id], living[partner]])
+	if not news.is_empty():
+		_status.text = news[0] + ("" if news.size() == 1 else " (+%d more)" % (news.size() - 1))
+
+
+## _say_new_bonds for the heroes a look has just read again (ig-7sn.24), from the kept partners: before is each of
+## them, {hero_id: partner}, as it was, and _bond_partners is what it is now, for them and for the heroes no fold touched.
+## The same notices in the same order; _say_new_bonds stays the full read this is tested against.
+func _say_kept_bonds(before: Dictionary, ids: Dictionary, living: Dictionary) -> void:
+	if ids.is_empty():
+		return
+	var news: PackedStringArray = []
+	var said: Dictionary = {}
+	for id: String in living:
+		if not ids.has(id):
+			continue
+		var partner: String = _bond_partners[id]
+		if partner.is_empty() or said.has(id) or partner == before[id]:
+			continue
+		if _bond_partners[partner] == id:
 			news.append("%s and %s grew close." % [living[id], living[partner]])
 			said[partner] = true
 		else:

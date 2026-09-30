@@ -609,6 +609,17 @@ static func _role_ids(held: Array[Dictionary]) -> Array[String]:
 	return ids
 
 
+## The strongest of a hero's candidates by _ahead, {} for none: bond_from's pick without its filter (the candidates are
+## already the living tallies at or over the threshold, partner -> tally) and without its copy, so the tally returned is
+## the candidate itself: read it, do not edit it (ig-7sn.24).
+static func pick(candidates: Dictionary) -> Dictionary:
+	var chosen: Dictionary = {}
+	for tally: Dictionary in candidates.values():
+		if chosen.is_empty() or _ahead(tally, chosen):
+			chosen = tally
+	return chosen
+
+
 static func _ahead(tally: Dictionary, chosen: Dictionary) -> bool:
 	if tally["points"] != chosen["points"]:
 		return tally["points"] > chosen["points"]
