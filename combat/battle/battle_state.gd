@@ -50,6 +50,10 @@ var field_objects: Array[Dictionary] = []
 var field_sequence: int = 0
 ## Derived from the walls in field_objects, never saved: BattleSimulation._wall_paths rebuilds it on a miss.
 var wall_paths: BattleSimulation.WallPaths = null
+## The ally the player is piloting (ig-gy0.6), or "". View state like the tactical pause: never saved, never in
+## to_dict or from_dict, set by GameSession (or the practice view) before each watched advance and never for an
+## unwatched run or a forecast. The simulation skips that actor's automatic skill and target choices.
+var piloted_id: String = ""
 
 
 func to_dict() -> Dictionary:

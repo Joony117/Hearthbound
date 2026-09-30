@@ -80,6 +80,16 @@ var _selected_auto_revive: CheckButton
 var _command_mode: String = ""
 var _targeting_kind: String = ""
 var _targeting_masterwork: bool = false
+## ig-gy0.6: the hero the player pilots ("" for none). Live, GameSession holds the table and the snapshot says
+## it ("piloted"); practice, this is the truth and goes onto its own state before each advance. Cleared on leave.
+var _piloted_id: String = ""
+## The area skill waiting for a right-click on the ground or a unit.
+var _pilot_aim_skill: String = ""
+var _pilot_bar: PanelContainer
+var _pilot_slots: HBoxContainer
+var _pilot_buttons: Array[Button] = []
+var _pilot_bar_key: String = ""
+var _take_control_button: Button
 var _dragging: bool = false
 var _drag_start: Vector2 = Vector2.ZERO
 var _drag_current: Vector2 = Vector2.ZERO
@@ -234,6 +244,7 @@ func _process(delta: float) -> void:
 	_update_shake(delta)
 	if _mode == "practice" and _practice_state != null:
 		if not _pause_requested:
+			_practice_state.piloted_id = _piloted_id
 			BattleSimulation.advance(_practice_state, delta)
 			_render_snapshot(_practice_state.to_dict())
 	elif _mode == "live":
@@ -285,9 +296,17 @@ func _handle_key_press(event: InputEventKey) -> void:
 		_send_command({"kind": "retreat", "actor_ids": _selected_ids.duplicate()})
 		get_viewport().set_input_as_handled()
 		return
+	if event.is_action_pressed("rts_pilot", false, true):
+		_on_take_control_pressed()
+		get_viewport().set_input_as_handled()
+		return
 	for squad_index: int in range(10):
 		if event.is_action_pressed("rts_squad_%d" % ((squad_index + 1) % 10), false, true):
-			_select_squad(squad_index)
+			# ig-gy0.6: 1-0 fire the piloted hero's first ten skills while it is piloted, else select squads.
+			if _piloted_id.is_empty():
+				_select_squad(squad_index)
+			else:
+				_fire_pilot_slot(squad_index)
 			get_viewport().set_input_as_handled()
 			return
 
@@ -336,7 +355,21 @@ func _select_at_mouse(screen_point: Vector2, additive: bool) -> void:
 
 
 func _issue_context_command(screen_point: Vector2) -> void:
-	if _battle_ended or _selected_ids.is_empty():
+	if _battle_ended:
+		return
+	# ig-gy0.6: an area skill of the pilot's bar waits for this click, whatever is selected.
+	if not _pilot_aim_skill.is_empty() and not _piloted_id.is_empty():
+		var aim_click: BattleUnitView = _unit_at_screen(screen_point, 30.0)
+		var aim_point: Vector2 = _ground_point(screen_point)
+		var aimed: Dictionary = {"kind": "use_skill", "actor_ids": [_piloted_id], "skill_id": _pilot_aim_skill}
+		if aim_click != null:
+			aimed["target_id"] = aim_click.actor_id
+		else:
+			aimed["point"] = [aim_point.x, aim_point.y]
+		_pilot_aim_skill = ""
+		_send_command(aimed)
+		return
+	if _selected_ids.is_empty():
 		return
 	var point: Vector2 = _ground_point(screen_point)
 	var clicked: BattleUnitView = _unit_at_screen(screen_point, 30.0)
@@ -534,20 +567,28 @@ func _render_snapshot(snapshot: Dictionary) -> void:
 		_command_status.text = command_error
 	elif _mode == "practice" and not _practice_command_error.is_empty():
 		_command_status.text = _practice_command_error
-	elif _command_mode.is_empty() and _targeting_kind.is_empty():
+	elif _command_mode.is_empty() and _targeting_kind.is_empty() and _pilot_aim_skill.is_empty():
 		_command_status.text = ""
 	_supply_label.text = BattleState.supplies_text(_snapshot.get("supplies_remaining", {}) as Dictionary)
 	_pause_requested = bool(_snapshot.get("paused", _pause_requested))
 	_pause_button.text = "Resume" if _is_paused() else "Pause"
+	_piloted_id = str(_snapshot.get("piloted", _piloted_id))
 	_auto_battle.set_pressed_no_signal(bool((_snapshot.get("policies", {}) as Dictionary).get("auto_battle", true)))
 	_update_squad_row()
 	_update_selected_panel()
 	_update_unit_views()
 	_update_objective_views()
 	_update_field_views()
+	_update_pilot_bar()
+	# ig-gy0.6: a pilot that fell or left the fight is given back to the AI. Last, so a re-render it causes has
+	# nothing left to do.
+	if not _piloted_id.is_empty() and _actor_data(_piloted_id).get("life", "") != BattleActor.LIFE_ALIVE:
+		_set_piloted("")
 
 
 func _mark_battle_ended() -> void:
+	# ig-gy0.6: the fight is over, so the hero goes back as on leaving (the hotbar goes, the session's entry is cleared).
+	_set_piloted("")
 	_battle_ended = true
 	_status_label.text = "Battle ended · Return to hub for results"
 	_command_status.text = ""
@@ -1100,9 +1141,13 @@ func _release_live_binding() -> void:
 		if _pause_requested:
 			_controller.call("set_battle_paused", _order_id, false)
 		_pause_requested = false
+		# ig-gy0.6: piloting is view state; leaving the view gives the hero back.
+		if not _piloted_id.is_empty():
+			_controller.call("set_battle_piloted", _order_id, "")
 		var callback := Callable(self, "_on_battle_changed")
 		if _controller.has_signal("battle_changed") and _controller.is_connected("battle_changed", callback):
 			_controller.disconnect("battle_changed", callback)
+	_piloted_id = ""
 	_clear_owned_router_payload()
 
 
@@ -1247,6 +1292,7 @@ func _update_grid_lines() -> void:
 
 func _refresh_selection_presentation() -> void:
 	_update_selected_panel()
+	_update_pilot_bar()
 	_sync_selected_visuals()
 
 
@@ -1266,6 +1312,7 @@ func _build_hud() -> void:
 	%HelpButton.pressed.connect(func() -> void: _help_panel.visible = not _help_panel.visible)
 	%AutoBattle.toggled.connect(_on_auto_battle_toggled)
 	%AttackMoveButton.pressed.connect(_on_attack_move_button_pressed)
+	_build_pilot_bar()
 	# ig-0oj: a clicked button would keep focus, and Space (rts_pause, also ui_accept) would press it again.
 	# The squad row's buttons come later and get the same line; the victory OK keeps its focus.
 	for control: Node in _hud.find_children("*", "BaseButton", true, false):
@@ -1388,6 +1435,151 @@ func _on_auto_battle_toggled(enabled: bool) -> void:
 func _on_attack_move_button_pressed() -> void:
 	_command_mode = "attack_move"
 	_command_status.text = "Attack-move: right-click a point or target"
+
+
+## ig-gy0.6: the Take Control button and the hotbar of the piloted hero. The bar sits above the command status,
+## its buttons take no focus (Space still pauses after a click), and it shows only while a pilot is alive.
+func _build_pilot_bar() -> void:
+	_take_control_button = Button.new()
+	_take_control_button.name = "TakeControlButton"
+	_take_control_button.text = "Take Control (T)"
+	_take_control_button.pressed.connect(_on_take_control_pressed)
+	%AttackMoveButton.get_parent().add_child(_take_control_button)
+	_pilot_bar = PanelContainer.new()
+	_pilot_bar.name = "PilotBar"
+	_pilot_bar.visible = false
+	_pilot_bar.anchor_left = 0.5
+	_pilot_bar.anchor_right = 0.5
+	_pilot_bar.anchor_top = 1.0
+	_pilot_bar.anchor_bottom = 1.0
+	_pilot_bar.offset_left = -360.0
+	_pilot_bar.offset_right = 360.0
+	_pilot_bar.offset_top = -272.0
+	_pilot_bar.offset_bottom = -210.0
+	_pilot_bar.add_theme_stylebox_override("panel", _style(UI_INK, UI_BRASS))
+	var scroll := ScrollContainer.new()
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_pilot_bar.add_child(scroll)
+	_pilot_slots = HBoxContainer.new()
+	_pilot_slots.add_theme_constant_override("separation", 4)
+	scroll.add_child(_pilot_slots)
+	_hud.add_child(_pilot_bar)
+
+
+## The pick is the first living ally selected. Pressing it again (or with nobody else picked) gives the pilot
+## back to the AI; picking another switches. The pilot becomes the only selection, so right-clicks order it.
+func _on_take_control_pressed() -> void:
+	if _battle_ended:
+		return
+	var pick: String = ""
+	for actor_id: String in _selected_ids:
+		var data: Dictionary = _actor_data(actor_id)
+		if str(data.get("faction", "")) == "ally" and str(data.get("life", "")) == BattleActor.LIFE_ALIVE:
+			pick = actor_id
+			break
+	if not _piloted_id.is_empty() and (pick.is_empty() or pick == _piloted_id):
+		_set_piloted("")
+	elif pick.is_empty():
+		_command_status.text = "Select a hero to take control of"
+	else:
+		_selected_ids.clear()
+		_selected_ids.append(pick)
+		_set_piloted(pick)
+		_refresh_selection_presentation()
+
+
+func _set_piloted(actor_id: String) -> void:
+	if _piloted_id == actor_id:
+		return
+	_piloted_id = actor_id
+	_pilot_aim_skill = ""
+	if _mode == "live" and _controller != null:
+		_controller.call("set_battle_piloted", _order_id, actor_id)
+	elif _mode == "practice" and _practice_state != null:
+		_practice_state.piloted_id = actor_id
+	_update_pilot_bar()
+
+
+func _actor_data(actor_id: String) -> Dictionary:
+	for raw_actor: Variant in _snapshot.get("actors", []) as Array:
+		if raw_actor is Dictionary and str((raw_actor as Dictionary).get("id", "")) == actor_id:
+			return raw_actor as Dictionary
+	return {}
+
+
+## The hotbar's skills in bar order: everything the pilot can fire (abilities and weaponskills, Off ones too).
+func _pilot_skills(pilot: Dictionary) -> Array[AbilityDefinition]:
+	var result: Array[AbilityDefinition] = []
+	for raw_entry: Variant in pilot.get("skills", []) as Array:
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str((raw_entry as Dictionary).get("id", ""))) as AbilityDefinition
+		if skill != null and skill.kind != "passive":
+			result.append(skill)
+	return result
+
+
+func _update_pilot_bar() -> void:
+	if _pilot_bar == null:
+		return
+	_take_control_button.text = "Release Control (T)" if not _piloted_id.is_empty() else "Take Control (T)"
+	var pilot: Dictionary = _actor_data(_piloted_id) if not _piloted_id.is_empty() else {}
+	_pilot_bar.visible = not pilot.is_empty() and not _battle_ended
+	if not _pilot_bar.visible:
+		return
+	var skills: Array[AbilityDefinition] = _pilot_skills(pilot)
+	var key_parts: PackedStringArray = [_piloted_id]
+	for skill: AbilityDefinition in skills:
+		key_parts.append(str(skill.skill_id))
+	var structure_key: String = "|".join(key_parts)
+	if structure_key != _pilot_bar_key:
+		_pilot_bar_key = structure_key
+		for child: Node in _pilot_slots.get_children():
+			_pilot_slots.remove_child(child)
+			child.queue_free()
+		_pilot_buttons.clear()
+		for slot: int in skills.size():
+			var button := Button.new()
+			button.focus_mode = Control.FOCUS_NONE
+			button.custom_minimum_size = Vector2(118.0, 46.0)
+			button.pressed.connect(_fire_pilot_slot.bind(slot))
+			_pilot_slots.add_child(button)
+			_pilot_buttons.append(button)
+	var cooldowns: Dictionary = pilot.get("skill_cooldowns", {}) as Dictionary
+	var next_swing: String = str((pilot.get("effect_state", {}) as Dictionary).get("next_swing_skill", ""))
+	for slot: int in skills.size():
+		var skill: AbilityDefinition = skills[slot]
+		var cooldown: float = float(cooldowns.get(str(skill.skill_id), 0.0))
+		var key_label: String = "%d  " % ((slot + 1) % 10) if slot < 10 else ""
+		var detail: String = "%.1fs" % cooldown if cooldown > 0.0 else "next swing" if str(skill.skill_id) == next_swing else ""
+		_pilot_buttons[slot].text = "%s%s\n%s" % [key_label, skill.display_name, detail]
+		_pilot_buttons[slot].disabled = cooldown > 0.0
+		_pilot_buttons[slot].tooltip_text = skill.display_name
+
+
+func _fire_pilot_slot(slot: int) -> void:
+	var skills: Array[AbilityDefinition] = _pilot_skills(_actor_data(_piloted_id))
+	if slot >= 0 and slot < skills.size():
+		_fire_pilot_skill(skills[slot])
+
+
+## An area skill waits for a right-click (the ground point, or the unit clicked); any other fires now and the
+## simulation aims it as a chain step aims.
+func _fire_pilot_skill(skill: AbilityDefinition) -> void:
+	if _battle_ended or _piloted_id.is_empty():
+		return
+	if _needs_ground_click(skill):
+		_pilot_aim_skill = str(skill.skill_id)
+		_command_status.text = "%s: right-click a point or target" % skill.display_name
+		return
+	_pilot_aim_skill = ""
+	_send_command({"kind": "use_skill", "actor_ids": [_piloted_id], "skill_id": str(skill.skill_id)})
+
+
+static func _needs_ground_click(skill: AbilityDefinition) -> bool:
+	if skill.kind != "ability" or skill.self_centered:
+		return false
+	return not BattleSimulation._effect_of(skill, "zone").is_empty() \
+			or not BattleSimulation._effect_of(skill, "wall").is_empty() \
+			or str(BattleSimulation._effect_of(skill, "damage").get("area", "")) == "circle"
 
 
 func _all_living_ally_ids() -> Array[String]:

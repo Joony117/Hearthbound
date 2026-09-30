@@ -107,6 +107,10 @@ var _periodic_save_accumulator: float = 0.0
 ## ig-7sn.10: a pulse crossed PERIODIC_SAVE_SECONDS; the next _process call runs the save. Unsaved.
 var _periodic_save_due: bool = false
 var _paused_battle_orders: Dictionary[String, bool] = {}
+## ig-gy0.6: the hero the player pilots in each watched battle, order id -> actor id. View state like the
+## tactical pause: unsaved, cleared by _read_profile, restored by a rollback, and never set for a battle no
+## view is watching. Each watched advance puts it on the BattleState (_send_battle_advance, _advance_battle).
+var _piloted_battle_actors: Dictionary[String, String] = {}
 ## ig-7sn.15: each battle order's last state, [the battle Dictionary it was written as or decoded from,
 ## the BattleState], by order id. Unsaved; from_dict clears it. Every writer replaces an order's battle
 ## Dictionary and never edits it (ig-7sn.5), so while the order still holds that Dictionary the state is
@@ -1441,6 +1445,7 @@ func get_battle_snapshot(order_id: String) -> Dictionary:
 	snapshot["route_remaining_seconds"] = maxf(Item.float_field(order, "remaining_seconds", 0.0, "expedition order"), 0.0)
 	snapshot["team_name"] = str(order.get("team_name", ""))
 	snapshot["paused"] = _paused_battle_orders.has(order_id)
+	snapshot["piloted"] = _piloted_battle_actors.get(order_id, "")
 	snapshot["catching_up"] = _catch_up_seconds(order) > 0.0
 	snapshot["last_command_error"] = str(_command_errors.get(order_id, order.get("last_command_error", "")))
 	snapshot["checkpoint_error"] = _checkpoint_error if _checkpoint_save_failed else str(order.get("checkpoint_error", ""))
@@ -1474,6 +1479,25 @@ func set_battle_paused(order_id: String, paused: bool) -> void:
 		_drop_battle_advance(order_id, false)
 	else:
 		_paused_battle_orders.erase(order_id)
+	_notify_battle_changed(order_id)
+
+
+## ig-gy0.6: the player takes control of actor_id in a watched battle ("" hands it back to the AI). One pilot
+## per battle, so a second call switches. The job out was sent for the old pilot: it is dropped and its seconds
+## owed again, so the battle keeps its time (set_battle_paused drops its job too).
+func set_battle_piloted(order_id: String, actor_id: String) -> void:
+	var gone: bool = _order_index(order_id) < 0
+	if gone and actor_id.is_empty():
+		# Settlement removes the order, not its entry: handing the hero back still clears it. No job, nobody to tell.
+		_piloted_battle_actors.erase(order_id)
+		return
+	if gone or str(_piloted_battle_actors.get(order_id, "")) == actor_id:
+		return
+	if actor_id.is_empty():
+		_piloted_battle_actors.erase(order_id)
+	else:
+		_piloted_battle_actors[order_id] = actor_id
+	_drop_battle_advance(order_id, true)
 	_notify_battle_changed(order_id)
 
 
@@ -2237,6 +2261,7 @@ func _owe_battles(delta: float, may_advance: bool) -> void:
 func _send_battle_advance(order: Dictionary, seconds: float) -> void:
 	var order_id: String = str(order.get("id", ""))
 	var state: BattleState = _battle_state(order)
+	state.piloted_id = str(_piloted_battle_actors.get(order_id, ""))
 	_battle_states.erase(order_id)
 	var step: float = minf(seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0))
 	_battle_advances[order_id] = {"battle": order.get("battle"), "state": state, "seconds": seconds, "job": _submit_battle_job(func(job: BattleJob) -> Dictionary: return BattleJob.run_battle(state, step, job))}
@@ -2492,6 +2517,7 @@ func _battle_order_due(order: Dictionary, route_due: bool) -> bool:
 ## (ig-7sn.15; the frames send jobs since ig-7sn.18).
 func _advance_battle(order: Dictionary, seconds: float) -> void:
 	var state: BattleState = _battle_state(order)
+	state.piloted_id = str(_piloted_battle_actors.get(str(order.get("id", "")), ""))
 	BattleSimulation.advance(state, minf(seconds, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
 	_land_battle(order, state.to_dict(), state)
 
@@ -2800,6 +2826,7 @@ func _incident_snapshot(state: BattleState, stranded_ids: Array[String]) -> Dict
 		# A chain's target may not be kept, and its ticks are this battle's (ig-gy0.5): the stranded start none.
 		for key: String in BattleActor.CHAIN_KEYS:
 			effect_state.erase(key)
+		effect_state.erase("next_swing_skill")
 	snapshot["actors"] = kept
 	snapshot["squads"] = []
 	snapshot["status"] = "stranded"
@@ -2945,7 +2972,7 @@ func _rollback_kept() -> Dictionary:
 			current.append(order_id)
 	return {
 		"ledger": ledger, "tiers": _ledger_tiers, "ledger_size": ledger.size(),
-		"paused": _paused_battle_orders.duplicate(), "owed": _battle_owed.duplicate(),
+		"paused": _paused_battle_orders.duplicate(), "piloted": _piloted_battle_actors.duplicate(), "owed": _battle_owed.duplicate(),
 		"checkpoint_failed": _checkpoint_save_failed, "checkpoint_error": _checkpoint_error,
 		"command_errors": _command_errors.duplicate(), "checks": checks, "current": current,
 		"town_notice": _town_notice.duplicate(true),
@@ -2963,6 +2990,7 @@ func _roll_back(snapshot: Dictionary, kept: Dictionary) -> void:
 	_ledger_tiers = kept["tiers"]
 	_ledger_tiers.resize(int(kept["ledger_size"]))
 	_paused_battle_orders = kept["paused"]
+	_piloted_battle_actors = kept["piloted"]
 	# ig-7sn.15: the battles keep the time they are owed.
 	_battle_owed = kept["owed"]
 	_checkpoint_save_failed = bool(kept["checkpoint_failed"])
@@ -3149,6 +3177,7 @@ func _read_profile(data: Dictionary) -> void:
 	stranded_incidents.clear()
 	rescue_clock_seconds = 0.0
 	_paused_battle_orders.clear()
+	_piloted_battle_actors.clear()
 	_battle_states.clear()
 	_battle_owed.clear()
 	_checkpoint_save_failed = false

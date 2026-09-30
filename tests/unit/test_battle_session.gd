@@ -104,7 +104,7 @@ func test_background_tick_matches_direct_canonical_simulation_checkpoint() -> vo
 	BattleSimulation.advance(expected, 2.5)
 	GameSession.tick_expeditions(2.5)
 	var actual: Dictionary = GameSession.get_battle_snapshot(order_id)
-	for transient_key: String in ["phase", "route_remaining_seconds", "team_name", "paused", "catching_up", "last_command_error", "checkpoint_error"]:
+	for transient_key: String in ["phase", "route_remaining_seconds", "team_name", "paused", "piloted", "catching_up", "last_command_error", "checkpoint_error"]:
 		actual.erase(transient_key)
 	assert_eq(actual, expected.to_dict())
 

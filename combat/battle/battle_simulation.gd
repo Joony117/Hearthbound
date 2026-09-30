@@ -94,6 +94,8 @@ const COMMAND_GUARD: String = "guard"
 const COMMAND_CARRY: String = "carry"
 const COMMAND_RETREAT: String = "retreat"
 const COMMAND_ABILITY: String = "ability"
+## ig-gy0.6: one hero fires one skill of its bar by hand, at a target or a ground point.
+const COMMAND_USE_SKILL: String = "use_skill"
 const COMMAND_ITEM_HEALING: String = "item_healing"
 const COMMAND_ITEM_REVIVAL: String = "item_revival"
 const COMMAND_SET_STANCE: String = "set_stance"
@@ -102,7 +104,7 @@ const COMMAND_SET_ABILITY_AUTO: String = "set_ability_auto"
 const COMMAND_SET_ITEM_AUTO: String = "set_item_auto"
 const COMMANDS: Array[String] = [
 	COMMAND_MOVE, COMMAND_ATTACK, COMMAND_ATTACK_MOVE, COMMAND_HOLD, COMMAND_GUARD,
-	COMMAND_CARRY, COMMAND_RETREAT, COMMAND_ABILITY, COMMAND_ITEM_HEALING,
+	COMMAND_CARRY, COMMAND_RETREAT, COMMAND_ABILITY, COMMAND_USE_SKILL, COMMAND_ITEM_HEALING,
 	COMMAND_ITEM_REVIVAL, COMMAND_SET_STANCE, COMMAND_SET_AUTO_BATTLE,
 	COMMAND_SET_ABILITY_AUTO, COMMAND_SET_ITEM_AUTO,
 ]
@@ -151,7 +153,9 @@ static func create_run(
 		actor.effect_state.erase("kite_point")
 		actor.effect_state.erase("kite_ready_tick")
 		# A chain's ticks are this battle's too (ig-gy0.5): one carried across a leg would sit ahead of it.
+		# A weaponskill set for the next swing (ig-gy0.6) ends with the leg, as a chain does.
 		actor.end_chain()
+		actor.effect_state.erase("next_swing_skill")
 		state.actors.append(actor)
 		has_enemy_snapshot = has_enemy_snapshot or actor.faction == "enemy"
 	if not has_enemy_snapshot and kind != "rescue":
@@ -268,6 +272,10 @@ static func issue_command(state: BattleState, command: Dictionary) -> Dictionary
 		COMMAND_ABILITY:
 			if actors.size() != 1 or not _manual_abilities(state, actors, target, point):
 				return _command_result(false, "No selected ability can resolve against that target now.", state)
+		COMMAND_USE_SKILL:
+			var refusal: String = _use_skill_by_hand(state, actors, command, target, point)
+			if not refusal.is_empty():
+				return _command_result(false, refusal, state)
 		COMMAND_ITEM_HEALING:
 			if actors.size() != 1 or target == null or not _use_healing(state, actors[0], target, bool(command.get("masterwork", false))):
 				return _command_result(false, "Healing cannot resolve against that target now.", state)
@@ -573,8 +581,11 @@ static func _expire_effects_and_cooldowns(state: BattleState) -> void:
 		if actor.life != BattleActor.LIFE_ALIVE or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0:
 			_cancel_pending_action(actor)
 			# A chain ends when its hero goes non-alive, not when it is stunned (ig-gy0.5); a loaded one too.
-			if actor.life != BattleActor.LIFE_ALIVE and actor.effect_state.has("chain_trigger"):
-				actor.end_chain()
+			if actor.life != BattleActor.LIFE_ALIVE:
+				# ig-gy0.6: a weaponskill set for the next swing goes with it, the same way.
+				actor.effect_state.erase("next_swing_skill")
+				if actor.effect_state.has("chain_trigger"):
+					actor.end_chain()
 
 
 static func _choose_intentions(state: BattleState) -> void:
@@ -592,6 +603,10 @@ static func _choose_intentions(state: BattleState) -> void:
 			continue
 		if actor.faction == "enemy":
 			_choose_enemy_intention(state, actor)
+			continue
+		# ig-gy0.6: like a direct order, and then some: nothing below picks for the piloted hero.
+		if actor.id == state.piloted_id:
+			_keep_piloted_order(state, actor)
 			continue
 		if actor.order_kind == COMMAND_ATTACK and not bool(actor.effect_state.get("direct_order", false)):
 			var automatic_target: BattleActor = _actor_by_id(state, actor.order_target_id)
@@ -615,11 +630,7 @@ static func _choose_intentions(state: BattleState) -> void:
 		# ig-ap2: a direct attack-move keeps its point, on either auto setting. It fights the enemy it
 		# engaged while that one lives and stays in contact range, else the nearest enemy in it, else none.
 		if bool(actor.effect_state.get("direct_order", false)) and actor.order_kind == COMMAND_ATTACK_MOVE:
-			var contact: float = maxf(BALANCE.battle_detection_range, actor.attack_range)
-			var engaged: BattleActor = _actor_by_id(state, actor.order_target_id)
-			if engaged == null or engaged.faction != "enemy" or engaged.life != BattleActor.LIFE_ALIVE or engaged.position.distance_to(actor.position) > contact:
-				engaged = _nearest_enemy_near_point(state, actor.position, actor.position, contact)
-			actor.order_target_id = engaged.id if engaged != null else ""
+			_engage_for_attack_move(state, actor)
 			continue
 		if bool(actor.effect_state.get("direct_order", false)) and not actor.order_kind.is_empty():
 			continue
@@ -672,6 +683,37 @@ static func _choose_intentions(state: BattleState) -> void:
 			var rows: RowScan = _scan_rows(state, actor) if actor.archetype in BACK_ROW else null
 			if not (rows != null and _kite_order(state, actor, rows)):
 				_choose_squad_intention(state, actor, previous_target_id, plan, rows)
+
+
+## ig-ap2: the enemy a direct attack-move fights, kept while it lives and stays in contact range, else the
+## nearest enemy in it, else none.
+static func _engage_for_attack_move(state: BattleState, actor: BattleActor) -> void:
+	var contact: float = maxf(BALANCE.battle_detection_range, actor.attack_range)
+	var engaged: BattleActor = _actor_by_id(state, actor.order_target_id)
+	if engaged == null or engaged.faction != "enemy" or engaged.life != BattleActor.LIFE_ALIVE or engaged.position.distance_to(actor.position) > contact:
+		engaged = _nearest_enemy_near_point(state, actor.position, actor.position, contact)
+	actor.order_target_id = engaged.id if engaged != null else ""
+
+
+## ig-gy0.6 (SYSTEMS.md § Hero AI on auto): the piloted hero moves on the player's orders alone. The target it
+## already has is kept, and its attack-move still finds an enemy; an automatic order of any other kind (a stance
+## move, a hold, a hop, an evade) is dropped, and a target that is gone leaves it standing with no new pick.
+## The supplies retreat and the rescue carry skip it like any direct order (ig-axw); a carrier keeps its order.
+static func _keep_piloted_order(state: BattleState, actor: BattleActor) -> void:
+	actor.effect_state.erase("evade_point")
+	var direct: bool = bool(actor.effect_state.get("direct_order", false))
+	if not direct and actor.order_kind != COMMAND_ATTACK and actor.carrying_id.is_empty():
+		actor.order_kind = ""
+		actor.order_target_id = ""
+		actor.effect_state.erase("kite_point")
+	if actor.order_kind == COMMAND_ATTACK:
+		var target: BattleActor = _actor_by_id(state, actor.order_target_id)
+		if target == null or target.life != BattleActor.LIFE_ALIVE:
+			actor.order_kind = ""
+			actor.order_target_id = ""
+			actor.effect_state["direct_order"] = false
+	elif direct and actor.order_kind == COMMAND_ATTACK_MOVE:
+		_engage_for_attack_move(state, actor)
 
 
 static func _move_actors(state: BattleState) -> void:
@@ -764,6 +806,9 @@ static func _support_actions(state: BattleState) -> void:
 	for actor: BattleActor in state.actors:
 		if actor.life != BattleActor.LIFE_ALIVE or actor.faction != "ally":
 			continue
+		# ig-gy0.6: the piloted hero casts and uses items only by the player's command.
+		if actor.id == state.piloted_id:
+			continue
 		if not anyone_down and not heal_always and not (lowest < heal_ceiling):
 			continue
 		var landed: bool = false
@@ -846,7 +891,9 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 		if chain == CHAIN_FIRED:
 			continue
 		# Before the range check: a rule that finds its own aim (Gauntlet Toss) reaches past the swing.
-		if chain == CHAIN_NONE and _auto_cast(state, actor, target, ["buff", "attack"], rng):
+		# ig-gy0.6: the piloted hero picks no skill; it casts by the player's command and its chain steps.
+		var piloted: bool = actor.id == state.piloted_id
+		if chain == CHAIN_NONE and not piloted and _auto_cast(state, actor, target, ["buff", "attack"], rng):
 			continue
 		if target == null:
 			continue
@@ -863,11 +910,16 @@ static func _offensive_actions(state: BattleState, rng: RandomNumberGenerator) -
 		if str(actor.effect_state.get("attack_target_id", "")) != target.id:
 			actor.effect_state["attack_target_id"] = ""
 			continue
-		# A weaponskill rides the swing: same windup, same interval (SYSTEMS.md § Skills).
-		var stepped: AbilityDefinition = _chain_weaponskill(actor, target) if chain == CHAIN_WAITING else null
-		var weaponskill: AbilityDefinition = stepped if stepped != null else _pick_weaponskill(state, actor, target)
+		# A weaponskill rides the swing: same windup, same interval (SYSTEMS.md § Skills). ig-gy0.6: the one the
+		# player set comes first (it starts its chain by hand and leaves a waiting step waiting), then the chain's
+		# step; the piloted hero's swing is otherwise plain, never a picked weaponskill.
+		var by_hand: AbilityDefinition = _take_next_swing_skill(actor)
+		var stepped: AbilityDefinition = _chain_weaponskill(actor, target) if chain == CHAIN_WAITING and by_hand == null else null
+		var weaponskill: AbilityDefinition = by_hand if by_hand != null else stepped
+		if weaponskill == null and not piloted:
+			weaponskill = _pick_weaponskill(state, actor, target)
 		if weaponskill != null:
-			_use_weaponskill(state, actor, weaponskill, target, rng)
+			_use_weaponskill(state, actor, weaponskill, target, rng, by_hand != null)
 		else:
 			_damage(state, actor, target, 1.0, rng, true)
 		if stepped != null:
@@ -1170,40 +1222,73 @@ static func _use_skill(
 	rng: RandomNumberGenerator = null,
 	across: Vector2 = Vector2.ZERO,
 ) -> bool:
-	if actor.life != BattleActor.LIFE_ALIVE or not skill.is_ability() or float(actor.skill_cooldowns.get(str(skill.skill_id), 0.0)) > 0.0:
-		return false
-	if actor.ability_lock > 0.0 or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0 or _has_status(actor, "silence"):
-		return false
-	if actor.position.distance_to(point) > skill.range_units or actor.position.distance_to(point) < skill.min_range_units:
-		return false
-	if _needs_enemy_target(skill) and (target == null or target.faction == actor.faction or target.life != BattleActor.LIFE_ALIVE):
-		return false
-	var heal: Dictionary = _effect_of(skill, "heal")
-	if not heal.is_empty() and str(heal.get("area", "target")) == "target" and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE or target.hp >= target.max_hp):
-		return false
-	if not _effect_of(skill, "shield").is_empty() and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE):
-		return false
-	var moves: bool = not _effect_of(skill, "move").is_empty()
-	if moves and _has_status(actor, "root"):
+	if not _skill_refusal(state, actor, skill, target, point).is_empty():
 		return false
 	if not _apply_effects(state, actor, skill, target, point, rng, false, false, across):
 		return false
 	# The caster faces what it cast at, manual or auto; a caster that moved, or cast around itself,
 	# faces its target.
-	_face(actor, target.position if target != null and (moves or skill.self_centered) else point)
+	_face(actor, target.position if target != null and (not _effect_of(skill, "move").is_empty() or skill.self_centered) else point)
 	_spend_ability(state, actor, skill)
 	return true
 
 
+## Why actor cannot cast skill at target (or at point, with none) right now, or "" when it can: the checks of
+## _use_skill in its order, each with its own words (ig-gy0.6). It looks at the cast and not at what the
+## effects would find: a cast with nobody in reach only shows once _apply_effects has run.
+static func _skill_refusal(_state: BattleState, actor: BattleActor, skill: AbilityDefinition, target: BattleActor, point: Vector2) -> String:
+	if actor.life != BattleActor.LIFE_ALIVE:
+		return "That hero is not standing."
+	if not skill.is_ability():
+		return "A passive is always on and is never fired." if skill.kind == "passive" else "A weaponskill rides the swing; it is not cast."
+	if float(actor.skill_cooldowns.get(str(skill.skill_id), 0.0)) > 0.0:
+		return "That skill is still on cooldown."
+	if actor.ability_lock > 0.0:
+		return "Another ability was just used; the ability lock holds."
+	if float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0:
+		return "The hero is stunned."
+	if _has_status(actor, "silence"):
+		return "The hero is silenced."
+	var distance: float = actor.position.distance_to(point)
+	if distance > skill.range_units:
+		return "That is out of range."
+	if distance < skill.min_range_units:
+		return "That is too close."
+	if _needs_enemy_target(skill) and (target == null or target.faction == actor.faction or target.life != BattleActor.LIFE_ALIVE):
+		return "That skill needs a living enemy as its target."
+	var heal: Dictionary = _effect_of(skill, "heal")
+	if not heal.is_empty() and str(heal.get("area", "target")) == "target" and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE or target.hp >= target.max_hp):
+		return "That skill needs a hurt ally as its target."
+	if not _effect_of(skill, "shield").is_empty() and (target == null or target.faction != actor.faction or target.life != BattleActor.LIFE_ALIVE):
+		return "That skill needs a living ally as its target."
+	if not _effect_of(skill, "move").is_empty() and _has_status(actor, "root"):
+		return "The hero is rooted."
+	return ""
+
+
 ## A weaponskill rides the basic swing (SYSTEMS.md § Skills): no cooldown, no lock. Its primary hit
 ## counts as a basic hit. A combo step lands its combo_multiplier and combo-only statuses.
-static func _use_weaponskill(state: BattleState, actor: BattleActor, skill: AbilityDefinition, target: BattleActor, rng: RandomNumberGenerator) -> void:
+## by_hand: the player set it for this swing (ig-gy0.6), so a chain it triggers replaces a running one.
+static func _use_weaponskill(state: BattleState, actor: BattleActor, skill: AbilityDefinition, target: BattleActor, rng: RandomNumberGenerator, by_hand: bool = false) -> void:
 	if not _apply_effects(state, actor, skill, target, target.position, rng, _combo_ready(state, actor, skill), true):
 		_damage(state, actor, target, 1.0, rng, true)
 		return
 	actor.combo_skill = str(skill.skill_id)
 	actor.combo_tick = state.tick
-	_start_chain(state, actor, skill, false)
+	_start_chain(state, actor, skill, by_hand)
+
+
+## ig-gy0.6: the weaponskill the player set for this swing, taken off the actor as it is read. Null when none is
+## set, when the hero is silenced at the swing (a plain one) or when it has left the bar.
+static func _take_next_swing_skill(actor: BattleActor) -> AbilityDefinition:
+	if not actor.effect_state.has("next_swing_skill"):
+		return null
+	var skill_id: String = str(actor.effect_state["next_swing_skill"])
+	actor.effect_state.erase("next_swing_skill")
+	var skill: AbilityDefinition = ABILITIES.get(skill_id) as AbilityDefinition
+	if skill == null or skill.kind != "weaponskill" or _skill_mode(actor, skill_id).is_empty() or _has_status(actor, "silence"):
+		return null
+	return skill
 
 
 ## The cooldown (x the battle's pace, ig-1jw), the ability lock and the tick the views read.
@@ -2191,7 +2276,8 @@ static func _answer(state: BattleState, caster: BattleActor, rng: RandomNumberGe
 	var first_dodge: BattleActor = null
 	for tags: Array in [["stun", "interrupt"], ["shield"], ["dodge"]]:
 		for hero: BattleActor in state.actors:
-			if hero.faction != "ally":
+			# ig-gy0.6: the piloted hero claims nothing; the next hero with a counter does.
+			if hero.faction != "ally" or hero.id == state.piloted_id:
 				continue
 			for skill: AbilityDefinition in _counters(hero, tags):
 				var aim: BattleActor = caster
@@ -2305,6 +2391,79 @@ static func _manual_abilities(state: BattleState, actors: Array[BattleActor], ta
 			_start_chain(state, actor, skill, true)
 	state.rng_state = str(rng.state)
 	return used
+
+
+## COMMAND_USE_SKILL (ig-gy0.6): the one hero in actors fires one skill of its bar by hand, in any mode. "" when
+## it fired (or set the skill for its next swing), else why it did not, with nothing changed. The aim is the
+## clicked unit, else the ground point, else where a chain step would aim (the hero's own enemy as the foe).
+## A cast that lands on another enemy then retargets the hero as a right-click does, and a trigger starts its
+## chain by hand (a refused cast changes nothing). A weaponskill is set for the swing instead.
+static func _use_skill_by_hand(state: BattleState, actors: Array[BattleActor], command: Dictionary, target: BattleActor, point: Vector2) -> String:
+	const NOBODY: String = "Nobody is in reach."
+	if actors.size() != 1:
+		return "use_skill needs exactly one hero."
+	var actor: BattleActor = actors[0]
+	var skill_id: Variant = command.get("skill_id")
+	var skill: AbilityDefinition = ABILITIES.get(skill_id) as AbilityDefinition if skill_id is String else null
+	if skill == null or _skill_mode(actor, skill_id as String).is_empty():
+		return "That skill is not on this hero's bar."
+	if target == null and not str(command.get("target_id", "")).is_empty():
+		return "That target is not in the battle."
+	if target == null and command.has("point") and not _valid_point(command.get("point")):
+		return "That command needs a finite ground point."
+	if skill.kind == "weaponskill":
+		if _has_status(actor, "silence"):
+			return "The hero is silenced."
+		var foe: BattleActor = target
+		if foe == null and not command.has("point"):
+			foe = _actor_by_id(state, actor.order_target_id)
+		if foe == null or foe.faction == actor.faction or foe.life != BattleActor.LIFE_ALIVE:
+			return "That skill needs a living enemy as its target."
+		actor.effect_state["next_swing_skill"] = skill_id
+		_retarget_by_hand(state, actor, foe)
+		return ""
+	var aimed: BattleActor = target
+	var aim_point: Vector2 = point
+	var across: Vector2 = Vector2.ZERO
+	if target != null or command.has("point"):
+		var hand: Array = _hand_aim(actor, skill, target, point)
+		aim_point = hand[0]
+		across = hand[1]
+		aimed = actor if hand[2] else target
+	else:
+		var order_foe: BattleActor = _actor_by_id(state, actor.order_target_id)
+		var aim: Array = _chain_aim(state, actor, skill, order_foe if order_foe != null and order_foe.faction != actor.faction and order_foe.life == BattleActor.LIFE_ALIVE else null)
+		if aim.is_empty():
+			# Nothing to aim at: nobody downed for a revive, no enemy for anything else.
+			return NOBODY if skill.band() == "revive" else "That skill needs a living enemy as its target."
+		aimed = aim[0]
+		aim_point = aim[1]
+		across = aim[2]
+	var refusal: String = _skill_refusal(state, actor, skill, aimed, aim_point)
+	if not refusal.is_empty():
+		return refusal
+	# A pure revive lands only on a downed ally; Rally, which also buffs, casts on anyone.
+	if skill.band() == "revive" and (aimed == null or aimed.life != BattleActor.LIFE_DOWNED):
+		return NOBODY
+	var rng := RandomNumberGenerator.new()
+	rng.state = state.rng_state.to_int()
+	var fired: bool = _use_skill(state, actor, skill, aimed, aim_point, rng, across)
+	state.rng_state = str(rng.state)
+	if not fired:
+		return "There is no room for the wall." if not _effect_of(skill, "wall").is_empty() else NOBODY
+	if aimed != null and aimed.faction != actor.faction and aimed.life == BattleActor.LIFE_ALIVE:
+		_retarget_by_hand(state, actor, aimed)
+	_start_chain(state, actor, skill, true)
+	return ""
+
+
+## A right-click on an enemy (COMMAND_ATTACK) for one hero: it drops a body it carries and takes an attack order
+## on foe, unless it already has exactly that one.
+static func _retarget_by_hand(state: BattleState, actor: BattleActor, foe: BattleActor) -> void:
+	if actor.order_kind == COMMAND_ATTACK and actor.order_target_id == foe.id:
+		return
+	_drop_carried(state, actor)
+	_replace_direct_order(actor, COMMAND_ATTACK, foe.id, foe.position)
 
 
 ## Where a cast by hand at target (or at point, with no target) aims: [the point, the line a wall goes
@@ -2466,7 +2625,9 @@ static func _take_damage(state: BattleState, attacker: BattleActor, target: Batt
 		# ig-ls3: a downed carrier's channel is over; after a revive it starts at 0.
 		target.effect_state.erase("carry_progress")
 		# A chain ends when its hero is downed (ig-gy0.5), so none is checkpointed on a downed body.
+		# The weaponskill set for the next swing goes too (ig-gy0.6).
 		target.end_chain()
+		target.effect_state.erase("next_swing_skill")
 		_drop_carried(state, target)
 		_drop_from_carrier(state, target)
 	else:
@@ -2512,8 +2673,10 @@ static func _update_carry(state: BattleState, carrier: BattleActor) -> void:
 
 static func _extract_actor(state: BattleState, actor: BattleActor) -> void:
 	actor.life = BattleActor.LIFE_EXTRACTED
-	# ig-gy0.5: no chain key outlives a living hero (a retreat and a timeout both end here).
+	# ig-gy0.5: no chain key outlives a living hero (a retreat and a timeout both end here), nor does
+	# a weaponskill set for the next swing (ig-gy0.6).
 	actor.end_chain()
+	actor.effect_state.erase("next_swing_skill")
 	if not actor.hero_id.is_empty() and not actor.hero_id in state.extracted_ids:
 		state.extracted_ids.append(actor.hero_id)
 	if not actor.carrying_id.is_empty():

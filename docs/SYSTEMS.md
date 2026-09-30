@@ -86,18 +86,44 @@ Knight and Rogue, the back row is Ranger, Mage and Cleric.
 - None of this section's rules move it: no evasion, hop, stance move, cover or formation. It
   claims no telegraph, so the claim passes to the next hero (§ Skills, Counters).
 - It moves only on the player's orders. After a target order it closes in and swings, as the
-  order does today. After a move order it holds at the point and swings only at a target in reach.
-  When its target dies it picks no new one. It stands until the player picks.
-- Anything that returns earlier in the planning pass (the rescue carry, the supplies retreat)
-  still wins, as it does over any direct order.
+  order does today. After a move order it holds at the point and doesn't swing until the player
+  gives it a target. When its target dies it picks no new one. It stands until the player picks.
+- Piloting counts as a direct order (director ruling, `ig-gy0.6`): the supplies retreat and the
+  rescue carry skip it, as they skip any direct order (`ig-axw`). A hero already carrying keeps
+  its order.
 - To the other heroes it is an ordinary squadmate. It still counts as the front-liner for
   formation and hop points. A piloted Knight's target still keeps other Knights off that threat,
   and its hits still give the cover taunt ("auto or not", below).
 - Its chains run when the player fires a trigger, with no cut-ins, because cut-ins are the AI's. A
-  skill fired by hand that is not a trigger leaves the chain running.
+  skill fired by hand that is not a trigger leaves the chain running, unless it lands on another
+  enemy that lives through it: the hero then takes that enemy as its target, and the chain, which
+  follows the hero's target, ends. Aimed at the chain's own target, an ally, the hero itself, the
+  ground, or an enemy it kills, it leaves the chain running.
+- A hand press of the chain's pending step does not count as that step. An ability step then waits
+  on its cooldown until its deadline and is skipped. A weaponskill step has no cooldown: the hand
+  weaponskill takes that swing, and the step waits for a later swing while its deadline runs.
+- **`use_skill`** (`actor_ids` of one, `skill_id`, then a `target_id` or a `point`) fires any skill
+  on the hero's bar, Off ones included, in any mode, not only on a piloted hero. With no target and
+  no point it aims like a chain step (the current enemy target as the foe). A click overrides that;
+  area skills take a ground click in the view. A refused cast (cooldown, ability lock, stun,
+  silence, range, no target) changes nothing and says why. A cast that fired on an enemy that
+  lives through it retargets the hero as a right-click would. A cast that kills the enemy it was
+  aimed at retargets nothing: the hero goes on with its order or its carry, and a running chain
+  runs on (nobody can fight a dead enemy). A trigger then starts its chain on the hero's own
+  target, as any chain starts. Fired during the tactical pause, a skill fires at once; the
+  ability lock still holds the next one until time runs.
+- **A weaponskill by hand** has no cooldown or cast. It sets `next_swing_skill` on the hero, and
+  the next swing uses it. It rides the battle save, is erased when the hero goes down, is
+  extracted, crosses into the next leg, or is copied into an incident, and is not cleared by a
+  chain ending. A silence re-checked at the swing turns it into a plain swing. It wins over the
+  chain's waiting weaponskill step.
 - It uses no item on its own: the order's auto healing and auto revival skip it (director ruling,
   2026-09-25). The item commands still work, and the other heroes still use the supplies.
-- Piloting is view state and never saved. When it ends, the hero is on auto again on the next tick.
+- Piloting is view state and never saved. It ends when the player ends it, leaves the view, the
+  pilot is no longer alive, or the watched battle's order closes after the fight. Then the hero is
+  on auto again on the next tick. Between a fight's end and its order closing (and in a finished
+  practice battle, until the player leaves), the hotbar stays but does nothing: a finished battle
+  refuses every command.
 
 **Formation.** A back-row hero never walks closer to its reference point (its attack target, else
 its squad's objective point) than its squad's nearest living front-liner is, plus one formation
@@ -867,8 +893,8 @@ an selected enemy", "immune to cc while in motion", knocking aside enemies in be
   retargets, so cover holds) when it is 4–12 away and the slam will hit two (another enemy
   within 2.5 of it), or it is elite. Ground Slam's rule is `combo`: it fires right after Charge,
   once the 1.0 s ability lock clears, inside the combo window. On auto the slam is only an
-  opener; by hand it fires any time (designed, not built: `ig-gy0.6`'s `use_skill`; today's hand
-  command fires only the signature). Under 4 away the Knight just walks in.
+  opener; by hand (`use_skill`, `ig-gy0.6`) it fires whenever an opponent is within 2.5. Under 4
+  away the Knight just walks in.
 - **Enemies don't get either.** Enemy Knights keep § Enemies' kit.
 - **Four small schema additions,** each inside ADR item 1's closed set: `move.to = "charge"` with a
   `lane_push` distance, an `area` on `interrupt` (`target` or `around_caster`), a
@@ -1853,7 +1879,7 @@ Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.
   spot: inside the bounds and outside every wall that stays up. With no face that works, the AI
   skips the cast.
 - **By hand** (`ig-vl1.5`). The signature command fires Rime Wall when it is first on the bar (the
-  bar can be reordered); `ig-gy0.6`'s hotbar and `ig-gy0.5`'s chain steps will too. The wall goes across the line from the caster to the aim point,
+  bar can be reordered); `ig-gy0.6`'s hotbar (`use_skill`) and `ig-gy0.5`'s chain steps fire it too. The wall goes across the line from the caster to the aim point,
   centered on it, in range 8 as usual. A clicked unit's point first moves thickness / 2 +
   separation / 2 + 0.001 (0.926) toward the caster, so the clicked unit ends on the far side
   instead of being pulled to the caster's side by the on-the-line rule. An aim on the caster itself

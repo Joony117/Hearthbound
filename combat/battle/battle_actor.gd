@@ -298,7 +298,10 @@ static func validate_dict(data: Dictionary) -> String:
 		for entry: Variant in value as Array:
 			if not entry is String:
 				return "Battle actor effect cover_order must be an Array of Strings."
-	return _validate_chains(data, effects, actor_archetype, ally)
+	var chains_error: String = _validate_chains(data, effects, actor_archetype, ally)
+	if not chains_error.is_empty():
+		return chains_error
+	return _validate_next_swing(data, effects, ally)
 
 
 ## The skill archetypes an actor of archetype and faction may carry: its class, then the general
@@ -436,6 +439,22 @@ static func _chain_problem(raw_chain: Variant, kit: Array, triggers: Dictionary)
 	if triggers.has(chain["trigger"]):
 		return "Battle actor chain trigger %s is listed twice." % chain["trigger"]
 	return ""
+
+
+## Optional (ig-gy0.6; a checkpoint from before it has none): the weaponskill the player set for the next swing
+## is an ally's, and one on its bar. The key rides the battle save; piloting itself never does.
+static func _validate_next_swing(data: Dictionary, effects: Dictionary, ally: bool) -> String:
+	if not effects.has("next_swing_skill"):
+		return ""
+	var skill_id: Variant = effects["next_swing_skill"]
+	var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition if skill_id is String else null
+	if not ally or skill == null or skill.kind != "weaponskill":
+		return "Battle actor effect next_swing_skill must name a weaponskill of an allied actor."
+	if data.get("skills") is Array:
+		for entry: Variant in data["skills"] as Array:
+			if entry is Dictionary and (entry as Dictionary).get("id") == skill_id:
+				return ""
+	return "Battle actor effect next_swing_skill must be on the actor's bar."
 
 
 ## The running chain ends: its four keys go.
