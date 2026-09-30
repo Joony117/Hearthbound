@@ -701,9 +701,14 @@ player's order decides. The telegraph half of each cell arrives with the counter
 - **Waiting.** Until the next step is ready, the hero keeps swinging (a basic, or the picker's
   weaponskill) but fires no ability outside the chain. Each step must fire within
   `skill_chain_step_timeout_seconds` of the one before it, or of the trigger, or it is skipped. The
-  deadline is a saved tick number, and a step may fire on that tick itself. So a timer never ties
-  on a float (`ig-85w`), and a weaponskill step always makes the next swing, even at
-  `battle_basic_interval_max` (3.0 s).
+  deadline is a saved tick number, and a step may fire on that tick itself, so a timer never ties
+  on a float (`ig-85w`). A weaponskill step rides the next swing, which lands at most one swing
+  interval plus the 0.3 s windup after the trigger or the step before it. So it makes its deadline
+  when the interval is at most 2.7 s (3.0 − 0.3), unless a stun or the reach holds the swing. Every
+  hero's interval is inside that: the slowest base SPD is 90 (100 / 90 ≈ 1.1 s), rank, level and gear only
+  raise SPD, and no hero can be slowed (only Rime Circle slows, and enemies carry only their
+  signature). A 3.0 s swing (`battle_basic_interval_max`, every enemy's) would miss, but enemies
+  have no chains (`ig-cka`). A hero slow or a longer windup reopens this.
 - **Cut-ins.** Everything above chain in the picker cuts in: counter, revive and heal, including the
   heal band's shields and self damage reduction (`DECISIONS.md` 2026-09-23, item 7). A cut-in
   never ends the chain, and the step's deadline keeps running.
