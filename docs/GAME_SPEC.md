@@ -1392,6 +1392,11 @@ dialogue item with the line bank (`ig-m6o.2.2.2`). The partner's greeting (`ig-m
 first of them. Stated conditions, reasons, requests and diaries stay on the list, and so do moods,
 until `ig-m6o.2.2.8` writes their tickets.
 
+**Amended 2026-09-30 (`ig-m6o.2.2.8` split).** Hero moods leave the morale item with their ticket
+(`ig-m6o.2.2.15`): they change walks, words and the panel, and no number (unless the owner
+rules otherwise). Diaries leave the dialogue item with theirs (`ig-m6o.2.2.16`). Fear, stated
+conditions, reasons and requests stay on the list for `ig-m6o.3`.
+
 **Excluded from the draft is not the same as excluded forever.** Hard constraints above is the
 never list; this one is a *now* list. Direction above already names town NPCs as eventual, and
 "not to be invented by an implementer" is what both readings have in common — a feature arrives
