@@ -704,7 +704,7 @@ func test_the_lumbermill_panel_shows_away_and_the_dispatch_summary_names_it() ->
 	assert_string_contains((hub.get_node("%DispatchSummary") as RichTextLabel).text, "Lumbermill 1 runs short while away (A)")
 	assert_ne(GameSession.dispatch_expedition([workers[0].instance_id], "verdant_outskirts", 1, "Out"), "")
 	(hub.get_node("%Town") as TownView).building_selected.emit(&"Lumbermill_1")
-	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 2/2: A · Away, B\nMakes 1.0 wood a minute")
+	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 2/2: A (Woodcutting 0) · Away, B (Woodcutting 0)\nMakes 1.0 wood a minute")
 
 
 ## Two housed heroes working Lumbermill_1, with House_2 and House_3.
@@ -743,6 +743,8 @@ func _add_hero(hero_name: String) -> Hero:
 	var hero := Hero.new(hero_name, 7)
 	hero.def_id = &"knight"
 	hero.level = 80
+	# Passions are random per hero: none here is for a town job, so the panel text is the same on every run.
+	hero.passions = [&"smithing", &"rites"] as Array[StringName]
 	GameSession.add_hero(hero)
 	return hero
 

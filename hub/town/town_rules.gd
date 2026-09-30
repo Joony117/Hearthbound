@@ -21,6 +21,9 @@ const TYPES: Array[StringName] = [HOUSE, LUMBERMILL, MINE, FARM]
 ## Types whose first one is free (SYSTEMS.md § The first of each producer is free): each producer,
 ## and the House its workers need (ig-6m2.10). The first Farm is the way out of hunger with no wood.
 const FREE_FIRST: Array[StringName] = [HOUSE, LUMBERMILL, MINE, FARM]
+## Workplace type -> the profession its workers earn XP in and get faster at (ig-6m2.7, SYSTEMS.md § Keepers
+## and professions, Workers). A type with a job is a key here: each new workplace adds its row.
+const JOB_PROFESSIONS: Dictionary[StringName, StringName] = {LUMBERMILL: &"woodcutting", MINE: &"mining", FARM: &"farming"}
 ## The seven halls: placed buildings whose id is their type (DECISIONS.md 2026-09-23, the town
 ## builder, item 3), one of each, never built or demolished. These are their default hexes, where the
 ## authored halls stood before ig-6m2.2; a new profile, or a save without them, gets them here.
@@ -175,19 +178,25 @@ static func place_plan(type: StringName, hex: Vector2i, buildings: Array[Diction
 	return plan
 
 
-## Wood made over delta_seconds by this many Lumbermill workers who are home.
-static func wood_made(workers_home: int, delta_seconds: float, balance: BalanceTable) -> float:
-	return balance.wood_per_worker_minute * workers_home * delta_seconds / 60.0
+## One worker's output at this workplace type, in workers: 1 plus the skill bonus (SYSTEMS.md § Keepers and
+## professions, Workers). The live tick and the panel both sum it. type must be a key of JOB_PROFESSIONS.
+static func worker_work(hero: Hero, type: StringName, balance: BalanceTable) -> float:
+	return 1.0 + balance.worker_skill_bonus_per_level * Hero.profession_skill(hero, JOB_PROFESSIONS[type], balance)
 
 
-## Stone made over delta_seconds by this many Mine workers who are home.
-static func stone_made(workers_home: int, delta_seconds: float, balance: BalanceTable) -> float:
-	return balance.stone_per_worker_minute * workers_home * delta_seconds / 60.0
+## Wood made over delta_seconds by this much Lumbermill work: the sum of worker_work over its workers who are home.
+static func wood_made(work: float, delta_seconds: float, balance: BalanceTable) -> float:
+	return balance.wood_per_worker_minute * work * delta_seconds / 60.0
 
 
-## Food made over delta_seconds by this many Farm workers who are home.
-static func food_made(workers_home: int, delta_seconds: float, balance: BalanceTable) -> float:
-	return balance.food_per_worker_minute * workers_home * delta_seconds / 60.0
+## Stone made over delta_seconds by this much Mine work.
+static func stone_made(work: float, delta_seconds: float, balance: BalanceTable) -> float:
+	return balance.stone_per_worker_minute * work * delta_seconds / 60.0
+
+
+## Food made over delta_seconds by this much Farm work.
+static func food_made(work: float, delta_seconds: float, balance: BalanceTable) -> float:
+	return balance.food_per_worker_minute * work * delta_seconds / 60.0
 
 
 ## Every workplace's rate while the town starves (the clock is above 0), else 1.
@@ -219,8 +228,8 @@ static func starve_stop_seconds(starving_seconds: float, balance: BalanceTable) 
 ## warning and a tick brings at most one death. Food at or over the low line: fed, the clock resets.
 ## In between it holds. ig-0og.1: can_die false (no eater is at home) holds the clock at the stop point
 ## even once acked, and a clock already past it stays where it is. Returns {food, clock, acked, death}.
-static func starve_step(food: float, clock: float, acked: bool, farm_workers: int, eaters: int, can_die: bool, delta_seconds: float, balance: BalanceTable) -> Dictionary:
-	var made: float = food_made(farm_workers, delta_seconds, balance) * work_multiplier(clock, balance)
+static func starve_step(food: float, clock: float, acked: bool, farm_work: float, eaters: int, can_die: bool, delta_seconds: float, balance: BalanceTable) -> Dictionary:
+	var made: float = food_made(farm_work, delta_seconds, balance) * work_multiplier(clock, balance)
 	var left: float = food + made - balance.food_per_hero_minute * eaters * delta_seconds / 60.0
 	var step: Dictionary = {"food": maxf(left, 0.0), "clock": clock, "acked": acked, "death": false}
 	if left < 0.0:

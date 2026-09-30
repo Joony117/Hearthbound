@@ -399,7 +399,7 @@ func _process(delta: float) -> void:
 	_periodic_save_accumulator += elapsed_seconds
 	if _periodic_save_accumulator >= PERIODIC_SAVE_SECONDS:
 		_periodic_save_accumulator = 0.0
-		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _workers_home(TownRules.LUMBERMILL) + _workers_home(TownRules.MINE) + _workers_home(TownRules.FARM) > 0 or not food_eaters().is_empty() or not _working_keepers().is_empty() or town_buildings.any(_is_building):
+		if not expedition_orders.is_empty() or not stranded_incidents.is_empty() or (not lost_caches.is_empty() and not recovery_clock_paused) or _work_home(TownRules.LUMBERMILL) + _work_home(TownRules.MINE) + _work_home(TownRules.FARM) > 0 or not food_eaters().is_empty() or not _working_keepers().is_empty() or town_buildings.any(_is_building):
 			_periodic_save_due = true
 
 
@@ -946,13 +946,18 @@ func cache_seconds_remaining(cache: LostCache, clock_seconds: float) -> float:
 	return LostCache.seconds_remaining(cache, clock_seconds, building_levels[4], keeper_skill(&"Reliquary"), preload("res://balance.tres"))
 
 
-## Every home keeper as [keeper, profession]: who earns XP on the live tick.
+## Every home keeper and worker as [hero, profession]: who earns XP on the live tick. A worker's profession is
+## its workplace's job (TownRules.JOB_PROFESSIONS).
 func _working_keepers() -> Array[Array]:
 	var working: Array[Array] = []
 	for profession: StringName in Hero.PROFESSIONS:
 		var keeper: Hero = _home_keeper(Hero.PROFESSIONS[profession])
 		if keeper != null:
 			working.append([keeper, profession])
+	for hero: Hero in roster:
+		var type: StringName = TownRules.type_of(hero.station)
+		if TownRules.JOB_PROFESSIONS.has(type) and not is_hero_busy(hero):
+			working.append([hero, TownRules.JOB_PROFESSIONS[type]])
 	return working
 
 
@@ -1106,13 +1111,15 @@ func _set_home_in_memory(hero: Hero, house_id: StringName) -> void:
 	_notify_roster_changed()
 
 
-## Workers at a workplace of this type who are home (not away) right now; the live tick pays each of them.
-func _workers_home(type: StringName) -> int:
-	var working: int = 0
+## The work of this type's workers who are home (not away) right now, in workers: each is 1.0 plus its skill
+## bonus (TownRules.worker_work). The live tick pays it, and the starve look-ahead reads the same sum.
+func _work_home(type: StringName) -> float:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var work: float = 0.0
 	for hero: Hero in roster:
 		if TownRules.type_of(hero.station) == type and not is_hero_busy(hero):
-			working += 1
-	return working
+			work += TownRules.worker_work(hero, type, balance)
+	return work
 
 
 ## The clock sits at a stop point, unacknowledged: the last warning is up and nobody can die yet.
@@ -2331,7 +2338,7 @@ func _pulse(delta_seconds: float) -> void:
 		if not active_rescue or not bool(incident.get("expiry_pending", false)):
 			has_expiring_incident = true
 			break
-	var farm: int = _workers_home(TownRules.FARM)
+	var farm: float = _work_home(TownRules.FARM)
 	var starve_death: bool = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, farm, food_eaters().size(), not starvation_candidates().is_empty(), delta_seconds, preload("res://balance.tres"))["death"]
 	# A building that finishes is saved at once: with no other clock running, the periodic save would
 	# never write it, and every reload would build it again.
@@ -2438,8 +2445,8 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	# Live tick only: _advance_orders_in_memory (the offline catch-up) makes nothing (GAME_SPEC.md § Hard constraints).
 	var balance: BalanceTable = preload("res://balance.tres")
 	var work: float = TownRules.work_multiplier(town_starving_seconds, balance)
-	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_workers_home(TownRules.LUMBERMILL), delta_seconds, balance) * work
-	town_resources["stone"] = float(town_resources["stone"]) + TownRules.stone_made(_workers_home(TownRules.MINE), delta_seconds, balance) * work
+	town_resources["wood"] = float(town_resources["wood"]) + TownRules.wood_made(_work_home(TownRules.LUMBERMILL), delta_seconds, balance) * work
+	town_resources["stone"] = float(town_resources["stone"]) + TownRules.stone_made(_work_home(TownRules.MINE), delta_seconds, balance) * work
 	# Construction moves on the live tick only too (SYSTEMS.md § Stone and construction). At 0 it is finished.
 	for building: Dictionary in town_buildings:
 		if _is_building(building):
@@ -2447,7 +2454,7 @@ func _advance_clocks_in_memory(delta_seconds: float) -> void:
 			if float(building["build_remaining"]) <= 0.0:
 				building.erase("build_remaining")
 	var candidates: Array[Hero] = starvation_candidates()
-	var step: Dictionary = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, _workers_home(TownRules.FARM), food_eaters().size(), not candidates.is_empty(), delta_seconds, balance)
+	var step: Dictionary = TownRules.starve_step(float(town_resources["food"]), town_starving_seconds, town_starve_acked, _work_home(TownRules.FARM), food_eaters().size(), not candidates.is_empty(), delta_seconds, balance)
 	town_resources["food"] = step["food"]
 	town_starving_seconds = step["clock"]
 	town_starve_acked = step["acked"]

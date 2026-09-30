@@ -170,6 +170,7 @@ wood_per_worker_minute = 1.0
 mine_wood_cost = 20
 mine_worker_slots = 2
 stone_per_worker_minute = 0.5
+worker_skill_bonus_per_level = 0.1
 house_build_seconds = 60.0
 workplace_build_seconds = 120.0
 hall_upgrade_wood_per_level = 20

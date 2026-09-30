@@ -190,7 +190,7 @@ func test_the_farm_scene_is_pickable_and_its_panel_says_food() -> void:
 	assert_eq(town.building_at(camera.unproject_position(node.global_position + Vector3(0.0, 1.0, 0.0))), farm, "it is clickable")
 	assert_eq((hub.get_node("%Wood") as Label).text, "Wood: 1000   Stone: 0   Food: 30   Beds: 1/1")
 	town.building_selected.emit(farm)
-	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 1/2: Farmer\nMakes 1.0 food a minute")
+	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 1/2: Farmer (Farming 0)\nMakes 1.0 food a minute")
 
 
 ## Arms the periodic save, changes wood without a save, runs one pulse: did the file get the change?
@@ -222,6 +222,8 @@ func _add_hero(hero_name: String) -> Hero:
 	var hero := Hero.new(hero_name, 7)
 	hero.def_id = &"knight"
 	hero.level = 80
+	# Passions are random per hero: none here is for a town job, so the panel text is the same on every run.
+	hero.passions = [&"smithing", &"rites"] as Array[StringName]
 	GameSession.add_hero(hero)
 	return hero
 

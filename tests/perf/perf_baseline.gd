@@ -263,7 +263,7 @@ func _measure_pulse_split() -> void:
 			session._incident_remaining_seconds(incident)
 		side["scan incidents"] = _since(started_scan)
 		started_scan = Time.get_ticks_usec()
-		TownRules.starve_step(float(session.town_resources["food"]), session.town_starving_seconds, session.town_starve_acked, session._workers_home(TownRules.FARM), session.food_eaters().size(), not session.starvation_candidates().is_empty(), PULSE, balance)
+		TownRules.starve_step(float(session.town_resources["food"]), session.town_starving_seconds, session.town_starve_acked, session._work_home(TownRules.FARM), session.food_eaters().size(), not session.starvation_candidates().is_empty(), PULSE, balance)
 		side["scan starve_step"] = _since(started_scan)
 		started_scan = Time.get_ticks_usec()
 		session.town_buildings.any(func(building: Dictionary) -> bool: return session._is_building(building) and float(building["build_remaining"]) <= PULSE)

@@ -135,7 +135,7 @@ func test_the_placed_panel_says_stone_on_a_mine_and_wood_on_a_lumbermill() -> vo
 	add_child_autofree(hub)
 	var town: TownView = hub.get_node("%Town") as TownView
 	town.building_selected.emit(workers[0].station)
-	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 2/2: A, B\nMakes 1.0 stone a minute")
+	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 2/2: A (Mining 0), B (Mining 0)\nMakes 1.0 stone a minute")
 	town.building_selected.emit(mill)
 	assert_eq((hub.get_node("%PlacedInfo") as Label).text, "Workers 0/2: none\nMakes 0.0 wood a minute")
 
@@ -161,6 +161,8 @@ func _add_hero(hero_name: String) -> Hero:
 	var hero := Hero.new(hero_name, 7)
 	hero.def_id = &"knight"
 	hero.level = 80
+	# Passions are random per hero: none here is for a town job, so the panel text is the same on every run.
+	hero.passions = [&"smithing", &"rites"] as Array[StringName]
 	GameSession.add_hero(hero)
 	return hero
 

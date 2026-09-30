@@ -1350,22 +1350,27 @@ func _refresh_placed_panel() -> void:
 	var house: bool = type == TownRules.HOUSE
 	var people: Array[Hero] = _placed_people()
 	var names: PackedStringArray = []
-	var home_count: int = 0
+	var work: float = 0.0
 	for hero: Hero in people:
 		var away: bool = GameSession.is_hero_busy(hero)
-		names.append("%s · Away" % hero.hero_name if away else hero.hero_name)
-		home_count += 0 if away else 1
+		var label: String = hero.hero_name
+		if not house:
+			var profession: StringName = TownRules.JOB_PROFESSIONS[type]
+			label += " (%s %d%s)" % [str(profession).capitalize(), Hero.profession_skill(hero, profession, BALANCE), ", passion" if profession in hero.passions else ""]
+			work += 0.0 if away else TownRules.worker_work(hero, type, BALANCE)
+		names.append("%s · Away" % label if away else label)
+	work *= TownRules.work_multiplier(GameSession.town_starving_seconds, BALANCE)  # What the tick pays: starving halves it.
 	var who: String = "none" if names.is_empty() else ", ".join(names)
 	%PlacedTitle.text = str(_open_building).capitalize().to_upper()
 	if house:
 		%PlacedInfo.text = "Resident %d/%d: %s" % [people.size(), BALANCE.house_capacity, who]
 	else:
-		var made: String = "%.1f wood" % TownRules.wood_made(home_count, 60.0, BALANCE)
+		var made: String = "%.1f wood" % TownRules.wood_made(work, 60.0, BALANCE)
 		match type:
 			TownRules.MINE:
-				made = "%.1f stone" % TownRules.stone_made(home_count, 60.0, BALANCE)
+				made = "%.1f stone" % TownRules.stone_made(work, 60.0, BALANCE)
 			TownRules.FARM:
-				made = "%.1f food" % TownRules.food_made(home_count, 60.0, BALANCE)
+				made = "%.1f food" % TownRules.food_made(work, 60.0, BALANCE)
 		%PlacedInfo.text = "Workers %d/%d: %s\nMakes %s a minute" % [people.size(), TownRules.worker_slots(type, BALANCE), who, made]
 	var building: Dictionary = GameSession.town_building(_open_building)
 	if building.has("build_remaining"):
@@ -1383,18 +1388,25 @@ func _placed_people() -> Array[Hero]:
 
 
 ## The shared roster picker: every hero, with where it lives and works. Rows hold ids (a failed save
-## rebuilds the roster while the popup is open).
+## rebuilds the roster while the popup is open). A workplace's picker shows each hero's skill in its job and
+## lists the passion heroes first, each group in roster order; a House's is as it was.
 func _on_placed_assign_pressed() -> void:
 	var picker: PopupMenu = %PlacedPicker
 	picker.clear()
-	for hero: Hero in GameSession.roster:
-		var marks: String = ""
-		if hero.home != Hero.NO_HOME:
-			marks += " · lives in %s" % str(hero.home).capitalize()
-		if hero.station != Hero.NO_STATION:
-			marks += " · works at %s" % str(hero.station).capitalize()
-		picker.add_item("%s%s" % [hero.hero_name, marks])
-		picker.set_item_metadata(picker.item_count - 1, hero.instance_id)
+	var profession: StringName = TownRules.JOB_PROFESSIONS.get(TownRules.type_of(_open_building), &"")
+	for passion_first: bool in [true, false]:
+		for hero: Hero in GameSession.roster:
+			if (profession in hero.passions) != passion_first:
+				continue
+			var marks: String = ""
+			if profession != &"":
+				marks = " — %s %d%s" % [str(profession).capitalize(), Hero.profession_skill(hero, profession, BALANCE), " · passion" if passion_first else ""]
+			if hero.home != Hero.NO_HOME:
+				marks += " · lives in %s" % str(hero.home).capitalize()
+			if hero.station != Hero.NO_STATION:
+				marks += " · works at %s" % str(hero.station).capitalize()
+			picker.add_item("%s%s" % [hero.hero_name, marks])
+			picker.set_item_metadata(picker.item_count - 1, hero.instance_id)
 	_placed_picker_clears = false
 	if picker.item_count == 0:
 		_status.text = "No heroes to assign."
