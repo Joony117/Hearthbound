@@ -246,6 +246,7 @@ func test_a_returning_battle_is_not_decoded_on_a_pulse_where_it_is_not_due() -> 
 	battle["status"] = "victory"
 	GameSession.expedition_orders[0]["battle"] = battle
 	GameSession.expedition_orders[0]["remaining_seconds"] = 60.0
+	GameSession.expedition_orders[0]["phase"] = "returning"  # ig-f1y: a landing turns an ended battle home, so a writer leaves this shape
 	var decodes: int = GameSession.pulse_decodes_idle
 	GameSession.tick_expeditions(0.25)
 	assert_eq(GameSession.pulse_decodes_idle - decodes, 1, "the replaced Dictionary is decoded")

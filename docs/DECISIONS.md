@@ -262,6 +262,15 @@ the single-thread run.
          landed; fixed, and `test_below_4_fps_the_due_save_runs_before_the_next_pulse` checks it.
        - (c) The clause "a settle's refresh frame (`ig-7sn.16`, if it made one)" above guards
          nothing: `ig-7sn.16` made no refresh frame.
+     - *Note 2026-09-29 (`ig-f1y`, godot-architect, amended by the director):* a landing whose
+       fight has ended also turns its order home (phase `returning`), as the catch-up landing
+       already did. Neither landing captures the stranded incident; the settle does, as it
+       already did for a partial strand. An order with nobody secured is due at once, so its
+       settle comes at the next pulse, or in the catch-up's own commit. So a normal order never
+       carries an incident id in a save, which the validator refuses. The pulse no longer turns
+       battles home. Why: the order kept `fighting` until the next pulse, and the validator
+       refuses fighting with an ended battle, so every commit in that gap was refused. A job's
+       landing still commits nothing; the next save carries the turn home with the battle.
 8. `ig-7sn.12` (load catch-up): `apply_offline_expedition_progress` does no sim work; it sets an
    additive order key `catch_up_seconds` (missing = 0, bad value → 0 with `push_warning`,
    `SAVE_VERSION` unchanged, the `P2-23` precedent). The first pulse sends one job per owed order;

@@ -28,6 +28,7 @@ func after_all() -> void:
 
 
 func before_each() -> void:
+	SaveService.take_load_notice()  # An earlier test's failed write leaves its notice.
 	GameSession.set_process(false)
 	SaveService.load_blocked = false
 	GameSession.from_dict({"roster": []})
@@ -247,6 +248,149 @@ func test_a_battle_a_job_ends_turns_home_and_settles_with_no_decode() -> void:
 	assert_eq(GameSession.pulse_decodes_idle, idle_decodes, "no idle decode")
 
 
+## ig-f1y ACC 1: the landing that ends a fight turns its order home there and then. The save refuses a
+## fighting order holding an ended battle, so until the next pulse turned it home every commit was refused.
+func test_a_landing_that_ends_the_fight_turns_its_order_home_before_any_pulse() -> void:
+	_dispatch_live()
+	_end_by_a_job()
+	var order: Dictionary = GameSession.expedition_orders[0]
+	assert_ne(str((order["battle"] as Dictionary)["status"]), "active", "setup: a job ended the battle")
+	assert_eq(str(order["phase"]), "returning", "turned home by the landing, with no pulse between")
+	_assert_a_commit_holds()
+	_settle_all()
+	assert_eq(GameSession.expedition_reports.size(), 1, "exactly one report")
+	assert_true(GameSession.stranded_incidents.is_empty(), "the hero came home")
+
+
+## ig-f1y ACC 1: the same with everyone downed: the landing leaves the one incident, and it is the order's.
+func test_a_landing_that_downs_everyone_leaves_exactly_one_incident() -> void:
+	var order_id: String = _dispatch_live()
+	_end_by_a_job(true)
+	var order: Dictionary = GameSession.expedition_orders[0]
+	assert_eq(str(order["phase"]), "returning")
+	assert_eq(str(order["incident_id"]), "", "the landing leaves the incident to the settle: a normal order carries none in a save")
+	_assert_a_commit_holds()
+	_settle_all()
+	assert_eq(GameSession.expedition_reports.size(), 1, "exactly one report")
+	assert_eq(GameSession.stranded_incidents.size(), 1, "exactly one incident")
+	assert_eq(str(GameSession.stranded_incidents[0]["source_order_id"]), order_id, "the order's own")
+
+
+## ig-f1y: the offline catch-up landing turns home the same way (no capture), and its own commit settles the
+## order. An order owed its catch-up whose battle ends with everyone downed, landed through the pulse: the commit
+## holds, the order is gone, and there is one incident, the order's, and one report. A pin: it passes on the
+## old code too, and this path had no test. It reads the state on the landing frame itself, before any other
+## frame: a later pulse settling the order would not do (the landing's _resolve_due_orders_in_memory is the line).
+func test_a_catch_up_that_downs_everyone_settles_in_its_own_commit() -> void:
+	var order_id: String = _dispatch_live()
+	_cut_short(true)
+	GameSession.expedition_orders[0]["catch_up_seconds"] = 5.0
+	for ignored_frame: int in 240:
+		if GameSession._battle_checks.has(order_id):
+			break
+		_frame()
+	assert_true(GameSession._battle_checks.has(order_id), "the pulse sent the catch-up")
+	_finish(GameSession._battle_checks[order_id]["catch_up"] as BattleJob)
+	assert_eq(GameSession.expedition_orders.size(), 1, "the order is still out before the catch-up lands")
+	# The next pulse lands it; the frame that uses the entry up is the landing frame.
+	for ignored_frame: int in 240:
+		_frame()
+		if not GameSession._battle_checks.has(order_id):
+			break
+	assert_false(GameSession._battle_checks.has(order_id), "the catch-up landed")
+	assert_true(GameSession.expedition_orders.is_empty(), "the order settled in the landing's own commit")
+	assert_eq(SaveService.last_write_error, "", "the commit was written")
+	assert_eq(SaveService.take_load_notice(), "", "no notice")
+	var sources: Array = GameSession.stranded_incidents.map(func(incident: Dictionary) -> String: return str(incident["source_order_id"]))
+	assert_eq(sources, [order_id], "exactly one incident, the order's own")
+	assert_eq(GameSession.expedition_reports.size(), 1, "exactly one report")
+
+
+## ig-f1y ACC 1: a tactical pause right after the landing. The pulse used to skip a paused order's turn home,
+## so the 15 s save was refused, the refusal started a stall, and a stall runs no pulse: a lock-up.
+func test_a_pause_right_after_the_landing_does_not_stall_the_save() -> void:
+	var order_id: String = _dispatch_live()
+	_end_by_a_job()
+	GameSession.set_battle_paused(order_id, true)
+	GameSession.set("_periodic_save_due", true)
+	_frame()
+	assert_false(GameSession._checkpoint_save_failed, "no stall started")
+	assert_eq(SaveService.last_write_error, "", "the periodic save was written")
+	assert_eq(str(GameSession.expedition_orders[0]["phase"]), "returning")
+	# Settlement removes the order, not its pause entry: un-pausing (the view's exit) still clears it.
+	_settle_all()
+	GameSession.set_battle_paused(order_id, false)
+	assert_false(GameSession._paused_battle_orders.has(order_id), "un-pausing after the settle leaves no entry")
+
+
+## ig-f1y ACC 2: a real save right after the landing frame holds the order turned home with its ended battle,
+## reloads through disk, and settles once.
+func test_a_save_right_after_the_landing_reloads_returning_and_settles_once() -> void:
+	_dispatch_live()
+	_end_by_a_job()
+	assert_true(SaveService.save(), SaveService.last_write_error)
+	var saved: Dictionary = _read_save()
+	assert_eq(str(saved["expedition_orders"][0]["phase"]), "returning", "saved turned home")
+	var status: String = str(saved["expedition_orders"][0]["battle"]["status"])
+	assert_ne(status, "active", "with its ended battle")
+	saved["saved_at_unix"] = Time.get_unix_time_from_system() + 3600.0
+	_write_save(saved)
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	assert_eq(SaveService.take_load_notice(), "", "no recovery notice")
+	assert_eq(str(GameSession.expedition_orders[0]["phase"]), "returning", "reloads turned home")
+	assert_eq(str((GameSession.expedition_orders[0]["battle"] as Dictionary)["status"]), status, "with its ended battle")
+	_settle_all()
+	assert_eq(GameSession.expedition_reports.size(), 1, "settled once")
+
+
+## ig-f1y ACC 2: a save as 67900d4 wrote it (one order fighting a live battle, one walking home from an ended
+## one) reloads and plays on as it did. The order keys are a fresh dispatch's: the format is unchanged.
+func test_a_save_with_one_order_fighting_and_one_walking_home_loads_and_settles_as_before() -> void:
+	_dispatch_live()
+	assert_true(SaveService.save(), SaveService.last_write_error)
+	var dispatched_keys: Array = _sorted_keys(_read_save()["expedition_orders"][0])
+	_dispatch_live()
+	var walking: Dictionary = GameSession.expedition_orders[1]
+	var ended: Dictionary = (walking["battle"] as Dictionary).duplicate(true)
+	ended["status"] = "timeout"
+	walking["battle"] = ended
+	walking["phase"] = "returning"
+	walking["remaining_seconds"] = 120.0
+	assert_true(SaveService.save(), SaveService.last_write_error)
+	var saved: Dictionary = _read_save()
+	assert_eq(_sorted_keys(saved["expedition_orders"][0]), dispatched_keys, "the fighting order's keys")
+	assert_eq(_sorted_keys(saved["expedition_orders"][1]), dispatched_keys, "the walking one's")
+	saved["saved_at_unix"] = Time.get_unix_time_from_system() + 3600.0
+	_write_save(saved)
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	assert_eq(str(GameSession.expedition_orders[0]["phase"]), "fighting")
+	assert_eq(str((GameSession.expedition_orders[0]["battle"] as Dictionary)["status"]), "active")
+	assert_eq(str(GameSession.expedition_orders[1]["phase"]), "returning")
+	GameSession.expedition_orders[1]["remaining_seconds"] = 0.0
+	for ignored_frame: int in 240:
+		if GameSession.expedition_orders.size() < 2:
+			break
+		_frame()
+	assert_eq(GameSession.expedition_orders.size(), 1, "the walking order settled")
+	assert_eq(GameSession.expedition_reports.size(), 1, "once")
+	assert_eq(str(GameSession.expedition_orders[0]["phase"]), "fighting", "the other still fights")
+	assert_eq(str((GameSession.expedition_orders[0]["battle"] as Dictionary)["status"]), "active")
+
+
+## ig-f1y ACC 3: the pulse turns no battle home. A fighting order holding an ended battle (a shape no writer
+## leaves now) is left as it is by the pulse, with its route still to walk.
+func test_the_pulse_turns_no_battle_home() -> void:
+	_dispatch_live()
+	var order: Dictionary = GameSession.expedition_orders[0]
+	var ended: Dictionary = (order["battle"] as Dictionary).duplicate(true)
+	ended["status"] = "timeout"
+	order["battle"] = ended
+	order["remaining_seconds"] = 60.0
+	GameSession.tick_expeditions(1.0)
+	assert_eq(str(GameSession.expedition_orders[0]["phase"]), "fighting", "the pulse left the phase")
+	assert_true(GameSession.stranded_incidents.is_empty())
+
+
 ## One level-0 Knight to verdant_outskirts for one run: its battle stays live for minutes.
 func _dispatch_live() -> String:
 	var hero := Hero.new("Jobber", 0)
@@ -256,6 +400,55 @@ func _dispatch_live() -> String:
 	var order_id: String = GameSession.dispatch_force([preset_id], "verdant_outskirts", 1, {}, LOADOUT)
 	assert_ne(order_id, "", GameSession.last_action_error)
 	return order_id
+
+
+## ig-f1y: cuts the one live battle to half a second (its order has 60 s of route), then runs frames with no
+## pulse until a job's landing ends it, and stops on that frame: no pulse ran between, so nothing but the
+## landing itself can have turned the order home. everyone_downed downs every hero first.
+func _end_by_a_job(everyone_downed: bool = false) -> void:
+	_cut_short(everyone_downed)
+	for ignored_frame: int in 240:
+		GameSession.set("_expedition_pulse_accumulator", 0.0)
+		_frame()
+		if str((GameSession.expedition_orders[0]["battle"] as Dictionary)["status"]) != "active":
+			return
+	fail_test("no job ended the battle")
+
+
+## The one live battle cut to half a second, its order given 60 s of route; everyone_downed downs every hero.
+func _cut_short(everyone_downed: bool) -> void:
+	var order: Dictionary = GameSession.expedition_orders[0]
+	var short: Dictionary = (order["battle"] as Dictionary).duplicate(true)
+	short["max_seconds"] = float(short["elapsed_seconds"]) + 0.5
+	if everyone_downed:
+		var downed: Array[String] = []
+		for actor: Dictionary in short["actors"] as Array:
+			if str(actor["faction"]) == "ally" and not str(actor["hero_id"]).is_empty():
+				actor["life"] = BattleActor.LIFE_DOWNED
+				actor["hp"] = 0.0
+				downed.append(str(actor["hero_id"]))
+		short["downed_ever_ids"] = downed
+	order["battle"] = short
+	order["remaining_seconds"] = 60.0
+
+
+## A committed action goes through as the state stands: it is not refused, and the save says nothing.
+func _assert_a_commit_holds() -> void:
+	var preset_id: String = str(GameSession.team_presets[0]["id"])
+	var hero_ids: Array[String] = [GameSession.roster[0].instance_id]
+	assert_eq(GameSession.save_team_preset(preset_id, "Renamed", hero_ids, "verdant_outskirts"), preset_id, GameSession.last_action_error)
+	assert_eq(SaveService.last_write_error, "", "no write error")
+	assert_eq(SaveService.take_load_notice(), "", "no notice")
+
+
+## Gives the one order no route left and runs frames until it settles.
+func _settle_all() -> void:
+	GameSession.expedition_orders[0]["remaining_seconds"] = 0.0
+	for ignored_frame: int in 240:
+		if GameSession.expedition_orders.is_empty():
+			return
+		_frame()
+	fail_test("the order never settled")
 
 
 ## One 60 fps frame, once every job out has finished (the game waits on a job only when it lands).

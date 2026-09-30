@@ -307,8 +307,6 @@ func _land_battle_checks_in_memory(landed: Dictionary[String, int]) -> void:
 			order.erase("catch_up_seconds")
 			if caught_up_state.status != "active":
 				order["phase"] = "returning"
-				if _battle_has_no_secured_allies(caught_up_state):
-					_capture_stranded_incident(order, caught_up_state)
 			caught_up = true
 			_notify_battle_changed(order_id)
 			continue
@@ -1578,6 +1576,9 @@ func issue_battle_command(order_id: String, command: Dictionary) -> Dictionary:
 
 func set_battle_paused(order_id: String, paused: bool) -> void:
 	if _order_index(order_id) < 0:
+		if not paused:
+			# Settlement removes the order, not its entry: un-pausing still clears it. No job, nobody to tell.
+			_paused_battle_orders.erase(order_id)
 		return
 	if paused:
 		_paused_battle_orders[order_id] = true
@@ -2343,7 +2344,7 @@ func tick_expeditions(delta_seconds: float) -> void:
 ## none starves: the oldest finished job lands first, and a battle that lands sends again behind every job
 ## already out. The sim carries tick_remainder, so the battle runs the same ticks as advancing at the pulse
 ## did, up to the sim's TICK_EPSILON rounding at a chunk's edge (the pulse's own chunks varied the same way).
-## A battle that ends turns home at the next pulse, at most a pulse later.
+## A battle that ends turns home as it lands (ig-f1y).
 func _owe_battles(delta: float, may_advance: bool) -> void:
 	var owed: Dictionary[String, float] = {}
 	for order: Dictionary in expedition_orders:
@@ -2525,19 +2526,14 @@ func _advance_orders_in_memory(delta_seconds: float) -> void:
 	_notify_expeditions_changed()
 
 
-## The pulse's clocks. No live battle advances here (_land_battle writes each advance, and says so); one
-## whose fight ended since the last pulse turns home here, and leaves an incident if nobody can.
+## The pulse's clocks. No live battle advances here (_land_battle writes each advance, and says so), and
+## none turns home here: a fight that ends turns its order home as it lands (ig-f1y).
 func _advance_clocks_in_memory(delta_seconds: float) -> void:
 	for order: Dictionary in expedition_orders:
 		order["remaining_seconds"] = maxf(Item.float_field(order, "remaining_seconds", 0.0, "expedition order") - delta_seconds, 0.0)
 		if str(order.get("backend", "legacy_v2")) == "battle_v1" and not _battle_clock_stopped(order):
 			if _battle_live(order):
 				continue
-			if not str(order.get("phase", "")) in ["returning", "checking"]:
-				var state: BattleState = _battle_state(order)
-				order["phase"] = "returning"
-				if _battle_has_no_secured_allies(state):
-					_capture_stranded_incident(order, state)
 			_notify_battle_changed(str(order.get("id", "")))
 	if not recovery_clock_paused and not lost_caches.is_empty():
 		recovery_clock_seconds += delta_seconds
@@ -2629,12 +2625,15 @@ func _advance_battle(order: Dictionary, seconds: float) -> void:
 
 
 ## An advance's write-back, the one place an advanced battle lands: the order takes the new Dictionary, the
-## state it came from is kept beside it, and the battle says so.
+## state it came from is kept beside it, a fight that has ended turns the order home (ig-f1y: the save
+## refuses fighting with an ended battle), and the battle says so. Only a live order lands here.
 func _land_battle(order: Dictionary, battle: Dictionary, state: BattleState) -> void:
 	var order_id: String = str(order.get("id", ""))
 	order["battle"] = battle
 	_battle_states[order_id] = [battle, state]
 	pulse_battle_advances += 1
+	if state.status != "active":
+		order["phase"] = "returning"
 	_notify_battle_changed(order_id)
 
 
