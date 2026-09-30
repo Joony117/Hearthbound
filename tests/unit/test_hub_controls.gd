@@ -129,6 +129,34 @@ func test_a_hidden_roster_rebuilds_nothing_and_its_open_matches_a_fresh_rebuild(
 	assert_string_contains(hero_detail.text, "History:", "its detail shows")
 
 
+## ig-7sn.21 (F3): %InventoryList is the Forge's. With the Forge closed a roster change leaves it alone and
+## marks it stale; the Forge's open shows the current inventory, a fresh rebuild, and keeps the selection.
+func test_a_closed_forge_leaves_the_inventory_alone_and_its_open_shows_the_current_one() -> void:
+	var ring := Item.new(&"ring", 2)
+	GameSession.add_item(ring)
+	var hub: Node3D = _instantiate_hub()
+	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
+	assert_eq(inventory_list.item_count, 0, "_ready leaves the hidden Forge's list for the first open")
+	hub._open(&"Forge")
+	assert_eq(inventory_list.item_count, 1)
+	inventory_list.select(0)
+	inventory_list.multi_selected.emit(0, true)
+	hub._open(hub.NO_BUILDING)
+	var shown: Array[String] = _rows(inventory_list)
+	GameSession.add_item(Item.new(&"boots", 3))
+	assert_eq(_rows(inventory_list), shown, "closed: the list is not rebuilt")
+	assert_true(hub._stale.has(&"inventory"), "closed: it is marked stale")
+	hub._open(&"Forge")
+	assert_false(hub._stale.has(&"inventory"), "the open ran it")
+	var opened: Array[String] = _rows(inventory_list)
+	assert_eq(opened.size(), 2, "the open shows the current inventory")
+	hub._refresh_inventory()
+	assert_eq(_rows(inventory_list), opened, "the open equals a fresh rebuild")
+	var selected: PackedInt32Array = inventory_list.get_selected_items()
+	assert_eq(selected.size(), 1, "the selection made before the close survives it")
+	assert_eq(inventory_list.get_item_metadata(selected[0]), ring)
+
+
 ## ig-7sn.9: %SupplyStock sits outside ExpeditionsView, whose gated refresh also writes it; the hub
 ## writes it at entry and on the Apothecary's open, with no pulse, and while the load is blocked too.
 func test_the_apothecary_shows_the_supply_stock_with_no_pulse_even_while_the_load_is_blocked() -> void:
@@ -217,6 +245,7 @@ func test_inventory_exact_rank_signal_filters_to_only_the_selected_rank() -> voi
 	GameSession.add_item(rank_c_item)
 	GameSession.add_item(rank_b_item)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%InventoryRankFilter") as OptionButton
 	var exact_rank: CheckBox = hub.get_node("%InventoryExactRank") as CheckBox
@@ -368,6 +397,7 @@ func test_favorite_item_toggle_updates_protection_and_favorites_filter() -> void
 	var item := Item.new(&"ring", 2)
 	GameSession.add_item(item)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var inventory: ItemList = hub.get_node("%InventoryList") as ItemList
 	var favorite: CheckBox = hub.get_node("%FavoriteItem") as CheckBox
 	var protection_filter: OptionButton = hub.get_node("%InventoryProtectionFilter") as OptionButton
@@ -394,6 +424,7 @@ func test_a_favorite_that_fails_to_save_says_so_and_unticks() -> void:
 	var item := Item.new(&"ring", 2)
 	GameSession.add_item(item)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var inventory: ItemList = hub.get_node("%InventoryList") as ItemList
 	var favorite: CheckBox = hub.get_node("%FavoriteItem") as CheckBox
 	inventory.select(0)

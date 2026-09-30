@@ -26,6 +26,9 @@ extends SceneTree
 ## Since ig-7sn.10: roster and pulse5 print SPLIT lines (each battle's bytes, actors by faction and life,
 ## field objects and dead-enemy share; the three text forms' stringify, parse and bytes; _load_refusal by
 ## battle), and pulse5 prints SAVEFRAME: the frame the periodic save ran on, and that whole frame's time.
+## Since ig-7sn.21: the SETTLE and COMMIT lines print the hub's dream_reads and dream_resumes since the last
+## pulse, and the header line the display server's name. settle1 also runs --headless (CPU only: no draw, so
+## a whole-frame row is not the windowed one; tests/perf/run_measure.sh MODE=headless).
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -75,7 +78,7 @@ func _run() -> void:
 	DisplayServer.window_set_size(Vector2i(1920, 1080))
 	print("MEASURE %s at commit %s" % [measure, args[1] if args.size() > 1 else "?"])
 	print("APPDATA %s | user:// %s" % [OS.get_environment("APPDATA"), ProjectSettings.globalize_path("user://")])
-	print("CPU %s | GPU %s | window %s | vsync %d | max_fps %d" % [OS.get_processor_name(), RenderingServer.get_video_adapter_name(), DisplayServer.window_get_size(), DisplayServer.window_get_vsync_mode(), Engine.max_fps])
+	print("CPU %s | GPU %s | display %s | window %s | vsync %d | max_fps %d" % [OS.get_processor_name(), RenderingServer.get_video_adapter_name(), DisplayServer.get_name(), DisplayServer.window_get_size(), DisplayServer.window_get_vsync_mode(), Engine.max_fps])
 	print("SAVE %d heroes, %d records, %d buildings, %d orders" % [session.roster.size(), session.ledger.size(), session.town_buildings.size(), session.expedition_orders.size()])
 	match measure:
 		"pulse1":
@@ -421,6 +424,7 @@ func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
 		var active: int = _active()
 		var saved_at: float = session.saved_at_unix
 		var decodes: Array[int] = [session.pulse_decodes_active, session.pulse_decodes_idle]
+		var dreams: Array[int] = [_hub_counter("dream_reads"), _hub_counter("dream_resumes")]
 		spent.clear()
 		var started: int = Time.get_ticks_usec()
 		session._pulse(PULSE)
@@ -453,7 +457,7 @@ func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
 				top.append("%s %.1f" % [key, float(handlers[key])])
 		_add(samples, head + " handlers, all", handler_ms)
 		var zone: String = str(session.expedition_reports.back().get("zone_id", "?")) if settled > 0 else kind
-		var line: String = "%s %s, %s (%d active, %d checking before; %d leg(s)): pulse %.1f ms, whole frame %.1f ms, decodes %d active/%d idle; handlers %.1f ms (%s)" % ["SETTLE" if settled > 0 else "COMMIT", label, zone, active, checking, settled, pulse_ms, frame_ms, session.pulse_decodes_active - decodes[0], session.pulse_decodes_idle - decodes[1], handler_ms, ", ".join(top)]
+		var line: String = "%s %s, %s (%d active, %d checking before; %d leg(s)): pulse %.1f ms, whole frame %.1f ms, decodes %d active/%d idle, dream_reads %d, dream_resumes %d; handlers %.1f ms (%s)" % ["SETTLE" if settled > 0 else "COMMIT", label, zone, active, checking, settled, pulse_ms, frame_ms, session.pulse_decodes_active - decodes[0], session.pulse_decodes_idle - decodes[1], _hub_counter("dream_reads") - dreams[0], _hub_counter("dream_resumes") - dreams[1], handler_ms, ", ".join(top)]
 		if settled > 0 and not parts.is_empty():
 			var rest: float = pulse_ms - handler_ms
 			var side: PackedStringArray = []
@@ -472,6 +476,12 @@ func _settle_pulses(label: String, count: int, spent: Dictionary) -> void:
 	for key: String in labels:
 		_report(key, samples[key])
 	print("%s: %d pulses, %d that settled" % [label, pulses, settles])
+
+
+## One of the hub's dream counters (dream_resumes is ig-7sn.21's: 0 before the hub has it).
+func _hub_counter(counter: String) -> int:
+	var value: Variant = current_scene.get(counter)
+	return int(value) if value is int else 0
 
 
 ## The order the next pulse settles by its route (its fight over and its route home done, as _pulse

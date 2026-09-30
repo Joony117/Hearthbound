@@ -3588,11 +3588,15 @@ func bond_index() -> Dictionary:
 
 
 ## The kept index's {version, touched} (Bonds.index_state): which heroes' tallies each fold since
-## bond_index()'s pairs were built touched (ig-7sn.16). A rebuild makes new pairs and starts these over.
-## Callers never change it.
+## bond_index()'s pairs were built touched (ig-7sn.16), and {outs, out_named, out_all}: which kept dreams
+## and names an eviction since then could have changed (ig-7sn.21). A rebuild makes new pairs and starts
+## these over. Callers never change it.
 func bond_changes() -> Dictionary:
 	bond_index()
-	return {"version": _bond_state["version"], "touched": _bond_state["touched"]}
+	return {
+		"version": _bond_state["version"], "touched": _bond_state["touched"],
+		"outs": _bond_state["outs"], "out_named": _bond_state["out_named"], "out_all": _bond_state["out_all"],
+	}
 
 
 func _bond_in_step() -> bool:

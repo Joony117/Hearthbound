@@ -81,12 +81,25 @@ static func _names_hero(record: Dictionary, hero_id: String) -> bool:
 	return str(record.get("hero", "")) == hero_id or _array(record, "team").has(hero_id) or _array(record, "rescued").has(hero_id)
 
 
+## The index of the first record of ledger with a seq over seq, ledger.size() for none. Seqs rise along
+## the list (append writes them and a load drops one that does not), so it walks back from the end and
+## costs the records after seq, not the list (ig-7sn.21). A seq under 1 is before every record.
+static func first_after(ledger: Array[Dictionary], seq: int) -> int:
+	if seq < 1:
+		return 0
+	var index: int = ledger.size()
+	while index > 0 and int(ledger[index - 1].get("seq", 0)) > seq:
+		index -= 1
+	return index
+
+
 ## The hero-detail History list, newest first, at most max_lines. Routine victories in a row at
 ## one zone collapse into one line. names maps hero ids to display names; the ledger's own
 ## summoned/died records fill the gaps. It walks the ledger from the newest end and stops where the
-## list ends (ig-7sn.16), so only a hero with fewer lines than max_lines reads every record.
-static func history_lines(ledger: Array[Dictionary], hero_id: String, names: Dictionary, rank_names: PackedStringArray, max_lines: int) -> Array[String]:
-	var all_names: Dictionary = known_names(ledger, names)
+## list ends (ig-7sn.16), so only a hero with fewer lines than max_lines reads every record. known is
+## known_names(ledger, names) when the caller kept it (ig-7sn.21); {} reads it here.
+static func history_lines(ledger: Array[Dictionary], hero_id: String, names: Dictionary, rank_names: PackedStringArray, max_lines: int, known: Dictionary = {}) -> Array[String]:
+	var all_names: Dictionary = known if not known.is_empty() else known_names(ledger, names)
 	var lines: Array[String] = []
 	var routine_zone: String = ""
 	var routine_count: int = 0
@@ -114,12 +127,25 @@ static func history_lines(ledger: Array[Dictionary], hero_id: String, names: Dic
 ## names (hero id -> display name) filled in with the names the summoned and died records carry,
 ## so a hero no longer on the roster is still named.
 static func known_names(ledger: Array[Dictionary], names: Dictionary) -> Dictionary:
-	var all_names: Dictionary = {}
-	for record: Dictionary in ledger:
-		if record.has("name"):
-			all_names[str(record.get("hero", ""))] = str(record.get("name"))
+	var all_names: Dictionary = record_names(ledger)["names"]
 	all_names.merge(names, true)
 	return all_names
+
+
+## The names the ledger's own records carry, hero id -> name, a later record winning, as {names, seq}
+## (seq the last record's, 0 for none). kept is an earlier return for the same ledger, or {}: it resumes
+## with the records after kept["seq"] and returns kept, changed (ig-7sn.21). Any record with a name field
+## counts (a summoned or died one writes it, and a load accepts it on a battle), so a caller starts over
+## when a non-battle record, or one carrying a name, is taken out (Bonds' out_all).
+static func record_names(ledger: Array[Dictionary], kept: Dictionary = {}) -> Dictionary:
+	var state: Dictionary = kept if not kept.is_empty() else {"names": {}, "seq": 0}
+	var found: Dictionary = state["names"]
+	for index: int in range(first_after(ledger, int(state["seq"])), ledger.size()):
+		var record: Dictionary = ledger[index]
+		if record.has("name"):
+			found[str(record.get("hero", ""))] = str(record.get("name"))
+	state["seq"] = int(ledger.back().get("seq", 0)) if not ledger.is_empty() else 0
+	return state
 
 
 static func _line(record: Dictionary, hero_id: String, names: Dictionary, rank_names: PackedStringArray) -> String:

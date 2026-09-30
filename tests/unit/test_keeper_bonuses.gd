@@ -85,6 +85,7 @@ func test_the_inventory_tooltip_shows_the_keeper_salvage() -> void:
 	item.enhance_level = 5
 	GameSession.add_item(item)
 	var hub: Node3D = _instantiate_hub()
+	hub._open(&"Forge")
 	var tooltip: String = (hub.get_node("%InventoryList") as ItemList).get_item_tooltip(0)
 	assert_string_contains(tooltip, "Salvage: %d %s parts" % [roundi(8 * 1.25), item.rank_label(BALANCE)])
 

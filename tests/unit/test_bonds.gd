@@ -1044,7 +1044,7 @@ func test_an_eviction_the_fold_cannot_take_out_rebuilds() -> void:
 	_assert_index_is_a_rebuild("after the rebuild")
 
 
-func test_the_detail_panel_reads_a_dream_once_per_ledger_change() -> void:
+func test_the_detail_panel_reads_a_dream_once_and_resumes_it_on_a_ledger_change() -> void:
 	_hero(A, "Ada")
 	_hero(B, "Bea")
 	for _index: int in 2:
@@ -1054,13 +1054,14 @@ func test_the_detail_panel_reads_a_dream_once_per_ledger_change() -> void:
 	hub._open(&"Forge")
 	_select(hub, "Ada")
 	var reads: int = hub.dream_reads
+	var resumes: int = hub.dream_resumes
 	hub._refresh_hero_detail()
 	hub._refresh_hero_detail()
-	assert_eq(hub.dream_reads, reads, "no ledger change: the kept dream")
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads, resumes], "no ledger change: the kept dream")
 	GameSession._record("battle", {"order": "order:new", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
 	hub._refresh_hero_detail()
 	hub._refresh_hero_detail()
-	assert_eq(hub.dream_reads, reads + 1, "an append: read once more")
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads, resumes + 1], "an append: the kept dream resumes once, no read in full (ig-7sn.21)")
 	assert_string_contains((hub.get_node("%HeroDetail") as Label).text, "Fight beside Bea again (2/3).")
 
 
@@ -1292,6 +1293,273 @@ func test_the_hubs_look_at_the_touched_heroes_equals_a_full_look() -> void:
 	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records, "the second half evicted")
 
 
+## ---- ig-7sn.21: the kept dreams and names
+
+## ACC 3, the marks: folding out a battle marks its team, rescued and rescuers and no one else; any
+## other kind marks everyone (it can change any hero's dream). They are stamped even when the fold
+## refuses the take-out, because a refusal rebuilds the index and starts them over.
+func test_folding_out_marks_the_heroes_a_battle_names_and_everyone_for_any_other_kind() -> void:
+	_battle([A, B], "victory", {"rescued": [C], "rescuers": [D]})
+	_battle([E], "victory")
+	_record("ranked_up", {"hero": A, "from": 0, "to": 1})
+	_record("died", {"hero": B, "name": "Bea"})
+	_record("summoned", {"hero": F, "name": "Fay", "rank": 0})
+	var folded: Dictionary = Bonds.index_state(_ledger, BALANCE)
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [0, {}, 0], "a build starts them over")
+	Bonds.fold_out(folded, _ledger[0], BALANCE)
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [1, {A: 1, B: 1, C: 1, D: 1}, 0], "a battle marks its team, rescued and rescuers")
+	Bonds.fold_out(folded, _ledger[1], BALANCE)
+	assert_eq([folded["outs"], folded["out_named"], folded["out_all"]], [2, {A: 1, B: 1, C: 1, D: 1, E: 2}, 0], "a routine win marks its team")
+	for at: int in range(2, 5):
+		Bonds.fold_out(folded, _ledger[at], BALANCE)
+		assert_eq([folded["outs"], folded["out_all"]], [at + 1, at + 1], "a %s record marks everyone" % _ledger[at]["kind"])
+	assert_eq((folded["out_named"] as Dictionary).size(), 5, "and no one in particular")
+
+
+## Ledger.first_after: the index of the first record past a seq, through gaps the evictions leave.
+func test_first_after_finds_the_first_record_past_a_seq() -> void:
+	var ledger: Array[Dictionary] = []
+	assert_eq([Ledger.first_after(ledger, 0), Ledger.first_after(ledger, 5)], [0, 0], "an empty list")
+	for seq: int in [2, 3, 7, 8]:
+		Ledger.append(ledger, seq, 0, "summoned", {"hero": A, "name": "Ada", "rank": 0})
+	assert_eq([-5, 0, 1, 2, 3, 5, 7, 8, 9].map(func(seq: int) -> int: return Ledger.first_after(ledger, seq)), [0, 0, 0, 1, 2, 2, 3, 4, 4])
+
+
+## ACC 3: a dream_fold resumed after the records appended since equals the dream read in full (skip
+## false): for every hero of the perf seed's ledger split at its 9,000th record, and for twelve heroes of
+## seeded ledgers kept through appends and evictions under a cap of 300, every 5th record, a hero
+## resuming unless an eviction marked it (out_named, or out_all) since it was read, as the hub tells.
+func test_a_resumed_dream_equals_the_dream_read_in_full() -> void:
+	var heroes: Array[String] = []
+	for index: int in 100:
+		heroes.append("perf:%d" % index)
+	var seeded: Array[Dictionary] = _perf_ledger(heroes)
+	var prefix: Array[Dictionary] = seeded.slice(0, 9000)
+	for hero_id: String in heroes:
+		var resumed: Dictionary = Bonds.dream_fold(seeded, hero_id, Bonds.dream_fold(prefix, hero_id))
+		if Bonds.dream_of(resumed) != Bonds.dream(seeded, hero_id, null, false):
+			fail_test("the perf seed's %s" % hero_id)
+			return
+	var twelve: Array[String] = heroes.slice(0, 12)
+	var counts: Dictionary = {"full": 0, "resumed": 0}
+	var states: Dictionary = {}
+	for seed_value: int in [1, 2, 3]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_value
+		var ledger: Array[Dictionary] = []
+		var tiers: Array[int] = []
+		var folded: Dictionary = Bonds.index_state(ledger, BALANCE)
+		var kept: Dictionary = {}
+		var read_at: Dictionary = {}
+		for seq: int in range(1, 601):
+			var made: Array = _random_record(rng, twelve, seq, true)
+			Ledger.append(ledger, seq, 0, made[0], made[1])
+			tiers.append(Ledger.tier(ledger.back()))
+			Bonds.fold_in(folded, ledger.back(), BALANCE)
+			for record: Dictionary in Ledger.evict(ledger, tiers, 300):
+				if not Bonds.fold_out(folded, record, BALANCE):
+					folded = Bonds.index_state(ledger, BALANCE)
+					kept = {}
+					read_at = {}
+			if seq % 5 != 0:
+				continue
+			for hero_id: String in twelve:
+				var seen: int = int(read_at.get(hero_id, -1))
+				var resumes: bool = kept.has(hero_id) and int(folded["out_all"]) <= seen and int((folded["out_named"] as Dictionary).get(hero_id, 0)) <= seen
+				if not resumes:
+					read_at[hero_id] = int(folded["outs"])
+				counts["resumed" if resumes else "full"] += 1
+				kept[hero_id] = Bonds.dream_fold(ledger, hero_id, kept[hero_id] if resumes else {})
+				var dream: Dictionary = Bonds.dream_of(kept[hero_id])
+				if dream != Bonds.dream(ledger, hero_id, null, false):
+					fail_test("seed %d, %s at seq %d (resumed: %s)" % [seed_value, hero_id, seq, resumes])
+					return
+				states["%s:%s" % [dream.get("dream", "none"), dream.get("state", "none")]] = true
+	gut.p("KEPT DREAMS: %s; %s" % [counts, states.keys()])
+	assert_gt(counts["resumed"], 100, "many resumed")
+	assert_gt(counts["full"], 100, "many read again in full")
+	assert_gte(states.keys().filter(func(state: String) -> bool: return not state.ends_with(":open") and not state.begins_with("none")).size(), 3, "and some ended: %s" % [states.keys()])
+
+
+## ACC 3, through the hub: after appends the shown hero's dream resumes, and an eviction that names a hero
+## in a battle's team, rescued or rescuers reads its dream in full once; a hero it does not name resumes.
+## Every answer equals a full read.
+func test_an_eviction_that_names_the_hero_reads_its_dream_in_full_once() -> void:
+	_fill_to_cap(6)
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	_battle_in(GameSession.ledger, [A, B], "victory")
+	_battle_in(GameSession.ledger, [C, D], "victory")
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	for hero_id: String in [A, B, C, D]:
+		assert_eq(hub._dream(hero_id), Bonds.dream(GameSession.ledger, hero_id), "read in full: %s" % hero_id)
+	assert_eq(hub._dream(A)["dream"], "life_debt")
+	var reads: int = hub.dream_reads
+	var resumes: int = hub.dream_resumes
+	for step: int in 3:
+		GameSession._record("battle", {"order": "order:new%d" % step, "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+		assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A), "append %d" % step)
+		assert_eq(hub._dream(C), Bonds.dream(GameSession.ledger, C), "append %d, one it does not name" % step)
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads, resumes + 6], "under the cap: every look after an append resumes")
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	var evicted_seq: int = BALANCE.ledger_max_records - 4
+	assert_true(GameSession.ledger.any(func(record: Dictionary) -> bool: return record["seq"] == evicted_seq), "the routine win that names Ada and Bea is in")
+	GameSession._record("battle", {"order": "order:new3", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records, "the fourth append evicted the oldest routine win")
+	assert_false(GameSession.ledger.any(func(record: Dictionary) -> bool: return record["seq"] == evicted_seq), "the win that named Ada and Bea")
+	reads = hub.dream_reads
+	resumes = hub.dream_resumes
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A))
+	assert_eq(hub._dream(B), Bonds.dream(GameSession.ledger, B))
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 2, resumes], "the named heroes read in full")
+	assert_eq(hub._dream(C), Bonds.dream(GameSession.ledger, C))
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 2, resumes + 1], "the hero it does not name resumes")
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A))
+	assert_eq(hub._dream(B), Bonds.dream(GameSession.ledger, B))
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 2, resumes + 1], "once: no read after it")
+
+
+## ACC 3: a load (a new array) and a rollback that dropped an append each read the dream in full; the
+## append after them resumes; a death of the owed hero appended later resumes to "lost".
+func test_a_load_and_a_rollback_that_dropped_an_append_each_read_the_dream_in_full() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	for _index: int in 2:
+		_battle_in(GameSession.ledger, [A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	assert_eq(hub._dream(A)["state"], "open")
+	var reads: int = hub.dream_reads
+	var resumes: int = hub.dream_resumes
+	var data: Dictionary = GameSession.to_dict()
+	data["ledger"] = GameSession.ledger.duplicate(true)
+	GameSession.from_dict(data)
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A))
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 1, resumes], "a load reads in full")
+	var dropped := func() -> bool:
+		GameSession._record("battle", {"order": "order:dropped", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+		return false
+	assert_false(GameSession._commit_profile_mutation(dropped))
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A))
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 2, resumes], "a rollback that dropped an append reads in full")
+	GameSession._record("battle", {"order": "order:kept", "zone": ZONE, "team": [A, B], "result": "retreated", "moments": []})
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A))
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 2, resumes + 1], "the append after it resumes")
+	assert_eq(hub._dream(B), Bonds.dream(GameSession.ledger, B))
+	assert_true(hub._dreams.has(B), "Bea's dream is kept while she is on the roster")
+	GameSession.kill_hero(GameSession.hero_by_id(B), StringName(ZONE), BALANCE)
+	assert_eq(hub._dream(A)["state"], "lost", "the owed hero's death")
+	assert_eq(hub._dream(A), Bonds.dream(GameSession.ledger, A))
+	assert_eq([hub.dream_reads, hub.dream_resumes], [reads + 3, resumes + 2], "a death appended resumes")
+	assert_false(hub._dreams.has(B), "a hero that left the roster keeps no dream")
+	assert_true(hub._dreams.has(A))
+
+
+## ACC 3 (the names): the hub's kept known names equal Ledger.known_names after appends, after an
+## eviction of a summoned record, after an eviction of a died record (the oldest filler goes, and its
+## name with it) and after a load. Appends fold into the kept names; an eviction of another kind than a
+## battle, or a load, reads them again in full.
+func test_the_kept_names_equal_known_names_when_a_summoned_record_is_evicted() -> void:
+	_assert_kept_names_through("summoned")
+
+
+func test_the_kept_names_equal_known_names_when_a_died_record_is_evicted() -> void:
+	_assert_kept_names_through("died")
+
+
+## Sol's case: a load accepts a battle record that carries a name, and Ledger.known_names reads every
+## record that has one, so evicting that battle takes its name out (the kept names read again in full).
+func test_the_kept_names_equal_known_names_when_a_battle_that_carries_a_name_is_evicted() -> void:
+	_fill_to_cap(1)
+	_battle_in(GameSession.ledger, [A, B], "victory", {"hero": "gone", "name": "Mara"})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	var living: Dictionary = hub._roster_names()
+	assert_eq(hub._known_names(living), Ledger.known_names(GameSession.ledger, living), "at entry")
+	assert_eq(hub._known_names(living)["gone"], "Mara")
+	GameSession._record("summoned", {"hero": "new", "name": "New", "rank": 0})
+	assert_false(GameSession.ledger.any(func(record: Dictionary) -> bool: return record["kind"] == "battle"), "the routine battle was evicted")
+	assert_eq(hub._known_names(living), Ledger.known_names(GameSession.ledger, living), "after the eviction")
+	assert_false(hub._known_names(living).has("gone"), "its name went")
+
+
+## ACC 3 (the names): History given the kept names equals History that reads them, for every hero of the
+## perf seed and of seeded ledgers with summons and deaths, the kept names resumed record by record.
+func test_history_lines_with_the_kept_names_equal_those_without() -> void:
+	var heroes: Array[String] = []
+	var names: Dictionary = {}
+	for index: int in 100:
+		heroes.append("perf:%d" % index)
+		names[heroes.back()] = "Perf %d" % index
+	var seeded: Array[Dictionary] = _perf_ledger(heroes)
+	var known: Dictionary = Ledger.known_names(seeded, names)
+	for hero_id: String in heroes:
+		if Ledger.history_lines(seeded, hero_id, names, BALANCE.rank_names, 10, known) != Ledger.history_lines(seeded, hero_id, names, BALANCE.rank_names, 10):
+			fail_test("the perf seed's %s" % hero_id)
+			return
+	var eight: Array[String] = heroes.slice(0, 8)
+	for seed_value: int in [1, 2]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_value
+		var ledger: Array[Dictionary] = []
+		var kept: Dictionary = {}
+		for seq: int in range(1, 601):
+			var made: Array = _random_record(rng, eight, seq)
+			Ledger.append(ledger, seq, 0, made[0], made[1])
+			kept = Ledger.record_names(ledger, kept)
+			if seq % 50 != 0:
+				continue
+			known = (kept["names"] as Dictionary).duplicate()
+			known.merge(names, true)
+			assert_eq(known, Ledger.known_names(ledger, names), "seed %d: the kept names at seq %d" % [seed_value, seq])
+			for hero_id: String in eight:
+				if Ledger.history_lines(ledger, hero_id, names, BALANCE.rank_names, 10, known) != Ledger.history_lines(ledger, hero_id, names, BALANCE.rank_names, 10):
+					fail_test("seed %d, %s at seq %d" % [seed_value, hero_id, seq])
+					return
+
+
+## ACC 3: the hub's kept dreams and names equal a full read for every hero of a seeded run that reaches the
+## cap halfway (each record then evicts one), through a load and a rollback that dropped three appends.
+func test_the_hubs_kept_dreams_and_names_equal_a_full_read_through_evictions_a_load_and_a_rollback() -> void:
+	_fill_to_cap(150)
+	var heroes: Array[String] = []
+	for index: int in 8:
+		heroes.append(_hero("hero:%d" % index, "H%d" % index).instance_id)
+	var hub: Node3D = _hub()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	for step: int in range(1, 301):
+		if step == 100:
+			var data: Dictionary = GameSession.to_dict()
+			data["ledger"] = GameSession.ledger.duplicate(true)
+			GameSession.from_dict(data)
+		if step == 200:
+			var mutation := func() -> bool:
+				for _index: int in 3:
+					var dropped: Array = _random_record(rng, heroes, GameSession.ledger_next_seq, true)
+					GameSession._record(dropped[0], dropped[1])
+				return false
+			assert_false(GameSession._commit_profile_mutation(mutation))
+		var made: Array = _random_record(rng, heroes, GameSession.ledger_next_seq, true)
+		GameSession._record(made[0], made[1])
+		if step % 3 != 0:
+			continue
+		for hero_id: String in heroes:
+			if hub._dream(hero_id) != Bonds.dream(GameSession.ledger, hero_id, null, false):
+				fail_test("step %d (%s): %s's dream" % [step, made[0], hero_id])
+				return
+		var living: Dictionary = hub._roster_names()
+		if hub._known_names(living) != Ledger.known_names(GameSession.ledger, living):
+			fail_test("step %d (%s): the known names" % [step, made[0]])
+			return
+	gut.p("HUB DREAMS: %d read in full, %d resumed" % [hub.dream_reads, hub.dream_resumes])
+	assert_gt(hub.dream_resumes, 100, "most looks resumed")
+	assert_gt(hub.dream_reads, heroes.size() * 2, "some read in full (the load, the rollback, evictions)")
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records, "the second half evicted")
+
+
 ## ---- helpers
 
 ## The perf seed's ledger (tests/perf/seed_perf.gd: its rng, 5-hero teams and mix) at the cap.
@@ -1453,13 +1721,42 @@ func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int,
 	return ["battle", fields]
 
 
-## Summons of no one on the roster up to short of the cap, straight into GameSession's ledger: they
-## score nothing, so a rebuild stays cheap. GameSession's cap is folded in when it compiles, so a
+## Summons (or records of another kind) of no one on the roster up to short of the cap, straight into
+## GameSession's ledger: they score nothing, so a rebuild stays cheap. GameSession's cap is folded in when it compiles, so a
 ## test cannot shrink it.
-func _fill_to_cap(short: int) -> void:
+func _fill_to_cap(short: int, kind: String = "summoned") -> void:
 	for seq: int in range(1, BALANCE.ledger_max_records - short + 1):
-		Ledger.append(GameSession.ledger, seq, 0, "summoned", {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
+		Ledger.append(GameSession.ledger, seq, 0, kind, {"hero": "filler:%d" % seq, "name": "F", "rank": 0})
 	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+
+
+func _assert_kept_names_through(kind: String) -> void:
+	_fill_to_cap(3, kind)
+	_hero(A, "Ada")
+	var hub: Node3D = _hub()
+	var living: Dictionary = hub._roster_names()
+	assert_eq(hub._known_names(living), Ledger.known_names(GameSession.ledger, living), "%s: at entry" % kind)
+	var kept: Dictionary = hub._record_names
+	assert_true((kept["names"] as Dictionary).has("filler:1"))
+	for step: int in 3:
+		GameSession._record(kind, {"hero": "new:%d" % step, "name": "N%d" % step, "rank": 0})
+		assert_eq(hub._known_names(living), Ledger.known_names(GameSession.ledger, living), "%s: append %d" % [kind, step])
+		assert_true(is_same(hub._record_names, kept), "%s: append %d folded into the kept names" % [kind, step])
+	assert_eq(GameSession.ledger.size(), BALANCE.ledger_max_records)
+	GameSession._record(kind, {"hero": "new:3", "name": "N3", "rank": 0})
+	assert_false(GameSession.ledger.any(func(record: Dictionary) -> bool: return record["hero"] == "filler:1"), "%s: the oldest filler was evicted" % kind)
+	assert_eq(hub._known_names(living), Ledger.known_names(GameSession.ledger, living), "%s: after the eviction" % kind)
+	assert_false((hub._record_names["names"] as Dictionary).has("filler:1"), "%s: its name went" % kind)
+	assert_false(is_same(hub._record_names, kept), "%s: read again in full" % kind)
+	kept = hub._record_names
+	assert_eq(hub._known_names(living), Ledger.known_names(GameSession.ledger, living))
+	assert_true(is_same(hub._record_names, kept), "%s: once" % kind)
+	var data: Dictionary = GameSession.to_dict()
+	data["ledger"] = GameSession.ledger.duplicate(true)
+	GameSession.from_dict(data)
+	living = hub._roster_names()
+	assert_eq(hub._known_names(living), Ledger.known_names(GameSession.ledger, living), "%s: after a load" % kind)
+	assert_false(is_same(hub._record_names, kept), "%s: a load reads again in full" % kind)
 
 
 func _assert_index_is_a_rebuild(what: String) -> void:

@@ -121,6 +121,7 @@ func test_the_hub_says_why_each_gate_is_closed() -> void:
 	_item_at(12)
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var note: String = "Masterwork (+13 to +15) needs a born smith at skill 5 working here."
 	assert_eq((hub.get_node("%ForgeLevel") as Label).tooltip_text, note)
 	assert_eq((hub.get_node("%Enhance") as Button).tooltip_text, note)

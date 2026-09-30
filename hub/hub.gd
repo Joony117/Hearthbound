@@ -28,6 +28,7 @@ const HERO_PANELS: Array[StringName] = [&"SharedRosterPanel", &"SelectedHeroPane
 ## first, the hero detail last (it and %EquippedList read the roster's selection).
 const PANEL_REFRESHES: Dictionary[StringName, Array] = {
 	&"roster": [&"SharedRosterPanel"],
+	&"inventory": [&"ArmoryView"],
 	&"preset_lists": [&"TeamsView", &"ExpeditionsView"],
 	&"preset_editor": [&"TeamsView"],
 	&"practice": [&"TeamsView"],
@@ -149,16 +150,24 @@ var _bond_candidates: Dictionary = {}
 var _bonds_pairs: Variant = null
 var _bonds_version: int = 0
 var _bonds_living: Dictionary = {}
-## Dreams read since the ledger last changed, {hero_id: dream}; emptied on each ledger change.
+## The dreams read for the index the last look saw, {hero_id: {fold, outs, dream}} (ig-7sn.21): fold is
+## Bonds.dream_fold's state, outs the eviction count (GameSession.bond_changes) it was read at, dream what
+## Bonds.dream says. An append resumes the fold; an eviction that could change it (the marks), a load and
+## a rebuilt index read it again in full. Emptied with _record_names when the ledger array or the index is new.
 var _dreams: Dictionary = {}
+## Ledger.record_names' state for that index, {names, seq}, and the eviction count (GameSession.bond_changes)
+## it was read at; {} for none. Known names are these with the roster's laid over.
+var _record_names: Dictionary = {}
+var _record_names_outs: int = 0
 ## History lines read since the ledger last changed, {hero_id: [roster names then, lines]}; emptied
-## with _dreams (ig-7sn.9). The lines name heroes by the roster's names, so those are part of the key.
+## on each ledger change (ig-7sn.9). The lines name heroes by the roster's names, so those are part of the key.
 var _histories: Dictionary = {}
-## _partner_signs' memo and the roster names it was read for; emptied with _dreams.
+## _partner_signs' memo and the roster names it was read for; emptied when the index or the roster's names change.
 var _signs: Dictionary = {}
 var _signs_living: Dictionary = {}
-## How many dreams were read, for tests.
+## How many dreams were read in full, and how many resumed from a kept one, for tests and the perf measure.
 var dream_reads: int = 0
+var dream_resumes: int = 0
 var _order_structure_key: String = ""
 ## How many times an order card and the hero detail were refreshed, for tests (ig-7sn.3).
 var order_card_updates: int = 0
@@ -519,7 +528,10 @@ func _refresh_lost_caches() -> void:
 	%StartRecoveryWindow.tooltip_text = "A new gear loss pauses the recovery clock for review." if %StartRecoveryWindow.disabled else "Review every loss before starting the active timer."
 
 
+## %InventoryList is the Forge's, so a roster change with the Forge closed leaves it alone (ig-7sn.21); _open runs it.
 func _refresh_inventory() -> void:
+	if _skip_hidden(&"inventory"):
+		return
 	var selected_ids: Array[String] = _selected_item_ids.duplicate()
 	var visible_ids: Array[String] = []
 	for selected_index: int in _inventory_list.get_selected_items():
@@ -733,7 +745,7 @@ func _history_lines(hero: Hero) -> Array[String]:
 	var names: Dictionary = _roster_names()
 	var kept: Array = _histories.get(hero.instance_id, [])
 	if kept.is_empty() or kept[0] != names:
-		kept = [names, Ledger.history_lines(GameSession.ledger, hero.instance_id, names, BALANCE.rank_names, 10)]
+		kept = [names, Ledger.history_lines(GameSession.ledger, hero.instance_id, names, BALANCE.rank_names, 10, _known_names(names))]
 		_histories[hero.instance_id] = kept
 	return kept[1]
 
@@ -743,7 +755,7 @@ func _history_lines(hero: Hero) -> Array[String]:
 ## dream is still read for the selected hero only, on refresh, never per row.
 func _bond_text(hero: Hero) -> String:
 	var living: Dictionary = _roster_names()
-	var names: Dictionary = Ledger.known_names(GameSession.ledger, living)
+	var names: Dictionary = _known_names(living)
 	var text: String = ""
 	var bond: Dictionary = Bonds.bond_from(_bond_index(), hero.instance_id, living, BALANCE)
 	if not bond.is_empty():
@@ -767,7 +779,7 @@ func _refresh_partner() -> void:
 		var bond: Dictionary = Bonds.bond_from(_bond_index(), walker.instance_id, living, BALANCE)
 		if not bond.is_empty():
 			_partner_id = bond["partner"]
-			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, Ledger.known_names(GameSession.ledger, living))
+			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, _known_names(living))
 	_show_partner()
 	# The walkers ran first on this roster_changed, against the old partner, who may have been cut by
 	# the wanderer cap.
@@ -821,19 +833,21 @@ func _partner_sign(hero_id: String, living: Dictionary) -> String:
 	return "" if partner.is_empty() else PARTNER_SIGN % living[partner]
 
 
-## The hub's one way to the bond index (GameSession keeps it). A look that finds the ledger key
-## changed since the last one says the new bonds and forgets the dreams and histories read. When the
-## index and the roster names are the ones the last look saw, it reads only the heroes whose tallies
-## a fold touched since (ig-7sn.16; a routine win touches none). A load, a rebuilt index or a roster
-## change reads every hero.
+## The hub's one way to the bond index (GameSession keeps it). A look that finds the ledger key or the
+## index changed since the last one says the new bonds and forgets the histories read; a load or a
+## rebuilt index forgets the dreams and known names too (an append or an eviction leaves them to
+## _dream and _known_names, ig-7sn.21). When the index and the roster names are the ones the last look
+## saw, it reads only the heroes whose tallies a fold touched since (ig-7sn.16; a routine win touches
+## none). A load, a rebuilt index or a roster change reads every hero.
 func _bond_index() -> Dictionary:
 	var pairs: Dictionary = GameSession.bond_index()
 	var ledger: Array[Dictionary] = GameSession.ledger
-	if is_same(ledger, _bonds_ledger) and GameSession.ledger_next_seq == _bonds_seq:
+	if is_same(ledger, _bonds_ledger) and GameSession.ledger_next_seq == _bonds_seq and is_same(pairs, _bonds_pairs):
 		return pairs
 	var living: Dictionary = _roster_names()
 	var changes: Dictionary = GameSession.bond_changes()
-	if is_same(ledger, _bonds_ledger) and is_same(pairs, _bonds_pairs) and living == _bonds_living:
+	var same_index: bool = is_same(ledger, _bonds_ledger) and is_same(pairs, _bonds_pairs)
+	if same_index and living == _bonds_living:
 		var touched: Dictionary = {}
 		for id: String in changes["touched"]:
 			if int(changes["touched"][id]) > _bonds_version and living.has(id):
@@ -848,12 +862,18 @@ func _bond_index() -> Dictionary:
 			_say_new_bonds(_bond_candidates, pairs, living)
 		_bond_candidates = _living_candidates(pairs, living)
 		_signs = {}
+		# A hero that left the roster keeps no dream (the roster changed, or the index is new).
+		for id: String in _dreams.keys():
+			if not living.has(id):
+				_dreams.erase(id)
 	_bonds_ledger = ledger
 	_bonds_seq = GameSession.ledger_next_seq
 	_bonds_pairs = pairs
 	_bonds_version = int(changes["version"])
 	_bonds_living = living
-	_dreams.clear()
+	if not same_index:
+		_dreams.clear()
+		_record_names = {}
 	_histories.clear()
 	return pairs
 
@@ -876,14 +896,42 @@ func _candidates_of(pairs: Dictionary, hero_id: String, living: Dictionary) -> D
 	return mine
 
 
-## hero_id's dream, read at most once per ledger change: the look at the index comes first, so a
-## changed ledger has already emptied the memo.
+## hero_id's dream, as Bonds.dream(GameSession.ledger, hero_id) says it (ig-7sn.21). The look at the index
+## comes first, so a load or a rebuilt index has already emptied the memo. A hero not read yet, or one an
+## eviction since could have changed (the marks: out_all, or out_named for the hero, past the count it
+## was read at), is read in full; after an append only the records after the last one read are folded in.
 func _dream(hero_id: String) -> Dictionary:
 	_bond_index()
-	if not _dreams.has(hero_id):
-		_dreams[hero_id] = Bonds.dream(GameSession.ledger, hero_id)
+	var marks: Dictionary = GameSession.bond_changes()
+	var ledger: Array[Dictionary] = GameSession.ledger
+	var memo: Dictionary = _dreams.get(hero_id, {})
+	var read_at: int = int(memo.get("outs", -1))
+	if memo.is_empty() or int(marks["out_all"]) > read_at or int((marks["out_named"] as Dictionary).get(hero_id, 0)) > read_at:
+		var fold: Dictionary = Bonds.dream_fold(ledger, hero_id)
+		memo = {"fold": fold, "outs": int(marks["outs"]), "dream": Bonds.dream_of(fold)}
+		_dreams[hero_id] = memo
 		dream_reads += 1
-	return _dreams[hero_id]
+	elif not ledger.is_empty() and int(ledger.back()["seq"]) > int((memo["fold"] as Dictionary)["seq"]):
+		memo["fold"] = Bonds.dream_fold(ledger, hero_id, memo["fold"])
+		memo["dream"] = Bonds.dream_of(memo["fold"])
+		dream_resumes += 1
+	return memo["dream"]
+
+
+## Ledger.known_names(GameSession.ledger, living), with the ledger's part kept like a dream: it takes in
+## the records appended since, and is read again in full when a non-battle record, or any record carrying
+## a name field, was evicted since (the marks' out_all).
+func _known_names(living: Dictionary) -> Dictionary:
+	_bond_index()
+	var marks: Dictionary = GameSession.bond_changes()
+	if _record_names.is_empty() or int(marks["out_all"]) > _record_names_outs:
+		_record_names = Ledger.record_names(GameSession.ledger)
+		_record_names_outs = int(marks["outs"])
+	else:
+		Ledger.record_names(GameSession.ledger, _record_names)
+	var all_names: Dictionary = (_record_names["names"] as Dictionary).duplicate()
+	all_names.merge(living, true)
+	return all_names
 
 
 ## "Mara and Dunn grew close." for a new mutual pair, "Dunn grew close to Mara." for a one-way one,
@@ -1153,6 +1201,8 @@ func _refresh_stale() -> void:
 		match refresh:
 			&"roster":
 				_refresh_roster()
+			&"inventory":
+				_refresh_inventory()
 			&"preset_lists":
 				_refresh_preset_lists()
 			&"preset_editor":

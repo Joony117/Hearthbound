@@ -65,9 +65,13 @@ static func index(ledger: Array[Dictionary], balance: BalanceTable) -> Dictionar
 ## battles is battle order -> its battle records. The rebuild and the fold share one set of rules, so
 ## a kept state's pairs equal a fresh one's. version counts the folds since the build that touched a
 ## tally, and touched is hero -> the version that last touched its pairs (ig-7sn.16), so a reader of
-## pairs can re-read only those heroes; a build starts both at 0 and {}.
+## pairs can re-read only those heroes; a build starts both at 0 and {}. outs counts the evictions
+## fold_out took out, and out_named and out_all say which of them could change a kept dream (ig-7sn.21):
+## out_named is hero -> outs at the last eviction that named it in a battle's team, rescued or rescuers,
+## and out_all is outs at the last one that was a non-battle record, or any record carrying a name field
+## (dream reads every non-battle record, and the kept names every name); see _mark_out.
 static func index_state(ledger: Array[Dictionary], balance: BalanceTable) -> Dictionary:
-	var folded: Dictionary = {"pairs": {}, "counts": {}, "dead": {}, "battles": {}, "version": 0, "touched": {}}
+	var folded: Dictionary = {"pairs": {}, "counts": {}, "dead": {}, "battles": {}, "version": 0, "touched": {}, "outs": 0, "out_named": {}, "out_all": 0}
 	for record: Dictionary in ledger:
 		_fold(folded, record)
 	# One tally per pair at the end, not one per record.
@@ -91,6 +95,7 @@ static func fold_in(folded: Dictionary, record: Dictionary, balance: BalanceTabl
 ## death whose battle is still in. Under today's eviction tiers neither happens: every scoring record
 ## is a non-routine battle, those go oldest first, and died records go only after every battle.
 static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTable) -> bool:
+	_mark_out(folded, record)
 	var touched: Dictionary = {}
 	match str(record.get("kind", "")):
 		"battle":
@@ -106,6 +111,24 @@ static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTab
 				_drop(folded["dead"], battle_order, record)
 	_retally(folded, touched, balance)
 	return true
+
+
+## Says which kept dreams and names an evicted record could change (ig-7sn.21). dream reads only the
+## battles that name its hero in team, rescued or rescuers, so taking out any other battle leaves that
+## hero's dream as it was, and taking out one of those changes only the heroes it names. Every other kind
+## (died, ranked_up, summoned) can change any hero's dream. So can a record of any kind that carries a
+## "name" (a load accepts a battle that does), since Ledger.record_names reads every one. A hero named
+## here has out_named[hero] past the outs it was read at; out_all past it means every one.
+static func _mark_out(folded: Dictionary, record: Dictionary) -> void:
+	var outs: int = int(folded["outs"]) + 1
+	folded["outs"] = outs
+	if str(record.get("kind", "")) != "battle" or record.has("name"):
+		folded["out_all"] = outs
+		return
+	var named: Dictionary = folded["out_named"]
+	for key: String in ["team", "rescued", "rescuers"]:
+		for id: Variant in _array(record, key):
+			named[str(id)] = outs
 
 
 ## Folds record in without tallying. Returns the heroes whose pairs it may have changed.
@@ -387,10 +410,28 @@ static func _ahead(tally: Dictionary, chosen: Dictionary) -> bool:
 ## would break this. skip false reads every record: the exactness test's reference.
 ## The skip reads the three keys inline: three _array calls per record doubled the dream's cost.
 static func dream(ledger: Array[Dictionary], hero_id: String, balance: BalanceTable = null, skip: bool = true) -> Dictionary:
+	return dream_of(dream_fold(ledger, hero_id, {}, balance, skip))
+
+
+## The dream a dream_fold state holds, as dream() returns it: a copy, without the count the fold keeps.
+static func dream_of(state: Dictionary) -> Dictionary:
+	var current: Dictionary = (state["current"] as Dictionary).duplicate()
+	current.erase("quiet")
+	return current
+
+
+## dream()'s fold as a state {current, fought, seq} (seq the last record's, 0 for none), to keep. kept is
+## an earlier state of the same hero's fold, or {}: the fold resumes with the records after kept["seq"],
+## and returns kept itself, changed. It is a left fold and an append goes to the back with a higher seq,
+## so a resume equals a fresh read as long as no record it read has since been taken out. The caller
+## tells that by _mark_out's marks (ig-7sn.21), and a load or rebuilt index starts over.
+static func dream_fold(ledger: Array[Dictionary], hero_id: String, kept: Dictionary = {}, balance: BalanceTable = null, skip: bool = true) -> Dictionary:
 	var rules: BalanceTable = balance if balance != null else _SHIPPED
-	var current: Dictionary = {}
-	var fought: Dictionary = {}
-	for record: Dictionary in ledger:
+	var state: Dictionary = kept if not kept.is_empty() else {"current": {}, "fought": {}, "seq": 0}
+	var current: Dictionary = state["current"]
+	var fought: Dictionary = state["fought"]
+	for at: int in range(Ledger.first_after(ledger, int(state["seq"])), ledger.size()):
+		var record: Dictionary = ledger[at]
 		var kind: String = str(record.get("kind", ""))
 		if kind == "battle":
 			var team: Variant = record.get("team")
@@ -407,8 +448,9 @@ static func dream(ledger: Array[Dictionary], hero_id: String, balance: BalanceTa
 			var opened: Dictionary = _open(record, kind, hero_id, fought)
 			if not opened.is_empty():
 				current = opened
-	current.erase("quiet")
-	return current
+	state["current"] = current
+	state["seq"] = int(ledger.back().get("seq", 0)) if not ledger.is_empty() else 0
+	return state
 
 
 ## The dream record opens for hero_id, or {}. A battle opens life_debt (the owner was saved) before

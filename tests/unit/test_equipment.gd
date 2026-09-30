@@ -118,6 +118,7 @@ func test_hub_inventory_rank_and_slot_filters_compose() -> void:
 	GameSession.add_item(ring)
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%InventoryRankFilter") as OptionButton
 	var slot_filter: OptionButton = hub.get_node("%InventorySlotFilter") as OptionButton

@@ -68,6 +68,7 @@ func test_forge_hub_status_matches_salvage_yield_and_enhance_cap() -> void:
 	assert_not_null(hub_scene)
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var salvage_button: Button = hub.get_node("%Salvage") as Button
 	var enhance_button: Button = hub.get_node("%Enhance") as Button
@@ -116,6 +117,7 @@ func test_batch_salvage_credits_each_rank_after_confirm() -> void:
 	var hub_scene: PackedScene = load("res://hub/hub.tscn") as PackedScene
 	var hub: Node3D = hub_scene.instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var salvage_button: Button = hub.get_node("%Salvage") as Button
 	var confirm_dialog: ConfirmationDialog = hub.get_node("%ConfirmDialog") as ConfirmationDialog
@@ -149,6 +151,7 @@ func test_rank_filter_drops_a_hidden_item_before_salvage_can_destroy_it() -> voi
 	GameSession.add_item(rank_c_item)
 	var hub: Node3D = (load("res://hub/hub.tscn") as PackedScene).instantiate() as Node3D
 	add_child_autofree(hub)
+	hub._open(&"Forge")
 	var inventory_list: ItemList = hub.get_node("%InventoryList") as ItemList
 	var rank_filter: OptionButton = hub.get_node("%InventoryRankFilter") as OptionButton
 	var salvage_button: Button = hub.get_node("%Salvage") as Button
