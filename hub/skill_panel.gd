@@ -64,15 +64,81 @@ func refresh() -> void:
 	var bar: Array[Dictionary] = Hero.bar_for(hero, BALANCE)
 	for index: int in bar.size():
 		_rows.add_child(_row(bar, index))
-	var level: int = maxi(Hero.level_for(hero, BALANCE), 1)
+	_add_learning(hero)
+	_add_chains(hero)
+
+
+## What the hero can still learn (ig-gy0.7): each class skill it has not opened yet, with Teach (the Training Hall,
+## for F parts); its class's book when one is owned; then the general skills, each with Teach and Use book. A
+## refused button is disabled and its tooltip is GameSession's reason.
+func _add_learning(hero: Hero) -> void:
+	var level: int = Hero.skill_level(Hero.level_for(hero, BALANCE))
+	var known: Array[AbilityDefinition] = Hero.known_skills(hero, BALANCE)
+	var general: Array[AbilityDefinition] = []
 	for skill: AbilityDefinition in BattleSimulation.ABILITIES.values():
-		if skill.archetype == str(hero.def_id) and not skill.book_only and skill.unlock_level > level:
+		if skill in known:
+			continue
+		if skill.archetype == "general":
+			general.append(skill)
+		elif skill.archetype != str(hero.def_id):
+			continue
+		elif skill.book_only:
+			if int(GameSession.skill_books.get(skill.skill_id, 0)) > 0:
+				var row := HBoxContainer.new()
+				row.name = "ClassBook_%s" % skill.skill_id
+				row.add_child(_label("%s · class book" % skill.display_name, true))
+				row.add_child(_book_button(hero, skill))
+				_rows.add_child(row)
+		elif skill.unlock_level > level:
 			var locked := Label.new()
 			locked.name = "Locked_%s" % skill.skill_id
 			locked.theme_type_variation = &"MutedLabel"
 			locked.text = "%s · opens at level %d" % [skill.display_name, skill.unlock_level]
 			_rows.add_child(locked)
-	_add_chains(hero)
+			_rows.add_child(_teach_button(hero, skill, "Teach_%s" % skill.skill_id))
+	if general.is_empty():
+		return
+	_rows.add_child(_label("GENERAL · any class may learn these", false, "GeneralTitle"))
+	for skill: AbilityDefinition in general:
+		var row := HBoxContainer.new()
+		row.name = "General_%s" % skill.skill_id
+		row.add_child(_label("%s · tier %d" % [skill.display_name, skill.tier], true))
+		row.add_child(_teach_button(hero, skill, "Teach"))
+		row.add_child(_book_button(hero, skill))
+		_rows.add_child(row)
+
+
+func _label(text: String, expand: bool, node_name: String = "") -> Label:
+	var label := Label.new()
+	label.text = text
+	if not node_name.is_empty():
+		label.name = node_name
+	if expand:
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	else:
+		label.theme_type_variation = &"MutedLabel"
+	return label
+
+
+func _teach_button(hero: Hero, skill: AbilityDefinition, node_name: String) -> Button:
+	var plan: Dictionary = GameSession.preview_lesson(hero, skill.skill_id)
+	var button: Button = _button(node_name, "Teach · %d F parts" % int(plan["cost"]), _on_learn.bind(skill.skill_id, false), not str(plan["refusal"]).is_empty())
+	button.tooltip_text = str(plan["refusal"])
+	return button
+
+
+func _book_button(hero: Hero, skill: AbilityDefinition) -> Button:
+	var refusal: String = GameSession.book_refusal(hero, skill.skill_id)
+	var button: Button = _button("Book", "Use book (%d)" % int(GameSession.skill_books.get(skill.skill_id, 0)), _on_learn.bind(skill.skill_id, true), not refusal.is_empty())
+	button.tooltip_text = refusal
+	return button
+
+
+## A failed save rolls the profile back (and replaces the Hero objects), so the hero is re-read by id.
+func _on_learn(skill_id: String, from_book: bool) -> void:
+	var learned: bool = GameSession.use_skill_book(_hero(), skill_id) if from_book else GameSession.teach_skill(_hero(), skill_id)
+	_error.text = "" if learned else GameSession.last_action_error
+	refresh()
 
 
 func _row(bar: Array[Dictionary], index: int) -> HBoxContainer:

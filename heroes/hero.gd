@@ -121,8 +121,8 @@ static func profession_xp_to_next(hero: Hero, profession: StringName, balance: B
 	if skill >= balance.profession_skill_cap:
 		return 0.0
 	var needed_minutes: float = 0.0
-	for skill_level: int in range(1, skill + 2):
-		needed_minutes += balance.profession_xp_minutes_per_level * skill_level
+	for profession_level: int in range(1, skill + 2):
+		needed_minutes += balance.profession_xp_minutes_per_level * profession_level
 	return needed_minutes * 60.0 - hero.profession_xp.get(profession, 0.0)
 
 
@@ -141,6 +141,13 @@ static func level_for(hero: Hero, balance: BalanceTable) -> int:
 		0,
 		balance.level_caps[clampi(hero.rank, 0, balance.level_caps.size() - 1)],
 	)
+
+
+## The level every skill check reads: heroes start at level 0, and 0 counts as 1 (SYSTEMS.md § Learning,
+## director ruling 2026-09-24). Class unlocks, the general tier minimums, a book's minimum and the Training
+## Hall's reach all go through it, so no check reads a raw level.
+static func skill_level(raw_level: int) -> int:
+	return maxi(raw_level, 1)
 
 
 static func xp_to_next_level(from_level: int, balance: BalanceTable) -> int:
@@ -380,7 +387,7 @@ func to_dict() -> Dictionary:
 ## Every skill the hero knows, in kit order: its class skills open at its level (level 0 knows the
 ## level-1 slot, SYSTEMS.md § Learning), then what it learned.
 static func known_skills(hero: Hero, balance: BalanceTable) -> Array[AbilityDefinition]:
-	var known: Array[AbilityDefinition] = BattleSimulation.known_kit(str(hero.def_id), maxi(level_for(hero, balance), 1))
+	var known: Array[AbilityDefinition] = BattleSimulation.known_kit(str(hero.def_id), skill_level(level_for(hero, balance)))
 	for skill_id: String in hero.learned_skills:
 		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition
 		if skill != null and not skill in known:

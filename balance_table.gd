@@ -247,6 +247,14 @@ extends Resource
 @export var skill_chain_step_timeout_seconds: float = 3.0
 @export var skill_chain_max_steps: int = 8
 @export var skill_status_tick_seconds: float = 1.0
+# Learning (SYSTEMS.md § Skills, Learning; PROVISIONAL, ig-gy0.7): the Training Hall teaches a class skill up to
+# hero level + this x its level, at F parts per unlock level; a general skill costs its tier's parts. Books:
+# this share of drops are general, and a general skill needs its tier's minimum hero level.
+@export var training_hall_teach_levels_per_level: int = 5
+@export var training_hall_teach_parts_per_unlock_level: int = 3
+@export var training_hall_general_parts: Array[int] = [20, 40, 80]
+@export var general_tier_min_levels: Array[int] = [1, 10, 20]
+@export var skill_book_general_share: float = 0.5
 # Bonds and dreams, slice 1 (SYSTEMS.md § Bonds and dreams, slice 1; every row PROVISIONAL).
 @export var bond_points_hard_battle: int = 1
 @export var bond_points_saved: int = 3

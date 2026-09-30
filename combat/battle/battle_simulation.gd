@@ -1181,7 +1181,7 @@ static func _actor_from_team_snapshot(snapshot: Dictionary, spawn_index: int, zo
 		# at level 0 and the first slot opens at level 1 (SYSTEMS.md § Learning), so level 0 has it too.
 		# The old per-hero ability_auto flag covers abilities only; weaponskills stay on.
 		var mode: String = "auto" if bool(snapshot.get("ability_auto", true)) else "manual"
-		for skill: AbilityDefinition in known_kit(actor.archetype, maxi(int(snapshot.get("level")), 1)):
+		for skill: AbilityDefinition in known_kit(actor.archetype, Hero.skill_level(int(snapshot.get("level")))):
 			actor.add_skill(skill, mode if skill.is_ability() else "auto")
 		var learned: Variant = snapshot.get("learned_skills")
 		for skill_id: Variant in learned as Array if learned is Array else []:
@@ -1912,7 +1912,7 @@ static func _rule_aim(state: BattleState, actor: BattleActor, skill: AbilityDefi
 		return _nearest_actor(state, actor, actor.faction, BattleActor.LIFE_DOWNED)
 	if actor.faction == "enemy":
 		return target
-	if skill.ai_no_ready_heal and _class_heal_ready(actor):
+	if skill.ai_no_ready_heal and _class_heal_ready(state, actor):
 		return null
 	match skill.ai_rule:
 		"always", "fight_on":
@@ -2052,11 +2052,13 @@ static func _any_within(actors: Array[BattleActor], center: Vector2, radius: flo
 	return false
 
 
-## One of the actor's own class abilities that heals is off cooldown and on Auto.
-static func _class_heal_ready(actor: BattleActor) -> bool:
+## One of the actor's own class abilities that heals is off cooldown, on Auto and has an ally its own rule
+## would heal (ig-gy0.7): a ready heal with nobody to aim at does not hold Field Dressing back. The heal has
+## no ai_no_ready_heal of its own, so _rule_aim does not come back here.
+static func _class_heal_ready(state: BattleState, actor: BattleActor) -> bool:
 	for entry: Dictionary in actor.skills:
 		var skill: AbilityDefinition = ABILITIES[entry["id"]]
-		if skill.is_ability() and skill.archetype == actor.archetype and str(entry["mode"]) == "auto" and float(actor.skill_cooldowns.get(entry["id"], 0.0)) <= 0.0 and not _effect_of(skill, "heal").is_empty():
+		if skill.is_ability() and skill.archetype == actor.archetype and str(entry["mode"]) == "auto" and float(actor.skill_cooldowns.get(entry["id"], 0.0)) <= 0.0 and not _effect_of(skill, "heal").is_empty() and _rule_aim(state, actor, skill, null, "heal") != null:
 			return true
 	return false
 

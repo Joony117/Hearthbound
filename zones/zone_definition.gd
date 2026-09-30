@@ -15,6 +15,8 @@ const DEF_PATH_TEMPLATE: String = "res://zones/defs/%s.tres"
 @export var xp_reward: int = 0
 @export var loot_rank_min: int = 0
 @export var loot_rank_max: int = 0
+## Per loot roll: the chance a clear also drops a skill book (SYSTEMS.md § Skills, ig-gy0.7; PROVISIONAL).
+@export var skill_book_drop_chance: float = 0.0
 @export var unlock_condition: String = ""
 @export var base_duration_seconds: float = 0.0
 @export var minimum_duration_seconds: float = 0.0

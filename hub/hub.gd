@@ -59,6 +59,7 @@ const EXPEDITION_ZONES: Array[ZoneDefinition] = [
 @onready var _inventory_exact_rank: CheckBox = %InventoryExactRank
 @onready var _inventory_slot_filter: OptionButton = %InventorySlotFilter
 @onready var _parts: Label = %Parts
+@onready var _skill_books: Label = %SkillBooks
 @onready var _circle_level: Label = %CircleLevel
 @onready var _forge_level: Label = %ForgeLevel
 @onready var _training_hall_level: Label = %TrainingHallLevel
@@ -610,6 +611,19 @@ func _refresh_parts() -> void:
 	for rank_index: int in GameSession.parts.size():
 		entries.append("%s: %d" % [BALANCE.rank_names[rank_index], GameSession.parts[rank_index]])
 	_parts.text = "Parts  " + " | ".join(entries)
+	_skill_books.text = "Skill books  " + ", ".join(_skill_book_entries())
+	_skill_books.visible = not GameSession.skill_books.is_empty()
+
+
+## One "Name ×count" per book owned, in skill id order (ig-gy0.7). Learning happens on the hero's SkillPanel.
+func _skill_book_entries() -> PackedStringArray:
+	var entries: PackedStringArray = []
+	var ids: Array = GameSession.skill_books.keys()
+	ids.sort()
+	for skill_id: String in ids:
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition
+		entries.append("%s ×%d" % [skill.display_name if skill != null else skill_id, GameSession.skill_books[skill_id]])
+	return entries
 
 
 func _refresh_buildings() -> void:
@@ -2904,11 +2918,22 @@ func _refresh_recent_returns() -> void:
 		var report: Dictionary = GameSession.expedition_reports[index]
 		var casualties: Array[String] = _string_array(report.get("casualty_names", []))
 		var casualty_text: String = " · Lost: %s" % ", ".join(casualties) if not casualties.is_empty() else ""
-		_recent_returns.add_item("%s · %s · +%d stones, %d items, %d XP%s" % [str(report.get("team_name", "Team")), str(report.get("outcome", "returned")), int(report.get("stones_earned", 0)), int(report.get("items_earned", 0)), int(report.get("xp_earned", 0)), casualty_text])
+		_recent_returns.add_item("%s · %s · +%d stones, %d items, %d XP%s%s" % [str(report.get("team_name", "Team")), str(report.get("outcome", "returned")), int(report.get("stones_earned", 0)), int(report.get("items_earned", 0)), int(report.get("xp_earned", 0)), _report_books_text(report), casualty_text])
 		var hero_names: Array[String] = _string_array(report.get("hero_names", []))
 		_recent_returns.set_item_tooltip(_recent_returns.item_count - 1, "%s\nOutcome: %s\nHeroes: %s\nRewards: %d stones, %d items, %d XP\nCasualties: %s\nStopped: %s\nCumulative: %d stones, %d items, %d XP\nRewards are already banked." % [
 			str(report.get("team_name", "Team")), str(report.get("outcome", "returned")), ", ".join(hero_names) if not hero_names.is_empty() else "Unknown", int(report.get("stones_earned", 0)), int(report.get("items_earned", 0)), int(report.get("xp_earned", 0)), ", ".join(casualties) if not casualties.is_empty() else "None", str(report.get("stopped_reason", "completed")), int(report.get("cumulative_stones", 0)), int(report.get("cumulative_items", 0)), int(report.get("cumulative_xp", 0)),
 		])
+
+
+## " and a skill book: Tumble" or " and skill books: Tumble, Deathmark" for a report's "books" (ig-gy0.7); "" without any.
+func _report_books_text(report: Dictionary) -> String:
+	var names: PackedStringArray = []
+	for skill_id: String in _string_array(report.get("books", [])):
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition
+		names.append(skill.display_name if skill != null else skill_id)
+	if names.is_empty():
+		return ""
+	return " and %s: %s" % ["a skill book" if names.size() == 1 else "skill books", ", ".join(names)]
 
 
 func _on_stop_order_pressed(order_id: String) -> void:

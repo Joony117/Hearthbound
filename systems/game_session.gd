@@ -39,6 +39,8 @@ var cleared_zone_ids: Dictionary[StringName, bool] = {}
 var team_presets: Array[Dictionary] = []
 var expedition_orders: Array[Dictionary] = []
 var expedition_reports: Array[Dictionary] = []
+## Skill books owned, {skill_id: count} (ig-gy0.7). Additive save key; a book is spent by use_skill_book.
+var skill_books: Dictionary[String, int] = {}
 var supplies: Dictionary = BattleState.supplies_from({"healing": 3, "revival": 1})
 var stranded_incidents: Array[Dictionary] = []
 var rescue_clock_seconds: float = 0.0
@@ -1320,6 +1322,103 @@ func set_skill_bar(hero: Hero, bar: Array[Dictionary]) -> bool:
 
 func _set_skill_bar_in_memory(hero: Hero, bar: Array[Dictionary]) -> void:
 	hero.skill_bar = bar
+
+
+## Why hero cannot learn skill, by book or lesson; "" when it can (ig-gy0.7): a blocked load, not on the
+## roster, no such skill, another class's skill, or one it knows already. A hero away may learn, like set_skill_bar: a
+## dispatch fixes the kit into its snapshot, so a battle in flight is unchanged.
+func _learn_refusal(hero: Hero, skill: AbilityDefinition) -> String:
+	if SaveService.load_blocked:
+		return SaveService.load_block_reason
+	if hero == null or not roster.has(hero):
+		return "That hero is not on the roster."
+	if skill == null:
+		return "That is not a skill."
+	if skill.archetype != "general" and skill.archetype != str(hero.def_id):
+		return "%s cannot learn %s: it is another class's skill." % [hero.hero_name, skill.display_name]
+	if skill in Hero.known_skills(hero, preload("res://balance.tres")):
+		return "%s already knows %s." % [hero.hero_name, skill.display_name]
+	return ""
+
+
+## Why hero cannot use its skill_id book now; "" when it can. A general book needs the tier's minimum
+## hero level, whatever the Training Hall's level.
+func book_refusal(hero: Hero, skill_id: String) -> String:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition
+	var refusal: String = _learn_refusal(hero, skill)
+	if not refusal.is_empty():
+		return refusal
+	if not skill.is_bookable():
+		return "There is no book for %s." % skill.display_name
+	if int(skill_books.get(skill_id, 0)) < 1:
+		return "You have no %s book." % skill.display_name
+	var minimum: int = balance.general_tier_min_levels[skill.tier - 1] if skill.archetype == "general" else 1
+	if Hero.skill_level(Hero.level_for(hero, balance)) < minimum:
+		return "%s needs hero level %d." % [skill.display_name, minimum]
+	return ""
+
+
+## Teaches hero the skill from a book and spends the book (ig-gy0.7). Refuses with book_refusal's reason.
+func use_skill_book(hero: Hero, skill_id: String) -> bool:
+	last_action_error = book_refusal(hero, skill_id)
+	if not last_action_error.is_empty():
+		return false
+	return _commit_profile_mutation(_learn_skill_in_memory.bind(hero, skill_id, 0, true))
+
+
+## What teaching skill_id at the Training Hall takes: {"cost": F parts, "refusal": why not, "" when it can}
+## (ig-gy0.7). teach_skill applies exactly this. A class skill opens up to hero level + levels_per_level x hall
+## level, at parts_per_unlock_level F parts per unlock level; a general one needs the hall at its tier and the
+## hero at the tier's minimum level, for the tier's parts. A class's book-only skill is never taught.
+func preview_lesson(hero: Hero, skill_id: String) -> Dictionary:
+	var balance: BalanceTable = preload("res://balance.tres")
+	var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(skill_id) as AbilityDefinition
+	var plan: Dictionary = {"cost": 0, "refusal": _learn_refusal(hero, skill)}
+	if skill != null and not skill.book_only:
+		plan["cost"] = balance.training_hall_general_parts[skill.tier - 1] if skill.archetype == "general" else balance.training_hall_teach_parts_per_unlock_level * skill.unlock_level
+	if not str(plan["refusal"]).is_empty():
+		return plan
+	var hall: int = clampi(building_levels[2], 0, balance.summoning_circle_level_cap)
+	var level: int = Hero.skill_level(Hero.level_for(hero, balance))
+	if skill.book_only:
+		plan["refusal"] = "%s can only be learned from a book." % skill.display_name
+	elif skill.archetype == "general":
+		if skill.tier > hall:
+			plan["refusal"] = "%s needs a Training Hall of level %d; it is level %d." % [skill.display_name, skill.tier, hall]
+		elif level < balance.general_tier_min_levels[skill.tier - 1]:
+			plan["refusal"] = "%s needs hero level %d." % [skill.display_name, balance.general_tier_min_levels[skill.tier - 1]]
+	else:
+		var reach: int = level + balance.training_hall_teach_levels_per_level * hall
+		if skill.unlock_level > reach:
+			plan["refusal"] = "%s opens at level %d; this Training Hall reaches level %d for %s." % [skill.display_name, skill.unlock_level, reach, hero.hero_name]
+	if str(plan["refusal"]).is_empty() and parts[0] < int(plan["cost"]):
+		plan["refusal"] = "%s costs %d F parts; you have %d." % [skill.display_name, int(plan["cost"]), parts[0]]
+	return plan
+
+
+## Teaches hero the skill at the Training Hall for F parts (ig-gy0.7). Refuses with preview_lesson's reason.
+func teach_skill(hero: Hero, skill_id: String) -> bool:
+	var plan: Dictionary = preview_lesson(hero, skill_id)
+	last_action_error = str(plan["refusal"])
+	if not last_action_error.is_empty():
+		return false
+	return _commit_profile_mutation(_learn_skill_in_memory.bind(hero, skill_id, int(plan["cost"]), false))
+
+
+## Checked path only (_commit_profile_mutation). The new skill joins the bar as auto (Hero.bar_for), so the
+## bar needs no change.
+func _learn_skill_in_memory(hero: Hero, skill_id: String, parts_cost: int, from_book: bool) -> void:
+	hero.learned_skills.append(skill_id)
+	if from_book:
+		var left: int = int(skill_books.get(skill_id, 0)) - 1
+		if left > 0:
+			skill_books[skill_id] = left
+		else:
+			skill_books.erase(skill_id)
+	else:
+		parts[0] -= parts_cost
+	_notify_roster_changed()
 
 
 ## The hero's whole chain list (GAME_SPEC.md § Skills, "Chains", SYSTEMS.md § Skills): one chain per
@@ -2708,6 +2807,7 @@ func _settle_battle_order(order_index: int) -> void:
 	var xp_amount: int = roundi(float(balance.xp_per_wave * outcome.completed_waves * state.pace) * xp_multiplier)
 	var stones_earned: int = 0
 	var items_earned: int = 0
+	var books: Array[String] = []
 	if outcome.status == "victory" and zone != null:
 		xp_amount = roundi(float((balance.xp_per_wave * outcome.completed_waves + zone.xp_reward) * state.pace) * xp_multiplier)
 		# ig-0og.1: rate B, times ig-ncz's factor from this run's own route and team size.
@@ -2716,8 +2816,16 @@ func _settle_battle_order(order_index: int) -> void:
 		stones_earned = ExpeditionOrders.stone_payout(zone, state.pace, balance, factor)
 		stones += stones_earned
 		var run_seed: int = Item.int_field(order, "run_seed", 0, "battle order")
+		var archetypes: Array[String] = []
+		for hero: Hero in roster:
+			archetypes.append(str(hero.def_id))
 		for roll: int in state.pace:
 			inventory.append(Expedition.roll_loot(zone, balance, run_seed + roll))
+			# ig-gy0.7: a book is one more roll per loot roll, with its own seed, so the loot above is untouched.
+			var book: String = Expedition.roll_book(zone, balance, run_seed, roll, archetypes)
+			if not book.is_empty():
+				books.append(book)
+				skill_books[book] = int(skill_books.get(book, 0)) + 1
 		items_earned = state.pace
 		cleared_zone_ids[zone.zone_id] = true
 	if not secured.is_empty() and xp_amount > 0:
@@ -2730,7 +2838,7 @@ func _settle_battle_order(order_index: int) -> void:
 	var stopped_reason: String = _battle_stop_reason(order, state, outcome)
 	if stopped_reason.is_empty() and not _begin_battle_check(order):
 		stopped_reason = last_action_error if not last_action_error.is_empty() else "unsafe_repeat"
-	_append_report(order, _hero_names(_string_array(order.get("hero_ids"))), _hero_names(outcome.stranded_hero_ids), StringName(outcome.status), stones_earned, xp_amount * secured.size(), items_earned, stopped_reason)
+	_append_report(order, _hero_names(_string_array(order.get("hero_ids"))), _hero_names(outcome.stranded_hero_ids), StringName(outcome.status), stones_earned, xp_amount * secured.size(), items_earned, stopped_reason, books)
 	if not stopped_reason.is_empty():
 		expedition_orders.remove_at(order_index)
 
@@ -2880,8 +2988,9 @@ func _append_report(
 	xp_earned: int,
 	items_earned: int,
 	stopped_reason: String,
+	books: Array[String] = [],
 ) -> void:
-	expedition_reports.append({
+	var report: Dictionary = {
 		"id": Item.new_instance_id(),
 		"order_id": str(order.get("id", "")),
 		"team_name": str(order.get("team_name", "")),
@@ -2899,7 +3008,11 @@ func _append_report(
 		"runs_completed": Item.int_field(order, "runs_completed", 0, "expedition order"),
 		"total_runs": Item.int_field(order, "total_runs", 1, "expedition order"),
 		"stopped_reason": stopped_reason,
-	})
+	}
+	# ig-gy0.7: additive; a report with no book has no key, and an older one never had it.
+	if not books.is_empty():
+		report["books"] = books.duplicate()
+	expedition_reports.append(report)
 	while expedition_reports.size() > MAX_EXPEDITION_REPORTS:
 		expedition_reports.pop_front()
 
@@ -3142,6 +3255,7 @@ func to_dict() -> Dictionary:
 		"team_presets": team_presets.duplicate(true),
 		"expedition_orders": expedition_orders.duplicate(true),
 		"expedition_reports": expedition_reports.duplicate(true),
+		"skill_books": skill_books.duplicate(),
 		"supplies": supplies.duplicate(true),
 		"stranded_incidents": stranded_incidents.duplicate(true),
 		"rescue_clock_seconds": rescue_clock_seconds,
@@ -3180,6 +3294,7 @@ func _read_profile(data: Dictionary) -> void:
 	team_presets.clear()
 	expedition_orders.clear()
 	expedition_reports.clear()
+	skill_books.clear()
 	supplies = BattleState.supplies_from({"healing": 3, "revival": 1})
 	stranded_incidents.clear()
 	rescue_clock_seconds = 0.0
@@ -3259,9 +3374,15 @@ func _read_profile(data: Dictionary) -> void:
 			expedition_orders.append(order)
 	for entry: Variant in _array_field(data, "expedition_reports"):
 		if entry is Dictionary:
-			expedition_reports.append((entry as Dictionary).duplicate(true))
+			var report: Dictionary = (entry as Dictionary).duplicate(true)
+			# ig-gy0.7: the optional "books" is an Array of skill ids; anything else is dropped from the report.
+			if report.has("books") and not (report["books"] is Array and (report["books"] as Array).all(func(id: Variant) -> bool: return id is String)):
+				push_warning("Expedition report books '%s' is invalid; dropped." % str(report["books"]))
+				report.erase("books")
+			expedition_reports.append(report)
 	while expedition_reports.size() > MAX_EXPEDITION_REPORTS:
 		expedition_reports.pop_front()
+	_read_skill_books(data)
 	if save_version >= 2:
 		recovery_clock_seconds = maxf(Item.float_field(data, "recovery_clock_seconds", 0.0, "game session"), 0.0)
 		var raw_recovery_paused: Variant = data.get("recovery_clock_paused")
@@ -3289,6 +3410,33 @@ func _read_profile(data: Dictionary) -> void:
 	embodied_hero_id = body.instance_id if body != null and not is_hero_busy(body) else NO_BODY
 	_notify_roster_changed()
 	_notify_expeditions_changed()
+
+
+## Additive key (ig-gy0.7): {skill_id: count}. Keeps an id a book can teach (a general skill or a class's
+## book-only one) with a positive whole count; every other entry is dropped with a warning. A save without
+## the key loads none, quietly.
+func _read_skill_books(data: Dictionary) -> void:
+	var raw_books: Variant = data.get("skill_books")
+	if raw_books == null:
+		return
+	if not raw_books is Dictionary:
+		push_warning("Invalid skill_books: expected Dictionary, got %s; loading none." % type_string(typeof(raw_books)))
+		return
+	for raw_id: Variant in raw_books as Dictionary:
+		var skill: AbilityDefinition = BattleSimulation.ABILITIES.get(str(raw_id)) as AbilityDefinition if raw_id is String else null
+		# Variant is required while validating untrusted save entries.
+		var raw_count: Variant = (raw_books as Dictionary)[raw_id]
+		var count: int = 0
+		if raw_count is int:
+			count = raw_count as int
+		elif raw_count is float:
+			var float_count: float = raw_count as float
+			if is_finite(float_count) and float_count == floorf(float_count):
+				count = int(float_count)
+		if skill == null or not skill.is_bookable() or count < 1:
+			push_warning("Skill book '%s' x %s dropped: not a book skill or not a positive whole count." % [raw_id, raw_count])
+			continue
+		skill_books[str(raw_id)] = count
 
 
 ## Additive keys (ig-6m2.5.2). Repairs, never refusals, so a save never skips a warning: a clock that

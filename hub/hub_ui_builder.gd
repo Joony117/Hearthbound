@@ -323,6 +323,10 @@ static func _build_armory(content: Control) -> void:
 	var parts := _label(box, "Parts", "Parts", true)
 	parts.theme_type_variation = &"MutedLabel"
 	parts.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var books := _label(box, "", "SkillBooks", true)
+	books.theme_type_variation = &"MutedLabel"
+	books.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	books.visible = false
 	var conversion := HBoxContainer.new()
 	_add(box, conversion, "ConvertRow")
 	_add_option(conversion, "ConvertRankOption").size_flags_horizontal = Control.SIZE_EXPAND_FILL

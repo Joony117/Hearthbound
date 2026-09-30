@@ -44,6 +44,8 @@ func _check_zone(zone_name: String, resource_path: String, expected_recommended_
 		return _fail("%s xp_reward" % zone_name, str(expected_xp_reward), str(zone.xp_reward))
 	if zone.unlock_condition != expected_unlock_condition:
 		return _fail("%s unlock_condition" % zone_name, expected_unlock_condition, zone.unlock_condition)
+	if zone.skill_book_drop_chance < 0.0 or zone.skill_book_drop_chance > 1.0:
+		return _fail("%s skill_book_drop_chance" % zone_name, "0 to 1", str(zone.skill_book_drop_chance))
 	return 0
 
 

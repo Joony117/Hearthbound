@@ -16,6 +16,7 @@ stone_reward = 75
 xp_reward = 72
 loot_rank_min = 2
 loot_rank_max = 4
+skill_book_drop_chance = 0.04
 unlock_condition = "Clear Verdant Outskirts"
 base_duration_seconds = 180.0
 minimum_duration_seconds = 45.0

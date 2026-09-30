@@ -134,6 +134,33 @@ static func roll_loot(zone: ZoneDefinition, balance: BalanceTable, loot_seed: in
 	return Item.new(def_id, rank)
 
 
+## One skill-book roll of a victory (ig-gy0.7): a skill id, or "" for none. Book roll `roll` has its own
+## generator, seeded from ("%d:book:%d" % [run_seed, roll]).hash(), so it never reuses a loot seed and
+## roll_loot's draws are untouched. A book is loot, not stones: no route factor. First the zone's chance;
+## then a general book (skill_book_general_share), one general skill picked uniformly; else a class book,
+## one of the given archetypes (each counts once, however many heroes) and that class's book-only skill.
+## No class on the roster with a book gives a general one.
+static func roll_book(zone: ZoneDefinition, balance: BalanceTable, run_seed: int, roll: int, archetypes: Array[String]) -> String:
+	assert(zone != null)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = ("%d:book:%d" % [run_seed, roll]).hash()
+	if rng.randf() >= zone.skill_book_drop_chance:
+		return ""
+	var general: Array[String] = []
+	var class_books: Dictionary[String, String] = {}
+	for skill: AbilityDefinition in BattleSimulation.ABILITIES.values():
+		if skill.archetype == "general":
+			general.append(str(skill.skill_id))
+		elif skill.book_only and skill.archetype in archetypes:
+			class_books[skill.archetype] = str(skill.skill_id)
+	var classes: Array = class_books.keys()
+	classes.sort()
+	var general_draw: bool = rng.randf() < balance.skill_book_general_share
+	if general_draw or classes.is_empty():
+		return general[rng.randi_range(0, general.size() - 1)]
+	return class_books[classes[rng.randi_range(0, classes.size() - 1)]]
+
+
 ## Each died record names the order whose battle stranded that hero: the incident's
 ## source_order_id, unless battle_orders holds an exception (a rescuer a failed rescue stranded).
 static func finalize_permanent_losses(incident: Dictionary, hero_ids: Array[String]) -> void:

@@ -16,6 +16,7 @@ stone_reward = 25
 xp_reward = 24
 loot_rank_min = 0
 loot_rank_max = 2
+skill_book_drop_chance = 0.02
 unlock_condition = "Available from start"
 base_duration_seconds = 60.0
 minimum_duration_seconds = 15.0

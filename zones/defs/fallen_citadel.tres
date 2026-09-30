@@ -16,6 +16,7 @@ stone_reward = 225
 xp_reward = 216
 loot_rank_min = 2
 loot_rank_max = 4
+skill_book_drop_chance = 0.08
 unlock_condition = "Clear Ashfall Reaches"
 base_duration_seconds = 600.0
 minimum_duration_seconds = 120.0

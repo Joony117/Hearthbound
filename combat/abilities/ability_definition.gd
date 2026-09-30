@@ -281,6 +281,11 @@ func is_ability() -> bool:
 	return kind == "ability"
 
 
+## A skill a book can teach (ig-gy0.7): any general skill, or a class's book-only one.
+func is_bookable() -> bool:
+	return archetype == "general" or book_only
+
+
 ## The picker band its AI rule puts it in ("" for a counter-only skill).
 func band() -> String:
 	return str(AI_BANDS[ai_rule])
