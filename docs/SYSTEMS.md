@@ -1829,7 +1829,7 @@ any wall spell, so its tests place walls by hand.
 
 | Row | Value | Why |
 |---|---|---|
-| Pathfinding budget | 2 ms | What walls may add to the frame that advances a watched frontier_march (`GameSession._owe_battles`; since `ig-7sn.15` that frame runs about a pulse's worth of its sim, 14.0 ms in `ig-7sn.7`) with `battle_wall_cap` walls across both armies' paths. A miss switches the fallback the ADR names |
+| Pathfinding budget | 2 ms | What walls may add to the frame that advances a watched frontier_march (`GameSession._owe_battles`; since `ig-7sn.18` the sim runs as a job on a worker thread, so that frame holds the landing, the snapshot copy and the view's render, not the ticks: § Dispatched battles) with `battle_wall_cap` walls across both armies' paths. A miss switches the fallback the ADR names |
 
 > ⚠️ **PROVISIONAL** — 2 ms is a share of the pulse, not a measurement · **Settled by:** the
 > `ig-0qh` measure with three walls on frontier_march
@@ -1842,6 +1842,11 @@ last walls-first pair (p50 +1.7 to +1.8). The first two walls-first pairs read +
 PC got faster run by run, which inflates a walls-first gap. The sim alone (`tick_expeditions`, view
 unhooked) grows by 1.2 to 1.9 ms. Frames, settled runs: p99 22.6–23.4 ms with walls, 20.5–21.4
 without; 4–10 over 33 ms, against 1–2. Logs: `.agent-results/ig-vl1.5/pc_battle_frontier*.log`
+
+Since `ig-7sn.20` (owner PC, headless, on bba4576, one pair): the sim runs on a worker (`ig-7sn.18`), and
+the advance row's walls gap is -0.04 ms (3.60 ms with walls, 3.64 without, 118 frames each). The
+ticks' +1.5 ms per advance is worker CPU, not the frame's (`ig-7sn.23`): 1.2 ms of it the corner search and the
+straight checks, 0.04 the Rime Wall scan, 0.01 the graph rebuilds. Logs: `.agent-results/ig-7sn.20/`
 
 **Walls** (`ig-vl1.5`, design 2026-09-25). The Mage's second spell, **Rime Wall** (§ The v1 kits).
 Walls are control, so they go to the Mage; the Cleric's shaping is Hearthward.

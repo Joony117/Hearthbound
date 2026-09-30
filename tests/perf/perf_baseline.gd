@@ -29,6 +29,9 @@ extends SceneTree
 ## Since ig-7sn.21: the SETTLE and COMMIT lines print the hub's dream_reads and dream_resumes since the last
 ## pulse, and the header line the display server's name. settle1 also runs --headless (CPU only: no draw, so
 ## a whole-frame row is not the windowed one; tests/perf/run_measure.sh MODE=headless).
+## Since ig-7sn.20: battle_frontier and battle_frontier_nowall are also read headless (the advance row, the advance
+## split and the render's CPU side mean something there; the whole-frame, floor and draw rows do not), and
+## frontier_march runs end with a "wall split": the walls' work in an advance, replayed on a twin (_wall_replay).
 ## Frames: 5 s of warm-up, then 30 s recorded: p50, p99, the worst frame, and frames over 33 ms.
 ## Timings are in ms. Nothing here changes game code: phases are timed by doing each phase's work
 ## again on copies of the same battles.
@@ -1043,15 +1046,24 @@ func _measure_battle(zone_id: String) -> void:
 	var rest: Array[float] = []
 	var spawn_renders: Array[float] = []
 	var still_renders: Array[float] = []
+	# ig-7sn.20: the battle before its first advance and the ticks each advance ran, for the wall split's replay.
+	var replay_start: Dictionary = {}
+	var replay_ticks: Array[int] = []
+	var replay_end: BattleState = null
 	for _pulse: int in SAMPLES:
 		var index: int = session._order_index(order_id)
 		if index < 0 or not session._battle_live(session.expedition_orders[index]):
 			break
 		var order: Dictionary = session.expedition_orders[index]
 		var state: BattleState = session._battle_state(order)
+		if replay_start.is_empty():
+			replay_start = state.to_dict().duplicate(true)
+		var ticks_before: int = state.tick
 		var started: int = Time.get_ticks_usec()
 		BattleSimulation.advance(state, minf(PULSE, maxf(state.max_seconds - state.elapsed_seconds, 0.0)))
 		ticks.append(_since(started))
+		replay_ticks.append(state.tick - ticks_before)
+		replay_end = state
 		started = Time.get_ticks_usec()
 		var battle: Dictionary = state.to_dict()
 		encode.append(_since(started))
@@ -1105,6 +1117,147 @@ func _measure_battle(zone_id: String) -> void:
 				unit._process(delta)
 		unit_ms.append(_since(started))
 	_report("%s: unit views' _process per frame (%d views)" % [label, units.size()], unit_ms)
+	if zone_id == "frontier_march" and replay_end != null:
+		_wall_replay(label, replay_start, replay_ticks, replay_end)
+
+
+## ig-7sn.20: where the walls' cost goes in an advance, on a twin decoded from the battle before its first advance
+## and run through the same ticks (the sim is deterministic: the twin ends where the battle did, or the last line
+## says it did not). Each tick is _tick's body, with the parts timed where they run; whatever a timing has to
+## change is done on a copy, so the twin's own run stays the battle's. Every row is per advance unless it says per
+## tick. It runs on the walls run and on the no-wall run (W1 and the graph then read 0: the comparison).
+##   W1 the Rime Wall scan: _back_row_threat for every Mage with the skill on Auto and off cooldown (an upper
+##      bound: the tick's turn may not reach the rule), the threats it found, and the placements _use_skill
+##      refused (_cast_wall false and the rest of its checks) on a copy.
+##   W2+W3 _move_actors with the walls as they stand, then with an empty WallPaths stamped like the real one (so
+##      walled is false), each on its own copy of the tick's state, in an order that flips each tick. The
+##      difference is the corner search, the straight checks and separation's wall cut.
+##   W4 the graph: rebuilds (a miss after the first build) and what a rebuild with a wall up cost.
+##   W5 alive, moved and (walls run) blocked actors per tick: blocked is those whose straight line to the point
+##      or target of their order crosses a wall, approximately the ones the corner search runs for.
+func _wall_replay(label: String, start: Dictionary, per_advance: Array[int], battle: BattleState) -> void:
+	var twin: BattleState = BattleState.from_dict(start.duplicate(true))
+	var rng := RandomNumberGenerator.new()
+	rng.state = twin.rng_state.to_int()
+	var rows: Dictionary = {}
+	for key: String in ["scan", "calls", "found", "refused", "real", "bare", "gap", "misses", "rebuild", "rebuild_each", "ticks", "alive", "moved", "blocked"]:
+		var column: Array[float] = []
+		rows[key] = column
+	for count: int in per_advance:
+		var spent: Dictionary = {"scan": 0.0, "calls": 0.0, "found": 0.0, "refused": 0.0, "real": 0.0, "bare": 0.0, "misses": 0.0, "rebuild": 0.0, "ticks": 0.0}
+		for _n: int in count:
+			if twin.status != "active":
+				break
+			spent["ticks"] += 1.0
+			twin.tick += 1
+			twin.elapsed_seconds = minf(twin.elapsed_seconds + BattleSimulation.BALANCE.battle_tick_seconds, twin.max_seconds)
+			BattleSimulation._expire_effects_and_cooldowns(twin)
+			BattleSimulation._update_field_objects(twin)
+			BattleSimulation._answer_telegraphs(twin, rng)
+			BattleSimulation._choose_intentions(twin)
+			var kept: BattleSimulation.WallPaths = twin.wall_paths
+			var started: int = Time.get_ticks_usec()
+			var paths: BattleSimulation.WallPaths = BattleSimulation._wall_paths(twin)
+			if paths != kept:
+				var built: float = _since(started)
+				spent["misses"] += 1.0 if kept != null else 0.0
+				if not paths.centers.is_empty():
+					spent["rebuild"] += built
+					rows["rebuild_each"].append(built)
+			var frozen: Dictionary = twin.to_dict()
+			var first_walled: bool = twin.tick % 2 == 0
+			var one: Array[float] = _move_time(frozen, first_walled)
+			var two: Array[float] = _move_time(frozen, not first_walled)
+			var real: Array[float] = one if first_walled else two
+			var bare: Array[float] = two if first_walled else one
+			spent["real"] += real[0]
+			spent["bare"] += bare[0]
+			rows["alive"].append(real[1])
+			rows["moved"].append(real[2])
+			rows["blocked"].append(real[3])
+			BattleSimulation._move_actors(twin)
+			var copy: BattleState = null
+			for actor: BattleActor in twin.actors:
+				if actor.life != BattleActor.LIFE_ALIVE or actor.ability_lock > 0.0 or float(actor.effect_state.get("stun_remaining", 0.0)) > 0.0 or BattleSimulation._has_status(actor, "silence"):
+					continue
+				for entry: Dictionary in actor.skills:
+					var skill: AbilityDefinition = BattleSimulation.ABILITIES[entry["id"]]
+					if skill.ai_rule != "melee_near_back_row" or str(entry["mode"]) != "auto" or float(actor.skill_cooldowns.get(entry["id"], 0.0)) > 0.0 or not skill.is_ability():
+						continue
+					started = Time.get_ticks_usec()
+					var threat: Array = BattleSimulation._back_row_threat(twin, actor, skill)
+					spent["scan"] += _since(started)
+					spent["calls"] += 1.0
+					if threat.is_empty():
+						continue
+					spent["found"] += 1.0
+					if copy == null:
+						copy = BattleState.from_dict(twin.to_dict().duplicate(true))
+					var caster: BattleActor = BattleSimulation._actor_by_id(copy, actor.id)
+					var ally: BattleActor = BattleSimulation._actor_by_id(copy, (threat[0] as BattleActor).id)
+					var enemy: BattleActor = BattleSimulation._actor_by_id(copy, (threat[1] as BattleActor).id)
+					var spare := RandomNumberGenerator.new()
+					spare.state = rng.state
+					if BattleSimulation._use_skill(copy, caster, skill, enemy, BattleSimulation._threat_point(ally, enemy, skill), spare, enemy.position - ally.position):
+						copy = null
+					else:
+						spent["refused"] += 1.0
+			BattleSimulation._support_actions(twin)
+			BattleSimulation._offensive_actions(twin, rng)
+			BattleSimulation._update_objectives(twin)
+			BattleSimulation._evaluate_terminal(twin)
+		if twin.status == "active" and twin.elapsed_seconds + BattleSimulation.TICK_EPSILON >= twin.max_seconds:
+			BattleSimulation._finish_timeout(twin)
+		spent["gap"] = spent["real"] - spent["bare"]
+		for key: String in ["scan", "calls", "found", "refused", "real", "bare", "gap", "misses", "rebuild", "ticks"]:
+			rows[key].append(spent[key])
+	twin.rng_state = str(rng.state)
+	_report("%s: wall split, ticks per advance (count)" % label, rows["ticks"])
+	_report("%s: wall split, W1 the Rime Wall scan, _back_row_threat over ready Auto Mages (ms; an upper bound)" % label, rows["scan"])
+	_report("%s: wall split, W1 scans run (count)" % label, rows["calls"])
+	_report("%s: wall split, W1 scans that found a threat (count)" % label, rows["found"])
+	_report("%s: wall split, W1 placements refused (count)" % label, rows["refused"])
+	_report("%s: wall split, W2+W3 _move_actors, walls as they stand (ms)" % label, rows["real"])
+	_report("%s: wall split, W2+W3 _move_actors, no walls: an empty WallPaths (ms)" % label, rows["bare"])
+	_report("%s: wall split, W2+W3 the difference (ms)" % label, rows["gap"])
+	_report("%s: wall split, W4 graph rebuilds after the first build (count)" % label, rows["misses"])
+	_report("%s: wall split, W4 rebuild time with a wall up, per advance (ms)" % label, rows["rebuild"])
+	_report("%s: wall split, W4 one rebuild with a wall up (ms)" % label, rows["rebuild_each"])
+	_report("%s: wall split, W5 alive actors per tick (count)" % label, rows["alive"])
+	_report("%s: wall split, W5 actors that moved per tick (count)" % label, rows["moved"])
+	_report("%s: wall split, W5 actors whose straight line to their order is blocked per tick (count)" % label, rows["blocked"])
+	print("%s: wall split, the twin ended %s the battle (tick %d vs %d, rng %s)" % [label, "with" if twin.tick == battle.tick and twin.rng_state == battle.rng_state else "AGAINST", twin.tick, battle.tick, "same" if twin.rng_state == battle.rng_state else "different"])
+
+
+## One _move_actors on a copy of frozen, walled or with an empty WallPaths stamped like the real one:
+## [its ms, alive actors, actors that moved, actors whose straight line to their order crosses a wall].
+func _move_time(frozen: Dictionary, walled: bool) -> Array[float]:
+	var copy: BattleState = BattleState.from_dict(frozen.duplicate(true))
+	var paths: BattleSimulation.WallPaths = BattleSimulation._wall_paths(copy)
+	if not walled:
+		paths = BattleSimulation.WallPaths.new()
+		paths.sequence = copy.field_sequence
+		paths.count = copy.field_objects.size()
+		paths.bounds = float(copy.objective_state.get("bounds", 20.0))
+		copy.wall_paths = paths
+	var before: Dictionary = {}
+	var blocked: int = 0
+	for actor: BattleActor in copy.actors:
+		if actor.life != BattleActor.LIFE_ALIVE:
+			continue
+		before[actor.id] = actor.position
+		if walled and not actor.order_kind.is_empty():
+			var target: BattleActor = BattleSimulation._actor_by_id(copy, actor.order_target_id)
+			var goal: Vector2 = target.position if target != null and target.life == BattleActor.LIFE_ALIVE else actor.order_point
+			blocked += 1 if BattleSimulation._wall_blocked(paths, actor.position, goal) else 0
+	var started: int = Time.get_ticks_usec()
+	BattleSimulation._move_actors(copy)
+	var spent: float = _since(started)
+	var moved: int = 0
+	for actor: BattleActor in copy.actors:
+		if before.has(actor.id) and actor.position != before[actor.id]:
+			moved += 1
+	return [spent, float(before.size()), float(moved), float(blocked)]
 
 
 ## Opens the live battle view on order_id as the current scene, the way the ig-rog check does.

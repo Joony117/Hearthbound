@@ -14,7 +14,7 @@ ROOT=$(cygpath -w "$PWD")
 PFX=""; [ "$MODE" = headless ] && PFX=headless_
 OUT=.agent-results/$2; shift 2
 for m in "$@"; do
-	case "$m" in pulse1|pulse5|pulse_split|settle1|settle5|hub|battle_citadel|battle_frontier|roster|actions|dreams|town|load|preview) ;; *) echo "unknown measure: $m"; exit 2;; esac
+	case "$m" in pulse1|pulse5|pulse_split|settle1|settle5|hub|battle_citadel|battle_frontier|battle_frontier_nowall|roster|actions|dreams|town|load|preview) ;; *) echo "unknown measure: $m"; exit 2;; esac
 done
 mkdir -p "$OUT"
 COMMIT=$(git rev-parse --short HEAD)
