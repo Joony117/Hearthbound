@@ -213,4 +213,7 @@ bond_points_rescued = 5
 bond_points_death_witnessed = 5
 bond_threshold = 8
 dream_fight_beside_battles = 3
+dream_name_victories = 3
+dream_worthy_hard_victories = 2
+dream_worthy_fade_battles = 30
 caster_rank_offset = 0.0

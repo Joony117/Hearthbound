@@ -110,7 +110,7 @@ func test_the_dream_opens_advances_is_paid_and_opens_again() -> void:
 	assert_eq(Bonds.dream_lines({}, A, NAMES, BALANCE), [] as Array[String])
 	_battle([A, B], "victory", {"moments": [_moment("carried", A, B)]})
 	var zone: String = Ledger.zone_name(ZONE)
-	assert_eq(Bonds.dream(_ledger, A), {"state": "open", "owed": B, "what": "carried", "zone": ZONE, "fights": 0}, "the opening battle is not a fight after it")
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "life_debt", "state": "open", "owed": B, "what": "carried", "zone": ZONE, "fights": 0}, "the opening battle is not a fight after it")
 	_battle([A, B], "victory")
 	_battle([A, C], "victory")
 	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), [
@@ -139,17 +139,253 @@ func test_the_owed_heros_death_loses_the_dream() -> void:
 	assert_eq(Bonds.dream(_ledger, A)["owed"], C, "an enemy is never owed")
 
 
-## One bond and dream read for one hero at the cap. A measurement for ig-m6o.2.2, not a gate.
+## ---- ig-m6o.2.2.7: the dream catalogue (SYSTEMS.md § The dream catalogue)
+
+func test_watch_over_opens_counts_battles_beside_and_is_fulfilled_by_a_rank_up() -> void:
+	var zone: String = Ledger.zone_name(ZONE)
+	_battle([A, B], "victory", {"moments": [_moment("revived", B, A)]})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "watch_over", "state": "open", "who": B, "what": "revived", "zone": ZONE, "count": 0}, "Ada revived Bea")
+	assert_eq(Bonds.dream(_ledger, B)["dream"], "life_debt", "and Bea owes Ada")
+	_battle([A, B], "victory")
+	_battle([A, C], "victory")
+	_battle([B, C], "victory")
+	assert_eq(Bonds.dream(_ledger, A)["count"], 1, "a routine battle beside Bea counts; the opening one, and ones without her, do not")
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), [
+		"Dream: watch over Bea.",
+		"  [x] Ada revived Bea at %s." % zone,
+		"  [ ] Fight beside Bea again (1/3).",
+		"  [ ] See Bea rank up.",
+	] as Array[String])
+	for _index: int in 3:
+		_battle([A, B], "victory")
+	assert_string_contains(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE)[2], "[x] Fight beside Bea again (3/3).")
+	_record("ranked_up", {"hero": C, "from": 0, "to": 1, "via": "essence"})
+	assert_eq(Bonds.dream(_ledger, A)["state"], "open", "someone else ranking up pays nothing")
+	_record("ranked_up", {"hero": B, "from": 0, "to": 1, "via": "essence"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "watch_over", "state": "fulfilled", "who": B})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream fulfilled: Bea rose in rank."] as Array[String])
+
+
+func test_watch_over_opens_on_a_rescue_is_fulfilled_before_the_count_and_lost_to_a_death() -> void:
+	_battle([A, B, C], "victory", {"rescued": [B, C], "rescuers": [A]})
+	var open: Dictionary = Bonds.dream(_ledger, A)
+	assert_eq([open["dream"], open["who"], open["what"]], ["watch_over", B, "rescued"], "the first one rescued")
+	var before: Array[Dictionary] = _ledger.duplicate()
+	_record("ranked_up", {"hero": B, "from": 0, "to": 1, "via": "essence"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "watch_over", "state": "fulfilled", "who": B}, "a rank-up ends it at count 0")
+	_ledger = before
+	_record("died", {"hero": B, "name": "Bea", "cause": "starvation"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "watch_over", "state": "lost", "who": B})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream lost: Bea died before rising."] as Array[String])
+
+
+func test_carry_name_opens_on_a_witnessed_death_counts_victories_there_and_is_fulfilled() -> void:
+	var zone: String = Ledger.zone_name(ZONE)
+	_battle([A, B, C], "stranded", {"order": "order:x"})
+	_record("died", {"hero": C, "name": "Cal", "cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "carry_name", "state": "open", "who": C, "zone": ZONE, "count": 0})
+	assert_eq(Bonds.dream(_ledger, B)["dream"], "carry_name", "Bea was there too")
+	assert_eq(Bonds.dream(_ledger, D), {}, "Dov was not")
+	_battle([A, B], "victory", {"zone": "frontier_march"})
+	_battle([A, B], "retreated")
+	_battle([B, C], "victory")
+	assert_eq(Bonds.dream(_ledger, A)["count"], 0, "a win elsewhere, a loss here, a win without Ada: nothing")
+	_battle([A], "victory")
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), [
+		"Dream: carry Cal's name.",
+		"  [x] Ada saw Cal fall at %s." % zone,
+		"  [ ] Win at %s (1/3)." % zone,
+		"  [ ] Carry Cal's name.",
+	] as Array[String], "any victory with Ada in the team counts, routine too")
+	_battle([A, D], "victory")
+	assert_eq(Bonds.dream(_ledger, A)["state"], "open")
+	_battle([A, B], "victory")
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "carry_name", "state": "fulfilled", "who": C, "zone": ZONE})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream fulfilled: Cal's name carried at %s." % zone] as Array[String])
+
+
+func test_carry_name_is_lost_only_to_a_second_witnessed_death_at_its_zone() -> void:
+	_battle([A, B, C], "stranded", {"order": "order:x"})
+	_record("died", {"hero": C, "name": "Cal", "cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	_record("died", {"hero": D, "name": "Dov", "cause": "expedition", "zone": ZONE, "battle_order": "order:nobody"})
+	_battle([A, B, D], "stranded", {"order": "order:y", "zone": "frontier_march"})
+	_record("died", {"hero": D, "name": "Dov", "cause": "expedition", "zone": "frontier_march", "battle_order": "order:y"})
+	_record("died", {"hero": E, "name": "Eve", "cause": "expedition", "zone": ZONE})
+	_record("died", {"hero": F, "name": "Fay", "cause": "starvation", "zone": ZONE, "battle_order": "order:x"})
+	assert_eq(Bonds.dream(_ledger, A)["state"], "open", "unwitnessed at the zone, witnessed elsewhere, no order, no expedition: nothing")
+	_record("died", {"cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "carry_name", "state": "open", "who": C, "zone": ZONE, "count": 0}, "a death with no hero, even at a witnessed order, is no one's: still open, count unchanged")
+	_battle([A, E], "stranded", {"order": "order:z"})
+	_record("died", {"hero": E, "name": "Eve", "cause": "expedition", "zone": ZONE, "battle_order": "order:z"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "carry_name", "state": "lost", "who": C, "zone": ZONE})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream lost: %s took another friend." % Ledger.zone_name(ZONE)] as Array[String])
+
+
+func test_carry_name_never_opens_from_a_death_whose_battles_are_gone() -> void:
+	_battle([A, B, C], "stranded", {"order": "order:x"})
+	_record("died", {"hero": C, "name": "Cal", "cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "carry_name")
+	_ledger.remove_at(0)
+	assert_eq(Bonds.dream(_ledger, A), {}, "the cap evicted the battle: no one is known to have been there")
+
+
+func test_be_worthy_opens_on_a_sacrifice_for_the_owner_and_counts_hard_victories() -> void:
+	_record("died", {"hero": C, "name": "Cal", "cause": "sacrifice", "by": A})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "be_worthy", "state": "open", "who": C, "count": 0})
+	assert_eq(Bonds.dream(_ledger, B), {}, "a life given for Ada is Ada's")
+	_battle([A, B], "victory")
+	_battle([A, B], "retreated", {"moments": [_moment("downed", A, "enemy:goblin")]})
+	_battle([B, D], "victory", {"moments": [_moment("downed", B, "enemy:goblin")]})
+	assert_eq(Bonds.dream(_ledger, A)["count"], 0, "a routine win, a retreat, a hard win without Ada: nothing")
+	_battle([A, B], "victory", {"moments": [_moment("downed", B, "enemy:goblin")]})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), [
+		"Dream: be worth Cal's life.",
+		"  [x] Cal was given up for Ada.",
+		"  [ ] Win hard fights (1/2).",
+		"  [ ] Repay Cal's life.",
+	] as Array[String])
+	_battle([A, B], "victory", {"moments": [_moment("downed", A, "enemy:goblin")]})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "be_worthy", "state": "fulfilled", "who": C})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream fulfilled: Cal's life was worth it."] as Array[String])
+
+
+func test_be_worthy_is_lost_to_a_rescue_even_when_that_rescue_would_have_won_it() -> void:
+	_record("died", {"hero": C, "name": "Cal", "cause": "sacrifice", "by": A})
+	_battle([A, B], "victory", {"moments": [_moment("downed", B, "enemy:goblin")]})
+	assert_eq(Bonds.dream(_ledger, A)["count"], 1, "one hard win short")
+	_battle([A, B, D], "victory", {"rescued": [A], "rescuers": [B]})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "be_worthy", "state": "lost", "who": C}, "a hard victory, but Ada was carried home: lost first")
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream lost: carried home before Cal's life was repaid."] as Array[String])
+
+
+func test_be_worthy_fades_after_a_run_without_a_hard_win_and_a_hard_win_restarts_the_run() -> void:
+	var run: int = BALANCE.dream_worthy_fade_battles
+	_record("died", {"hero": C, "name": "Cal", "cause": "sacrifice", "by": A})
+	for _index: int in run - 1:
+		_battle([A, B], "victory")
+	_battle([B, D], "victory")
+	_battle([D], "retreated")
+	assert_eq(Bonds.dream(_ledger, A)["state"], "open", "one short; battles without Ada are not in the run")
+	_battle([A, B], "victory", {"moments": [_moment("downed", B, "enemy:goblin")]})
+	for _index: int in run - 1:
+		_battle([A, B], "retreated")
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "be_worthy", "state": "open", "who": C, "count": 1}, "the hard win restarted the run; a loss counts in it")
+	_battle([A, B], "victory")
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "be_worthy", "state": "faded", "who": C})
+	assert_eq(Bonds.dream_lines(Bonds.dream(_ledger, A), A, NAMES, BALANCE), ["Dream faded: %d battles without a hard win." % run] as Array[String])
+	_battle([A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "life_debt", "a faded dream frees the slot")
+
+
+func test_a_battle_that_saves_the_owner_and_has_it_save_someone_opens_the_life_debt() -> void:
+	_battle([A, B, C], "victory", {"moments": [_moment("revived", C, A), _moment("revived", A, B)]})
+	var found: Dictionary = Bonds.dream(_ledger, A)
+	assert_eq([found["dream"], found["owed"]], ["life_debt", B], "Bea saved Ada; Ada saved Cal; the debt wins")
+
+
+func test_the_record_that_ends_a_dream_never_opens_the_next() -> void:
+	_battle([A, B], "victory", {"moments": [_moment("revived", B, A)]})
+	_battle([A, B, C], "stranded", {"order": "order:x"})
+	_record("died", {"hero": B, "name": "Bea", "cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "watch_over", "state": "lost", "who": B}, "Bea's witnessed death loses Watch over and does not open Carry their name")
+	_battle([A, C, D], "stranded", {"order": "order:y"})
+	_record("died", {"hero": D, "name": "Dov", "cause": "expedition", "zone": ZONE, "battle_order": "order:y"})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "carry_name", "the next formative record after the end opens one")
+	_ledger = []
+	_battle([A, B], "victory", {"moments": [_moment("revived", B, A)]})
+	_record("died", {"hero": B, "name": "Bea", "cause": "sacrifice", "by": A})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "watch_over", "state": "lost", "who": B}, "Bea given up for Ada loses Watch over and does not open Be worth it")
+	_record("died", {"hero": C, "name": "Cal", "cause": "sacrifice", "by": A})
+	assert_eq(Bonds.dream(_ledger, A)["dream"], "be_worthy")
+	_ledger = []
+	_battle([A, B], "victory", {"moments": [_moment("revived", A, B)]})
+	_record("died", {"hero": B, "name": "Bea", "cause": "sacrifice", "by": C})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "life_debt", "state": "lost", "owed": B}, "and the life debt ends the same way")
+
+
+func test_three_sacrifices_in_one_rank_up_open_be_worthy_on_the_first() -> void:
+	for id: String in [B, C, D]:
+		_record("died", {"hero": id, "name": "X", "cause": "sacrifice", "by": A})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "be_worthy", "state": "open", "who": B, "count": 0}, "the others add nothing")
+
+
+func test_legacy_records_open_no_catalogue_dream_and_change_none() -> void:
+	_battle([A, B], "stranded")
+	_record("died", {"hero": C, "name": "Cal"})
+	_record("died", {"hero": C, "name": "Cal", "cause": "expedition", "zone": ZONE})
+	_record("died", {"hero": C, "name": "Cal", "cause": "expedition", "battle_order": "order:0"})
+	_record("died", {"hero": C, "name": "Cal", "cause": "sacrifice"})
+	_record("died", {"cause": "expedition", "zone": ZONE, "battle_order": "order:0"})
+	_record("died", {"cause": "sacrifice", "by": A})
+	_record("ranked_up", {})
+	Ledger.append(_ledger, _ledger.size() + 1, 0, "battle", {"team": [A]})
+	Ledger.append(_ledger, _ledger.size() + 1, 0, "battle", {})
+	assert_eq(Bonds.dream(_ledger, A), {}, "no cause, by, order, zone, hero, team, moments or rescue: nothing opens")
+	_battle([A, B], "victory", {"moments": [_moment("revived", B, A)]})
+	_record("died", {"cause": "expedition"})
+	_record("ranked_up", {})
+	Ledger.append(_ledger, _ledger.size() + 1, 0, "battle", {"team": [A, B]})
+	assert_eq(Bonds.dream(_ledger, A), {"dream": "watch_over", "state": "open", "who": B, "what": "revived", "zone": ZONE, "count": 1}, "and none of them ends or counts on an open one but the bare battle beside Bea")
+
+
+func test_a_dead_hero_keeps_its_name_in_the_dream_lines() -> void:
+	_battle([A, B, C], "stranded", {"order": "order:x"})
+	_record("died", {"hero": C, "name": "Cal", "cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	var found: Dictionary = Bonds.dream(_ledger, A)
+	assert_string_contains(Bonds.dream_lines(found, A, Ledger.known_names(_ledger, {A: "Ada"}), BALANCE)[1], "Ada saw Cal fall")
+	assert_string_contains(Bonds.dream_lines(found, A, {A: "Ada"}, BALANCE)[1], "a hero now forgotten", "a name nobody knows")
+
+
+func test_no_dream_is_saved_and_a_disk_round_trip_gives_the_same_dreams() -> void:
+	_hero(A, "Ada")
+	var owners: Array[String] = [A, B, D, F]
+	GameSession._record("battle", {"order": "order:1", "zone": ZONE, "team": [A, B], "result": "victory", "moments": [_moment("revived", A, B)]})
+	GameSession._record("battle", {"order": "order:2", "zone": ZONE, "team": [D, E], "result": "stranded", "moments": []})
+	GameSession._record("died", {"hero": E, "name": "Eve", "cause": "expedition", "zone": ZONE, "battle_order": "order:2"})
+	GameSession._record("died", {"hero": C, "name": "Cal", "cause": "sacrifice", "by": F})
+	var before: Dictionary = {}
+	for id: String in owners:
+		before[id] = Bonds.dream(GameSession.ledger, id)
+	assert_eq([before[A]["dream"], before[B]["dream"], before[D]["dream"], before[F]["dream"]], ["life_debt", "watch_over", "carry_name", "be_worthy"])
+	for key: String in GameSession.to_dict():
+		assert_false(key.contains("dream"), "no saved dream: %s" % key)
+	assert_true(SaveService.save(), SaveService.last_write_error)
+	var files: Dictionary = {SaveService.SAVE_PATH: FileAccess.get_file_as_bytes(SaveService.SAVE_PATH), SaveService.LEDGER_PATH: FileAccess.get_file_as_bytes(SaveService.LEDGER_PATH)}
+	for path: String in files:
+		assert_false((files[path] as PackedByteArray).get_string_from_utf8().contains("dream"), "and none on disk: %s" % path)
+	# The reset saves the empty state over both files (roster_changed), so put the two files back.
+	GameSession.from_dict({"roster": []})
+	for path: String in files:
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		file.store_buffer(files[path])
+		file.close()
+	assert_true(SaveService.load_game(), SaveService.load_block_reason)
+	for id: String in owners:
+		assert_eq(Bonds.dream(GameSession.ledger, id), before[id], "%s's dream after the round trip" % id)
+
+
+## One bond and dream read for one hero at the cap. A measurement for ig-m6o.2.2, not a gate. The
+## ledger also holds a formative record for each dream of the catalogue (ig-m6o.2.2.7): three owners
+## at the cap that each hold their own, checked, and the timed hero's mix of saves and rescues.
 func test_read_cost_at_the_cap() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
 	var heroes: Array[String] = []
 	for index: int in 40:
 		heroes.append("hero:%d" % index)
+	var scripted: Dictionary = {
+		2500: ["battle", {"order": "order:2500", "zone": ZONE, "team": ["own:watch", "own:x"], "result": "victory", "moments": [_moment("revived", "own:x", "own:watch")]}],
+		5000: ["battle", {"order": "order:5000", "zone": ZONE, "team": ["own:carry", "own:y"], "result": "stranded", "moments": []}],
+		5001: ["died", {"hero": "own:y", "name": "Y", "cause": "expedition", "zone": ZONE, "battle_order": "order:5000"}],
+		7500: ["died", {"hero": "own:z", "name": "Z", "cause": "sacrifice", "by": "own:worthy"}],
+	}
 	for index: int in BALANCE.ledger_max_records:
 		var team: Array[String] = []
 		for _slot: int in 4:
 			team.append(heroes[rng.randi_range(0, heroes.size() - 1)])
+		if scripted.has(index):
+			_record(scripted[index][0], scripted[index][1])
+			continue
 		var roll: int = rng.randi_range(0, 9)
 		var fields: Dictionary = {"order": "order:%d" % index, "zone": ZONE, "team": team, "result": "victory", "moments": []}
 		if roll >= 6:
@@ -163,13 +399,21 @@ func test_read_cost_at_the_cap() -> void:
 	for id: String in heroes:
 		living[id] = true
 	var best_usec: int = 1 << 62
+	var best_dream_usec: int = 1 << 62
 	for _run: int in 7:
 		var started: int = Time.get_ticks_usec()
 		Bonds.bond(_ledger, heroes[0], living, BALANCE)
+		var midway: int = Time.get_ticks_usec()
 		Bonds.dream(_ledger, heroes[0])
-		best_usec = mini(best_usec, Time.get_ticks_usec() - started)
+		var ended: int = Time.get_ticks_usec()
+		best_usec = mini(best_usec, ended - started)
+		best_dream_usec = mini(best_dream_usec, ended - midway)
 	gut.p("BOND READ COST: %d records, one bond and dream read, best of 7: %.2f ms" % [_ledger.size(), best_usec / 1000.0])
+	gut.p("DREAM READ COST: %d records, one hero's dream (%s), best of 7: %.2f ms" % [_ledger.size(), Bonds.dream(_ledger, heroes[0]).get("dream", "none"), best_dream_usec / 1000.0])
 	assert_eq(_ledger.size(), BALANCE.ledger_max_records)
+	assert_eq(Bonds.dream(_ledger, "own:watch")["dream"], "watch_over")
+	assert_eq(Bonds.dream(_ledger, "own:carry")["dream"], "carry_name")
+	assert_eq(Bonds.dream(_ledger, "own:worthy")["dream"], "be_worthy")
 
 
 ## ---- the hub
@@ -215,7 +459,9 @@ func test_the_partner_stands_in_town_greets_once_per_approach_and_leaves_with_an
 	assert_eq(town.partner.greetings, 1)
 	assert_true(town.partner.is_showing_line())
 	assert_eq((town.partner.get_node("Line") as Label3D).text, Lines.line(town.partner.facts, 0), "the first approach shows the pair's first line")
-	assert_eq(town.partner.facts["kinds"], Lines.greeting_facts(Bonds.bond(GameSession.ledger, A, {A: true, B: true}, BALANCE), {}, A, {}).get("kinds"), "saved_by, from Ada's bond")
+	assert_eq(town.partner.facts["kinds"], Lines.greeting_facts(Bonds.bond(GameSession.ledger, A, {A: true, B: true}, BALANCE), Bonds.dream(GameSession.ledger, B), A, {}).get("kinds"), "saved_by, from Ada's bond, and Bea's dream")
+	assert_eq(town.partner.facts["kinds"], _kinds(["saved_by", "watch_over"]), "Bea revived Ada, so Bea watches over Ada, who is the one she says it to")
+	assert_eq(town.partner.facts["own"], {"watch_over": {"place": Ledger.zone_name(ZONE)}}, "and the dream's own place")
 	await _frames(5)
 	assert_eq(town.partner.greetings, 1, "once per approach")
 	GameSession.roster_changed.emit()
@@ -818,6 +1064,22 @@ func test_the_detail_panel_reads_a_dream_once_per_ledger_change() -> void:
 	assert_string_contains((hub.get_node("%HeroDetail") as Label).text, "Fight beside Bea again (2/3).")
 
 
+func test_the_detail_panel_names_a_fallen_hero_from_its_died_record() -> void:
+	_hero(A, "Ada")
+	_hero(B, "Bea")
+	_battle_in(GameSession.ledger, [A, B, C], "stranded", {"order": "order:x"})
+	Ledger.append(GameSession.ledger, GameSession.ledger.size() + 1, 0, "died", {"hero": C, "name": "Cal", "cause": "expedition", "zone": ZONE, "battle_order": "order:x"})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	var hub: Node3D = _hub()
+	hub._open(&"Forge")
+	_select(hub, "Ada")
+	var text: String = (hub.get_node("%HeroDetail") as Label).text
+	var zone: String = Ledger.zone_name(ZONE)
+	for line: String in ["Dream: carry Cal's name.", "  [x] Ada saw Cal fall at %s." % zone, "  [ ] Win at %s (0/3)." % zone]:
+		assert_string_contains(text, line)
+	assert_false(text.contains("a hero now forgotten"), "Cal is not on the roster, but his died record has his name")
+
+
 ## ---- ig-m6o.2.2.2: the partner greets from the line bank
 
 func test_three_approaches_in_a_row_show_three_different_lines() -> void:
@@ -863,16 +1125,17 @@ func test_the_hub_gives_the_partner_its_debt_lines() -> void:
 
 ## ---- ig-7sn.16: the settle's readers, exact after the speed-ups
 
-## ACC 3: the dream that skips battles without the hero equals the one that read every record, for
-## every hero of the perf seed's ledger, and at every 50th record of seeded ledgers the game could
-## write (a moment's hero and by are in the team), which open, pay and lose dreams.
+## ACC 3: the dream that skips battles without the hero equals the one that read every record (skip
+## false), for every hero of the perf seed's ledger, and at every 50th record of seeded ledgers the
+## game could write (a moment's hero and by are in the team, a death has its cause, zone and by),
+## which open, end and count every dream of the catalogue (ig-m6o.2.2.7).
 func test_the_dream_that_skips_equals_the_dream_that_read_every_record() -> void:
 	var heroes: Array[String] = []
 	for index: int in 100:
 		heroes.append("perf:%d" % index)
 	var seeded: Array[Dictionary] = _perf_ledger(heroes)
 	for hero_id: String in heroes:
-		if Bonds.dream(seeded, hero_id) != _dream_before(seeded, hero_id):
+		if Bonds.dream(seeded, hero_id) != Bonds.dream(seeded, hero_id, null, false):
 			fail_test("the perf seed's %s" % hero_id)
 			return
 	var eight: Array[String] = heroes.slice(0, 8)
@@ -887,11 +1150,13 @@ func test_the_dream_that_skips_equals_the_dream_that_read_every_record() -> void
 			if seq % 50 == 0:
 				for hero_id: String in eight:
 					var dream: Dictionary = Bonds.dream(ledger, hero_id)
-					if dream != _dream_before(ledger, hero_id):
+					if dream != Bonds.dream(ledger, hero_id, null, false):
 						fail_test("seed %d, %s at seq %d" % [seed_value, hero_id, seq])
 						return
-					states[dream.get("state", "none")] = true
-	assert_eq(states.keys().filter(func(state: String) -> bool: return state in ["open", "paid", "lost"]).size(), 3, "every state compared: %s" % [states.keys()])
+					states["%s:%s" % [dream.get("dream", "none"), dream.get("state", "none")]] = true
+	for opened: String in ["life_debt:open", "watch_over:open", "carry_name:open", "be_worthy:open"]:
+		assert_has(states, opened, "every dream compared: %s" % [states.keys()])
+	assert_gte(states.keys().filter(func(state: String) -> bool: return not state.ends_with(":open") and not state.begins_with("none")).size(), 3, "and some ended: %s" % [states.keys()])
 
 
 ## ACC 4: History read from the newest end equals the full read, for every hero of the perf seed's
@@ -1055,28 +1320,6 @@ func _merged_keys(one: Dictionary, other: Dictionary) -> Array:
 	return keys.keys()
 
 
-## Bonds.dream before ig-7sn.16, reading every record: the exactness test's reference.
-static func _dream_before(ledger: Array[Dictionary], hero_id: String) -> Dictionary:
-	var current: Dictionary = {}
-	for record: Dictionary in ledger:
-		var kind: String = str(record.get("kind", ""))
-		if current.get("state", "") == "open":
-			var owed: String = current["owed"]
-			if kind == "died" and str(record.get("hero", "")) == owed:
-				current = {"state": "lost", "owed": owed}
-			elif kind == "battle" and not Bonds._save(record, owed, hero_id).is_empty():
-				current = {"state": "paid", "owed": owed, "zone": str(record.get("zone", ""))}
-			elif kind == "battle" and Bonds._array(record, "team").has(hero_id) and Bonds._array(record, "team").has(owed):
-				current["fights"] += 1
-			continue
-		if kind != "battle":
-			continue
-		var opened: Dictionary = Bonds._save(record, hero_id, "")
-		if not opened.is_empty():
-			current = {"state": "open", "owed": opened["by"], "what": opened["what"], "zone": str(record.get("zone", "")), "fights": 0}
-	return current
-
-
 ## Ledger.history_lines before ig-7sn.16, gathering the hero's records first: the test's reference.
 static func _history_before(ledger: Array[Dictionary], hero_id: String, names: Dictionary, rank_names: PackedStringArray, max_lines: int) -> Array[String]:
 	var all_names: Dictionary = Ledger.known_names(ledger, names)
@@ -1176,7 +1419,8 @@ func _mix(rng: RandomNumberGenerator, index: int, team: Array[String]) -> Dictio
 ## ig-m6o.2.2.9: one seeded record, [kind, fields], of every kind the fold reads: hard fights, saves,
 ## rescues, routine wins, deaths (mostly of a battle a few records back, sometimes of none or of the
 ## next one), summons and rank-ups. A battle's order is "order:<its seq>". A moment's by is an enemy,
-## no one or any hero; with by_in_team, a teammate instead of any hero, as a real fight writes it.
+## no one or any hero; with by_in_team, a teammate instead of any hero, as a real fight writes it, and
+## a death has a cause (with a zone or a by, from the seq, so no rng draw differs) as kill_hero writes it.
 func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int, by_in_team: bool = false) -> Array:
 	var roll: int = rng.randi_range(0, 19)
 	var hero: String = heroes[rng.randi_range(0, heroes.size() - 1)]
@@ -1188,6 +1432,12 @@ func _random_record(rng: RandomNumberGenerator, heroes: Array[String], seq: int,
 		var died: Dictionary = {"hero": hero, "name": "X"}
 		if roll < 6:
 			died["battle_order"] = "order:%d" % (seq - rng.randi_range(-1, 6))
+		if by_in_team:
+			died["cause"] = ["expedition", "sacrifice", "starvation"][seq % 3]
+			if seq % 3 == 0:
+				died["zone"] = [ZONE, "frontier_march"][seq % 2]
+			elif seq % 3 == 1:
+				died["by"] = heroes[(seq * 7) % heroes.size()]
 		return ["died", died]
 	var team: Array[String] = _team(rng, heroes, rng.randi_range(1, 5))
 	var moments: Array = []
@@ -1348,6 +1598,12 @@ func _record(kind: String, fields: Dictionary) -> void:
 
 func _moment(what: String, hero: String, by: String) -> Dictionary:
 	return {"tick": 1, "what": what, "hero": hero, "by": by}
+
+
+func _kinds(kinds: Array) -> Array[String]:
+	var typed: Array[String] = []
+	typed.assign(kinds)
+	return typed
 
 
 func _bond(hero_id: String) -> Dictionary:

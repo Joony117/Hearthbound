@@ -16,6 +16,9 @@ const SLOTS: Dictionary = {
 	"death": ["name", "place", "dead"],
 	"hard": ["name", "place", "count"],
 	"debt": ["name"],
+	"watch_over": ["name", "place"],
+	"carry_name": ["name", "place", "dead"],
+	"be_worthy": ["name", "dead"],
 }
 
 var _ledger: Array[Dictionary] = []
@@ -38,8 +41,10 @@ func test_the_bank_fills_every_line_from_only_its_kinds_slots() -> void:
 			for found: RegExMatch in slot.search_all(text):
 				used.append(found.get_string(1))
 			assert_false(used.is_empty(), "uses a slot: %s" % text)
-			if kind == "death":
-				assert_has(used, "dead", "a death line names the dead hero: %s" % text)
+			if kind in ["death", "carry_name", "be_worthy"]:
+				assert_has(used, "dead", "a %s line names the dead hero: %s" % [kind, text])
+			if kind == "carry_name":
+				assert_has(used, "place", "a carry_name line names the place: %s" % text)
 			for slot_name: String in used:
 				assert_has(SLOTS[kind], slot_name, "%s may use {%s}: %s" % [kind, slot_name, text])
 			var filled: String = text.format(worst)
@@ -79,7 +84,7 @@ func test_a_death_line_names_the_dead_hero_or_the_fallback() -> void:
 
 
 func test_two_picks_in_a_row_differ_and_the_pick_wraps() -> void:
-	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"]]:
+	for kinds: Array in [["saved_by"], ["saved"], ["death"], ["hard"], ["saved", "debt"], ["watch_over"], ["carry_name"], ["be_worthy"]]:
 		var facts: Dictionary = {"kinds": _kinds(kinds), "slots": {"name": "Ada", "place": "Here", "dead": "Cal", "count": "Two"}, "start": 7}
 		var size: int = Lines.candidates(facts).size()
 		for pick: int in size:
@@ -99,13 +104,60 @@ func test_the_start_is_the_pair_so_each_pair_opens_on_its_own_line() -> void:
 func test_a_debt_shows_while_the_dream_is_open_and_not_after_it_is_paid_or_lost() -> void:
 	_saves()
 	assert_eq(_facts(B, A)["kinds"], _kinds(["saved", "debt"]), "Bea saved Ada: Ada owes Bea")
-	assert_eq(_facts(A, B)["kinds"], _kinds(["saved_by"]), "Bea owes Ada nothing")
+	assert_eq(_facts(A, B)["kinds"], _kinds(["saved_by", "watch_over"]), "Bea owes Ada nothing; she watches over her")
 	var open: Array[Dictionary] = _ledger.duplicate()
 	_battle([A, B], "victory", {"moments": [_moment("revived", B, A)]})
 	assert_false(_facts(B, A)["kinds"].has("debt"), "paid")
 	_ledger = open
 	_record("died", {"hero": B, "name": "Bea"})
 	assert_false(_facts(B, A)["kinds"].has("debt"), "lost")
+
+
+# The catalogue's kinds (ig-m6o.2.2.7): the partner's own dream, open, adds its lines.
+func test_watch_over_speaks_only_to_the_hero_watched_and_only_while_open() -> void:
+	_saves()
+	var facts: Dictionary = _facts(A, B)
+	assert_eq(facts["kinds"], _kinds(["saved_by", "watch_over"]), "Bea watches over Ada, and says so to Ada")
+	assert_eq(Lines.candidates(facts).size(), 10)
+	for pick: int in 10:
+		assert_false(Lines.line(facts, pick).contains("{"), Lines.line(facts, pick))
+	assert_eq(Lines.greeting_facts(Bonds.bond(_ledger, C, {A: true, B: true, C: true}, BALANCE), Bonds.dream(_ledger, B), C, NAMES), {}, "no bond, no words")
+	var open: Array[Dictionary] = _ledger.duplicate()
+	_record("ranked_up", {"hero": A, "from": 0, "to": 1, "via": "essence"})
+	assert_eq(_facts(A, B)["kinds"], _kinds(["saved_by"]), "fulfilled: quiet")
+	_ledger = open
+	var bond: Dictionary = Bonds.bond(_ledger, B, {A: true, B: true}, BALANCE)
+	assert_eq(Lines.greeting_facts(bond, Bonds.dream(_ledger, A), B, NAMES)["kinds"], _kinds(["saved", "debt"]), "Ada's is the life debt")
+	assert_false(Lines.greeting_facts(bond, {"dream": "watch_over", "state": "open", "who": C, "zone": ZONE, "count": 0}, B, NAMES)["kinds"].has("watch_over"), "she watches over Cal, not Bea")
+
+
+func test_a_dream_kind_fills_its_own_place_and_dead_not_the_bonds() -> void:
+	var elsewhere: String = Ledger.zone_name("frontier_march")
+	_battle([A, B, C], "stranded", {"order": "order:x"})
+	_record("died", {"hero": C, "name": "Cal", "battle_order": "order:x"})
+	for _index: int in 2:
+		_battle([A, B], "retreated")
+	var bond: Dictionary = Bonds.bond(_ledger, A, {A: true, B: true}, BALANCE)
+	assert_eq([bond["fact"]["kind"], bond["fact"]["dead"]], ["death", C], "the bond is the death seen together: Cal, at the first zone")
+	var names: Dictionary = NAMES.duplicate()
+	names["hero:d"] = "Dov"
+	var dream: Dictionary = {"dream": "carry_name", "state": "open", "who": "hero:d", "zone": "frontier_march", "count": 0}
+	var facts: Dictionary = Lines.greeting_facts(bond, dream, A, names)
+	assert_eq(facts["kinds"], _kinds(["death", "carry_name"]), "any listener: Ada was not at Dov's fall")
+	assert_eq(facts["own"], {"carry_name": {"place": elsewhere, "dead": "Dov"}})
+	assert_eq(facts["slots"]["dead"], "Cal", "the bond's slots are kept as they were")
+	facts["start"] = 0
+	var deaths: int = (Lines.BANK["death"] as Array).size()
+	for pick: int in deaths + (Lines.BANK["carry_name"] as Array).size():
+		var said: String = Lines.line(facts, pick)
+		assert_false(said.contains("{"), said)
+		assert_eq(said.contains("Dov"), pick >= deaths, "Dov only in the dream's lines: %s" % said)
+		assert_false(pick < deaths and said.contains(elsewhere), "the death's place is the bond's: %s" % said)
+	var worthy: Dictionary = Lines.greeting_facts(bond, {"dream": "be_worthy", "state": "open", "who": C, "count": 0}, A, NAMES)
+	assert_eq(worthy["kinds"], _kinds(["death", "be_worthy"]))
+	assert_eq(worthy["own"], {"be_worthy": {"dead": "Cal"}})
+	assert_eq(Lines.greeting_facts(bond, {"dream": "be_worthy", "state": "fulfilled", "who": C}, A, NAMES)["kinds"], _kinds(["death"]), "ended: quiet")
+	assert_eq(Lines.greeting_facts(bond, {"dream": "be_worthy", "state": "open", "who": "hero:gone", "count": 0}, A, NAMES)["own"], {"be_worthy": {"dead": "a hero now forgotten"}})
 
 
 # The owner's case (ig-m6o.2.1's seeded save, rebuilt): Dunn has at least 10 lines for Mara.

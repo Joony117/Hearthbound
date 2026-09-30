@@ -8,6 +8,26 @@ extends RefCounted
 const SAVES: Array[String] = ["revived", "carried"]
 ## The fact kinds in the order a record scores them, and the tally keys that count them.
 const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths"]
+## How each dream ends, in one line: {who} and {zone} are its names, {count} the fade's battles.
+const ENDINGS: Dictionary = {
+	"life_debt:paid": "Dream fulfilled: repaid {who} at {zone}.",
+	"life_debt:lost": "Dream lost: {who} died before the debt was paid.",
+	"watch_over:fulfilled": "Dream fulfilled: {who} rose in rank.",
+	"watch_over:lost": "Dream lost: {who} died before rising.",
+	"carry_name:fulfilled": "Dream fulfilled: {who}'s name carried at {zone}.",
+	"carry_name:lost": "Dream lost: {zone} took another friend.",
+	"be_worthy:fulfilled": "Dream fulfilled: {who}'s life was worth it.",
+	"be_worthy:lost": "Dream lost: carried home before {who}'s life was repaid.",
+	"be_worthy:faded": "Dream faded: {count} battles without a hard win.",
+}
+## How a save is told, by whoever saved and whoever was saved.
+const SAVE_LINES: Dictionary = {
+	"revived": "{by} revived {saved} at {zone}.",
+	"carried": "{by} carried {saved} out at {zone}.",
+	"rescued": "{by} rescued {saved} from {zone}.",
+}
+## The goals dream() reads when it is given no table.
+const _SHIPPED: BalanceTable = preload("res://balance.tres")
 
 
 ## hero_id's bond: the living hero (a key of living) with the most points, at or over
@@ -349,38 +369,113 @@ static func _ahead(tally: Dictionary, chosen: Dictionary) -> bool:
 	return str(tally["partner"]) < str(chosen["partner"])
 
 
-## hero_id's dream, "repay a life debt", read oldest first. {} before the first save. Otherwise
-## {state, owed, ...}: "open" adds what, zone and fights; "paid" adds zone; "lost" is the owed
-## hero's death. Only one debt is open at a time; after it ends, the next save opens a new one.
-## A battle naming hero_id in none of team, rescued and rescuers is skipped (ig-7sn.16): it can't open,
-## pay or count a fight, since a moment's hero and by are actors in its fight and team is every
-## allied actor, downed or not (_record_battle). Dropping allies from team would break this.
+## hero_id's dream, read oldest first: {} before the first formative record, else the one dream the
+## hero holds, {dream, state, ...}, dream naming its id (SYSTEMS.md § The dream catalogue):
+## - life_debt: X saved the owner. open adds owed, what, zone, fights; paid adds zone; lost is X's death.
+## - watch_over: the owner saved X. open adds who, what, zone, count (battles beside X since); X
+##   ranking up is fulfilled, X's death lost.
+## - carry_name: X died an expedition death the owner was there for, at zone. open adds who, zone,
+##   count (victories at zone since); fulfilled at dream_name_victories, lost on a second such death there.
+## - be_worthy: X was sacrificed for the owner. open adds who and count (hard victories since);
+##   fulfilled at dream_worthy_hard_victories, lost when the owner is carried home in a rescue,
+##   faded after dream_worthy_fade_battles battles in a row without a hard win.
+## One dream is open at a time; the record that ends one never opens the next. balance is the
+## table for the goals, the shipped one when null (hub.gd asks with two arguments).
+## A battle naming hero_id in none of team, rescued and rescuers is skipped (ig-7sn.16): every
+## dream reads only battles that name its owner, since a moment's hero and by are actors in its
+## fight and team is every allied actor, downed or not (_record_battle). Dropping allies from team
+## would break this. skip false reads every record: the exactness test's reference.
 ## The skip reads the three keys inline: three _array calls per record doubled the dream's cost.
-static func dream(ledger: Array[Dictionary], hero_id: String) -> Dictionary:
+static func dream(ledger: Array[Dictionary], hero_id: String, balance: BalanceTable = null, skip: bool = true) -> Dictionary:
+	var rules: BalanceTable = balance if balance != null else _SHIPPED
 	var current: Dictionary = {}
+	var fought: Dictionary = {}
 	for record: Dictionary in ledger:
 		var kind: String = str(record.get("kind", ""))
 		if kind == "battle":
 			var team: Variant = record.get("team")
-			if not (team is Array and (team as Array).has(hero_id)):
+			if team is Array and (team as Array).has(hero_id):
+				fought[str(record.get("order", ""))] = true
+			elif skip:
 				var rescued: Variant = record.get("rescued")
 				var rescuers: Variant = record.get("rescuers")
 				if not (rescued is Array and (rescued as Array).has(hero_id) or rescuers is Array and (rescuers as Array).has(hero_id)):
 					continue
 		if current.get("state", "") == "open":
-			var owed: String = current["owed"]
-			if kind == "died" and str(record.get("hero", "")) == owed:
-				current = {"state": "lost", "owed": owed}
-			elif kind == "battle" and not _save(record, owed, hero_id).is_empty():
-				current = {"state": "paid", "owed": owed, "zone": str(record.get("zone", ""))}
-			elif kind == "battle" and _array(record, "team").has(hero_id) and _array(record, "team").has(owed):
+			current = _advance(current, record, kind, hero_id, rules, fought)
+		else:
+			var opened: Dictionary = _open(record, kind, hero_id, fought)
+			if not opened.is_empty():
+				current = opened
+	current.erase("quiet")
+	return current
+
+
+## The dream record opens for hero_id, or {}. A battle opens life_debt (the owner was saved) before
+## watch_over (the owner saved someone); a died record opens carry_name or be_worthy, at most one.
+static func _open(record: Dictionary, kind: String, hero_id: String, fought: Dictionary) -> Dictionary:
+	var zone: String = str(record.get("zone", ""))
+	if kind == "battle":
+		var saved_by: Dictionary = _save(record, hero_id, "")
+		if not saved_by.is_empty():
+			return {"dream": "life_debt", "state": "open", "owed": saved_by["by"], "what": saved_by["what"], "zone": zone, "fights": 0}
+		var saved: Dictionary = _saved(record, hero_id)
+		if not saved.is_empty():
+			return {"dream": "watch_over", "state": "open", "who": saved["who"], "what": saved["what"], "zone": zone, "count": 0}
+	elif kind == "died" and str(record.get("hero", "")) != hero_id and not str(record.get("hero", "")).is_empty():
+		if not zone.is_empty() and _witnessed(record, fought):
+			return {"dream": "carry_name", "state": "open", "who": str(record["hero"]), "zone": zone, "count": 0}
+		if str(record.get("cause", "")) == "sacrifice" and str(record.get("by", "")) == hero_id:
+			return {"dream": "be_worthy", "state": "open", "who": str(record["hero"]), "count": 0, "quiet": 0}
+	return {}
+
+
+## current, an open dream, after record: the same dict counted on, or a new one that ends it.
+static func _advance(current: Dictionary, record: Dictionary, kind: String, hero_id: String, rules: BalanceTable, fought: Dictionary) -> Dictionary:
+	var dream_id: String = current["dream"]
+	var who: String = str(current.get("who", current.get("owed", "")))
+	var hero: String = str(record.get("hero", ""))
+	var zone: String = str(record.get("zone", ""))
+	var beside: bool = false
+	var won: bool = false
+	if kind == "battle":
+		var team: Array = _array(record, "team")
+		beside = team.has(hero_id) and team.has(who)
+		won = team.has(hero_id) and str(record.get("result", "")) == "victory"
+	match dream_id:
+		"life_debt":
+			if kind == "died" and hero == who:
+				return {"dream": dream_id, "state": "lost", "owed": who}
+			if kind == "battle" and not _save(record, who, hero_id).is_empty():
+				return {"dream": dream_id, "state": "paid", "owed": who, "zone": zone}
+			if beside:
 				current["fights"] += 1
-			continue
-		if kind != "battle":
-			continue
-		var opened: Dictionary = _save(record, hero_id, "")
-		if not opened.is_empty():
-			current = {"state": "open", "owed": opened["by"], "what": opened["what"], "zone": str(record.get("zone", "")), "fights": 0}
+		"watch_over":
+			if kind == "died" and hero == who:
+				return {"dream": dream_id, "state": "lost", "who": who}
+			if kind == "ranked_up" and hero == who:
+				return {"dream": dream_id, "state": "fulfilled", "who": who}
+			if beside:
+				current["count"] += 1
+		"carry_name":
+			if won and zone == current["zone"]:
+				current["count"] += 1
+				if current["count"] >= rules.dream_name_victories:
+					return {"dream": dream_id, "state": "fulfilled", "who": who, "zone": zone}
+			elif kind == "died" and zone == current["zone"] and hero != hero_id and _witnessed(record, fought):
+				return {"dream": dream_id, "state": "lost", "who": who, "zone": zone}
+		"be_worthy":
+			if kind == "battle" and _array(record, "rescued").has(hero_id):
+				return {"dream": dream_id, "state": "lost", "who": who}
+			if won and not Ledger.is_routine(record):
+				current["count"] += 1
+				current["quiet"] = 0
+				if current["count"] >= rules.dream_worthy_hard_victories:
+					return {"dream": dream_id, "state": "fulfilled", "who": who}
+			elif kind == "battle" and _array(record, "team").has(hero_id):
+				current["quiet"] += 1
+				if current["quiet"] >= rules.dream_worthy_fade_battles:
+					return {"dream": dream_id, "state": "faded", "who": who}
 	return current
 
 
@@ -400,6 +495,30 @@ static func _save(record: Dictionary, saved: String, by: String) -> Dictionary:
 	return {}
 
 
+## Whom saver saved in record, and how: {who, what}, or {} for no one. The other side of _save: a
+## rescue with saver among the rescuers saves the first hero rescued, else the first hero saver
+## revived or carried.
+static func _saved(record: Dictionary, saver: String) -> Dictionary:
+	if _array(record, "rescuers").has(saver):
+		for rescued: Variant in _array(record, "rescued"):
+			if str(rescued) != saver:
+				return {"who": str(rescued), "what": "rescued"}
+	for raw_moment: Variant in _array(record, "moments"):
+		var moment: Dictionary = raw_moment as Dictionary if raw_moment is Dictionary else {}
+		var saved: String = str(moment.get("hero", ""))
+		if str(moment.get("what", "")) in SAVES and str(moment.get("by", "")) == saver and not saved.is_empty() and not saved.begins_with("enemy:") and saved != saver:
+			return {"who": saved, "what": str(moment["what"])}
+	return {}
+
+
+## Whether record, a died record, is an expedition death of a named hero in a battle the owner was in
+## the team of, fought being the order ids of those battles read so far. A record with no hero (a
+## legacy or hand-edited one) is nobody's death, so it neither opens nor ends carry_name.
+static func _witnessed(record: Dictionary, fought: Dictionary) -> bool:
+	var order: String = str(record.get("battle_order", ""))
+	return str(record.get("cause", "")) == "expedition" and not str(record.get("hero", "")).is_empty() and not order.is_empty() and fought.has(order)
+
+
 ## "Closest to Mara: 4 hard fights, 1 rescue, 1 death seen together." names holds display names.
 static func bond_line(found: Dictionary, names: Dictionary, away: bool) -> String:
 	var parts: PackedStringArray = []
@@ -411,30 +530,39 @@ static func bond_line(found: Dictionary, names: Dictionary, away: bool) -> Strin
 	return "Closest to %s%s: %s." % [_name(found["partner"], names), " (away)" if away else "", ", ".join(parts)]
 
 
-## The dream as detail lines: a headline, then three milestones while the debt is open.
+## The dream as detail lines: while it is open, a headline then three milestones (the opening done,
+## the count at n/goal, the last one to do); once it has ended, one line.
 static func dream_lines(found: Dictionary, hero_id: String, names: Dictionary, balance: BalanceTable) -> Array[String]:
 	if found.is_empty():
 		return []
-	var owed: String = _name(found["owed"], names)
-	match str(found["state"]):
-		"paid":
-			return ["Dream fulfilled: repaid %s at %s." % [owed, Ledger.zone_name(found["zone"])]]
-		"lost":
-			return ["Dream lost: %s died before the debt was paid." % owed]
+	var dream_id: String = str(found.get("dream", ""))
+	var who: String = _name(str(found.get("who", found.get("owed", ""))), names)
 	var hero: String = _name(hero_id, names)
-	var zone: String = Ledger.zone_name(found["zone"])
-	var opened: String = {
-		"revived": "%s revived %s at %s." % [owed, hero, zone],
-		"carried": "%s carried %s out at %s." % [owed, hero, zone],
-		"rescued": "%s rescued %s from %s." % [owed, hero, zone],
-	}[found["what"]]
-	var goal: int = balance.dream_fight_beside_battles
-	var fights: int = mini(int(found["fights"]), goal)
+	var zone: String = Ledger.zone_name(str(found.get("zone", "")))
+	if found["state"] != "open":
+		var ending: String = str(ENDINGS.get("%s:%s" % [dream_id, found["state"]], ""))
+		return [ending.format({"who": who, "zone": zone, "count": balance.dream_worthy_fade_battles})] if not ending.is_empty() else []
+	match dream_id:
+		"life_debt":
+			var told: String = str(SAVE_LINES[found["what"]]).format({"by": who, "saved": hero, "zone": zone})
+			return _milestones("Dream: repay %s." % who, told, "Fight beside %s again" % who, found["fights"], balance.dream_fight_beside_battles, "Save %s." % who)
+		"watch_over":
+			var told: String = str(SAVE_LINES[found["what"]]).format({"by": hero, "saved": who, "zone": zone})
+			return _milestones("Dream: watch over %s." % who, told, "Fight beside %s again" % who, found["count"], balance.dream_fight_beside_battles, "See %s rank up." % who)
+		"carry_name":
+			return _milestones("Dream: carry %s's name." % who, "%s saw %s fall at %s." % [hero, who, zone], "Win at %s" % zone, found["count"], balance.dream_name_victories, "Carry %s's name." % who)
+		"be_worthy":
+			return _milestones("Dream: be worth %s's life." % who, "%s was given up for %s." % [who, hero], "Win hard fights", found["count"], balance.dream_worthy_hard_victories, "Repay %s's life." % who)
+	return []
+
+
+static func _milestones(headline: String, opened: String, counted: String, count: int, goal: int, last: String) -> Array[String]:
+	var shown: int = mini(count, goal)
 	return [
-		"Dream: repay %s." % owed,
+		headline,
 		"  [x] %s" % opened,
-		"  [%s] Fight beside %s again (%d/%d)." % ["x" if fights >= goal else " ", owed, fights, goal],
-		"  [ ] Save %s." % owed,
+		"  [%s] %s (%d/%d)." % ["x" if shown >= goal else " ", counted, shown, goal],
+		"  [ ] %s" % last,
 	]
 
 

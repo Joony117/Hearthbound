@@ -8,7 +8,9 @@ extends RefCounted
 const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"]
 ## Spoken by the partner to the body. Each kind's lines use only the slots it always gives:
 ## saved_by, saved {name} {place}; death {name} {place} {dead}; hard {name} {place} {count}; debt
-## {name}. The first line of the first four kinds is the old one-line greeting, word for word.
+## {name}; watch_over {name} {place}; carry_name {name} {place} {dead}; be_worthy {name} {dead}. The
+## first line of the first four kinds is the old one-line greeting, word for word. The last three
+## are the partner's dream (ig-m6o.2.2.7): their {place} and {dead} are the dream's, not the bond's.
 const BANK: Dictionary = {
 	"saved_by": [
 		"I'd come for you again. {place} or anywhere.",
@@ -45,6 +47,27 @@ const BANK: Dictionary = {
 		"Put me beside you out there, {name}. I owe you one.",
 		"I keep count, {name}. I still owe you a life.",
 	],
+	"watch_over": [
+		"I'll keep watch over you, {name}. Since {place}.",
+		"You're not alone, {name}. Not after {place}.",
+		"I mean to see you rise, {name}. I'll be there.",
+		"Stay close, {name}. I'm not done watching your back.",
+		"I got you through {place}. Now I want to see you rise.",
+	],
+	"carry_name": [
+		"We go back to {place} for {dead}.",
+		"{place} took {dead}. I mean to beat it.",
+		"I carry {dead}'s name into {place}.",
+		"Win at {place} with me. For {dead}.",
+		"{dead} fell at {place}. I won't let that stand.",
+	],
+	"be_worthy": [
+		"{dead} gave everything for me. I won't waste it.",
+		"I think about {dead} every fight, {name}.",
+		"I have to be worth {dead}'s life, {name}.",
+		"{dead} paid for me to stand here, {name}.",
+		"Win one hard fight for {dead}, {name}.",
+	],
 }
 
 
@@ -55,7 +78,20 @@ static func line(facts: Dictionary, pick: int) -> String:
 	var lines: Array[String] = candidates(facts)
 	if lines.is_empty():
 		return ""
-	return lines[(int(facts.get("start", 0)) + pick) % lines.size()].format(facts.get("slots", {}))
+	var index: int = (int(facts.get("start", 0)) + pick) % lines.size()
+	var slots: Dictionary = facts.get("slots", {})
+	var own: Dictionary = (facts.get("own", {}) as Dictionary).get(_kind_at(facts, index), {})
+	return lines[index].format(slots.merged(own, true))
+
+
+## The kind whose lines hold candidates()' index-th line.
+static func _kind_at(facts: Dictionary, index: int) -> String:
+	for kind: Variant in facts.get("kinds", []):
+		var count: int = (BANK.get(str(kind), []) as Array).size()
+		if index < count:
+			return str(kind)
+		index -= count
+	return ""
 
 
 static func candidates(facts: Dictionary) -> Array[String]:
@@ -67,6 +103,8 @@ static func candidates(facts: Dictionary) -> Array[String]:
 
 ## What the partner says to the body, as facts: bond is the body's bond (Bonds.bond_from, toward the
 ## partner), dream the partner's (Bonds.dream), names hero ids to display names. {} for no bond.
+## own holds, for the dream kinds only, the slots that kind's lines fill from the dream (line() lays
+## them over slots), so a bond's {place} or {dead} never speaks for the dream's.
 static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String, names: Dictionary) -> Dictionary:
 	if bond.is_empty():
 		return {}
@@ -79,10 +117,27 @@ static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String,
 	elif kind == "hard":
 		var hard: int = bond["hard"]
 		slots["count"] = NUMBER_WORDS[hard] if hard < NUMBER_WORDS.size() else str(hard)
-	if dream.get("state", "") == "open" and dream.get("owed", "") == body_id:
-		kinds.append("debt")
+	var own: Dictionary = {}
+	if dream.get("state", "") == "open":
+		var dream_id: String = str(dream.get("dream", ""))
+		var who: String = str(dream.get("who", ""))
+		var place: String = Ledger.zone_name(str(dream.get("zone", "")))
+		if dream_id == "life_debt" and dream.get("owed", "") == body_id:
+			kinds.append("debt")
+		elif dream_id == "watch_over" and who == body_id:
+			kinds.append(dream_id)
+			own[dream_id] = {"place": place}
+		elif dream_id == "carry_name":
+			kinds.append(dream_id)
+			own[dream_id] = {"place": place, "dead": _name(who, names)}
+		elif dream_id == "be_worthy":
+			kinds.append(dream_id)
+			own[dream_id] = {"dead": _name(who, names)}
 	var partner: String = str(bond["partner"])
-	return {"kinds": kinds, "slots": slots, "start": absi(("%s:%s" % [body_id, partner]).hash())}
+	var facts: Dictionary = {"kinds": kinds, "slots": slots, "start": absi(("%s:%s" % [body_id, partner]).hash())}
+	if not own.is_empty():
+		facts["own"] = own
+	return facts
 
 
 static func _name(id: String, names: Dictionary) -> String:
