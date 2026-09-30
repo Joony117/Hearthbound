@@ -762,6 +762,9 @@ func _reset_slow_mo() -> void:
 	_shake_trauma = 0.0
 	_slow_mo_remaining = 0.0
 	_last_living_enemy_ids.clear()
+	# ig-c9y.7: a new battle, a retry or a new view shows no blood from the last one; null before _ready builds it.
+	if _vfx != null:
+		_vfx.clear_pools()
 	_set_view_time_scale(1.0)
 
 

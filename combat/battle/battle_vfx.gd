@@ -58,6 +58,21 @@ const GORE_SPEED: float = 1.1
 const GORE_SPREAD: float = 30.0
 # Inside the shortest hit effect with damage (0.7 s), so the reaper never frees a spray mid-flight.
 const GORE_SECONDS: float = 0.55
+# PROVISIONAL (ig-c9y.7): the ground blood's look and caps, unfelt and unmeasured. Settled by: ig-c9y.6's worst-case measure (caps and times) and a played build (the look, game-designer).
+const POOL_COLOR: Color = Color(BLOOD_COLOR, 0.85)
+const POOL_RADIUS: float = 0.7
+const POOL_HEIGHT: float = 0.03
+const POOL_THICKNESS: float = 0.01
+# A pool starts this fraction of its size and grows to it.
+const POOL_START_SCALE: float = 0.2
+const POOL_GROW_SECONDS: float = 0.6
+const POOL_HOLD_SECONDS_FULL: float = 20.0
+const POOL_HOLD_SECONDS_LOW: float = 8.0
+const POOL_FADE_SECONDS: float = 2.0
+const POOL_EARLY_FADE_SECONDS: float = 0.5
+# Pools not yet fading, past which the oldest fades early.
+const POOL_CAP_FULL: int = 40
+const POOL_CAP_LOW: int = 15
 # Camera trauma per event, 0-1; battle_view squares it into a shake offset.
 const SHAKE_CRIT: float = 0.45
 const SHAKE_SKILL: float = 0.55
@@ -71,10 +86,16 @@ static var _specks: Dictionary = {}
 # The gore's splinter and droplet, shared and tinted like the specks (ig-c9y.1).
 static var _splinter: PrismMesh = _build_splinter()
 static var _droplet: SphereMesh = _build_droplet()
+# The ground blood's disc, shared by every pool (ig-c9y.7).
+static var _pool_mesh: CylinderMesh = _build_pool_mesh()
 
 # Every tween spawn starts, so the view's slow-mo can rescale live effects mid-flight.
 var _tweens: Array[Tween] = []
 var _time_scale: float = 1.0
+# ig-c9y.7: the ground blood's container (made on the first pool, so a vfx that never bleeds keeps today's
+# children) and the pools not yet fading, oldest first.
+var _pools: Node3D
+var _pools_live: Array[MeshInstance3D] = []
 
 
 func set_time_scale(value: float) -> void:
@@ -231,12 +252,19 @@ static func events_between(previous: Dictionary, actors: Array) -> Array[Diction
 			events.append({"kind": "dodge", "actor_id": actor_id, "position": _world(before.get("position"))})
 		if faction == "enemy" and life_before == "alive" and life_after == "dead":
 			events.append({"kind": "death", "actor_id": actor_id, "position": spot, "tick": _tick(after, "last_hit_tick")})
+		# ig-c9y.7: flesh bleeds where it falls, downed or dead (a fall through downed to dead in one render is one).
+		if life_before == "alive" and life_after in ["downed", "dead"] and HeroModel.body_type(faction, archetype) == "flesh":
+			events.append({"kind": "fall", "actor_id": actor_id, "faction": faction, "position": spot, "body": "flesh", "tick": _tick(after, "last_hit_tick")})
 	return events
 
 
 func spawn(event: Dictionary) -> void:
+	# A pool is no one-shot effect: it takes no slot of the cap below and is never dropped by it.
+	if str(event.get("kind", "")) == "fall":
+		_pool(event)
+		return
 	# ponytail: hard cap drops effects under heavy load; pool nodes if dropped effects become visible.
-	if get_child_count() >= MAX_LIVE_EFFECTS:
+	if get_child_count() - (1 if _pools != null else 0) >= MAX_LIVE_EFFECTS:
 		return
 	var effect := Node3D.new()
 	add_child(effect)
@@ -286,6 +314,54 @@ func spawn(event: Dictionary) -> void:
 	var reaper: Tween = _track(effect.create_tween())
 	reaper.tween_interval(lifetime + 0.05)
 	reaper.tween_callback(effect.queue_free)
+
+
+## ig-c9y.7: a flat blood disc where a flesh body fell, grown, held, then faded and freed. Nothing with gore off
+## or for a body that is not flesh. It reads the level at spawn, like _gore; a pool already down runs out its own
+## time if the setting changes. Past the level's cap the oldest pool not yet fading fades early. No RNG.
+func _pool(event: Dictionary) -> void:
+	var level: String = Settings.gore()
+	if level == "off" or str(event.get("body", "")) != "flesh":
+		return
+	if _pools == null:
+		_pools = Node3D.new()
+		_pools.name = "Pools"
+		add_child(_pools)
+	var spot: Vector3 = event.get("position", Vector3.ZERO)
+	var pool: MeshInstance3D = _mesh(_pools, _pool_mesh, POOL_COLOR)
+	pool.position = Vector3(spot.x, POOL_HEIGHT, spot.z)
+	pool.scale = Vector3(POOL_START_SCALE, 1.0, POOL_START_SCALE)
+	# Bound to its pool, so a freed pool never has a tween stepping it; tracked, so the view's time scale reaches it.
+	var life: Tween = _track(pool.create_tween())
+	life.tween_property(pool, "scale", Vector3.ONE, POOL_GROW_SECONDS)
+	life.tween_interval(POOL_HOLD_SECONDS_LOW if level == "low" else POOL_HOLD_SECONDS_FULL)
+	life.tween_callback(_fade_pool.bind(pool, POOL_FADE_SECONDS))
+	pool.set_meta(&"life", life)
+	_pools_live.append(pool)
+	while _pools_live.size() > (POOL_CAP_LOW if level == "low" else POOL_CAP_FULL):
+		var oldest: MeshInstance3D = _pools_live[0]
+		(oldest.get_meta(&"life") as Tween).kill()
+		_fade_pool(oldest, POOL_EARLY_FADE_SECONDS)
+
+
+func _fade_pool(pool: MeshInstance3D, seconds: float) -> void:
+	_pools_live.erase(pool)
+	# A pool cleared in the meantime has left the tree, and can't start a tween.
+	if not pool.is_inside_tree():
+		return
+	var tint: Color = pool.get_instance_shader_parameter(&"tint")
+	var fade: Tween = _track(pool.create_tween())
+	fade.tween_method(_set_alpha.bind(pool, tint), tint.a, 0.0, seconds)
+	fade.tween_callback(pool.queue_free)
+
+
+## Every pool gone at once: a new battle, a retry or a new view starts with none (nothing of them is saved).
+func clear_pools() -> void:
+	_pools_live.clear()
+	if _pools != null:
+		remove_child(_pools)
+		_pools.queue_free()
+		_pools = null
 
 
 func _basic_attack(effect: Node3D, event: Dictionary) -> float:
@@ -610,6 +686,18 @@ static func _build_droplet() -> SphereMesh:
 	droplet.rings = 3
 	droplet.material = _speck_material
 	return droplet
+
+
+static func _build_pool_mesh() -> CylinderMesh:
+	var disc := CylinderMesh.new()
+	disc.top_radius = POOL_RADIUS
+	disc.bottom_radius = POOL_RADIUS
+	disc.height = POOL_THICKNESS
+	disc.radial_segments = 24
+	disc.rings = 1
+	# The camera looks down: the underside is never seen.
+	disc.cap_bottom = false
+	return disc
 
 
 static func _build_effect_material() -> ShaderMaterial:
