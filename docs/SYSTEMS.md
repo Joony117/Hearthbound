@@ -763,7 +763,7 @@ since the hall caps at level 5.
 Stones, parts or Essence, and no Essence formula reads skills (`compute_essence_yield` reads rank
 and level). Books cannot be salvaged or sold. So ~327 → ~219 → ~188 does not move. A book teaches
 one skill. Its class is picked at random, weighted by your roster's archetypes.
-*Amended 2026-09-24 (`ig-vl1`, not built yet):* each archetype on the roster counts once, whatever
+*Amended 2026-09-24 (`ig-vl1`; built in `ig-gy0.7`, `Expedition.roll_book`):* each archetype on the roster counts once, whatever
 its head count. Casters are 1 in 100 each, so a roster weighting would make a lone Mage's book
 about 1% of class books; this way it gets one share per archetype owned, a fifth with all five.
 
