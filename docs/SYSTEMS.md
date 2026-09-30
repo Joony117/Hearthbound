@@ -1217,7 +1217,14 @@ derived", item 7).
   changed, the body's greeting only when the body is one, and a hero's detail only when that hero
   is selected.
 - **Cost.** The pair scan at 100 heroes (1,723 pairs in reach) takes 4.2 ms best and 4.5–6.2 ms
-  worst of seven, once a minute, so it fits a frame and needs no bucketing by hex.
+  worst of seven, once a minute, so it fits a frame and needs no bucketing by hex. Measured on the
+  perf seed (`tests/perf/`, 100 heroes, the Ledger at its cap with a chat in three, the fullest
+  town: 643 pairs in reach; `--headless`, CPU only; three runs of five, none void): the roll a
+  chat lands on takes 4.9 ms mean, 5.7 worst, with the scan (2.8) and the hub's handler inside it
+  (the handler run again with nothing new: 0.06). The pulse plus its roll is 6.7 ms mean, 7.8
+  worst, and that whole frame 6.9 mean, far under the 33 ms line: no History memo rule. The settle
+  pulse is unchanged: 19.0 ms mean against 18.7 before this bead, whole frame 23.4 against 23.0,
+  the same seeded save, `dream_reads` 0 (`ig-m6o.2.2.4`).
 
 > ⚠️ **PROVISIONAL** — the five "met" lines, `CHAT_DISTANCE` 4.5 and `MEETING_SECONDS` 30 ·
 > **Settled by:** the owner watching a town for an evening
