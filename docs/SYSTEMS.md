@@ -124,6 +124,9 @@ Knight and Rogue, the back row is Ranger, Mage and Cleric.
   on auto again on the next tick. Between a fight's end and its order closing (and in a finished
   practice battle, until the player leaves), the hotbar stays but does nothing: a finished battle
   refuses every command.
+- The camera follows the piloted hero from the moment control is taken (view only, `ig-gy0.8`): it
+  stays on the hero inside the camera bounds, and the pan keys move nothing while it follows. F turns
+  it off and on, and it ends with the piloting.
 
 **Formation.** A back-row hero never walks closer to its reference point (its attack target, else
 its squad's objective point) than its squad's nearest living front-liner is, plus one formation

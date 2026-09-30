@@ -83,6 +83,9 @@ var _targeting_masterwork: bool = false
 ## ig-gy0.6: the hero the player pilots ("" for none). Live, GameSession holds the table and the snapshot says
 ## it ("piloted"); practice, this is the truth and goes onto its own state before each advance. Cleared on leave.
 var _piloted_id: String = ""
+## ig-gy0.8: the camera rig follows the piloted hero's view (F toggles). On when a pilot is taken, off when it is given
+## back; only meaningful while _piloted_id is set (_following).
+var _follow_pilot: bool = false
 ## The area skill waiting for a right-click on the ground or a unit.
 var _pilot_aim_skill: String = ""
 var _pilot_bar: PanelContainer
@@ -235,6 +238,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_camera_pan(delta)
+	_follow_pilot_camera()
 	_update_drag_box()
 	if _slow_mo_remaining > 0.0:
 		_slow_mo_remaining -= delta
@@ -298,6 +302,12 @@ func _handle_key_press(event: InputEventKey) -> void:
 		return
 	if event.is_action_pressed("rts_pilot", false, true):
 		_on_take_control_pressed()
+		get_viewport().set_input_as_handled()
+		return
+	if not _piloted_id.is_empty() and event.is_action_pressed("rts_follow_pilot", false, true):
+		_follow_pilot = not _follow_pilot
+		if _command_line_idle():
+			_command_status.text = _follow_status()
 		get_viewport().set_input_as_handled()
 		return
 	for squad_index: int in range(10):
@@ -559,20 +569,21 @@ func _render_snapshot(snapshot: Dictionary) -> void:
 		_status_label.text = "%s   ·   Catching up" % status
 	else:
 		_status_label.text = "%s   ·   Route minimum %s" % [status, _format_time(route_remaining)]
+	# The snapshot's pilot first: the idle line below reads it.
+	_piloted_id = str(_snapshot.get("piloted", _piloted_id))
 	var checkpoint_error: String = str(_snapshot.get("checkpoint_error", ""))
 	var command_error: String = str(_snapshot.get("last_command_error", ""))
-	if not checkpoint_error.is_empty():
+	if _command_line_idle():
+		_command_status.text = _follow_status()
+	elif not checkpoint_error.is_empty():
 		_command_status.text = "Checkpoint failed: %s" % checkpoint_error
 	elif not command_error.is_empty():
 		_command_status.text = command_error
 	elif _mode == "practice" and not _practice_command_error.is_empty():
 		_command_status.text = _practice_command_error
-	elif _command_mode.is_empty() and _targeting_kind.is_empty() and _pilot_aim_skill.is_empty():
-		_command_status.text = ""
 	_supply_label.text = BattleState.supplies_text(_snapshot.get("supplies_remaining", {}) as Dictionary)
 	_pause_requested = bool(_snapshot.get("paused", _pause_requested))
 	_pause_button.text = "Resume" if _is_paused() else "Pause"
-	_piloted_id = str(_snapshot.get("piloted", _piloted_id))
 	_auto_battle.set_pressed_no_signal(bool((_snapshot.get("policies", {}) as Dictionary).get("auto_battle", true)))
 	_update_squad_row()
 	_update_selected_panel()
@@ -1058,6 +1069,9 @@ func _select_squad(squad_index: int) -> void:
 
 
 func _focus_selection() -> void:
+	# ig-gy0.8: the follow owns the rig; the squad is still selected, only the camera move is skipped.
+	if _following():
+		return
 	var total: Vector3 = Vector3.ZERO
 	var count: int = 0
 	for actor_id: String in _selected_ids:
@@ -1074,19 +1088,54 @@ func _sync_selected_visuals() -> void:
 
 
 func _update_camera_pan(delta: float) -> void:
-	if _has_editable_focus() or _victory_banner.visible:
+	if _has_editable_focus() or _victory_banner.visible or _following():
 		return
 	var input: Vector2 = Input.get_vector("rts_pan_left", "rts_pan_right", "rts_pan_forward", "rts_pan_back")
 	if Input.is_action_pressed("rts_additive_select") and Input.is_action_pressed("rts_pan_left"):
 		input.x = maxf(input.x, 0.0)
 	if input == Vector2.ZERO:
 		return
-	var next_position: Vector3 = _camera_rig.global_position + Vector3(input.x, 0.0, input.y) * PAN_SPEED * delta
-	_camera_rig.global_position = Vector3(
-		clampf(next_position.x, -_camera_bounds, _camera_bounds),
-		0.0,
-		clampf(next_position.z, -_camera_bounds, _camera_bounds),
+	_camera_rig.global_position = _bounded(_camera_rig.global_position + Vector3(input.x, 0.0, input.y) * PAN_SPEED * delta)
+
+
+## point on the ground plane, kept inside the zone's camera bounds.
+func _bounded(point: Vector3) -> Vector3:
+	return Vector3(clampf(point.x, -_camera_bounds, _camera_bounds), 0.0, clampf(point.z, -_camera_bounds, _camera_bounds))
+
+
+## Whether the camera follows the pilot now: follow is on and a hero is piloted (a snapshot can clear the pilot without
+## _set_piloted, and a stale flag must not lock the pan).
+func _following() -> bool:
+	return _follow_pilot and not _piloted_id.is_empty()
+
+
+## ig-gy0.8: the rig takes the pilot view's x and z, with no lerp: the unit view already glides between snapshots.
+# ponytail: this reads the pilot view's previous-frame spot (the parent's _process runs before the unit's glide,
+# battle_unit_view.gd:294), so the rig trails one frame while the hero glides. If the owner sees a wobble, give unit
+# views an earlier process_priority.
+func _follow_pilot_camera() -> void:
+	if _following() and _unit_views.has(_piloted_id):
+		_camera_rig.global_position = _bounded(_unit_views[_piloted_id].global_position)
+
+
+## Whether nothing owns the command line: no checkpoint or command error, no command mode, targeting or armed aim. The
+## follow status is written only then (render, F and _set_piloted all ask here).
+func _command_line_idle() -> bool:
+	return (
+		str(_snapshot.get("checkpoint_error", "")).is_empty()
+		and str(_snapshot.get("last_command_error", "")).is_empty()
+		and (_mode != "practice" or _practice_command_error.is_empty())
+		and _command_mode.is_empty()
+		and _targeting_kind.is_empty()
+		and _pilot_aim_skill.is_empty()
 	)
+
+
+## The command line when nothing else is asked of the player: blank, or while piloting whether the camera follows.
+func _follow_status() -> String:
+	if _piloted_id.is_empty():
+		return ""
+	return "Follow on (F)" if _follow_pilot else "Follow off (F)"
 
 
 func _has_editable_focus() -> bool:
@@ -1151,6 +1200,7 @@ func _release_live_binding() -> void:
 		if _controller.has_signal("battle_changed") and _controller.is_connected("battle_changed", callback):
 			_controller.disconnect("battle_changed", callback)
 	_piloted_id = ""
+	_follow_pilot = false
 	_clear_owned_router_payload()
 
 
@@ -1495,12 +1545,16 @@ func _set_piloted(actor_id: String) -> void:
 	if _piloted_id == actor_id:
 		return
 	_piloted_id = actor_id
+	_follow_pilot = not actor_id.is_empty()
 	_pilot_aim_skill = ""
 	if _mode == "live" and _controller != null:
 		_controller.call("set_battle_piloted", _order_id, actor_id)
 	elif _mode == "practice" and _practice_state != null:
 		_practice_state.piloted_id = actor_id
 	_update_pilot_bar()
+	# A paused practice renders nothing, so the idle line is refreshed here (after the aim is cleared).
+	if _command_line_idle():
+		_command_status.text = _follow_status()
 
 
 func _actor_data(actor_id: String) -> Dictionary:

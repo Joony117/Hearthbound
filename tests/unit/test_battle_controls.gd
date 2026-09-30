@@ -40,6 +40,7 @@ func test_rts_inputs_are_added_without_rebinding_legacy_arena_actions() -> void:
 	assert_eq(_key_for_action(&"rts_hold"), KEY_H)
 	assert_eq(_key_for_action(&"rts_guard"), KEY_G)
 	assert_eq(_key_for_action(&"rts_retreat"), KEY_R)
+	assert_eq(_key_for_action(&"rts_follow_pilot"), KEY_F)
 	assert_eq(_key_for_action(&"rts_pause"), KEY_SPACE)
 	assert_eq(_key_for_action(&"rts_squad_0"), KEY_0)
 	assert_eq(_key_for_action(&"rts_squad_9"), KEY_9)

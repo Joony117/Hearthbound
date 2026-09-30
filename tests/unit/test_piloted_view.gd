@@ -251,6 +251,246 @@ func test_leaving_the_view_gives_the_hero_back_and_a_pilot_that_falls_is_release
 	assert_false(second._pilot_bar.visible)
 
 
+## ig-gy0.8 part C (C1): the camera follows the pilot from the moment control is taken. No lerp: the rig is the pilot view's
+## x and z after _process. F with nobody piloted does nothing.
+func test_taking_control_turns_the_follow_on_and_the_rig_takes_the_pilots_position() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	_press(view, KEY_F)
+	assert_false(view._follow_pilot, "F with nobody piloted toggles nothing")
+	assert_eq(view._command_status.text, "")
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	assert_true(view._follow_pilot, "taking control turns it on")
+	assert_eq(view._command_status.text, "Follow on (F)", "the idle command line says so")
+	controller.battle_changed.emit("battle-1")
+	assert_eq(view._command_status.text, "Follow on (F)", "and a render keeps it")
+	var pilot: BattleUnitView = view._unit_views["hero-1"]
+	pilot.global_position = Vector3(6.0, 0.0, -4.0)
+	view._process(FRAME)
+	assert_eq(view._camera_rig.global_position, Vector3(6.0, 0.0, -4.0), "the rig is on the pilot, no lerp")
+	pilot.global_position = Vector3(-3.5, 0.0, 5.0)
+	view._process(FRAME)
+	assert_eq(view._camera_rig.global_position, Vector3(-3.5, 0.0, 5.0), "and stays on it as it moves")
+
+
+## C2: F turns the follow off and on; while it is off the rig stays put as the pilot moves.
+func test_f_turns_the_follow_off_and_on_and_the_rig_stays_put_while_it_is_off() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	var pilot: BattleUnitView = view._unit_views["hero-1"]
+	pilot.global_position = Vector3(2.0, 0.0, 2.0)
+	view._process(FRAME)
+	_press(view, KEY_F)
+	assert_false(view._follow_pilot)
+	assert_eq(view._command_status.text, "Follow off (F)")
+	controller.battle_changed.emit("battle-1")
+	assert_eq(view._command_status.text, "Follow off (F)", "a render leaves the line")
+	var rig_at: Vector3 = view._camera_rig.global_position
+	pilot.global_position = Vector3(-8.0, 0.0, 7.0)
+	view._process(FRAME)
+	assert_eq(view._camera_rig.global_position, rig_at, "the rig stays put while the pilot moves")
+	assert_eq(controller.commands.size(), 0, "F sends no command")
+	_press(view, KEY_F)
+	assert_true(view._follow_pilot)
+	assert_eq(view._command_status.text, "Follow on (F)")
+	view._process(FRAME)
+	assert_eq(view._camera_rig.global_position, Vector3(-8.0, 0.0, 7.0), "on again: the rig catches up at once")
+
+
+## C3: while following, a held pan key moves nothing (off, it pans as ever). A follow left on with nobody piloted, which a
+## snapshot can leave, does not lock the pan.
+func test_a_held_pan_key_moves_nothing_while_following() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	view._unit_views["hero-1"].global_position = Vector3(0.0, 0.0, 0.0)
+	view._process(FRAME)
+	var rig_at: Vector3 = view._camera_rig.global_position
+	Input.action_press("rts_pan_right")
+	view._update_camera_pan(0.5)
+	assert_eq(view._camera_rig.global_position, rig_at, "following: the pan key moves nothing")
+	_press(view, KEY_F)
+	view._update_camera_pan(0.5)
+	assert_gt(view._camera_rig.global_position.x, rig_at.x, "follow off: it pans")
+	Input.action_release("rts_pan_right")
+
+	var second: BattleView = _live_view(_controller())
+	second._follow_pilot = true
+	assert_eq(second._piloted_id, "")
+	var second_at: Vector3 = second._camera_rig.global_position
+	Input.action_press("rts_pan_right")
+	second._update_camera_pan(0.25)
+	Input.action_release("rts_pan_right")
+	assert_gt(second._camera_rig.global_position.x, second_at.x, "a stale follow with no pilot pans")
+
+
+## C4: the rig clamps to _camera_bounds, as the pan does.
+func test_the_follow_clamps_the_rig_to_the_camera_bounds() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	var edge: float = view._camera_bounds
+	var pilot: BattleUnitView = view._unit_views["hero-1"]
+	pilot.global_position = Vector3(edge + 15.0, 0.0, -edge - 9.0)
+	view._process(FRAME)
+	assert_eq(view._camera_rig.global_position, Vector3(edge, 0.0, -edge), "past the corner: the rig stops at it")
+	pilot.global_position = Vector3(-edge - 2.0, 0.0, edge - 3.0)
+	view._process(FRAME)
+	assert_eq(view._camera_rig.global_position, Vector3(-edge, 0.0, edge - 3.0), "one axis past the edge: that axis clamps")
+
+
+## C5: giving the hero back, a pilot that falls and leaving the view turn the follow off; a new pilot turns it on again,
+## also when it had been turned off.
+func test_giving_the_hero_back_a_fallen_pilot_or_leaving_turns_the_follow_off_and_a_new_pilot_turns_it_on() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	assert_true(view._follow_pilot)
+	_press(view, KEY_F)
+	assert_false(view._follow_pilot)
+	view._selected_ids = ["hero-2"]
+	view._on_take_control_pressed()
+	assert_eq(view._piloted_id, "hero-2")
+	assert_true(view._follow_pilot, "a new pilot turns it on, though it was off")
+	view._on_take_control_pressed()
+	assert_eq(view._piloted_id, "")
+	assert_false(view._follow_pilot, "given back: off")
+	assert_eq(view._command_status.text, "", "and the line is blank again")
+
+	var second_controller: PilotController = _controller()
+	var second: BattleView = _live_view(second_controller)
+	second._selected_ids = ["hero-1"]
+	second._on_take_control_pressed()
+	assert_true(second._follow_pilot)
+	second_controller.snapshots["battle-1"]["actors"][0]["life"] = BattleActor.LIFE_DOWNED
+	second_controller.battle_changed.emit("battle-1")
+	assert_eq(second._piloted_id, "")
+	assert_false(second._follow_pilot, "a pilot that falls: off")
+
+	var third: BattleView = _live_view(_controller())
+	third._selected_ids = ["hero-1"]
+	third._on_take_control_pressed()
+	third._release_live_binding()
+	assert_false(third._follow_pilot, "leaving the view: off")
+
+
+## C6: an editable text focus stops F, as it stops T and 1-0.
+func test_editable_text_focus_stops_the_follow_key() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	var field := LineEdit.new()
+	add_child_autofree(field)
+	field.grab_focus()
+	assert_true(field.has_focus(), "setup: the field holds the focus")
+	_press(view, KEY_F)
+	assert_true(view._follow_pilot, "typing an F toggles nothing")
+	field.release_focus()
+	_press(view, KEY_F)
+	assert_false(view._follow_pilot, "with the field let go it does")
+
+
+## C7: F toggles the follow whatever the command line says, but writes its own line only when nothing else owns it: an armed
+## aim, a command error and a checkpoint error keep their text.
+func test_f_leaves_an_aim_instruction_and_an_error_on_the_command_line() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	var pilot: BattleUnitView = view._unit_views["hero-1"]
+	pilot.global_position = Vector3(2.0, 0.0, 2.0)
+	view._process(FRAME)
+	_press(view, KEY_3)
+	assert_eq(view._pilot_aim_skill, "mage_burst", "setup: the aim is armed")
+	var aim_line: String = view._command_status.text
+	assert_string_contains(aim_line, "Arcane Bloom")
+	_press(view, KEY_F)
+	assert_false(view._follow_pilot, "the flag did toggle")
+	assert_eq(view._command_status.text, aim_line, "the aim's instruction stays")
+	pilot.global_position = Vector3(-6.0, 0.0, 6.0)
+	view._process(FRAME)
+	assert_eq(view._camera_rig.global_position, Vector3(2.0, 0.0, 2.0), "and the rig stopped following")
+	controller.battle_changed.emit("battle-1")
+	assert_eq(view._command_status.text, aim_line, "a render keeps the aim line too")
+	_press(view, KEY_F)
+	assert_true(view._follow_pilot)
+	assert_eq(view._command_status.text, aim_line, "on again: still the aim's line")
+
+	var second_controller: PilotController = _controller()
+	var second: BattleView = _live_view(second_controller)
+	second._selected_ids = ["hero-1"]
+	second._on_take_control_pressed()
+	second_controller.snapshots["battle-1"]["last_command_error"] = "Out of range"
+	second_controller.battle_changed.emit("battle-1")
+	assert_eq(second._command_status.text, "Out of range", "setup: the error shows")
+	_press(second, KEY_F)
+	assert_false(second._follow_pilot, "the flag did toggle")
+	assert_eq(second._command_status.text, "Out of range", "a command error stays")
+	second_controller.snapshots["battle-1"]["last_command_error"] = ""
+	second_controller.snapshots["battle-1"]["checkpoint_error"] = "disk full"
+	second_controller.battle_changed.emit("battle-1")
+	_press(second, KEY_F)
+	assert_true(second._follow_pilot)
+	assert_eq(second._command_status.text, "Checkpoint failed: disk full", "and so does a checkpoint error")
+
+
+## C8: a paused practice renders nothing, so taking control and giving it back refresh the line themselves, with no
+## unpaused frame between.
+func test_a_paused_practice_refreshes_the_follow_line_when_control_is_taken_and_given_back() -> void:
+	var view: BattleView = _practice_view()
+	var ally_id: String = _practice_ally_id(view)
+	view._set_paused(true)
+	view._selected_ids = [ally_id]
+	_press(view, KEY_T)
+	assert_eq(view._piloted_id, ally_id, "setup: control was taken")
+	assert_eq(view._command_status.text, "Follow on (F)")
+	_press(view, KEY_T)
+	assert_eq(view._piloted_id, "")
+	assert_eq(view._command_status.text, "", "given back: the line is blank again")
+
+
+## C9: a live snapshot that clears the pilot (no _set_piloted) blanks the line in that same render, not a render later.
+func test_a_snapshot_that_clears_the_pilot_blanks_the_follow_line_in_the_same_render() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-1"]
+	view._on_take_control_pressed()
+	assert_eq(view._command_status.text, "Follow on (F)", "setup")
+	controller.snapshots["battle-1"]["piloted"] = ""
+	controller.battle_changed.emit("battle-1")
+	assert_eq(view._piloted_id, "")
+	assert_eq(view._command_status.text, "", "the render's idle line uses the snapshot's pilot")
+
+
+## C10: while following, a squad button's double-tap selects the squad but leaves the rig on the pilot; with the follow off it
+## still centres the camera on the squad.
+func test_a_squad_button_selects_the_squad_but_leaves_the_rig_on_the_pilot_while_following() -> void:
+	var controller: PilotController = _controller()
+	var view: BattleView = _live_view(controller)
+	view._selected_ids = ["hero-2"]
+	view._on_take_control_pressed()
+	var pilot: BattleUnitView = view._unit_views["hero-2"]
+	pilot.global_position = Vector3(6.0, 0.0, -4.0)
+	view._process(FRAME)
+	var squad_spot: Vector3 = view._unit_views["hero-1"].global_position
+	assert_ne(squad_spot, pilot.global_position, "setup: the squad is elsewhere")
+	view._on_squad_button_pressed(0)
+	view._on_squad_button_pressed(0)
+	assert_eq(view._selected_ids, ["hero-1"], "the squad is selected")
+	assert_eq(view._camera_rig.global_position, Vector3(6.0, 0.0, -4.0), "the rig stays on the pilot")
+	_press(view, KEY_F)
+	view._on_squad_button_pressed(0)
+	view._on_squad_button_pressed(0)
+	assert_eq(view._camera_rig.global_position, Vector3(squad_spot.x, 0.0, squad_spot.z), "follow off: the double-tap centres on the squad")
+
+
 ## F2: the battle is over (the controller has no snapshot for it any more): the view gives the hero back, so the
 ## session's entry is cleared and the hotbar goes, as on leaving.
 func test_a_battle_that_ends_gives_the_hero_back_and_the_hotbar_goes() -> void:
@@ -270,16 +510,8 @@ func test_a_battle_that_ends_gives_the_hero_back_and_the_hotbar_goes() -> void:
 
 
 func test_practice_mode_pilots_its_local_state_and_never_a_controller() -> void:
-	var hero := Hero.new("Practice Pilot", 0)
-	hero.def_id = &"knight"
-	var zone: ZoneDefinition = load("res://zones/defs/verdant_outskirts.tres") as ZoneDefinition
-	var view: BattleView = (load("res://combat/battle/battle_view.tscn") as PackedScene).instantiate() as BattleView
-	view.configure_practice([hero], zone)
-	add_child_autofree(view)
-	var ally_id: String = ""
-	for actor: BattleActor in view._practice_state.actors:
-		if actor.faction == "ally":
-			ally_id = actor.id
+	var view: BattleView = _practice_view()
+	var ally_id: String = _practice_ally_id(view)
 	view._selected_ids = [ally_id]
 	view._on_take_control_pressed()
 	assert_eq(view._piloted_id, ally_id)
@@ -290,6 +522,24 @@ func test_practice_mode_pilots_its_local_state_and_never_a_controller() -> void:
 	view._on_take_control_pressed()
 	assert_eq(view._practice_state.piloted_id, "")
 	assert_null(view._controller)
+
+
+func _practice_view() -> BattleView:
+	var hero := Hero.new("Practice Pilot", 0)
+	hero.def_id = &"knight"
+	var zone: ZoneDefinition = load("res://zones/defs/verdant_outskirts.tres") as ZoneDefinition
+	var view: BattleView = (load("res://combat/battle/battle_view.tscn") as PackedScene).instantiate() as BattleView
+	view.configure_practice([hero], zone)
+	add_child_autofree(view)
+	return view
+
+
+func _practice_ally_id(view: BattleView) -> String:
+	var ally_id: String = ""
+	for actor: BattleActor in view._practice_state.actors:
+		if actor.faction == "ally":
+			ally_id = actor.id
+	return ally_id
 
 
 func _controller() -> PilotController:
