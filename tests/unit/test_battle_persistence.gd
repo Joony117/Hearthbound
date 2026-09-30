@@ -249,7 +249,7 @@ func test_a_knights_cover_order_is_its_back_row_partner_then_points_then_team_or
 	var ranger: Hero = _cover_hero("hero:r", &"ranger")
 	var cleric: Hero = _cover_hero("hero:c", &"cleric")
 	var rogue: Hero = _cover_hero("hero:q", &"rogue")
-	# The mage is the partner (9 points), the ranger has 3, the cleric shared a routine win (0).
+	# The mage is the partner (12 points), the ranger has 4, the cleric shared a routine win (0).
 	_bond_ledger({"hero:m": 3, "hero:r": 1, "hero:c": 0})
 	var builds: int = GameSession.bond_builds
 	var snapshots: Array[Dictionary] = GameSession._team_snapshots([mage, cleric, rogue] as Array[Hero])
@@ -261,14 +261,21 @@ func test_a_knights_cover_order_is_its_back_row_partner_then_points_then_team_or
 	assert_eq(snapshots[0]["cover_order"], ["hero:m", "hero:r"], "the partner, then points; 0 points is left out")
 	assert_false(snapshots[3].has("cover_order"), "only a Knight's snapshot carries it")
 	assert_eq(GameSession.bond_builds, builds + 1, "one index read")
-	# A rogue partner (12 points) is left out; the mage and ranger tie at 3 and keep team order.
+	# A rogue partner (16 points) is left out; the mage and ranger tie at 4 and keep team order.
 	_bond_ledger({"hero:q": 4, "hero:m": 1, "hero:r": 1})
 	assert_eq(GameSession._team_snapshots([knight, rogue, ranger, mage] as Array[Hero])[0]["cover_order"], ["hero:r", "hero:m"])
 	assert_eq(GameSession._team_snapshots([knight, rogue, mage, ranger] as Array[Hero])[0]["cover_order"], ["hero:m", "hero:r"])
-	# A tie at 9 points: the partner is the one with the later save, and it goes first over team order.
+	# A tie at 12 points: the partner is the one with the later save, and it goes first over team order.
 	_bond_ledger({"hero:m": 3, "hero:r": 3})
 	assert_eq(Bonds.bond_from(GameSession.bond_index(), "hero:k", {"hero:m": true, "hero:r": true}, preload("res://balance.tres"))["partner"], "hero:r")
 	assert_eq(GameSession._team_snapshots([knight, mage, ranger] as Array[Hero])[0]["cover_order"], ["hero:r", "hero:m"])
+	# A save the Knight gave scores 1, not 3 (ig-m6o.2.2.6): the mage saved the Knight once (hard 1 + saved-by 3 = 4), the ranger
+	# was saved by it once (hard 1 + saving 1 = 2), so the mage is first though the ranger is first in team order (4 v 4 before).
+	_bond_ledger({"hero:m": 1})
+	for order: int in 1:
+		Ledger.append(GameSession.ledger, GameSession.ledger.size() + 1, 0, "battle", {"order": "order:g%d" % order, "zone": "verdant_outskirts", "team": ["hero:k", "hero:r"], "result": "victory", "moments": [{"tick": 1, "what": "revived", "hero": "hero:r", "by": "hero:k"}]})
+	GameSession.ledger_next_seq = GameSession.ledger.size() + 1
+	assert_eq(GameSession._team_snapshots([knight, ranger, mage] as Array[Hero])[0]["cover_order"], ["hero:m", "hero:r"], "what the Knight gave counts less than what it was given")
 
 
 func test_a_cover_order_survives_a_real_save_and_reload_and_a_legacy_battle_reads_as_empty() -> void:
@@ -566,14 +573,15 @@ func _cover_hero(id: String, def_id: StringName) -> Hero:
 	return hero
 
 
-## A fresh ledger where the Knight "hero:k" saved each other hero `saves` times: 3 points each, and a
-## routine victory together for 0.
+## A fresh ledger where each other hero saved the Knight "hero:k" `saves` times: 4 points each (the hard fight 1 and the
+## save 3), counted from the Knight toward the saver (the saved side scores in full, ig-m6o.2.2.6), and a routine
+## victory together for 0.
 func _bond_ledger(saves: Dictionary) -> void:
 	var ledger: Array[Dictionary] = []
 	for hero_id: String in saves:
 		var count: int = maxi(int(saves[hero_id]), 1)
 		for index: int in count:
-			var moments: Array = [{"tick": 1, "what": "revived", "hero": hero_id, "by": "hero:k"}] if int(saves[hero_id]) > 0 else []
+			var moments: Array = [{"tick": 1, "what": "revived", "hero": "hero:k", "by": hero_id}] if int(saves[hero_id]) > 0 else []
 			Ledger.append(ledger, ledger.size() + 1, 0, "battle", {"order": "order:%d" % ledger.size(), "zone": "verdant_outskirts", "team": ["hero:k", hero_id], "result": "victory", "moments": moments})
 	GameSession.ledger = ledger
 	GameSession.ledger_next_seq = ledger.size() + 1

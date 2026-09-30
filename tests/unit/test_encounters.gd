@@ -163,6 +163,7 @@ func test_the_live_tick_rolls_a_meeting_with_the_shipped_balance() -> void:
 	assert_eq([records[0]["heroes"], str(records[0]["place"]), records[0]["why"]], [["ada", "bea"], str(ada.home), "neighbours"])
 	assert_signal_emit_count(GameSession, "social_recorded", 1)
 	assert_signal_not_emitted(GameSession, "roster_changed", "a chat runs no roster cascade")
+	assert_eq(GameSession.bond_index()["ada"]["bea"]["teamwork"], 0, "neighbours build no teamwork")
 
 
 func test_two_coworkers_meet_at_the_first_ones_station_and_coworkers_beat_neighbours() -> void:
@@ -172,6 +173,8 @@ func test_two_coworkers_meet_at_the_first_ones_station_and_coworkers_beat_neighb
 	var records: Array[Dictionary] = _encounters()
 	assert_eq(records.size(), 1)
 	assert_eq([records[0]["heroes"], records[0]["place"], records[0]["why"]], [["ada", "bea"], "Forge", "coworkers"], "they are neighbours too: work goes first")
+	var pairs: Dictionary = GameSession.bond_index()
+	assert_eq([pairs["ada"]["bea"]["teamwork"], pairs["bea"]["ada"]["teamwork"]], [1, 1], "and the meeting is teamwork both ways (ig-m6o.2.2.6)")
 
 
 func test_a_hero_who_is_away_never_meets_and_the_body_does() -> void:

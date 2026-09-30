@@ -20,6 +20,10 @@ const NUMBER_WORDS: Array[String] = ["No", "One", "Two", "Three", "Four", "Five"
 ## "meal" (ig-m6o.2.2.5) is what the first hero at a table says to the second, and what a partner whose bond is only
 ## chats and meals says to the body when the last of them was a meal: {name} only, since a table's place is one of the
 ## Houses and a meal line does not name it. PROVISIONAL like "met".
+## "rival" and "collaborator" (ig-m6o.2.2.6) are the roles the partner holds toward the body (Bonds.roles): what a rival
+## says when the two are in each other's sights, and a collaborator when they work well together: {name} only. They are
+## said after the bond's and the dream's lines, and as the line of a meeting of a pair who hold the role. PROVISIONAL like
+## "met": the words are a first pass; settled by the owner reading them in play.
 const BANK: Dictionary = {
 	"saved_by": [
 		"I'd come for you again. {place} or anywhere.",
@@ -90,6 +94,20 @@ const BANK: Dictionary = {
 		"Food tastes better with company. Sit by me, {name}.",
 		"{name}, you've got crumbs on your chin. Other side.",
 		"Save me a seat at the next meal, {name}.",
+	],
+	"rival": [
+		"Still counting, {name}? I had one more than you last time.",
+		"Next fight, {name}. Loser buys the soup.",
+		"You got lucky out there, {name}. It won't happen twice.",
+		"Keep up, {name}. I won't wait for you.",
+		"Not bad, {name}. Not as good as me, but not bad.",
+	],
+	"collaborator": [
+		"Hand me that, {name}. We're faster together.",
+		"Good work today, {name}. Same again tomorrow?",
+		"{name}! I had an idea for the work. Tell me if it's mad.",
+		"We make a good team, {name}. Everyone says so.",
+		"Leave the rest, {name}. We'll finish it together.",
 	],
 	"quirk:hums": [
 		"Was I humming again? Tell me if it grates, {name}.",
@@ -198,8 +216,9 @@ static func candidates(facts: Dictionary) -> Array[String]:
 ## partner), dream the partner's (Bonds.dream), names hero ids to display names. {} for no bond.
 ## own holds, for the dream kinds only, the slots that kind's lines fill from the dream (line() lays
 ## them over slots), so a bond's {place} or {dead} never speaks for the dream's. quirks are the partner's
-## (Hero.quirks); their kinds come last, and a quirk adds no own entry.
-static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String, names: Dictionary, quirks: Array[StringName] = []) -> Dictionary:
+## (Hero.quirks); their kinds come after the bond's, the dream's and roles', and a quirk adds no own entry. roles are the
+## kinds the partner holds toward the body ("rival", "collaborator": ig-m6o.2.2.6), each adding its lines and no slot.
+static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String, names: Dictionary, quirks: Array[StringName] = [], roles: Array[String] = []) -> Dictionary:
 	if bond.is_empty():
 		return {}
 	var fact: Dictionary = bond["fact"]
@@ -227,6 +246,7 @@ static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String,
 		elif dream_id == "be_worthy":
 			kinds.append(dream_id)
 			own[dream_id] = {"dead": _name(who, names)}
+	kinds.append_array(roles)
 	for quirk: StringName in quirks:
 		kinds.append("quirk:%s" % quirk)
 	var partner: String = str(bond["partner"])
@@ -238,12 +258,13 @@ static func greeting_facts(bond: Dictionary, dream: Dictionary, body_id: String,
 
 ## What one hero says to the other when they meet (ig-m6o.2.2.4), as facts for line(): the "met" kind, the
 ## second hero of the record named (the first speaks) and the place of the meeting. The start is the record's
-## seq, so meeting after meeting reads the next line. {} for a record that names no two heroes.
-static func meeting_facts(record: Dictionary, names: Dictionary) -> Dictionary:
+## seq, so meeting after meeting reads the next line. {} for a record that names no two heroes. kind is the bank the line
+## comes from: "met", or a role the pair holds ("rival", "collaborator": ig-m6o.2.2.6).
+static func meeting_facts(record: Dictionary, names: Dictionary, kind: String = "met") -> Dictionary:
 	var heroes: Variant = record.get("heroes")
 	if not heroes is Array or (heroes as Array).size() != 2:
 		return {}
-	var kinds: Array[String] = ["met"]
+	var kinds: Array[String] = [kind]
 	return {"kinds": kinds, "slots": {"name": _name(str((heroes as Array)[1]), names), "place": place_name(str(record.get("place", "")))}, "start": int(record.get("seq", 0))}
 
 

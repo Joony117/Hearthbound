@@ -5,6 +5,9 @@ const UI_BUILDER := preload("res://hub/hub_ui_builder.gd")
 const MAX_TEAM_SIZE: int = 5
 ## A bonded hero's roster flag and town sign (ig-m6o.2.2.1), with the partner's name.
 const PARTNER_SIGN: String = "♥ %s"
+## The panel's roles line (ig-m6o.2.2.6): Bonds.roles key, label; up to ROLE_NAMES names a role.
+const ROLE_LABELS: Array[Array] = [["friends", "Friends"], ["rivals", "Rival"], ["collaborators", "Works well with"]]
+const ROLE_NAMES: int = 3
 const NO_BUILDING: StringName = &""
 ## What each building opens (GAME_SPEC.md § The town hub). Every node named here is hidden unless
 ## the open building lists it.
@@ -756,18 +759,48 @@ func _history_lines(hero: Hero) -> Array[String]:
 
 ## The bond and dream lines above History (SYSTEMS.md § Bonds and dreams, slice 1), each block
 ## followed by a blank line; "" when the hero has neither. The bond comes from the kept index; the
-## dream is still read for the selected hero only, on refresh, never per row.
+## dream is still read for the selected hero only, on refresh, never per row. The roles line
+## (ig-m6o.2.2.6) sits under "Closest to", and alone when the hero holds a role but has no partner.
 func _bond_text(hero: Hero) -> String:
 	var living: Dictionary = _roster_names()
 	var names: Dictionary = _known_names(living)
 	var text: String = ""
-	var bond: Dictionary = Bonds.bond_from(_bond_index(), hero.instance_id, living, BALANCE)
+	var pairs: Dictionary = _bond_index()
+	var block: Array[String] = []
+	var bond: Dictionary = Bonds.bond_from(pairs, hero.instance_id, living, BALANCE)
 	if not bond.is_empty():
-		text += "%s\n\n" % Bonds.bond_line(bond, names, GameSession.is_hero_busy(GameSession.hero_by_id(bond["partner"])))
+		block.append(Bonds.bond_line(bond, names, GameSession.is_hero_busy(GameSession.hero_by_id(bond["partner"]))))
+	var held: String = _roles_line(Bonds.roles(pairs, hero.instance_id, living, BALANCE), names)
+	if not held.is_empty():
+		block.append(held)
+	if not block.is_empty():
+		text += "%s\n\n" % "\n".join(block)
 	var dream: Array[String] = Bonds.dream_lines(_dream(hero.instance_id), hero.instance_id, names, BALANCE)
 	if not dream.is_empty():
 		text += "%s\n\n" % "\n".join(dream)
 	return text
+
+
+## "Friends: Mara, Dunn. Rival: Wren. Works well with: Tamsin.": each role that has someone, up to ROLE_NAMES names in
+## the order Bonds.roles gives, "(away)" after a hero on an expedition; "" when no role is held.
+func _roles_line(held: Dictionary, names: Dictionary) -> String:
+	var parts: Array[String] = []
+	for role: Array in ROLE_LABELS:
+		var said: Array[String] = []
+		for id: String in (held[role[0]] as Array).slice(0, ROLE_NAMES):
+			said.append("%s%s" % [names.get(id, "a hero now forgotten"), " (away)" if GameSession.is_hero_busy(GameSession.hero_by_id(id)) else ""])
+		if not said.is_empty():
+			parts.append("%s: %s." % [role[1], ", ".join(said)])
+	return " ".join(parts)
+
+
+## The role line kind two heroes share, one only: "rival", else "collaborator", else "" (ig-m6o.2.2.6). It picks which
+## bank a meeting between them reads, and which the partner's greeting adds.
+func _role_kind(one: String, other: String, living: Dictionary) -> String:
+	var held: Dictionary = Bonds.roles(_bond_index(), one, living, BALANCE)
+	if (held["rivals"] as Array).has(other):
+		return "rival"
+	return "collaborator" if (held["collaborators"] as Array).has(other) else ""
 
 
 ## The walking hero's bonded partner and greeting facts, from the kept index and the partner's
@@ -784,7 +817,11 @@ func _refresh_partner() -> void:
 		var bond: Dictionary = Bonds.bond_from(_bond_index(), walker.instance_id, living, BALANCE)
 		if not bond.is_empty():
 			_partner_id = bond["partner"]
-			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, _known_names(living), GameSession.hero_by_id(_partner_id).quirks)
+			var roles: Array[String] = []
+			var role: String = _role_kind(walker.instance_id, _partner_id, living)
+			if not role.is_empty():
+				roles.append(role)
+			_partner_facts = Lines.greeting_facts(bond, _dream(_partner_id), walker.instance_id, _known_names(living), GameSession.hero_by_id(_partner_id).quirks, roles)
 	_show_partner()
 	# The walkers ran first on this roster_changed, against the old partner, who may have been cut by
 	# the wanderer cap.
@@ -2678,6 +2715,7 @@ func _on_battle_changed(order_id: String) -> void:
 ## The roster rows and the walkers' signs redraw only if one of those heroes' partner sign changed, the body's
 ## greeting only if the body is one, the open detail only if the selected hero is one; then the town plays each
 ## meeting. In the commit path the flush's roster_changed already redrew everything, and this look finds nothing.
+## A meeting between rivals says a "rival" line, else between collaborators a "collaborator" line, else "met".
 ## A meal (ig-m6o.2.2.5) redraws by the same look, then the town seats its diners (play_meal); a meal too is no roster
 ## change.
 func _on_social_recorded(records: Array[Dictionary]) -> void:
@@ -2701,6 +2739,9 @@ func _on_social_recorded(records: Array[Dictionary]) -> void:
 			continue
 		var facts: Dictionary = Lines.meeting_facts(record, living)
 		if not facts.is_empty():
+			var role: String = _role_kind(str(record["heroes"][0]), str(record["heroes"][1]), living)
+			if not role.is_empty():
+				facts = Lines.meeting_facts(record, living, role)
 			%Town.play_meeting(str(record["heroes"][0]), str(record["heroes"][1]), facts)
 
 

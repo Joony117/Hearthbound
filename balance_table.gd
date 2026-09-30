@@ -274,6 +274,13 @@ extends Resource
 @export var meal_house_hexes: int = 2
 @export var meal_table_size: int = 4
 @export var bond_points_meal: int = 1
+# Layers and roles (SYSTEMS.md § Bonds and dreams, Layers and roles; ig-m6o.2.2.6; every row PROVISIONAL): the given side of a
+# save or a rescue (less than being saved, bond_points_saved, or rescued, bond_points_rescued), and how much respect (kills
+# traded the lead) or teamwork (coworker meetings) makes a rival or a collaborator.
+@export var bond_points_saving: int = 1
+@export var bond_points_rescuing: int = 2
+@export var rival_threshold: int = 3
+@export var collaborator_threshold: int = 4
 @export var dream_fight_beside_battles: int = 3
 @export var dream_name_victories: int = 3
 @export var dream_worthy_hard_victories: int = 2

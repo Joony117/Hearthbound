@@ -21,6 +21,8 @@ const SLOTS: Dictionary = {
 	"be_worthy": ["name", "dead"],
 	"met": ["name", "place"],
 	"meal": ["name"],
+	"rival": ["name"],
+	"collaborator": ["name"],
 }
 
 var _ledger: Array[Dictionary] = []
@@ -60,13 +62,59 @@ func test_the_bank_fills_every_line_from_only_its_kinds_slots() -> void:
 			assert_lte(filled.length(), 72, filled)
 
 
+func test_the_role_banks_hold_five_lines_that_name_only_the_other_hero() -> void:
+	for kind: String in ["rival", "collaborator"]:
+		assert_eq((Lines.BANK[kind] as Array).size(), 5, kind)
+		for text: String in Lines.BANK[kind]:
+			assert_string_contains(text, "{name}")
+			assert_lte(text.format({"name": "Maximilianusss"}).length(), 72, text)
+
+
+func test_a_meeting_reads_the_bank_of_the_kind_it_is_given_and_met_by_default() -> void:
+	var record: Dictionary = {"seq": 9, "heroes": [A, B], "place": "Forge", "why": "neighbours"}
+	assert_eq(Lines.meeting_facts(record, NAMES), Lines.meeting_facts(record, NAMES, "met"), "the default is the old call")
+	assert_eq(Lines.meeting_facts(record, NAMES)["kinds"], _kinds(["met"]))
+	for kind: String in ["rival", "collaborator"]:
+		var facts: Dictionary = Lines.meeting_facts(record, NAMES, kind)
+		assert_eq(facts["kinds"], _kinds([kind]))
+		assert_true((Lines.BANK[kind] as Array).has(Lines.line(facts, 0).replace("Bea", "{name}")), "a %s line naming the second hero" % kind)
+		assert_string_contains(Lines.line(facts, 0), "Bea")
+	assert_eq(Lines.meeting_facts({"heroes": [A]}, NAMES, "rival"), {}, "not a pair: nothing, whatever the kind")
+
+
+func test_a_role_adds_its_lines_after_the_bond_and_the_dream_and_before_the_quirks() -> void:
+	_saves()
+	var bond: Dictionary = Bonds.bond(_ledger, A, {A: true, B: true}, BALANCE)
+	var dream: Dictionary = Bonds.dream(_ledger, B)
+	var quirks: Array[StringName] = [&"hums"]
+	var plain: Dictionary = Lines.greeting_facts(bond, dream, A, NAMES, quirks)
+	assert_eq(Lines.greeting_facts(bond, dream, A, NAMES, quirks, _kinds([])), plain, "no role: the old call")
+	var rival: Dictionary = Lines.greeting_facts(bond, dream, A, NAMES, quirks, _kinds(["rival"]))
+	assert_eq(rival["kinds"], _kinds(["saved_by", "watch_over", "rival", "quirk:hums"]))
+	assert_eq(Lines.candidates(rival).size(), Lines.candidates(plain).size() + 5)
+	assert_eq(rival["slots"], plain["slots"], "a role adds no slot")
+	assert_eq(rival["start"], plain["start"], "and moves no start")
+	var said: Dictionary = {}
+	for pick: int in Lines.candidates(rival).size():
+		var text: String = Lines.line(rival, pick)
+		assert_false(text.contains("{"), text)
+		said[text] = true
+	for text: String in Lines.BANK["rival"]:
+		assert_true(said.has(text.format({"name": "Ada"})), "the partner may say: %s" % text)
+	assert_eq(Lines.greeting_facts({}, {}, A, NAMES, quirks, _kinds(["rival"])), {}, "no bond, no words, even for a role")
+
+
 func test_the_old_greetings_are_each_kinds_first_line() -> void:
 	for _index: int in 2:
 		_battle([A, B, C], "stranded", {"order": "order:%d" % _ledger.size(), "rescued": [B], "rescuers": [A]})
 	_record("died", {"hero": C, "name": "Cal", "battle_order": "order:0"})
 	var zone: String = Ledger.zone_name(ZONE)
-	assert_eq(_first(A, {A: true, B: true}), "I haven't forgotten %s. I owe you." % zone, "the latest 5-point fact: A rescued B")
-	assert_eq(_first(B, {A: true, B: true}), "I'd come for you again. %s or anywhere." % zone)
+	assert_eq(_first(A, {A: true, B: true}), "I still think about Cal.", "the death seen together (5) outranks the rescue A gave (2)")
+	assert_eq(_first(B, {A: true, B: true}), "I'd come for you again. %s or anywhere." % zone, "B was rescued (5): the latest 5-point fact")
+	_ledger = []
+	for _index: int in 3:
+		_battle([A, B, C], "stranded", {"order": "order:%d" % _ledger.size(), "rescued": [B], "rescuers": [A]})
+	assert_eq(_first(A, {A: true, B: true}), "I haven't forgotten %s. I owe you." % zone, "A rescued B and nothing outranks it (3 x 3 = 9 toward B)")
 	_ledger = []
 	_battle([A, B, C], "stranded", {"order": "order:1"})
 	_record("died", {"hero": C, "name": "Cal", "battle_order": "order:1"})
@@ -297,7 +345,7 @@ func test_the_owners_case_gives_dunn_ten_lines_for_mara() -> void:
 	var bond: Dictionary = Bonds.bond(_ledger, mara, living, BALANCE)
 	assert_eq(bond["partner"], dunn, "Mara's partner is Dunn")
 	var facts: Dictionary = Lines.greeting_facts(bond, Bonds.dream(_ledger, dunn), mara, Ledger.known_names(_ledger, living))
-	assert_eq(facts["kinds"], _kinds(["saved", "debt"]))
+	assert_eq(facts["kinds"], _kinds(["death", "debt"]), "Aldo's fall (5) outranks the rescue Mara gave (2): it was 5 all before ig-m6o.2.2.6")
 	var said: Dictionary = {}
 	for pick: int in Lines.candidates(facts).size():
 		said[Lines.line(facts, pick)] = true
@@ -329,9 +377,9 @@ func _slots() -> Dictionary:
 	return slots
 
 
-## Two battles where Bea revives Ada: a bond, and Ada's dream owes Bea.
+## Four battles where Bea revives Ada: a bond each way (Ada 4 a fight, Bea 2), and Ada's dream owes Bea.
 func _saves() -> void:
-	for _index: int in 2:
+	for _index: int in 4:
 		_battle([A, B], "victory", {"moments": [_moment("revived", A, B)]})
 
 

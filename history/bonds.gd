@@ -7,14 +7,32 @@ extends RefCounted
 
 const SAVES: Array[String] = ["revived", "carried"]
 ## The fact kinds in the order a record scores them, and the tally keys that count them.
-const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths", "meetings", "meals"]
-## Where the meetings and meals slots sit in FACTS. They come after the battle facts, so every battle fact is scored
-## before them.
+const FACTS: Array[String] = ["hard", "saves", "rescues", "deaths", "meetings", "meals", "respect", "teamwork", "saving", "rescuing"]
+## Where the meetings and meals slots sit in FACTS: after the first four battle facts, and before the layers and the
+## given sides (SAVING and RESCUING are battle facts too, appended by ig-m6o.2.2.6). Nothing reads the order to tell a
+## battle fact from a social one: BATTLE and PICKED below list the slots.
 const MEETINGS: int = 4
 const MEALS: int = 5
-## The slots that are not battle facts (ig-m6o.2.2.5): a pair's strongest fact is one of these only when it has no
-## battle fact at all (_tally), so a newer chat or meal never displaces an older hard fight.
-const SOCIAL: Array[int] = [MEETINGS, MEALS]
+## ig-m6o.2.2.6: the two layer slots, and the given side of a save and of a rescue. "saves" and "rescues" count the
+## side a hero was on when it was saved or rescued (worded "saved_by"); "saving" and "rescuing" the side that did it
+## (worded "saved"). FACTS is append-only, so no slot above moves.
+const RESPECT: int = 6
+const TEAMWORK: int = 7
+const SAVING: int = 8
+const RESCUING: int = 9
+## The slots that are battle facts, and the slots a fact can be, in FACTS order (_tally walks these two, so it never asks
+## which kind is which). A pair's strongest fact is a meeting or a meal (ig-m6o.2.2.5) only when it has no battle fact at
+## all, so a newer chat or meal never displaces an older hard fight. The other two slots are the layers (ig-m6o.2.2.6),
+## RESPECT and TEAMWORK: counted into the tally, but never a fact, never points, never a battle fact. Each always counts
+## beside a slot of the same record (hard for respect, meetings for teamwork) and goes out with it, so a pair never holds
+## one without a fact.
+const BATTLE: Array[int] = [0, 1, 2, 3, SAVING, RESCUING]
+const PICKED: Array[int] = [0, 1, 2, 3, MEETINGS, MEALS, SAVING, RESCUING]
+## Which side of a save or a rescue a hero was on, as bits: it was saved (RECEIVED), it did the saving (GIVEN), or both.
+const RECEIVED: int = 1
+const GIVEN: int = 2
+## The counts bond_line names, in its order, and the noun for each.
+const LINE_NOUNS: Dictionary = {"hard": "hard fight", "saves": "save", "rescues": "rescue", "deaths": "death", "meetings": "chat", "meals": "meal"}
 ## Most diners one meal record may name and still count. TownRules.meal_tables seats meal_table_size (four when
 ## shipped), and a load accepts any record, so a hand-edited one with a hundred diners must not fold a hundred
 ## squared pairs at every load and eviction.
@@ -124,7 +142,11 @@ static func fold_out(folded: Dictionary, record: Dictionary, balance: BalanceTab
 			var pair: Array[String] = _meeting_pair(record)
 			if not pair.is_empty():
 				var counts: Dictionary = folded["counts"]
-				if not _uncount(counts[pair[0]][pair[1]][MEETINGS], record) or not _uncount(counts[pair[1]][pair[0]][MEETINGS], record):
+				var first: Array = counts[pair[0]][pair[1]]
+				var second: Array = counts[pair[1]][pair[0]]
+				if not _uncount(first[MEETINGS], record) or not _uncount(second[MEETINGS], record):
+					return false
+				if _coworkers(record) and (not _uncount(first[TEAMWORK], record) or not _uncount(second[TEAMWORK], record)):
 					return false
 				touched[pair[0]] = true
 				touched[pair[1]] = true
@@ -189,9 +211,20 @@ static func _meet(counts: Dictionary, record: Dictionary) -> Dictionary:
 	var pair: Array[String] = _meeting_pair(record)
 	if pair.is_empty():
 		return {}
-	_count(_slots(_others(counts, pair[0]), pair[1])[MEETINGS], record, "met", "")
-	_count(_slots(_others(counts, pair[1]), pair[0])[MEETINGS], record, "met", "")
+	var first: Array = _slots(_others(counts, pair[0]), pair[1])
+	var second: Array = _slots(_others(counts, pair[1]), pair[0])
+	_count(first[MEETINGS], record, "met", "")
+	_count(second[MEETINGS], record, "met", "")
+	if _coworkers(record):
+		_count(first[TEAMWORK], record, "", "")
+		_count(second[TEAMWORK], record, "", "")
 	return {pair[0]: true, pair[1]: true}
+
+
+## Whether an encounter's why is "coworkers", the meeting that counts as teamwork (ig-m6o.2.2.6). One rule for fold_in,
+## fold_out and a rebuild.
+static func _coworkers(record: Dictionary) -> bool:
+	return str(record.get("why", "")) == "coworkers"
 
 
 ## The two heroes of an encounter record, or [] unless "heroes" is a list of exactly two different, non-empty
@@ -253,30 +286,73 @@ static func _score(counts: Dictionary, record: Dictionary, dead: Array) -> Dicti
 	# Each kind in its own loop. Only a hero in the team or rescued scores; the other may be any hero
 	# in the record.
 	var ids: Array = team.keys()
+	var kills: Dictionary = {} if routine else _kills(record, ids)
 	for hero_id: String in ids:
 		var others: Dictionary = _others(counts, hero_id)
+		var own_kills: float = 0.0 if routine else kills[hero_id]
 		for other: String in ids:
 			if other == hero_id:
 				continue
 			if not routine:
-				# The hottest line at the cap, so inline: the hard slot's wording is always "hard".
-				var hard: Array = _slots(others, other)[0]
+				# The hottest line at the cap, so inline: the hard slot's wording is always "hard", and respect's
+				# is never read (a layer is never the fact).
+				var slots: Array = _slots(others, other)
+				var hard: Array = slots[0]
 				hard[0] += 1
 				hard[1] = record
+				if kills[other] > own_kills:
+					var respect: Array = slots[RESPECT]
+					respect[0] += 1
+					respect[1] = record
 			for died: Dictionary in dead:
 				var id: String = str(died.get("hero", ""))
 				if id != hero_id and id != other:
 					_count(_slots(others, other)[3], record, "death", id)
 					break
-	var saves: Dictionary = _saves(record, team, rescued, rescuers)
-	for hero_id: String in saves:
-		for other: String in saves[hero_id]:
-			_count(_slots(_others(counts, hero_id), other)[1], record, saves[hero_id][other], "")
-	var rescues: Dictionary = _rescues(team, rescued, rescuers)
-	for hero_id: String in rescues:
-		for other: String in rescues[hero_id]:
-			_count(_slots(_others(counts, hero_id), other)[2], record, "saved" if rescuers.has(hero_id) else "saved_by", "")
+	_count_sides(counts, _saves(record, team, rescued, rescuers), record, 1, SAVING)
+	_count_sides(counts, _rescues(team, rescued, rescuers), record, 2, RESCUING)
 	return _heroes(team, rescued, rescuers)
+
+
+## Counts each side of a save or a rescue in once per record: for each hero and other in sides (hero -> {other: RECEIVED
+## and/or GIVEN}), the side the hero was saved on into the slot received (worded "saved_by") and the side it saved on
+## into the slot given (worded "saved").
+static func _count_sides(counts: Dictionary, sides: Dictionary, record: Dictionary, received: int, given: int) -> void:
+	for hero_id: String in sides:
+		var others: Dictionary = _others(counts, hero_id)
+		for other: String in sides[hero_id]:
+			var slots: Array = _slots(others, other)
+			var bits: int = sides[hero_id][other]
+			if (bits & RECEIVED) != 0:
+				_count(slots[received], record, "saved_by", "")
+			if (bits & GIVEN) != 0:
+				_count(slots[given], record, "saved", "")
+
+
+## Takes out exactly what _count_sides put in. False when a count is left whose latest record is this one.
+static func _uncount_sides(counts: Dictionary, sides: Dictionary, record: Dictionary, received: int, given: int) -> bool:
+	for hero_id: String in sides:
+		for other: String in sides[hero_id]:
+			var slots: Array = counts[hero_id][other]
+			var bits: int = sides[hero_id][other]
+			if (bits & RECEIVED) != 0 and not _uncount(slots[received], record):
+				return false
+			if (bits & GIVEN) != 0 and not _uncount(slots[given], record):
+				return false
+	return true
+
+
+## Each hero's kills in a battle record as a number. A record with no "kills" (a legacy one), or a value that is not a
+## number (a load accepts any record), counts 0; after a load the numbers are floats, so all are compared as floats.
+## The one rule for _score and _unscore.
+static func _kills(record: Dictionary, ids: Array) -> Dictionary:
+	var raw: Variant = record.get("kills")
+	var table: Dictionary = raw as Dictionary if raw is Dictionary else {}
+	var kills: Dictionary = {}
+	for id: String in ids:
+		var value: Variant = table.get(id, 0)
+		kills[id] = float(value) if value is int or value is float else 0.0
+	return kills
 
 
 ## A died record of a battle order. For each battle of that order, its hero is a death seen together
@@ -319,29 +395,24 @@ static func _unscore(counts: Dictionary, record: Dictionary, dead: Array, touche
 	var rescuers: Dictionary = _id_set(record, "rescuers")
 	touched.merge(_heroes(team, rescued, rescuers))
 	var ids: Array = team.keys()
+	var kills: Dictionary = {} if routine else _kills(record, ids)
 	for hero_id: String in ids:
 		for other: String in ids:
 			if other == hero_id:
 				continue
-			if not routine and not _uncount(counts[hero_id][other][0], record):
-				return false
+			if not routine:
+				var slots: Array = counts[hero_id][other]
+				if not _uncount(slots[0], record):
+					return false
+				if kills[other] > kills[hero_id] and not _uncount(slots[RESPECT], record):
+					return false
 			if _seen_dying(dead, hero_id, other) and not _uncount(counts[hero_id][other][3], record):
 				return false
-	var saves: Dictionary = _saves(record, team, rescued, rescuers)
-	for hero_id: String in saves:
-		for other: String in saves[hero_id]:
-			if not _uncount(counts[hero_id][other][1], record):
-				return false
-	var rescues: Dictionary = _rescues(team, rescued, rescuers)
-	for hero_id: String in rescues:
-		for other: String in rescues[hero_id]:
-			if not _uncount(counts[hero_id][other][2], record):
-				return false
-	return true
+	return _uncount_sides(counts, _saves(record, team, rescued, rescuers), record, 1, SAVING) and _uncount_sides(counts, _rescues(team, rescued, rescuers), record, 2, RESCUING)
 
 
-## Hero -> {other: "saved_by" or "saved"}: every pair record scores a save for, worded by the first
-## save between them in it.
+## Hero -> {other: RECEIVED and/or GIVEN}: every pair the record scores a save for, and the side or sides of it: the
+## hero was saved by the other, saved the other, or both (a mutual save in one record), each once.
 static func _saves(record: Dictionary, team: Dictionary, rescued: Dictionary, rescuers: Dictionary) -> Dictionary:
 	var saved_with: Dictionary = {}
 	for raw_moment: Variant in _array(record, "moments"):
@@ -350,10 +421,9 @@ static func _saves(record: Dictionary, team: Dictionary, rescued: Dictionary, re
 			continue
 		var saved: String = str(moment.get("hero", ""))
 		var by: String = str(moment.get("by", ""))
-		if not (saved_with.get_or_add(saved, {}) as Dictionary).has(by):
-			saved_with[saved][by] = "saved_by"
-		if by != saved and not (saved_with.get_or_add(by, {}) as Dictionary).has(saved):
-			saved_with[by][saved] = "saved"
+		_add_side(saved_with, saved, by, RECEIVED)
+		if by != saved:
+			_add_side(saved_with, by, saved, GIVEN)
 	var scored: Dictionary = {}
 	for hero_id: String in saved_with:
 		if not (team.has(hero_id) or rescued.has(hero_id)):
@@ -365,16 +435,22 @@ static func _saves(record: Dictionary, team: Dictionary, rescued: Dictionary, re
 	return scored
 
 
-## A rescuer and a rescued hero, either way round, once per pair: hero -> {other: true}.
+## A rescuer and a rescued hero, once per pair: hero -> {other: RECEIVED and/or GIVEN}. The rescued hero was rescued
+## by the rescuer; the rescuer rescued the rescued, if the rescuer is in the team or was rescued too.
 static func _rescues(team: Dictionary, rescued: Dictionary, rescuers: Dictionary) -> Dictionary:
 	var rescues: Dictionary = {}
 	for rescuer: String in rescuers:
 		for saved: String in rescued:
 			if rescuer != saved:
 				if team.has(rescuer) or rescued.has(rescuer):
-					(rescues.get_or_add(rescuer, {}) as Dictionary)[saved] = true
-				(rescues.get_or_add(saved, {}) as Dictionary)[rescuer] = true
+					_add_side(rescues, rescuer, saved, GIVEN)
+				_add_side(rescues, saved, rescuer, RECEIVED)
 	return rescues
+
+
+static func _add_side(sides: Dictionary, hero_id: String, other: String, bit: int) -> void:
+	var mine: Dictionary = sides.get_or_add(hero_id, {})
+	mine[other] = int(mine.get(other, 0)) | bit
 
 
 static func _heroes(team: Dictionary, rescued: Dictionary, rescuers: Dictionary) -> Dictionary:
@@ -439,7 +515,7 @@ static func _others(counts: Dictionary, hero_id: String) -> Dictionary:
 ## One pair's slots, one per kind in FACTS order.
 static func _slots(others: Dictionary, other: String) -> Array:
 	if not others.has(other):
-		others[other] = [[0, null, "hard", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""]]
+		others[other] = [[0, null, "hard", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""], [0, null, "", ""]]
 	return others[other]
 
 
@@ -461,20 +537,23 @@ static func _uncount(slot: Array, record: Dictionary) -> bool:
 
 ## One pair's counted slots as the tally bond() returns. The strongest fact is the last one with the
 ## most points, as an oldest-first running best with >= keeps it: a later record wins a tie, and
-## within one record the later kind in FACTS order does. Meetings and meals (SOCIAL) are the exception: they are the
-## fact only for a pair with no battle fact, so a newer chat or meal (1 point) never displaces an older hard fight
+## within one record the later kind in FACTS order does. Meetings and meals are the exception: they are the
+## fact only for a pair with no battle fact (BATTLE), so a newer chat or meal (1 point) never displaces an older hard fight
 ## (1 point), whatever order the slots are read in. A pair with only meetings and meals picks by the ordinary rule: the
-## most points, else the later record. They all still count for points and last_seq.
+## most points, else the later record. They all still count for points and last_seq. The layers count into the tally under
+## their names and nothing else: no points, no last_seq, never the fact, and not a battle fact. Saving and rescuing are
+## battle facts.
 static func _tally(other: String, slots: Array, balance: BalanceTable) -> Dictionary:
-	var points: Array[int] = [balance.bond_points_hard_battle, balance.bond_points_saved, balance.bond_points_rescued, balance.bond_points_death_witnessed, balance.bond_points_encounter, balance.bond_points_meal]
-	var tally: Dictionary = {"partner": other, "points": 0, "last_seq": 0}
+	var points: Array[int] = [balance.bond_points_hard_battle, balance.bond_points_saved, balance.bond_points_rescued, balance.bond_points_death_witnessed, balance.bond_points_encounter, balance.bond_points_meal, 0, 0, balance.bond_points_saving, balance.bond_points_rescuing]
+	var tally: Dictionary = {"partner": other, "points": 0, "last_seq": 0, "respect": slots[RESPECT][0], "teamwork": slots[TEAMWORK][0]}
 	var best: int = -1
 	var best_seq: int = 0
 	var has_battle: bool = false
-	for kind: int in FACTS.size():
-		if not SOCIAL.has(kind) and slots[kind][0] > 0:
+	for kind: int in BATTLE:
+		if slots[kind][0] > 0:
 			has_battle = true
-	for kind: int in FACTS.size():
+			break
+	for kind: int in PICKED:
 		var slot: Array = slots[kind]
 		tally[FACTS[kind]] = slot[0]
 		if slot[0] == 0:
@@ -482,7 +561,7 @@ static func _tally(other: String, slots: Array, balance: BalanceTable) -> Dictio
 		tally["points"] += slot[0] * points[kind]
 		var seq: int = int((slot[1] as Dictionary).get("seq", 0))
 		tally["last_seq"] = maxi(tally["last_seq"], seq)
-		if has_battle and SOCIAL.has(kind):
+		if has_battle and (kind == MEETINGS or kind == MEALS):
 			continue
 		if best < 0 or points[kind] > points[best] or points[kind] == points[best] and seq >= best_seq:
 			best = kind
@@ -490,6 +569,44 @@ static func _tally(other: String, slots: Array, balance: BalanceTable) -> Dictio
 	var record: Dictionary = slots[best][1]
 	tally["fact"] = {"kind": slots[best][2], "points": points[best], "seq": best_seq, "zone": str(record.get("zone", "")), "dead": slots[best][3], "place": str(record.get("place", ""))}
 	return tally
+
+
+## Who hero_id is close to, from a kept index (SYSTEMS.md § Bonds and dreams, Layers and roles; ig-m6o.2.2.6): the living
+## heroes it holds each role with, strongest first, then latest fact, then lower id. friends: affection (points) at or
+## over bond_threshold, so friends[0] is bond_from's partner. rivals: respect at or over rival_threshold both ways,
+## ordered by the two sides' respect together. collaborators: teamwork at or over collaborator_threshold. Roles overlap.
+## A read, not stored: it changes no number.
+static func roles(pairs: Dictionary, hero_id: String, living: Dictionary, balance: BalanceTable) -> Dictionary:
+	var friends: Array[Dictionary] = []
+	var rivals: Array[Dictionary] = []
+	var collaborators: Array[Dictionary] = []
+	var mine: Dictionary = pairs.get(hero_id, {})
+	for other: String in mine:
+		if not living.has(other):
+			continue
+		var tally: Dictionary = mine[other]
+		if tally["points"] >= balance.bond_threshold:
+			friends.append({"partner": other, "score": tally["points"], "last_seq": tally["last_seq"]})
+		if tally["respect"] >= balance.rival_threshold:
+			var back: int = int(((pairs.get(other, {}) as Dictionary).get(hero_id, {}) as Dictionary).get("respect", 0))
+			if back >= balance.rival_threshold:
+				rivals.append({"partner": other, "score": tally["respect"] + back, "last_seq": tally["last_seq"]})
+		if tally["teamwork"] >= balance.collaborator_threshold:
+			collaborators.append({"partner": other, "score": tally["teamwork"], "last_seq": tally["last_seq"]})
+	return {"friends": _role_ids(friends), "rivals": _role_ids(rivals), "collaborators": _role_ids(collaborators)}
+
+
+static func _role_ids(held: Array[Dictionary]) -> Array[String]:
+	held.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["score"] != b["score"]:
+			return a["score"] > b["score"]
+		if a["last_seq"] != b["last_seq"]:
+			return a["last_seq"] > b["last_seq"]
+		return str(a["partner"]) < str(b["partner"]))
+	var ids: Array[String] = []
+	for entry: Dictionary in held:
+		ids.append(entry["partner"])
+	return ids
 
 
 static func _ahead(tally: Dictionary, chosen: Dictionary) -> bool:
@@ -670,13 +787,17 @@ static func _witnessed(record: Dictionary, fought: Dictionary) -> bool:
 
 
 ## "Closest to Mara: 4 hard fights, 1 rescue, 1 death seen together, 8 chats, 3 meals." names holds display names.
+## The saves and rescues count both sides (a save each way in one fight is 2 saves); respect and teamwork are not named.
 static func bond_line(found: Dictionary, names: Dictionary, away: bool) -> String:
 	var parts: PackedStringArray = []
-	for key: String in FACTS:
+	for key: String in LINE_NOUNS:
 		var count: int = found[key]
+		if key == "saves":
+			count += int(found.get("saving", 0))
+		elif key == "rescues":
+			count += int(found.get("rescuing", 0))
 		if count > 0:
-			var noun: String = {"hard": "hard fight", "saves": "save", "rescues": "rescue", "deaths": "death", "meetings": "chat", "meals": "meal"}[key]
-			parts.append("%d %s%s%s" % [count, noun, "" if count == 1 else "s", " seen together" if key == "deaths" else ""])
+			parts.append("%d %s%s%s" % [count, LINE_NOUNS[key], "" if count == 1 else "s", " seen together" if key == "deaths" else ""])
 	return "Closest to %s%s: %s." % [_name(found["partner"], names), " (away)" if away else "", ", ".join(parts)]
 
 

@@ -391,6 +391,18 @@ for 100+ hours at the guessed 60 records an hour.
    - The dream is not in the index. It stays a separate oldest-first read for one hero (item 6).
    - Hero ids are 128 random bits (`Item.new_instance_id`), so a reused id is negligible. The index
      treats an id as one hero for life, with no code guard.
+   - *Amended 2026-09-30 (`ig-m6o.2.2.6`):* affection is directed. A save or a rescue counts on
+     both sides: the hero saved counts the received side (`saves`, `rescues`, the old points) and
+     the saver counts the given side (`saving`, `rescuing`, fewer points; `SYSTEMS.md` § Bonds and
+     dreams, "Layers and roles"). Each side counts at most once per record for a pair, so a mutual
+     save in one fight counts once received and once given for each hero. This replaces "first
+     qualifying save within a record" above, for saves. The layers (respect, teamwork) and the
+     given sides are counted slots in the same derived index. They fold in and out exactly with
+     their record, are rebuilt on load, and are never saved. A layer count always comes with a
+     fact slot from the same record (hard for respect, meetings for teamwork), so a pair never
+     holds a layer without a fact; the random fold test pins that, and there is no runtime guard.
+     Roles are a read: `Bonds.roles` reads the kept index, and the partner, when there is one, is
+     `friends[0]`.
 3. **The index is kept until the ledger changes.** The holder identifies the in-memory ledger
    array and its `ledger_next_seq`; a new array on load or a changed next sequence invalidates the
    index. Clear it on a rule or balance change.
@@ -457,6 +469,11 @@ for 100+ hours at the guessed 60 records an hour.
      alike, and a test holds the shipped `meal_table_size` under the cap. One meal time at the
      cap (eight tables of four) folds in and out in 1.2 ms best of seven, with no rebuild. The
      table scan (who sits where) at 100 heroes costs 1.6 ms, so it is not bucketed by hex.
+   - *Amended 2026-09-30 (`ig-m6o.2.2.6`):* the layers keep the fold-in under 16.7 ms. One record
+     in costs 0.24–0.25 ms best and 11.8–12.3 ms worst of seven at the cap (was 0.21–0.22 /
+     11.6–11.8). The all-pairs rebuild a load pays is 149–151 ms best of seven once the cap's
+     battles carry kills, as the game's do (about 144 ms on the old fixture without kills; was
+     119–122). Printed, not gated.
 6. **Dreams stay derived too.** A hero's dream is read from its records by a fixed rule, for one
    hero at a time (the detail panel), as the slice does. The dream catalogue keeps that. A dream
    becomes saved per-hero state only when something that is not a record can choose or revise it:

@@ -1033,12 +1033,12 @@ row is a `balance.tres` row except the read cost, which is a measurement.
 | Row | Value | Why |
 |---|---|---|
 | `bond_points_hard_battle` | 1 | A `battle` with both heroes in `team` that is not routine: someone downed, a rescue, or not a victory. Routine victories score 0: the Ledger evicts them first, so a bond built on them would fade at the cap |
-| `bond_points_saved` | 3 | A `revived` or `carried` moment between the two, either way round. Its battle is not routine, so it also scores the hard battle: 4 in all |
-| `bond_points_rescued` | 5 | A rescue `battle`: one hero in `rescuers`, the other in `rescued`. With the hard battle, 6 |
+| `bond_points_saved` | 3 | A `revived` or `carried` moment between the two, toward the one who did the saving, from the one who was saved (since `ig-m6o.2.2.6`; the saver's side is `bond_points_saving`, § Layers and roles). Its battle is not routine, so it also scores the hard battle: 4 in all |
+| `bond_points_rescued` | 5 | A rescue `battle`: one hero in `rescuers`, the other in `rescued`, toward the rescuer from the rescued (the rescuer's side is `bond_points_rescuing`). With the hard battle, 6 |
 | `bond_points_death_witnessed` | 5 | Both in the `team` of the battle that stranded a hero who then died (`died.battle_order`). With the hard battle, 6 |
-| `bond_threshold` | 8 | Two saves (4 + 4), or one rescue or witnessed death plus two more hard fights (6 + 2). One fact alone never makes a bond |
+| `bond_threshold` | 8 | Two saves received (4 + 4), or one rescue or witnessed death plus two more hard fights (6 + 2). One fact alone never makes a bond. The saver reaches it in four saves (2 a fight) |
 | `dream_fight_beside_battles` | 3 | The dream's middle milestone: battles beside the one this hero owes, after the save that opened the debt. Any battle counts, routine too |
-| Bond read cost | 39 ms, measured, not a gate | One bond and dream read for one hero, at the 10,000-record cap, best of seven, printed for `ig-m6o.2.1`. The ADR it fed rules bonds derived, read in one pass for every pair and kept until the ledger changes (`DECISIONS.md` 2026-09-24 "Bonds stay derived", accepted). Nobody nears the cap for 100+ hours at the guessed 60 records an hour. Hard rule: it runs on refresh only, never per frame. Kept index (`ig-m6o.2.2.1`), same cap, 50 heroes in 5-hero teams, seven runs, best / worst: the all-pairs rebuild is 103–106 / 121–129 ms and runs once per ledger change. A roster change that writes a record (settle, summon, rank-up) costs 251–259 / 341–351 ms end to end, one rebuild included; one that writes none costs 137–143 / 176–198 ms, most of it the roster list (~60 ms) and the detail panel, then refreshed twice per roster change (~34 ms each, the dream read ~25 of it; once since `ig-7sn.3`). The 0.25 s pulse costs 1.7 / 2.2–2.5 ms and reads no bonds. Against slice 1 (~40–60 ms of bond reads per roster change) a record-writing change is ~50 ms dearer and a quiet one is cheaper. With 50-hero teams the rebuild takes ~4.4 s against slice 1's 434 ms per-hero read. Folded index (`ig-m6o.2.2.9`), same cap and teams, best / worst of seven over four runs: one record in (append, fold in, evict, fold out) costs 0.16 / 9.5–9.8 ms; the worst is the first call, which recomputes tiers. A roster change that writes a record now costs 107–108 / 174–189 ms, against 77–78 / 79–90 ms for one that writes none. With the detail panel refreshed once per roster change (`ig-7sn.3`), same test, best / worst of seven: 99 / 173 ms and 70 / 74 ms. Most of the gap is the one dream re-read. The all-pairs rebuild now runs only on a load or a rolled-back append: 117–119 / 120–125 ms. With 50-hero teams, one hard battle folds in at 10.2 / 16.9 ms and the oldest one comes out at 10.8 / 15.7 ms; the rebuild after a load is still 4.10 / 4.12 s |
+| Bond read cost | 39 ms, measured, not a gate | One bond and dream read for one hero, at the 10,000-record cap, best of seven, printed for `ig-m6o.2.1`. The ADR it fed rules bonds derived, read in one pass for every pair and kept until the ledger changes (`DECISIONS.md` 2026-09-24 "Bonds stay derived", accepted). Nobody nears the cap for 100+ hours at the guessed 60 records an hour. Hard rule: it runs on refresh only, never per frame. Kept index (`ig-m6o.2.2.1`), same cap, 50 heroes in 5-hero teams, seven runs, best / worst: the all-pairs rebuild is 103–106 / 121–129 ms and runs once per ledger change. A roster change that writes a record (settle, summon, rank-up) costs 251–259 / 341–351 ms end to end, one rebuild included; one that writes none costs 137–143 / 176–198 ms, most of it the roster list (~60 ms) and the detail panel, then refreshed twice per roster change (~34 ms each, the dream read ~25 of it; once since `ig-7sn.3`). The 0.25 s pulse costs 1.7 / 2.2–2.5 ms and reads no bonds. Against slice 1 (~40–60 ms of bond reads per roster change) a record-writing change is ~50 ms dearer and a quiet one is cheaper. With 50-hero teams the rebuild takes ~4.4 s against slice 1's 434 ms per-hero read. Folded index (`ig-m6o.2.2.9`), same cap and teams, best / worst of seven over four runs: one record in (append, fold in, evict, fold out) costs 0.16 / 9.5–9.8 ms; the worst is the first call, which recomputes tiers. A roster change that writes a record now costs 107–108 / 174–189 ms, against 77–78 / 79–90 ms for one that writes none. With the detail panel refreshed once per roster change (`ig-7sn.3`), same test, best / worst of seven: 99 / 173 ms and 70 / 74 ms. Most of the gap is the one dream re-read. The all-pairs rebuild now runs only on a load or a rolled-back append: 117–119 / 120–125 ms. With 50-hero teams, one hard battle folds in at 10.2 / 16.9 ms and the oldest one comes out at 10.8 / 15.7 ms; the rebuild after a load is still 4.10 / 4.12 s. Since `ig-m6o.2.2.6` (the layers) the 5-hero rebuild is 149–151 ms best once the records carry kills (about 144 without), one record in 0.25 / 12 ms (§ Layers and roles, Cost) |
 
 Each fact counts at most once per record for a pair, so one long battle full of revives cannot make
 a bond by itself.
@@ -1310,7 +1310,7 @@ The pace this gives:
 > player lays out the town, which is unmeasured · **Settled by:** the `ig-eek` stage saves' bond
 > counts, then the owner watching a town for an evening
 
-### Layers and roles — *ig-m6o.2.2.6, design 2026-09-25, not built yet*
+### Layers and roles — *ig-m6o.2.2.6, design 2026-09-25, built 2026-09-30*
 
 A bond gets three layers. Each is read from the records like the points above, and each feeds one
 role. Roles are a read, never saved, and they change no number. A layer ships only with the role
@@ -1318,9 +1318,9 @@ that reads it: familiarity waits for a reader, and grievance waits for knowledge
 
 | Layer | Direction | From (A toward B, points each) |
 |---|---|---|
-| Affection | Directed | Today's points, both ways: a hard fight, a death witnessed, a meeting, a meal. Saved or rescued by B: toward B (`bond_points_saved`, `bond_points_rescued`). New: saved or rescued B: toward B (`bond_points_saving`, `bond_points_rescuing`) |
+| Affection | Directed | Today's points, both ways: a hard fight, a death witnessed, a meeting, a meal. Saved or rescued by B: toward B (`bond_points_saved`, `bond_points_rescued`). Saved or rescued B: toward B (`bond_points_saving`, `bond_points_rescuing`). A mutual save in one fight is 4 + 1 = 5 each way, counted once a side however many moments |
 | Respect | Directed | A hard fight side by side where B had more kills than A: +1 toward B. A tie scores nothing, and a routine victory scores no respect |
-| Teamwork | Both ways | A meeting between coworkers: +1. Coworkers are checked first, so neighbours who also work side by side meet as coworkers (`ig-m6o.2.2.4`'s amendment) |
+| Teamwork | Both ways | A meeting between coworkers: +1. Coworkers are checked first, so neighbours who also work side by side meet as coworkers (`ig-m6o.2.2.4` as built) |
 
 | Role | Rule |
 |---|---|
@@ -1335,8 +1335,14 @@ that reads it: familiarity waits for a reader, and grievance waits for knowledge
   (`ig-uu7.4`) reads affection, as it read points.
 - The detail panel adds one line under "Closest to", only when a role is held: "Friends: Mara,
   Dunn. Rival: Wren. Works well with: Tamsin." Up to three names a role.
-- Two new line kinds, "rival" and "collaborator". A meeting between rivals or collaborators says
-  one, and so can the partner's greeting.
+- Two new line kinds, "rival" and "collaborator", five lines each and `{name}` only. A meeting between
+  rivals says a "rival" line, else between collaborators a "collaborator" line, else "met". The
+  partner's greeting adds at most one role's lines (the rival's first), after the bond's and the
+  dream's and before the quirk's, and only for the role the partner holds toward the body.
+- Nothing is saved. The layers are counts kept in the bond index beside the points, folded in and
+  out with their record and rebuilt on a load; kills are read from the battle record as it is
+  (an int or a float both count: JSON decodes a number as a float, and a load's `Ledger.normalized`
+  turns a whole one back into an int; a missing or non-number value counts 0).
 
 | Row | Value | Why |
 |---|---|---|
@@ -1345,9 +1351,26 @@ that reads it: familiarity waits for a reader, and grievance waits for knowledge
 | `rival_threshold` | 3 | Outdone in three hard fights each way. With hard fights uncounted (this section's first PROVISIONAL), that's a long rivalry, not one lucky night |
 | `collaborator_threshold` | 4 | Four coworker meetings. A coworker pair in a 30-hero town meets about 0.27 times an hour, so about 15 live hours; in a small town, about 4 |
 
-What changes when it lands: a save counts in full only toward the saver. A hero who saves B twice
+What changed when it landed: a save counts in full only toward the saver. A hero who saves B twice
 reaches 4 toward B, not 8, while B reaches 8 toward the saver. So B's partner is the saver, and the
-saver's partner may be someone else. `bond_points_saved`'s "either way round" changes with the code.
+saver's partner may be someone else. `bond_points_saved` no longer reads "either way round". The
+owner's seeded case moves too: Dunn's greeting for Mara is the death Mara saw (5) and not the rescue
+she gave (2; it was 5 all before), so it says "death" and not "saved".
+
+- **Cost.** The Ledger at its 10,000-record cap, 50 heroes in 5-hero teams, seven runs, best / worst,
+  headless on the quiet PC, three runs each, before → after. The load's all-pairs rebuild 119–122 /
+  127–131 → 144 / 149–150 ms on the same records (the layers' code), and 149–151 / 154–159 once the cap
+  battles carry kills (the cost tests' records now do). With chats and meals 106–115 / 110–122 → 125–126 /
+  127–132 (128–130 / 133–137 with kills). A load pays it once. One record in (append, fold in, evict, fold
+  out) 0.21–0.22 → 0.24–0.25 best, worst 11.6–11.8 → 11.8–12.3 (the first call, as before): under the ADR's
+  16.7 ms, and the tests assert the best under it. One meal time (8 tables) 1.16–1.21 → 1.27–1.28 best,
+  9.2–11.2 → 9.7–9.9 worst. One encounter 0.04–0.05 → 0.05 best, worst 8.2–8.6 both. The hub's look and the
+  0.25 s pulse are unchanged: the first roster refresh after a new record is 70 ms before and after on the
+  same records. That number reads 96 ms once every record carries one more key, even one nothing reads, so it
+  is a record-size effect that is not the layers'. Logs: `.agent-results/ig-m6o.2.2.6/perf/`.
+
+> ⚠️ **PROVISIONAL** — the words of the "rival" and "collaborator" lines are a first pass ·
+> **Settled by:** the owner reading them in play
 
 > ⚠️ **PROVISIONAL** — the four rows are desk picks, and how often heroes outdo each other in hard
 > fights is unmeasured · **Settled by:** the `ig-eek` stage saves' role counts, then the owner gate

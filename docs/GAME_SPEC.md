@@ -151,7 +151,8 @@ grievances, commitments and shared techniques. Friends, rivals, partners, mentor
 enemies can occupy overlapping roles. Concordance measures practiced coordination, including
 between rivals. The first layers are affection, respect and teamwork, and the first roles are
 friend, rival and works-well-with (`SYSTEMS.md` § Bonds and dreams, "Layers and roles",
-`ig-m6o.2.2.6`, designed, not built yet).
+`ig-m6o.2.2.6`, built): being saved adds more affection toward the saver than doing the saving
+adds toward the one saved, and the detail panel names each hero's friends, rival and collaborators.
 
 A **dream** names its owner, formative events, desired change, beneficiaries, acceptable methods
 and observable milestones. New knowledge can revise it. A woodcutter's crossing becomes a school;
