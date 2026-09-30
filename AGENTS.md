@@ -64,12 +64,13 @@ nothing regardless of what it printed. Always `_console`.
 
 Zero warnings, not just zero errors.
 
-**Reap every engine process you start.** Only one Godot process may run against this project at a
+**Reap every engine process you start.** Only one Godot process may run against a checkout at a
 time — `.godot/` is rebuilt by the gate and that rebuild is not concurrency-safe. Prefer runs that
-exit on their own; if you background one, kill it before you return:
+exit on their own; if you background one, kill it before you return, by your own checkout's path
+(another checkout's lane may be running its own; `E:\Game-lane2\tools\*` in that worktree):
 
 ```
-Get-Process Godot* | Stop-Process -Force
+Get-Process Godot_v4* | Where-Object Path -like 'E:\Game\tools\*' | Stop-Process -Force
 ```
 
 Check it, do not assume it. A `--headless -s <script>` run that hangs looks exactly like one that

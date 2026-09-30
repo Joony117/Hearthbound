@@ -10,7 +10,7 @@ cd "$root" || exit 1
 # This gate rewrites .godot/, which is not safe to race against another engine process.
 if (exec 3<>/dev/tcp/127.0.0.1/6005) 2>/dev/null; then
 	echo "GATE ABORTED: Godot LSP on 127.0.0.1:6005 - another engine process is live."
-	echo "Stop it first:  pkill -f Godot_v4"
+	echo "Stop it first: close that editor, or reap it by its own checkout's path (CLAUDE.md, Engine)."
 	exit 1
 fi
 
@@ -25,7 +25,7 @@ for exe in /proc/[0-9]*/exe; do
 		pid="${pid%/exe}"
 		echo "GATE ABORTED: PID $pid ($(basename "$target")) is already running this repo's engine binary ($godot_dir)."
 		echo "Command line: $(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"
-		echo "Stop it first:  pkill -f Godot_v4"
+		echo "Stop it first:  pkill -f \"$godot_dir/\""
 		exit 1
 		;;
 	esac

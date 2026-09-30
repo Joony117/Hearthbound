@@ -45,14 +45,22 @@ d="$(mktemp -d)" && XDG_DATA_HOME="$d/data" XDG_CONFIG_HOME="$d/config" XDG_CACH
 Export: `mkdir -p export && ./tools/godot/Godot_v4.7.1-stable_win64_console.exe --headless --export-release "Windows Desktop" export/game.exe`
 (the exporter won't create the directory).
 
-## Engine: one Godot at a time
+## Engine: one Godot per checkout
 
-- Never run two Godot processes against this repo. Gates break the tree on purpose mid-run, so a
+- Two checkouts, one engine lane each: `E:\Game` (master) and the worktree `E:\Game-lane2` (branch
+  `lane2`, ig-dw2), each with its own `tools/godot/` and `.godot/`. A lane runs Godot only in its own
+  checkout, and runs BUILT's two commands from there.
+- Never run two Godot processes against one checkout. Gates break the tree on purpose mid-run, so a
   second process sees a broken tree and reports it green.
-- Whoever starts Godot reaps it: `Get-Process Godot_v4* | Stop-Process -Force`, then check that the count is 0. Not `Godot*`: that also kills the godot-ai MCP server (`godot-ai.exe`).
+- Whoever starts Godot reaps it by its own checkout's path, then checks that the count is 0:
+  `Get-Process Godot_v4* | Where-Object Path -like 'E:\Game\tools\*' | Stop-Process -Force`
+  (`'E:\Game-lane2\tools\*'` in the worktree). A bare `Get-Process Godot_v4* | Stop-Process` kills the
+  other lane's run. Not `Godot*`: that also kills the godot-ai MCP server (`godot-ai.exe`).
   A leaked process turns the next gate red. An open editor (port 6005) also blocks the gate.
-- The worktree is shared. Parallel writers are safe only if at most one runs the engine and the
-  other's edits can't break the import.
+- Each checkout's tree is shared by whoever works in it. Parallel writers are safe only if at most one
+  runs the engine and the other's edits can't break the import.
+- lane2's work lands through the director: commit on `lane2`, bring it up to master, fast-forward master
+  to it, push. A lane2 session never commits, merges or pushes. Export only from `E:\Game`.
 
 ## Risky boundaries: review mandatory
 

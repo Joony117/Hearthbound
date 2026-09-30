@@ -2,7 +2,7 @@
 # This gate rewrites .godot/, which is not safe to race against another engine process.
 if (Get-NetTCPConnection -LocalPort 6005 -State Listen -ErrorAction SilentlyContinue) {
 	Write-Host "GATE ABORTED: Godot LSP on 127.0.0.1:6005 - another engine process is live."
-	Write-Host "Stop it first:  Get-Process Godot_v4* | Stop-Process -Force"
+	Write-Host "Stop it first: close that editor, or reap it by its own checkout's path (CLAUDE.md, Engine)."
 	exit 1
 }
 
@@ -20,13 +20,17 @@ if ($strays) {
 	$p = $strays | Select-Object -First 1
 	Write-Host "GATE ABORTED: PID $($p.ProcessId) ($($p.Name)) is already running this repo's engine binary ($godotDir)."
 	Write-Host "Command line: $($p.CommandLine)"
-	Write-Host "Stop it first:  Get-Process Godot_v4* | Stop-Process -Force"
+	Write-Host "Stop it first:  Get-Process Godot_v4* | Where-Object Path -like '$godotDir\*' | Stop-Process -Force"
 	exit 1
 }
 
-$godot = Join-Path $PSScriptRoot "..\tools\godot\Godot_v4.7.1-stable_win64_console.exe"
+$godot =Join-Path $PSScriptRoot "..\tools\godot\Godot_v4.7.1-stable_win64_console.exe"
 $original_appdata = $env:APPDATA
-$env:APPDATA = [System.IO.Path]::GetTempPath()
+# ig-dw2: a fresh dir per run, as the .sh's mktemp: two checkouts' gates never share user:// or the
+# engine's settings.
+$gate_appdata = Join-Path ([System.IO.Path]::GetTempPath()) ("hb-gate-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $gate_appdata | Out-Null
+$env:APPDATA = $gate_appdata
 $warmup_output = & $godot --headless --import 2>&1
 $output = & $godot --headless --quit 2>&1
 $engine_exit = $LASTEXITCODE
@@ -56,6 +60,7 @@ $standalone = Get-ChildItem -Path $PSScriptRoot -Recurse -Filter *.gd |
 $parse_output = & $godot --headless -s res://tests/gate_parse.gd -- @standalone 2>&1
 $parse_exit = $LASTEXITCODE
 $env:APPDATA = $original_appdata
+Remove-Item -LiteralPath $gate_appdata -Recurse -Force -ErrorAction SilentlyContinue
 $warmup_output | ForEach-Object { $_.ToString() }
 $output | ForEach-Object { $_.ToString() }
 $parse_output | ForEach-Object { $_.ToString() }
